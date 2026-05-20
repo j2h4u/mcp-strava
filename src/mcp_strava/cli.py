@@ -4,19 +4,19 @@ import sys
 import json
 from datetime import datetime, timedelta
 
-from strava_lib.constants import Config
-from strava_lib.db import (
+from mcp_strava.constants import Config
+from mcp_strava.db import (
     DbConn, refresh_token,
     api_request, get_daily_trimp_history
 )
-from strava_lib.training import calc_banister, calc_weekly_plan, forward_simulate
-from strava_lib.analytics import weekly_digest
-from strava_lib.report import daily_report
-from strava_lib.types import (
+from mcp_strava.training import calc_banister, calc_weekly_plan, forward_simulate
+from mcp_strava.analytics import weekly_digest
+from mcp_strava.report import daily_report
+from mcp_strava.types import (
     parse_strava_activity, parse_strava_athlete, dc_to_dict
 )
-from strava_lib.sync import sync_activities, backfill_activities
-from strava_lib.trends import compute_trends
+from mcp_strava.sync import sync_activities, backfill_activities
+from mcp_strava.trends import compute_trends
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -112,7 +112,7 @@ def cmd_sync(args):
         traceback.print_exc(file=sys.stderr)
         # Try to log the failure — don't crash if DB is unavailable
         try:
-            from strava_lib.db import DbConn
+            from mcp_strava.db import DbConn
             from datetime import datetime
             with DbConn() as conn:
                 conn.execute(
@@ -324,7 +324,7 @@ COMMANDS = {
 
 def main():
     if len(sys.argv) < 2:
-        print(f"Usage: cli.py <command> [args]\nCommands: {', '.join(COMMANDS)}", file=sys.stderr)
+        print(f"Usage: python -m mcp_strava <command> [args]\nCommands: {', '.join(COMMANDS)}", file=sys.stderr)
         sys.exit(1)
     cmd = sys.argv[1]
     args = sys.argv[2:]
