@@ -28,7 +28,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Operator can install and run the project as a Python package without relying on ad hoc `scripts/` path hacks.
   2. Operator can set DB path, token path, runtime mode, bind settings, and freshness thresholds from one typed settings surface.
   3. `just test` runs successfully after packaging changes and still validates baseline smoke behavior.
-**Plans**: TBD
+**Plans**:
+  - [ ] `01-01` Package Manifest & Source Layout - Wave 1
+  - [ ] `01-02` Typed Settings Boundary - Wave 2 *(blocked on Wave 1 completion)*
+  - [ ] `01-03` Pytest Smoke Workflow - Wave 3 *(blocked on Wave 2 completion)*
 
 ### Phase 2: SQLite Safety & Repository Layer
 **Goal**: Data is preserved through controlled schema evolution, and application data access is isolated behind a SQLite repository interface.
@@ -81,7 +84,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Package Foundation & Settings | 0/TBD | Not started | - |
+| 1. Package Foundation & Settings | 0/3 | Ready to execute | - |
 | 2. SQLite Safety & Repository Layer | 0/TBD | Not started | - |
 | 3. Strava Adapter & Refresh Runtime | 0/TBD | Not started | - |
 | 4. Application Services & CLI Refit | 0/TBD | Not started | - |
