@@ -84,7 +84,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Package Foundation & Settings | 0/3 | Ready to execute | - |
+| 1. Package Foundation & Settings | 1/3 | In Progress|  |
 | 2. SQLite Safety & Repository Layer | 0/TBD | Not started | - |
 | 3. Strava Adapter & Refresh Runtime | 0/TBD | Not started | - |
 | 4. Application Services & CLI Refit | 0/TBD | Not started | - |
