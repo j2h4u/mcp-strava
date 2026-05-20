@@ -21,10 +21,10 @@ Preserve the local Strava mirror and keep trusted training analytics working whi
 - [x] Weekly analytics and trend views compute rolling load, efficiency, sport summaries, and form trends — existing
 - [x] CLI commands provide current access to activities, report, weekly digest, trends, sync, backfill, raw Strava calls, SQL, sync logs, and kudos — existing
 - [x] Smoke tests run through `just test` and cover imports, pure model functions, daily report, metrics helpers, analytics helpers, and sport registry behavior — existing
+- [x] Refactored runtime is installable as a Python package with `python -m mcp_strava`, `src/mcp_strava` package imports, typed settings for DB/token/runtime/HTTP/freshness, and pytest-backed `just test` — validated in Phase 1
 
 ### Active
 
-- [ ] Refactor the codebase into an installable Python package with explicit settings for database path, environment, Strava credentials, and runtime mode
 - [ ] Separate core/domain training logic from SQLite, Strava HTTP calls, CLI formatting, and MCP transport concerns
 - [ ] Introduce a data-preserving SQLite repository layer with schema versioning, migration preflight, and backup safeguards before destructive changes
 - [ ] Introduce a Strava API adapter that owns OAuth refresh, request execution, rate-limit handling, retries, and payload parsing
@@ -101,4 +101,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-20 after initialization*
+*Last updated: 2026-05-20 after Phase 1 completion*
