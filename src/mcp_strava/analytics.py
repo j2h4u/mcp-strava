@@ -4,14 +4,14 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from itertools import accumulate
 
-from strava_lib.constants import (
+from mcp_strava.constants import (
     Config,
     RUNNING_SPORTS,
     SPORT_RUN, SPORT_WALK, SPORT_TRAILRUN,
     build_eff_config,
 )
-from strava_lib.db import get_daily_trimp_history
-from strava_lib.types import ActivityMetrics, RollingEfficiency, WeeklyDigest
+from mcp_strava.db import get_daily_trimp_history
+from mcp_strava.types import ActivityMetrics, RollingEfficiency, WeeklyDigest
 
 
 # ─── Generic Helpers ───

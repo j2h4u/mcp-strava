@@ -7,9 +7,9 @@ import socket
 import urllib.error
 from datetime import datetime
 
-from strava_lib.db import DbConn, init_db, load_env, api_request
-from strava_lib.types import parse_strava_activity, parse_strava_streams
-from strava_lib.sports import detect_new_types
+from mcp_strava.db import DbConn, init_db, load_env, api_request
+from mcp_strava.types import parse_strava_activity, parse_strava_streams
+from mcp_strava.sports import detect_new_types
 
 
 STREAM_KEYS = "time,heartrate,velocity_smooth,altitude,cadence,latlng,grade_smooth,grade_adjusted_speed,grade_adjusted_distance,moving"

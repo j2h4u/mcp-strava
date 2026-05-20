@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.error
 from datetime import datetime, timedelta
 
-from strava_lib.constants import Config, TRAINING_SPORTS
+from mcp_strava.constants import Config, TRAINING_SPORTS
 
 # strava_lib/ is inside scripts/, so go up 2 levels to reach skill root
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

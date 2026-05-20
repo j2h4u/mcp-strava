@@ -2,14 +2,14 @@
 
 from datetime import datetime, timedelta
 
-from strava_lib.constants import Config, RUNNING_SPORTS
-from strava_lib.db import DbConn, get_daily_trimp_history
-from strava_lib.metrics import enrich_activity, check_z5_minutes, check_hr_anomalies
-from strava_lib.training import (
+from mcp_strava.constants import Config, RUNNING_SPORTS
+from mcp_strava.db import DbConn, get_daily_trimp_history
+from mcp_strava.metrics import enrich_activity, check_z5_minutes, check_hr_anomalies
+from mcp_strava.training import (
     calc_banister, ewma,
     calc_progressive_signal, calc_weekly_plan
 )
-from strava_lib.types import DailyReport, Recommendation, BanisterPoint, AcwrPoint, BySportBreakdown
+from mcp_strava.types import DailyReport, Recommendation, BanisterPoint, AcwrPoint, BySportBreakdown
 
 
 def daily_report():

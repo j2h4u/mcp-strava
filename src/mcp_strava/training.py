@@ -1,8 +1,8 @@
 """Banister model, ACWR, and weekly training plan module."""
 
-from strava_lib.constants import Config, TRAINING_SPORTS
-from strava_lib.metrics import calc_efficiency_factor, calc_hr_recovery, calc_decoupling_with_gate
-from strava_lib.types import (BanisterResult, ProgressiveSignal, PlanDay, SimDay,
+from mcp_strava.constants import Config, TRAINING_SPORTS
+from mcp_strava.metrics import calc_efficiency_factor, calc_hr_recovery, calc_decoupling_with_gate
+from mcp_strava.types import (BanisterResult, ProgressiveSignal, PlanDay, SimDay,
                               WeeklyPlan, CompletedDay, PostWeekendSim, SparklineBar)
 from datetime import datetime, timedelta
 from itertools import product

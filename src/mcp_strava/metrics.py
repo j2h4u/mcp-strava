@@ -1,10 +1,10 @@
 """Per-activity metrics: decoupling, efficiency factor, HR recovery,
 vertical speed, and the enrichment wrapper that computes all of them."""
 
-from strava_lib.constants import Config
-from strava_lib.types import (HrRecovery, VerticalSpeed, DecouplingResult,
+from mcp_strava.constants import Config
+from mcp_strava.types import (HrRecovery, VerticalSpeed, DecouplingResult,
                                EnrichedActivity, CardiacDriftResult, parse_strava_activity)
-from strava_lib.cardiac_drift import cardiac_drift as _drift_algo
+from mcp_strava.cardiac_drift import cardiac_drift as _drift_algo
 import json
 
 

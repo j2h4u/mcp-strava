@@ -3,7 +3,7 @@
 All tunable parameters live in the `Config` hierarchy.
 Import what you need::
 
-    from strava_lib.constants import Config
+    from mcp_strava.constants import Config
     threshold = Config.Thresholds.PACE_CV_MAX
 """
 
@@ -110,7 +110,7 @@ class Config:
 # ═══════════════════════════════════════════════════════════════
 # All 50 Strava sport types defined once in sports.py.
 
-from strava_lib.sports import (              # noqa: E402
+from mcp_strava.sports import (              # noqa: E402
     SPORT_TRAINING  as TRAINING_SPORTS,
     SPORT_RUNNING   as RUNNING_SPORTS,
     SPORT_ALL       as ALL_SPORTS,

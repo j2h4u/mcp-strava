@@ -5,8 +5,8 @@ All 50 types from the official Strava API (SportType enum).
 Unknown types are saved but treated as non-training safe defaults.
 
 Usage:
-    from strava_lib.sports import is_training, is_running, get_eff_windows
-    from strava_lib.sports import SPORT_TRAINING, SPORT_RUN, SPORT_WALK, ...
+    from mcp_strava.sports import is_training, is_running, get_eff_windows
+    from mcp_strava.sports import SPORT_TRAINING, SPORT_RUN, SPORT_WALK, ...
 
 Each sport_type is annotated with:
   - is_training : sustained cardio that contributes to Banister/TRIMP load

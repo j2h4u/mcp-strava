@@ -4,9 +4,9 @@ import json
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from strava_lib.constants import Config
-from strava_lib.db import DbConn, get_daily_trimp_history
-from strava_lib.training import calc_banister_series
+from mcp_strava.constants import Config
+from mcp_strava.db import DbConn, get_daily_trimp_history
+from mcp_strava.training import calc_banister_series
 
 
 def compute_trends(weeks=52):
