@@ -1,5 +1,6 @@
 """Typed runtime settings for mcp_strava."""
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -34,9 +35,12 @@ _KEYS = {
     'MCP_STRAVA_HTTP_PORT',
     'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS',
     'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS',
+    'MCP_STRAVA_PROJECT_ROOT',
 }
 
-_CACHED_SETTINGS: Settings | None = None
+_CacheKey = tuple[tuple[tuple[str, str], ...], str | None, str | None]
+
+_CACHED_SETTINGS: dict[_CacheKey, Settings] = {}
 
 
 def _read_env_file(env_file: Path) -> dict[str, str]:
@@ -70,6 +74,37 @@ def _validate_ranges(http_port: int, warn_age_hours: int, max_age_hours: int) ->
         raise ValueError('Invalid integer for MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS: out of range')
     if max_age_hours < 0:
         raise ValueError('Invalid integer for MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS: out of range')
+    if warn_age_hours > max_age_hours:
+        raise ValueError(
+            'Invalid freshness settings: MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS '
+            'must be <= MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS'
+        )
+
+
+def _resolve_project_root(
+    env_map: Mapping[str, str],
+    file_values: Mapping[str, str],
+    project_root: str | Path | None,
+) -> Path:
+    if project_root is not None:
+        return Path(project_root)
+    if env_root := env_map.get('MCP_STRAVA_PROJECT_ROOT'):
+        return Path(env_root)
+    if file_root := file_values.get('MCP_STRAVA_PROJECT_ROOT'):
+        return Path(file_root)
+    return Path.cwd()
+
+
+def _cache_key(
+    environ: Mapping[str, str] | None,
+    env_file: str | Path | None,
+    project_root: str | Path | None,
+) -> _CacheKey:
+    env_map = os.environ if environ is None else environ
+    relevant_env = tuple(sorted((key, env_map[key]) for key in _KEYS if key in env_map))
+    env_file_key = str(Path(env_file)) if env_file is not None else None
+    project_root_key = str(Path(project_root)) if project_root is not None else None
+    return (relevant_env, env_file_key, project_root_key)
 
 
 def load_settings(
@@ -78,11 +113,12 @@ def load_settings(
     project_root: str | Path | None = None,
 ) -> Settings:
     """Load settings without mutating process-global state."""
-    env_map = dict(environ) if environ is not None else {}
-    root = Path(project_root) if project_root is not None else Path(__file__).resolve().parents[2]
+    env_map = dict(os.environ if environ is None else environ)
+    explicit_file_values = _read_env_file(Path(env_file)) if env_file is not None else {}
+    root = _resolve_project_root(env_map, explicit_file_values, project_root)
     compat_env_path = Path(env_file) if env_file is not None else (root / '.env')
 
-    file_values = _read_env_file(compat_env_path)
+    file_values = explicit_file_values if env_file is not None else _read_env_file(compat_env_path)
 
     def resolve(key: str, default: str) -> str:
         if key in env_map:
@@ -125,12 +161,11 @@ def get_settings(
     env_file: str | Path | None = None,
     project_root: str | Path | None = None,
 ) -> Settings:
-    global _CACHED_SETTINGS
-    if _CACHED_SETTINGS is None:
-        _CACHED_SETTINGS = load_settings(environ=environ, env_file=env_file, project_root=project_root)
-    return _CACHED_SETTINGS
+    key = _cache_key(environ=environ, env_file=env_file, project_root=project_root)
+    if key not in _CACHED_SETTINGS:
+        _CACHED_SETTINGS[key] = load_settings(environ=environ, env_file=env_file, project_root=project_root)
+    return _CACHED_SETTINGS[key]
 
 
 def reset_settings_cache() -> None:
-    global _CACHED_SETTINGS
-    _CACHED_SETTINGS = None
+    _CACHED_SETTINGS.clear()

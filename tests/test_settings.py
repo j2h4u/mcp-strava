@@ -17,6 +17,28 @@ def test_load_settings_defaults() -> None:
     assert settings.freshness.max_age_hours == 24
 
 
+def test_load_settings_defaults_to_current_working_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    settings = load_settings(environ={})
+
+    assert settings.database_path == tmp_path / 'data' / 'strava.db'
+    assert settings.token_path == tmp_path / '.env'
+
+
+def test_load_settings_reads_process_environment_when_environ_omitted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv('MCP_STRAVA_PROJECT_ROOT', str(tmp_path))
+    monkeypatch.setenv('MCP_STRAVA_DB_PATH', str(tmp_path / 'custom.db'))
+
+    settings = load_settings()
+
+    assert settings.database_path == tmp_path / 'custom.db'
+    assert settings.token_path == tmp_path / '.env'
+
+
 def test_load_settings_environment_overrides() -> None:
     env = {
         'MCP_STRAVA_DB_PATH': '/tmp/custom/db.sqlite',
@@ -100,12 +122,13 @@ def test_get_settings_cache_can_be_reset(tmp_path: Path) -> None:
     }
     second = get_settings(environ=env_two, project_root=tmp_path)
 
-    assert first is second
-    assert second.database_path == tmp_path / 'first.db'
+    assert first is not second
+    assert second.database_path == tmp_path / 'second.db'
 
     reset_settings_cache()
     third = get_settings(environ=env_two, project_root=tmp_path)
     assert third.database_path == tmp_path / 'second.db'
+    assert third is not second
 
 
 @pytest.mark.parametrize(
@@ -121,4 +144,14 @@ def test_load_settings_rejects_invalid_port(key: str, value: str) -> None:
     environ = {key: value}
 
     with pytest.raises(ValueError, match=key):
+        load_settings(environ=environ, project_root=Path('/tmp/project'))
+
+
+def test_load_settings_rejects_warn_age_greater_than_max_age() -> None:
+    environ = {
+        'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS': '25',
+        'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS': '24',
+    }
+
+    with pytest.raises(ValueError, match='MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS'):
         load_settings(environ=environ, project_root=Path('/tmp/project'))
