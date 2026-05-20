@@ -9,11 +9,15 @@ import urllib.error
 from datetime import datetime, timedelta
 
 from mcp_strava.constants import Config, TRAINING_SPORTS
+from mcp_strava.settings import get_settings
 
-# strava_lib/ is inside scripts/, so go up 2 levels to reach skill root
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DB_PATH = os.path.join(BASE_DIR, 'data', 'strava.db')
-ENV_PATH = os.path.join(BASE_DIR, '.env')
+
+def _db_path() -> str:
+    return str(get_settings().database_path)
+
+
+def _env_path() -> str:
+    return str(get_settings().token_path)
 
 
 # --- DB ---
@@ -22,8 +26,9 @@ class DbConn:
     """Context manager for SQLite connections — auto-closes on exit."""
 
     def __enter__(self):
-        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-        self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        db_path = _db_path()
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA wal_autocheckpoint=1000")
@@ -94,8 +99,9 @@ def init_db(conn):
 
 def load_env():
     env = {}
-    if os.path.exists(ENV_PATH):
-        with open(ENV_PATH, 'r') as f:
+    env_path = _env_path()
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
             for line in f:
                 if '=' in line and not line.startswith('#'):
                     k, v = line.strip().split('=', 1)
@@ -104,7 +110,7 @@ def load_env():
 
 
 def save_env(env):
-    with open(ENV_PATH, 'w') as f:
+    with open(_env_path(), 'w') as f:
         for k, v in env.items():
             f.write(f"{k}={v}\n")
 
@@ -114,7 +120,8 @@ def refresh_token():
     required = ['STRAVA_CLIENT_ID', 'STRAVA_CLIENT_SECRET', 'STRAVA_REFRESH_TOKEN']
     missing = [k for k in required if k not in env]
     if missing:
-        raise RuntimeError(f"Missing env vars for Strava auth: {', '.join(missing)}. Check {ENV_PATH}")
+        env_path = _env_path()
+        raise RuntimeError(f"Missing env vars for Strava auth: {', '.join(missing)}. Check {env_path}")
     data = urllib.parse.urlencode({
         'client_id': env['STRAVA_CLIENT_ID'],
         'client_secret': env['STRAVA_CLIENT_SECRET'],
