@@ -112,6 +112,7 @@ def test_get_settings_cache_can_be_reset(tmp_path: Path) -> None:
     ('key', 'value'),
     [
         ('MCP_STRAVA_HTTP_PORT', 'bad'),
+        ('MCP_STRAVA_HTTP_PORT', '70000'),
         ('MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS', 'x'),
         ('MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS', 'y'),
     ],
