@@ -109,45 +109,45 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01 | TBD | Pending |
-| FOUND-02 | TBD | Pending |
-| FOUND-03 | TBD | Pending |
-| SAFE-01 | TBD | Pending |
-| SAFE-02 | TBD | Pending |
-| SAFE-03 | TBD | Pending |
-| SAFE-04 | TBD | Pending |
-| REPO-01 | TBD | Pending |
-| REPO-02 | TBD | Pending |
-| REPO-03 | TBD | Pending |
-| STRAVA-01 | TBD | Pending |
-| STRAVA-02 | TBD | Pending |
-| STRAVA-03 | TBD | Pending |
-| APP-01 | TBD | Pending |
-| APP-02 | TBD | Pending |
-| APP-03 | TBD | Pending |
-| APP-04 | TBD | Pending |
-| CLI-01 | TBD | Pending |
-| CLI-02 | TBD | Pending |
-| CLI-03 | TBD | Pending |
-| MCP-01 | TBD | Pending |
-| MCP-02 | TBD | Pending |
-| MCP-03 | TBD | Pending |
-| MCP-04 | TBD | Pending |
-| REFRESH-01 | TBD | Pending |
-| REFRESH-02 | TBD | Pending |
-| REFRESH-03 | TBD | Pending |
-| DOCKER-01 | TBD | Pending |
-| DOCKER-02 | TBD | Pending |
-| DOCKER-03 | TBD | Pending |
-| TEST-01 | TBD | Pending |
-| TEST-02 | TBD | Pending |
-| TEST-03 | TBD | Pending |
-| TEST-04 | TBD | Pending |
+| FOUND-01 | Phase 1 | Pending |
+| FOUND-02 | Phase 1 | Pending |
+| FOUND-03 | Phase 1 | Pending |
+| SAFE-01 | Phase 2 | Pending |
+| SAFE-02 | Phase 2 | Pending |
+| SAFE-03 | Phase 2 | Pending |
+| SAFE-04 | Phase 2 | Pending |
+| REPO-01 | Phase 2 | Pending |
+| REPO-02 | Phase 2 | Pending |
+| REPO-03 | Phase 2 | Pending |
+| STRAVA-01 | Phase 3 | Pending |
+| STRAVA-02 | Phase 3 | Pending |
+| STRAVA-03 | Phase 3 | Pending |
+| APP-01 | Phase 4 | Pending |
+| APP-02 | Phase 4 | Pending |
+| APP-03 | Phase 4 | Pending |
+| APP-04 | Phase 4 | Pending |
+| CLI-01 | Phase 4 | Pending |
+| CLI-02 | Phase 4 | Pending |
+| CLI-03 | Phase 4 | Pending |
+| MCP-01 | Phase 5 | Pending |
+| MCP-02 | Phase 5 | Pending |
+| MCP-03 | Phase 5 | Pending |
+| MCP-04 | Phase 5 | Pending |
+| REFRESH-01 | Phase 3 | Pending |
+| REFRESH-02 | Phase 3 | Pending |
+| REFRESH-03 | Phase 3 | Pending |
+| DOCKER-01 | Phase 5 | Pending |
+| DOCKER-02 | Phase 5 | Pending |
+| DOCKER-03 | Phase 5 | Pending |
+| TEST-01 | Phase 2 | Pending |
+| TEST-02 | Phase 3 | Pending |
+| TEST-03 | Phase 5 | Pending |
+| TEST-04 | Phase 4 | Pending |
 
 **Coverage:**
 - v1 requirements: 34 total
-- Mapped to phases: 0
-- Unmapped: 34 (pending roadmap)
+- Mapped to phases: 34
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-05-20*

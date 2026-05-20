@@ -1,0 +1,88 @@
+# Roadmap: mcp-strava
+
+## Overview
+
+This roadmap refactors the current CLI-first codebase into a layered service architecture while preserving the existing `data/strava.db` mirror. The sequence is intentionally horizontal/layered for development efficiency: package/settings foundation, data layer hardening, Strava adapter and refresh runtime, application/CLI service layer, then MCP and Docker exposure.
+
+## Phases
+
+**Phase Numbering:**
+- Integer phases (1, 2, 3): Planned milestone work
+- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+
+Decimal phases appear between their surrounding integers in numeric order.
+
+- [ ] **Phase 1: Package Foundation & Settings** - Establish installable package/runtime configuration and keep smoke testing operational.
+- [ ] **Phase 2: SQLite Safety & Repository Layer** - Add migration safety rails and move persistence access behind repository boundaries.
+- [ ] **Phase 3: Strava Adapter & Refresh Runtime** - Isolate Strava transport/token logic and implement resilient automatic mirror refresh behavior.
+- [ ] **Phase 4: Application Services & CLI Refit** - Move user-facing analytics/reporting workflows into application services and route CLI through them.
+- [ ] **Phase 5: MCP HTTP Surface & Docker Hardening** - Expose read-only MCP tools and finalize local-safe container/runtime boundaries.
+
+## Phase Details
+
+### Phase 1: Package Foundation & Settings
+**Goal**: Developers can install and run the refactored service via a package entrypoint with one typed configuration system, while preserving testability through `just test`.
+**Depends on**: Nothing (first phase)
+**Requirements**: FOUND-01, FOUND-02, FOUND-03
+**Success Criteria** (what must be TRUE):
+  1. Operator can install and run the project as a Python package without relying on ad hoc `scripts/` path hacks.
+  2. Operator can set DB path, token path, runtime mode, bind settings, and freshness thresholds from one typed settings surface.
+  3. `just test` runs successfully after packaging changes and still validates baseline smoke behavior.
+**Plans**: TBD
+
+### Phase 2: SQLite Safety & Repository Layer
+**Goal**: Data is preserved through controlled schema evolution, and application data access is isolated behind a SQLite repository interface.
+**Depends on**: Phase 1
+**Requirements**: SAFE-01, SAFE-02, SAFE-03, SAFE-04, REPO-01, REPO-02, REPO-03, TEST-01
+**Success Criteria** (what must be TRUE):
+  1. Before schema-altering changes, operator can run preflight checks confirming schema version, required tables, row counts, and DB readability.
+  2. Schema-changing migrations create timestamped `data/strava.db` backups and verify post-migration parity for row counts and key report outputs.
+  3. If the expected mirror DB is missing or invalid, service startup fails closed instead of silently creating an empty replacement.
+  4. Services can read/write activities, streams, zones, kudos, and sync metadata only through repository methods with WAL/busy-timeout-safe behavior, and missing-HR/stream sessions remain explicit unknowns rather than rest days.
+**Plans**: TBD
+
+### Phase 3: Strava Adapter & Refresh Runtime
+**Goal**: Strava API interactions and token persistence are fully isolated in adapter/runtime layers with resilient, policy-driven mirror refresh.
+**Depends on**: Phase 2
+**Requirements**: STRAVA-01, STRAVA-02, STRAVA-03, REFRESH-01, REFRESH-02, REFRESH-03, TEST-02
+**Success Criteria** (what must be TRUE):
+  1. OAuth refresh, retry/rate-limit behavior, request execution, and payload parsing run through a dedicated Strava adapter rather than repository/application logic.
+  2. Token persistence is atomic and single-writer safe under concurrent refresh attempts.
+  3. Incremental sync resumes from checkpoints after 429/network/partial-fetch interruptions without corrupting mirror state.
+  4. Mirror refresh runs automatically at least daily, and request-time freshness checks can signal/schedule refresh without exposing sync as a user action.
+**Plans**: TBD
+
+### Phase 4: Application Services & CLI Refit
+**Goal**: User-facing analytics/report capabilities are delivered by application services and consumed by a clean CLI surface.
+**Depends on**: Phase 3
+**Requirements**: APP-01, APP-02, APP-03, APP-04, CLI-01, CLI-02, CLI-03, TEST-04
+**Success Criteria** (what must be TRUE):
+  1. Operator can get daily report, weekly summary, recent workouts, and per-workout analytics from local mirror data without live Strava calls at request time.
+  2. Returned analytics include freshness/completeness/warning metadata and recommendation rationale.
+  3. CLI exposes report/weekly/workouts/freshness plus sync/backfill/sql/raw/debug operations through the new service stack, with documented replacement mapping for retained capabilities.
+  4. Freshness logic is enforced in application services (not interface glue), including stale-data signaling behavior.
+**Plans**: TBD
+
+### Phase 5: MCP HTTP Surface & Docker Hardening
+**Goal**: MCP users can access read-only intent-level training tools over a local-safe HTTP server, with container/runtime boundaries ready for local gateway integration.
+**Depends on**: Phase 4
+**Requirements**: MCP-01, MCP-02, MCP-03, MCP-04, DOCKER-01, DOCKER-02, DOCKER-03, TEST-03
+**Success Criteria** (what must be TRUE):
+  1. MCP HTTP server exposes only read-only training tools for workouts/reports/load/readiness/recommendations.
+  2. MCP surface does not include sync/backfill/raw/sql/token/admin/sync-log operations, and allowlist tests prove these tools are absent.
+  3. MCP responses include freshness and completeness metadata when analytics may be stale or partial.
+  4. Container runtime uses a persistent `data/` volume, fails startup on missing/unreadable expected mirror DB, runs non-root by default, and keeps local-safe bind defaults.
+**Plans**: TBD
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. Package Foundation & Settings | 0/TBD | Not started | - |
+| 2. SQLite Safety & Repository Layer | 0/TBD | Not started | - |
+| 3. Strava Adapter & Refresh Runtime | 0/TBD | Not started | - |
+| 4. Application Services & CLI Refit | 0/TBD | Not started | - |
+| 5. MCP HTTP Surface & Docker Hardening | 0/TBD | Not started | - |

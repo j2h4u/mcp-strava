@@ -81,6 +81,7 @@ Existing codebase concerns that should shape the roadmap:
 | Preserve existing Strava data as durable mirror state | Refetching is slow and rate-limited; data loss would be costly | — Pending |
 | MCP must not expose sync/admin/debug tools | Agents should consume training insight, not operate infrastructure controls | — Pending |
 | Sync is automatic/background/core policy | The local mirror should stay fresh without making sync an MCP user action | — Pending |
+| Prefer development efficiency over intermediate operability | The service does not need to stay fully usable during refactor; it only needs to be operational after the milestone is complete | — Pending |
 
 ## Evolution
 
