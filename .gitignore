@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+.planning/config.json
 
 # Python bytecode and caches
 __pycache__/
