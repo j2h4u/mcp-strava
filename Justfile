@@ -4,7 +4,7 @@ default:
     @just --list
 
 test:
-    python3 scripts/run_tests.py
+    python3 -m pytest
 
 alias tests := test
 alias smoke := test

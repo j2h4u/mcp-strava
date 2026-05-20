@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+import sqlite3
 
 
 def test_imports():
@@ -40,8 +41,17 @@ def test_imports():
 
 def test_daily_report():
     """Daily report runs end-to-end: DB → metrics → training → recommendation."""
-    if not Path("data/strava.db").exists():
+    db_path = Path("data/strava.db")
+    if not db_path.exists():
         pytest.skip("data/strava.db missing; SAFE-04 fail-closed behavior is Phase 2 scope")
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='activities'"
+        ).fetchone()
+    if row is None:
+        pytest.skip("data/strava.db missing activities table; SAFE-04 fail-closed behavior is Phase 2 scope")
+    from mcp_strava.settings import reset_settings_cache
+    reset_settings_cache()
     from mcp_strava.report import daily_report
     report = daily_report()
     assert report is not None, "daily_report() returned None"
