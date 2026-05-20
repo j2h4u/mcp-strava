@@ -1,43 +1,23 @@
-"""Smoke tests for the Strava skill — run without pytest due to types.py naming conflict.
-
-Usage:
-    cd /opt/data/skills/productivity/strava/scripts
-    python3 -c "
-    import sys, importlib.util
-    sys.path.insert(0, '../tests')
-    spec = importlib.util.spec_from_file_location('test_smoke', '../tests/test_smoke.py')
-    test_smoke = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(test_smoke)
-    test_smoke.test_imports()
-    test_smoke.test_daily_report()
-    test_smoke.test_forward_simulate()
-    test_smoke.test_ewma()
-    test_smoke.test_form_zone()
-    test_smoke.test_trend()
-    test_smoke.test_sim_one_day()
-    test_smoke.test_decoupling_invalid()
-    test_smoke.test_calc_decoupling()
-    test_smoke.test_median_pct_change()
-    test_smoke.test_sports_registry()
-    print('ALL TESTS PASSED')
-    "
-"""
+"""Smoke tests for mcp_strava package behavior."""
 
 from datetime import date
+from pathlib import Path
+
+import pytest
 
 
 def test_imports():
     """All 14 public symbols import without errors — including new Config paths."""
-    from strava_lib.constants import Config
-    from strava_lib.types import DailyReport, WeeklyPlan, BanisterResult, DecouplingResult
-    from strava_lib.types import BySportBreakdown, CompletedDay, PostWeekendSim, SparklineBar
-    from strava_lib.db import DbConn, get_daily_trimp_history
-    from strava_lib.metrics import enrich_activity, calc_decoupling_with_gate, calc_efficiency_factor
-    from strava_lib.training import calc_banister, calc_weekly_plan, forward_simulate, ewma, trend
-    from strava_lib.analytics import weekly_digest
-    from strava_lib.report import daily_report
-    from strava_lib.sync import sync_activities, backfill_activities, RateLimiter
-    from strava_lib.trends import compute_trends
+    from mcp_strava.constants import Config
+    from mcp_strava.types import DailyReport, WeeklyPlan, BanisterResult, DecouplingResult
+    from mcp_strava.types import BySportBreakdown, CompletedDay, PostWeekendSim, SparklineBar
+    from mcp_strava.db import DbConn, get_daily_trimp_history
+    from mcp_strava.metrics import enrich_activity, calc_decoupling_with_gate, calc_efficiency_factor
+    from mcp_strava.training import calc_banister, calc_weekly_plan, forward_simulate, ewma, trend
+    from mcp_strava.analytics import weekly_digest
+    from mcp_strava.report import daily_report
+    from mcp_strava.sync import sync_activities, backfill_activities, RateLimiter
+    from mcp_strava.trends import compute_trends
 
     # Verify Config hierarchy
     assert Config.Model.Banister.TAU_FITNESS == 42
@@ -52,12 +32,17 @@ def test_imports():
     assert Config.Thresholds.PACE_CV_MAX == 0.25
     assert Config.Plan.Score.TARGET_HIT == 100
     assert Config.Plan.Score.SAFETY_CRITICAL == 30
+    import mcp_strava.types as package_types
+    expected_suffix = str(Path("src") / "mcp_strava" / "types.py")
+    assert str(package_types.__file__).endswith(expected_suffix)
     print("  OK: all imports + Config paths verified")
 
 
 def test_daily_report():
     """Daily report runs end-to-end: DB → metrics → training → recommendation."""
-    from strava_lib.report import daily_report
+    if not Path("data/strava.db").exists():
+        pytest.skip("data/strava.db missing; SAFE-04 fail-closed behavior is Phase 2 scope")
+    from mcp_strava.report import daily_report
     report = daily_report()
     assert report is not None, "daily_report() returned None"
     assert report.today, "Report missing today"
@@ -74,8 +59,8 @@ def test_daily_report():
 
 def test_forward_simulate():
     """Pure function: Banister simulation produces expected shape (SimDay dataclasses)."""
-    from strava_lib.training import forward_simulate
-    from strava_lib.constants import Config
+    from mcp_strava.training import forward_simulate
+    from mcp_strava.constants import Config
 
     alpha_fatigue = 1 - pow(0.5, 1.0 / Config.Model.Banister.TAU_FATIGUE)
     alpha_fitness = 1 - pow(0.5, 1.0 / Config.Model.Banister.TAU_FITNESS)
@@ -99,7 +84,7 @@ def test_forward_simulate():
 
 def test_ewma():
     """EWMA: empty, single value, decay behavior."""
-    from strava_lib.training import ewma
+    from mcp_strava.training import ewma
 
     # Empty input
     assert ewma({}, tau=7) == {}
@@ -121,7 +106,7 @@ def test_ewma():
 
 def test_form_zone():
     """Form zone classification — boundary values."""
-    from strava_lib.training import _form_zone, _form_zone_short
+    from mcp_strava.training import _form_zone, _form_zone_short
 
     # Simplified 3-zone (May 2026)
     assert _form_zone(-31) == 'tired'
@@ -141,7 +126,7 @@ def test_form_zone():
 
 def test_trend():
     """Trend: <4 values, rising, falling, stable, zero denominator."""
-    from strava_lib.training import trend
+    from mcp_strava.training import trend
 
     # Insufficient data
     assert trend([1, 2, 3]) is None
@@ -182,7 +167,7 @@ def test_trend():
 
 def test_sim_one_day():
     """_sim_one_day: formula correctness, fatigue responds faster than fitness."""
-    from strava_lib.training import _sim_one_day
+    from mcp_strava.training import _sim_one_day
 
     # Zero TRIMP — state should decay toward 0
     f, fa, form = _sim_one_day(50.0, 25.0, 0, 0.016, 0.094)
@@ -205,7 +190,7 @@ def test_sim_one_day():
 
 def test_decoupling_invalid():
     """_decoupling_invalid: <2 points, low velocity, high CV, normal."""
-    from strava_lib.metrics import _decoupling_invalid
+    from mcp_strava.metrics import _decoupling_invalid
 
     # Too few points
     assert _decoupling_invalid([]) is True
@@ -225,7 +210,7 @@ def test_decoupling_invalid():
 
 def test_calc_decoupling():
     """calc_decoupling: empty, insufficient, positive decoupling, negative."""
-    from strava_lib.metrics import calc_decoupling
+    from mcp_strava.metrics import calc_decoupling
 
     # Insufficient rows
     assert calc_decoupling([]) is None
@@ -246,7 +231,7 @@ def test_calc_decoupling():
 
 def test_median_pct_change():
     """median and pct_change: empty, odd/even, None/zero edge cases."""
-    from strava_lib.analytics import median, pct_change
+    from mcp_strava.analytics import median, pct_change
 
     # median
     assert median([]) is None
@@ -265,7 +250,7 @@ def test_median_pct_change():
 
 def test_sports_registry():
     """Sports registry: known types classify correctly, unknown types detected."""
-    from strava_lib.sports import is_training, is_running, get_eff_windows, detect_new_types
+    from mcp_strava.sports import is_training, is_running, get_eff_windows, detect_new_types
 
     # Known training types
     assert is_training('Run') is True
@@ -295,3 +280,10 @@ def test_sports_registry():
     unknown2 = detect_new_types(['Run', 'Hike', 'Walk'])
     assert len(unknown2) == 0
     print("  OK: sports_registry — training, running, eff_windows, detect_new")
+
+
+def test_settings_loads_defaults_under_pytest(tmp_path):
+    from mcp_strava.settings import load_settings
+
+    settings = load_settings(environ={}, project_root=tmp_path)
+    assert str(settings.database_path).endswith("data/strava.db")
