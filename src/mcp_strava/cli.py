@@ -1,4 +1,4 @@
-"""Strava CLI — thin dispatcher on top of strava_lib."""
+"""Strava CLI — thin dispatcher on top of mcp_strava modules."""
 
 import sys
 import json

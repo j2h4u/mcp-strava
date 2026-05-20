@@ -7,7 +7,7 @@ Fields that require Summit (paid) are marked with 💰.
 Fields we COULD use are marked with 🔵.
 Fields we DON'T need are marked with ⬜.
 
-Machine-readable version: strava_lib/api_schema.py (FieldSchema/EndpointSchema dataclasses).
+Machine-readable version: mcp_strava/api_schema.py (FieldSchema/EndpointSchema dataclasses).
 Used by cmd_sync Phase 4 for automatic schema validation + Summit detection.
 
 Last updated: 2026-05-05, verified against live API.
