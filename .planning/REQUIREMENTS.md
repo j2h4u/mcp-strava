@@ -11,7 +11,7 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 - [x] **FOUND-01**: Operator can install and run the service as a Python package instead of relying on ad hoc `scripts/` paths
 - [x] **FOUND-02**: Developer can configure database path, token path, runtime mode, HTTP bind settings, and freshness thresholds through one typed settings layer
-- [ ] **FOUND-03**: Developer can run the existing smoke behavior through `just test` after the package refactor
+- [x] **FOUND-03**: Developer can run the existing smoke behavior through `just test` after the package refactor
 
 ### Data Safety
 
@@ -111,7 +111,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | FOUND-01 | Phase 1 | Complete |
 | FOUND-02 | Phase 1 | Complete |
-| FOUND-03 | Phase 1 | Pending |
+| FOUND-03 | Phase 1 | Complete |
 | SAFE-01 | Phase 2 | Pending |
 | SAFE-02 | Phase 2 | Pending |
 | SAFE-03 | Phase 2 | Pending |
