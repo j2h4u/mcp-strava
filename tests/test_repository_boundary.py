@@ -259,6 +259,157 @@ def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_pat
         assert repo.read_sync_log(limit=5)
 
 
+def test_repository_exposes_refresh_methods() -> None:
+    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+
+    expected = {
+        "get_refresh_state",
+        "acquire_refresh_lease",
+        "release_refresh_lease",
+        "set_checkpoint",
+        "record_refresh_attempt",
+        "record_refresh_success",
+        "record_refresh_failure",
+        "enqueue_refresh_request",
+        "pending_refresh_requests",
+        "mark_refresh_requests_consumed",
+        "activities_missing_streams",
+        "activities_missing_details",
+    }
+
+    assert expected <= set(dir(SQLiteRepository))
+
+
+def _create_migrated_fixture(db_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.migrations import run_migrations
+
+    _create_fixture_db(db_path)
+    run_migrations(db_path)
+
+
+def test_acquire_refresh_lease_is_single_writer(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+
+    fixture = tmp_path / "repo.db"
+    _create_migrated_fixture(fixture)
+
+    with SQLiteRepository.from_path(fixture) as repo:
+        assert repo.acquire_refresh_lease("owner-a", "2026-05-21T12:10:00Z", "2026-05-21T12:00:00Z")
+        assert not repo.acquire_refresh_lease("owner-b", "2026-05-21T12:10:00Z", "2026-05-21T12:00:00Z")
+        repo.release_refresh_lease("owner-a")
+        assert repo.acquire_refresh_lease("owner-b", "2026-05-21T12:10:00Z", "2026-05-21T12:00:00Z")
+
+
+def test_enqueue_refresh_request_is_idempotent_per_D19(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+
+    fixture = tmp_path / "repo.db"
+    _create_migrated_fixture(fixture)
+
+    with SQLiteRepository.from_path(fixture) as repo:
+        assert repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        assert not repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        assert not repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        assert len(repo.pending_refresh_requests()) == 1
+        assert repo.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 1
+        assert repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        assert len(repo.pending_refresh_requests()) == 1
+
+
+def test_mark_refresh_requests_consumed_marks_all_pending_per_D19(tmp_path: Path) -> None:
+    from inspect import signature
+
+    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+
+    fixture = tmp_path / "repo.db"
+    _create_migrated_fixture(fixture)
+
+    assert list(signature(SQLiteRepository.mark_refresh_requests_consumed).parameters) == ["self", "consumed_at"]
+    with SQLiteRepository.from_path(fixture) as repo:
+        repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        repo.enqueue_refresh_request("manual", "2026-05-21")
+        repo.enqueue_refresh_request("timer", "2026-05-21")
+        assert repo.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 3
+        assert repo.pending_refresh_requests() == []
+        assert repo.mark_refresh_requests_consumed("2026-05-21T12:01:00Z") == 0
+
+
+def test_record_refresh_failure_rejects_unknown_reason_code(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+
+    fixture = tmp_path / "repo.db"
+    _create_migrated_fixture(fixture)
+
+    with SQLiteRepository.from_path(fixture) as repo:
+        repo.record_refresh_failure("2026-05-21T12:00:00Z", "rate_limited", "2026-05-21T12:15:00Z")
+        with pytest.raises(ValueError):
+            repo.record_refresh_failure("2026-05-21T12:00:00Z", "secret-token-leak", None)
+
+
+def test_pending_refresh_requests_and_mark_consumed_roundtrip(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+
+    fixture = tmp_path / "repo.db"
+    _create_migrated_fixture(fixture)
+
+    with SQLiteRepository.from_path(fixture) as repo:
+        assert repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        pending = repo.pending_refresh_requests()
+        assert len(pending) == 1
+        assert pending[0].reason == "first_use_of_day"
+        assert pending[0].consumed_at is None
+        assert repo.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 1
+        assert repo.pending_refresh_requests() == []
+
+
+def test_activities_missing_streams_filters_by_since_per_D16(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+
+    fixture = tmp_path / "repo.db"
+    _create_migrated_fixture(fixture)
+
+    with SQLiteRepository.from_path(fixture) as repo:
+        repo.upsert_activity_summary(
+            activity_id=101,
+            date="2026-05-20T06:00:00Z",
+            name="Missing Streams",
+            sport_type="Run",
+            distance=1000,
+            moving_time=600,
+            elapsed_time=700,
+            total_elevation_gain=10,
+            summary_json="{}",
+            synced_at="2026-05-20T07:00:00Z",
+        )
+        rows = repo.activities_missing_streams("2026-05-19")
+
+    assert [row.id for row in rows] == [101]
+
+
+def test_activities_missing_details_filters_by_since_per_D16(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+
+    fixture = tmp_path / "repo.db"
+    _create_migrated_fixture(fixture)
+
+    with SQLiteRepository.from_path(fixture) as repo:
+        repo.upsert_activity_summary(
+            activity_id=101,
+            date="2026-05-20T06:00:00Z",
+            name="Missing Details",
+            sport_type="Run",
+            distance=1000,
+            moving_time=600,
+            elapsed_time=700,
+            total_elevation_gain=10,
+            summary_json="{}",
+            synced_at="2026-05-20T07:00:00Z",
+        )
+        rows = repo.activities_missing_details("2026-05-19")
+
+    assert [row.id for row in rows] == [101]
+
+
 def test_repository_module_does_not_call_strava_network(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     fixture = tmp_path / "repo.db"
     _create_fixture_db(fixture)
