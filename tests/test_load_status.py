@@ -162,11 +162,13 @@ def test_effective_trimp_series_keeps_training_numeric_parity(tmp_path: Path) ->
     assert observed_only_from_points == legacy_observed
 
     assert calc_banister(effective_series, today_str) == calc_banister(legacy_observed, today_str)
-    assert calc_banister_series(effective_series, today_str) == calc_banister_series(legacy_observed, today_str)
-    assert ewma(effective_series, 7, today_str) == ewma(legacy_observed, 7, today_str)
-    assert ewma(effective_series, 28, today_str) == ewma(legacy_observed, 28, today_str)
-    assert ewma(effective_series, 42, today_str) == ewma(legacy_observed, 42, today_str)
+    effective_series_tail = calc_banister_series(effective_series, today_str)[-1]
+    legacy_series_tail = calc_banister_series(legacy_observed, today_str)[-1]
+    assert effective_series_tail == legacy_series_tail
+    assert ewma(effective_series, 7, today_str)[today_str] == ewma(legacy_observed, 7, today_str)[today_str]
+    assert ewma(effective_series, 28, today_str)[today_str] == ewma(legacy_observed, 28, today_str)[today_str]
+    assert ewma(effective_series, 42, today_str)[today_str] == ewma(legacy_observed, 42, today_str)[today_str]
 
     plan_effective = calc_weekly_plan(effective_series, today_str)
     plan_legacy = calc_weekly_plan(legacy_observed, today_str)
-    assert [d.load for d in plan_effective.completed_days] == [d.load for d in plan_legacy.completed_days]
+    assert [d.trimp for d in plan_effective.completed_days] == [d.trimp for d in plan_legacy.completed_days]

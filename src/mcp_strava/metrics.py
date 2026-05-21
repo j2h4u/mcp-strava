@@ -1,6 +1,7 @@
 """Per-activity metrics: decoupling, efficiency factor, HR recovery,
 vertical speed, and the enrichment wrapper that computes all of them."""
 
+from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.constants import Config
 from mcp_strava.types import (HrRecovery, VerticalSpeed, DecouplingResult,
                                EnrichedActivity, CardiacDriftResult, parse_strava_activity)
@@ -18,9 +19,10 @@ def _get_hr_max(conn) -> float:
     global _hr_max_cache
     if _hr_max_cache is not None:
         return _hr_max_cache
-    row = conn.execute("SELECT MAX(heartrate) FROM streams WHERE heartrate IS NOT NULL").fetchone()
-    if row and row[0]:
-        _hr_max_cache = float(row[0])
+    repo = SQLiteRepository.from_connection(conn)
+    hr_max = repo.max_heartrate()
+    if hr_max is not None:
+        _hr_max_cache = float(hr_max)
     else:
         _hr_max_cache = float(Config.Athlete.HR_MAX)
     return _hr_max_cache
@@ -54,12 +56,8 @@ def _decoupling_invalid(velocities):
 
 def _fetch_decoupling_rows(conn, activity_id):
     """Fetch stream rows needed for decoupling (HR + velocity, in motion)."""
-    return conn.execute("""
-        SELECT time_offset, heartrate, velocity, grade FROM streams
-        WHERE activity_id = ? AND heartrate IS NOT NULL AND velocity IS NOT NULL
-              AND velocity > ?
-        ORDER BY time_offset
-    """, (activity_id, Config.Thresholds.VEL_MOVING)).fetchall()
+    repo = SQLiteRepository.from_connection(conn)
+    return repo.stream_hr_velocity_rows(activity_id, Config.Thresholds.VEL_MOVING)
 
 
 def calc_decoupling(rows):
@@ -134,11 +132,8 @@ def calc_cardiac_drift(conn, activity_id, sport_type=None):
     
     Returns CardiacDriftResult or None if insufficient data.
     """
-    rows = conn.execute("""
-        SELECT heartrate, velocity FROM streams
-        WHERE activity_id = ? AND heartrate IS NOT NULL AND velocity > ?
-        ORDER BY time_offset
-    """, (activity_id, Config.Thresholds.VEL_MOVING)).fetchall()
+    repo = SQLiteRepository.from_connection(conn)
+    rows = repo.stream_hr_velocity_simple_rows(activity_id, Config.Thresholds.VEL_MOVING)
 
     if len(rows) < Config.Metrics.MIN_STREAM_POINTS:
         return None
@@ -187,27 +182,22 @@ def calc_efficiency_factor(conn, activity_id):
     """Efficiency Factor: normalized speed / avg HR.
     Higher = more economical movement. Computed as (distance_m / moving_time_s) / avg_hr.
     """
-    act = conn.execute("SELECT moving_time FROM activities WHERE id=?", (activity_id,)).fetchone()
-    if not act or act['moving_time'] < Config.Metrics.MIN_MOVING_TIME:
+    repo = SQLiteRepository.from_connection(conn)
+    moving_time = repo.activity_moving_time(activity_id)
+    if moving_time is None or moving_time < Config.Metrics.MIN_MOVING_TIME:
         return None
 
-    hr_row = conn.execute("""
-        SELECT AVG(heartrate) as avg_hr, COUNT(*) as n
-        FROM streams WHERE activity_id=? AND heartrate IS NOT NULL
-    """, (activity_id,)).fetchone()
-    if not hr_row or hr_row['avg_hr'] is None or hr_row['avg_hr'] <= 0 or hr_row['n'] < Config.Metrics.MIN_HR_POINTS:
+    avg_hr, n_hr = repo.activity_hr_summary(activity_id)
+    if avg_hr is None or avg_hr <= 0 or n_hr < Config.Metrics.MIN_HR_POINTS:
         return None
 
     # Use velocity from streams for actual pace
-    vel_row = conn.execute("""
-        SELECT AVG(velocity) as avg_vel
-        FROM streams WHERE activity_id=? AND velocity IS NOT NULL
-    """, (activity_id,)).fetchone()
-    if not vel_row or vel_row['avg_vel'] is None or vel_row['avg_vel'] < Config.Thresholds.VEL_MOVING:
+    avg_vel = repo.activity_avg_velocity(activity_id)
+    if avg_vel is None or avg_vel < Config.Thresholds.VEL_MOVING:
         return None
 
     # EF = speed_m_s / avg_hr × 100 (scale for readability)
-    ef = round(vel_row['avg_vel'] / hr_row['avg_hr'] * 100, 3)
+    ef = round(avg_vel / avg_hr * 100, 3)
     return ef
 
 
@@ -226,11 +216,8 @@ def calc_hr_recovery(conn, activity_id):
     Returns aggregate stats: best/worst/avg recovery, count of pauses, total rest time.
     Returns None if no pauses found (e.g. continuous run with no stops).
     """
-    rows = conn.execute("""
-        SELECT time_offset, heartrate, velocity FROM streams
-        WHERE activity_id=? AND heartrate IS NOT NULL
-        ORDER BY time_offset
-    """, (activity_id,)).fetchall()
+    repo = SQLiteRepository.from_connection(conn)
+    rows = repo.stream_hr_velocity_time_rows(activity_id)
     if len(rows) < Config.Metrics.MIN_STREAM_POINTS:
         return None
 
@@ -323,11 +310,8 @@ def calc_hr_recovery(conn, activity_id):
 
 def calc_vertical_speed(conn, activity_id):
     """Vertical ascent speed in m/h. Only counts ascending segments."""
-    rows = conn.execute("""
-        SELECT time_offset, altitude FROM streams
-        WHERE activity_id=? AND altitude IS NOT NULL
-        ORDER BY time_offset
-    """, (activity_id,)).fetchall()
+    repo = SQLiteRepository.from_connection(conn)
+    rows = repo.stream_altitude_rows(activity_id)
     if len(rows) < Config.Metrics.MIN_ALT_POINTS:
         return None
 
@@ -359,51 +343,36 @@ def enrich_activity(conn, act_row):
     May 2026: decoupling and EF removed from enrichment — decoupling almost always
     N/A (pace too variable), EF replaced by CC in progressive signal.
     """
-    raw_summary = json.loads(act_row['summary_json']) if act_row['summary_json'] else {}
+    def _field(name, default=None):
+        if isinstance(act_row, dict):
+            return act_row.get(name, default)
+        return getattr(act_row, name, default)
+
+    raw_summary = json.loads(_field("summary_json")) if _field("summary_json") else {}
     summary = parse_strava_activity(raw_summary) if raw_summary else None
 
     # TRIMP
-    trimp_row = conn.execute(f"""
-        SELECT {Config.SQL.TRIMP}
-        FROM streams WHERE activity_id = ?
-    """, (act_row['id'],)).fetchone()
-    # TRIMP: NULL (no HR data) → 0; true zero is indistinguishable but
-    # practically impossible (needs all HR < lowest zone for entire activity)
-    trimp = round(trimp_row['trimp'], 1) if (trimp_row and trimp_row['trimp'] is not None) else 0
+    repo = SQLiteRepository.from_connection(conn)
+    trimp = repo.activity_trimp(_field("id"))
 
     # HR Recovery
-    hr_recovery = calc_hr_recovery(conn, act_row['id'])
+    hr_recovery = calc_hr_recovery(conn, _field("id"))
 
     # Vertical Speed
-    vertical_speed = calc_vertical_speed(conn, act_row['id'])
+    vertical_speed = calc_vertical_speed(conn, _field("id"))
 
     # Cardiac Cost (CC) = avg_HR / avg_velocity — for progressive signal
-    cc_row = conn.execute("""
-        SELECT AVG(heartrate) as avg_hr, AVG(velocity) as avg_vel
-        FROM streams WHERE activity_id = ? AND heartrate IS NOT NULL
-              AND velocity > ?
-    """, (act_row['id'], Config.Thresholds.VEL_MOVING)).fetchone()
-    cc = round(cc_row['avg_hr'] / cc_row['avg_vel'], 2) if (
-        cc_row and cc_row['avg_hr'] and cc_row['avg_vel'] and cc_row['avg_vel'] > 0
-    ) else None
+    cc = repo.activity_cc(_field("id"), Config.Thresholds.VEL_MOVING)
 
     # Average %HRR: how much of the heart's reserve was used.
     # Uses MEDIAN heartrate from streams (more robust to sensor spikes than mean).
     # HRmax from streams (live), HRrest from config (Samsung Health).
     hrr_pct = None
-    median_hr_row = conn.execute("""
-        SELECT heartrate FROM streams
-        WHERE activity_id = ? AND heartrate IS NOT NULL
-        ORDER BY heartrate
-        LIMIT 1 OFFSET (
-            SELECT COUNT(*) FROM streams
-            WHERE activity_id = ? AND heartrate IS NOT NULL
-        ) / 2
-    """, (act_row['id'], act_row['id'])).fetchone()
-    if median_hr_row and median_hr_row[0]:
+    median_hr = repo.activity_median_heartrate(_field("id"))
+    if median_hr:
         hr_max = _get_hr_max(conn)
         hrr_pct = round(
-            (median_hr_row[0] - Config.Athlete.HR_REST)
+            (median_hr - Config.Athlete.HR_REST)
             / (hr_max - Config.Athlete.HR_REST) * 100, 1
         )
 
@@ -417,17 +386,17 @@ def enrich_activity(conn, act_row):
             start_time = time_part[:5]  # "HH:MM"
 
     # Intra-activity cardiac drift (Jenks-based)
-    cardiac_drift = calc_cardiac_drift(conn, act_row['id'], act_row['sport_type'])
+    cardiac_drift = calc_cardiac_drift(conn, _field("id"), _field("sport_type"))
 
     return EnrichedActivity(
-        id=act_row['id'],
-        date=act_row['date'][:10],
-        name=act_row['name'],
-        sport_type=act_row['sport_type'],
-        distance_km=round(act_row['distance'] / 1000, 2),
-        moving_time_min=round(act_row['moving_time'] / 60, 1),
-        elapsed_time_min=round(act_row['elapsed_time'] / 60, 1),
-        elevation_m=act_row['total_elevation_gain'],
+        id=_field("id"),
+        date=_field("date")[:10],
+        name=_field("name"),
+        sport_type=_field("sport_type"),
+        distance_km=round(_field("distance") / 1000, 2),
+        moving_time_min=round(_field("moving_time") / 60, 1),
+        elapsed_time_min=round(_field("elapsed_time") / 60, 1),
+        elevation_m=_field("total_elevation_gain"),
         trimp=trimp,
         avg_hr=summary.average_heartrate if summary else None,
         max_hr=int(round(summary.max_heartrate)) if summary and summary.max_heartrate else None,
@@ -446,13 +415,10 @@ def check_z5_minutes(conn, activity_id, z5_threshold=None, warn_seconds=300):
     Returns (z5_seconds, warning_reason) or (None, None)."""
     if z5_threshold is None:
         z5_threshold = Config.Zones.BOUNDS[-2]  # Z5 lower bound (penultimate element)
-    row = conn.execute("""
-        SELECT COUNT(*) as sec FROM streams
-        WHERE activity_id = ? AND heartrate >= ?
-    """, (activity_id, z5_threshold)).fetchone()
-    if not row or row['sec'] == 0:
+    repo = SQLiteRepository.from_connection(conn)
+    z5_sec = repo.activity_z5_seconds(activity_id, z5_threshold)
+    if z5_sec == 0:
         return None, None
-    z5_sec = row['sec']
     if z5_sec > warn_seconds:
         return z5_sec, f"⚠️ {z5_sec // 60} мин в Z5 (HR≥{z5_threshold}) — для 50+ это высокая нагрузка на сердце"
     return z5_sec, None
@@ -467,11 +433,8 @@ def check_hr_anomalies(conn, activity_id, jump_threshold=30, min_anomalies=3):
     
     Returns (anomaly_count, warning_reason) or (0, None).
     """
-    rows = conn.execute("""
-        SELECT time_offset, heartrate FROM streams
-        WHERE activity_id = ? AND heartrate IS NOT NULL
-        ORDER BY time_offset
-    """, (activity_id,)).fetchall()
+    repo = SQLiteRepository.from_connection(conn)
+    rows = repo.stream_hr_time_rows(activity_id)
     
     if len(rows) < 2:
         return 0, None

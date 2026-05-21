@@ -4,8 +4,9 @@ import json
 from datetime import datetime, timedelta
 from collections import defaultdict
 
+from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.constants import Config
-from mcp_strava.db import DbConn, get_daily_trimp_history
+from mcp_strava.db import DbConn
 from mcp_strava.training import calc_banister_series
 
 
@@ -15,7 +16,10 @@ def compute_trends(weeks=52):
     Returns JSON with: weeks (list of weekly metrics), avg_tiz, crash_rate.
     """
     with DbConn() as conn:
-        daily_trimp = get_daily_trimp_history(conn)
+        repo = SQLiteRepository.from_connection(conn)
+        today = datetime.now().date().isoformat()
+        first_day = repo.first_activity_day(sport_filter="training")
+        daily_trimp = repo.effective_trimp_history(first_day, today, sport_filter="training") if first_day else {}
 
         if not daily_trimp:
             print("No activity data available.")

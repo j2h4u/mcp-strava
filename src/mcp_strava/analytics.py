@@ -4,13 +4,13 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from itertools import accumulate
 
+from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.constants import (
     Config,
     RUNNING_SPORTS,
     SPORT_RUN, SPORT_WALK, SPORT_TRAILRUN,
     build_eff_config,
 )
-from mcp_strava.db import get_daily_trimp_history
 from mcp_strava.types import ActivityMetrics, RollingEfficiency, WeeklyDigest
 
 
@@ -79,20 +79,19 @@ def get_activity_metrics(conn):
     Returns list of ActivityMetrics indexed by date via build_acts_by_date().
     EF, bkm, VO2max removed from regular analytics (coach review #2, #4).
     """
-    cur = conn.execute("""
-        SELECT SUBSTR(a.date, 1, 10) as day, a.sport_type,
-               a.distance / 1000 as dist_km, a.moving_time / 60.0 as time_min,
-               a.total_elevation_gain as elev,
-               AVG(s.heartrate) as avg_hr, AVG(s.velocity) as avg_vel
-        FROM activities a
-        JOIN streams s ON a.id = s.activity_id
-        WHERE s.heartrate IS NOT NULL AND s.velocity > 0
-        GROUP BY a.id
-        HAVING avg_hr > 0 AND avg_vel > 0
-    """)
+    repo = SQLiteRepository.from_connection(conn)
+    cur = repo.activity_efficiency_rows()
     result = []
-    for row in cur.fetchall():
-        day, sport, dist_km, time_min, elev, avg_hr, avg_vel = row
+    for row in cur:
+        day, sport, dist_km, time_min, elev, avg_hr, avg_vel = (
+            row["day"],
+            row["sport_type"],
+            row["dist_km"],
+            row["time_min"],
+            row["elev"],
+            row["avg_hr"],
+            row["avg_vel"],
+        )
         cc = avg_hr / avg_vel
         epkm = (elev or 0) / dist_km if dist_km > 0 else 0
         cc_adj = cc - Config.Efficiency.CC_ELEV_COEFF * epkm
@@ -174,9 +173,11 @@ def weekly_digest(conn):
     Returns WeeklyDigest with: period, current_state (load/efficiency/volume), trends, yoy, context, this_week.
     """
     today = datetime.now().date()
+    repo = SQLiteRepository.from_connection(conn)
     
     # 1) Daily TRIMP series (full history, gaps filled with 0)
-    raw_daily = get_daily_trimp_history(conn)
+    first_day = repo.first_activity_day(sport_filter="training")
+    raw_daily = repo.effective_trimp_history(first_day, today.isoformat(), sport_filter="training") if first_day else {}
     
     if not raw_daily:
         return None

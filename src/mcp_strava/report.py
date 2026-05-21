@@ -2,8 +2,9 @@
 
 from datetime import datetime, timedelta
 
+from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.constants import Config, RUNNING_SPORTS
-from mcp_strava.db import DbConn, get_daily_trimp_history
+from mcp_strava.db import DbConn
 from mcp_strava.metrics import enrich_activity, check_z5_minutes, check_hr_anomalies
 from mcp_strava.training import (
     calc_banister, ewma,
@@ -19,18 +20,14 @@ def daily_report():
     ACWR, progressive signal, weekly plan, recommendation.
     """
     with DbConn() as conn:
+        repo = SQLiteRepository.from_connection(conn)
         now_local = datetime.now()
         today = now_local.strftime('%Y-%m-%d')
         yesterday = (now_local - timedelta(days=1)).strftime('%Y-%m-%d')
         window_start = (now_local - timedelta(days=14)).strftime('%Y-%m-%d')
 
         # 14-day activities (window_start through yesterday — today is incomplete)
-        acts_14d = conn.execute("""
-            SELECT id, date, name, sport_type, distance, moving_time, elapsed_time,
-                   total_elevation_gain, summary_json
-            FROM activities WHERE SUBSTR(date,1,10) >= ? AND SUBSTR(date,1,10) < ?
-            ORDER BY date
-        """, (window_start, today)).fetchall()
+        acts_14d = repo.activity_rows_between(window_start, yesterday)
 
         # Enrich all activities with metrics
         all_acts = []
@@ -79,7 +76,12 @@ def daily_report():
             bs.elevation_m += a.elevation_m or 0
 
         # Banister model
-        daily_trimp = get_daily_trimp_history(conn, sport_filter='training')  # exclude Walk from Banister
+        first_training_day = repo.first_activity_day(sport_filter="training")
+        daily_trimp = (
+            repo.effective_trimp_history(first_training_day, today, sport_filter="training")
+            if first_training_day
+            else {}
+        )
         banister = calc_banister(daily_trimp, today)
 
         # ACWR
@@ -192,21 +194,12 @@ def daily_report():
         # should limit weekly km increase to 10% to avoid stress fractures.
         today_dt = datetime.strptime(today, '%Y-%m-%d').date()
         week_start = today_dt - timedelta(days=today_dt.weekday())
-        running_in = ','.join(f"'{s}'" for s in RUNNING_SPORTS)
-        wk = conn.execute(f"""
-            SELECT SUM(distance)/1000 as km FROM activities
-            WHERE sport_type IN ({running_in})
-              AND SUBSTR(date,1,10) >= ?
-              AND SUBSTR(date,1,10) <= ?
-        """, (week_start.isoformat(), today)).fetchone()
-        prev = conn.execute(f"""
-            SELECT SUM(distance)/1000 as km FROM activities
-            WHERE sport_type IN ({running_in})
-              AND SUBSTR(date,1,10) >= ?
-              AND SUBSTR(date,1,10) < ?
-        """, ((week_start - timedelta(days=7)).isoformat(), week_start.isoformat())).fetchone()
-        this_km = wk['km'] if wk and wk['km'] else 0
-        prev_km = prev['km'] if prev and prev['km'] else 0
+        this_km = repo.total_distance_km_between(week_start.isoformat(), today, RUNNING_SPORTS)
+        prev_km = repo.total_distance_km_between(
+            (week_start - timedelta(days=7)).isoformat(),
+            (week_start - timedelta(days=1)).isoformat(),
+            RUNNING_SPORTS,
+        )
         if prev_km > 0 and this_km > 0:
             pct_increase = round((this_km / prev_km - 1) * 100, 0)
             if pct_increase > 15:

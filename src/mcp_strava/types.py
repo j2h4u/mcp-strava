@@ -9,7 +9,7 @@ Import this module instead of passing raw dicts.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Literal
 
 
 # ─── Strava API Response Contracts ───
@@ -543,6 +543,22 @@ class RepositoryDailyLoadStatus:
     day: str
     status: str  # REST | UNKNOWN | PARTIAL | OBSERVED
     observed_trimp: float
+    effective_trimp: float
+    activity_count: int = 0
+    stream_points: int = 0
+    heartrate_points: int = 0
+
+
+DailyLoadStatus = Literal["REST", "UNKNOWN", "PARTIAL", "OBSERVED"]
+
+
+@dataclass
+class DailyLoadPoint:
+    """Repository daily load contract separating status vs numeric load input."""
+
+    date: str
+    status: DailyLoadStatus
+    observed_trimp: float | None
     effective_trimp: float
     activity_count: int = 0
     stream_points: int = 0

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 from mcp_strava.adapters.sqlite.connection import open_expected_mirror_db
 from mcp_strava.adapters.sqlite.migrations import run_preflight
-from mcp_strava.constants import Config, TRAINING_SPORTS
+from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.settings import get_settings
 
 
@@ -172,25 +172,6 @@ def get_daily_trimp_history(conn, days=None, sport_filter=None):
     sport_filter='training': exclude non-training activities (Walk) from TRIMP.
                            Prevents daily walking from creating false fatigue signals.
     """
-    where_parts = ["s.heartrate IS NOT NULL"]
-    params = []
-
-    if days is not None:
-        since = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-        where_parts.append("SUBSTR(a.date,1,10) >= ?")
-        params.append(since)
-
-    if sport_filter == 'training':
-        placeholders = ','.join('?' * len(TRAINING_SPORTS))
-        where_parts.append(f"a.sport_type IN ({placeholders})")
-        params.extend(TRAINING_SPORTS)
-
-    where = "WHERE " + " AND ".join(where_parts)
-    rows = conn.execute(f"""
-        SELECT SUBSTR(a.date,1,10) as day,
-               {Config.SQL.TRIMP_S}
-        FROM activities a JOIN streams s ON a.id = s.activity_id
-        {where}
-        GROUP BY day
-    """, params).fetchall()
-    return {r['day']: round(r['trimp'], 1) for r in rows}
+    repo = SQLiteRepository.from_connection(conn)
+    since = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d') if days is not None else None
+    return repo.observed_trimp_history(since_day=since, sport_filter=sport_filter)
