@@ -42,7 +42,16 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Schema-changing migrations create timestamped `data/strava.db` backups and verify post-migration parity for row counts and key report outputs.
   3. If the expected mirror DB is missing or invalid, service startup fails closed instead of silently creating an empty replacement.
   4. Services can read/write activities, streams, zones, kudos, and sync metadata only through repository methods with WAL/busy-timeout-safe behavior, and missing-HR/stream sessions remain explicit unknowns rather than rest days.
-**Plans**: TBD
+**Plans**:
+  - [ ] `02-01` SQLite Safety Gate - Wave 1
+  - [ ] `02-02` Repository Contracts & Adapter Methods - Wave 2 *(blocked on Wave 1 completion)*
+  - [ ] `02-03` Repository Read Adoption & Load Statuses - Wave 2 *(blocked on Wave 1 completion and repository contracts)*
+  - [ ] `02-04` Operator Controls & Boundary Enforcement - Wave 3 *(blocked on Wave 2 completion)*
+
+**Cross-cutting constraints:**
+  - Preserve `data/strava.db`; default planning/execution tests must use temp or copied DBs.
+  - Schema changes go through explicit preflight, backup, migration, post-check, and parity.
+  - Direct SQLite access stays inside adapter/migration tooling, the compatibility bridge, local operator SQL, and narrow tests.
 
 ### Phase 3: Strava Adapter & Refresh Runtime
 **Goal**: Strava API interactions and token persistence are fully isolated in adapter/runtime layers with resilient, policy-driven mirror refresh.
