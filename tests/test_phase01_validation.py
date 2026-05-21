@@ -5,6 +5,8 @@ import sys
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from mcp_strava.db import DbConn
 from mcp_strava.settings import reset_settings_cache
 
@@ -37,24 +39,30 @@ def test_found01_module_entrypoint_usage_contract() -> None:
     assert 'Usage: python -m mcp_strava <command> [args]' in combined
 
 
-def test_found02_dbconn_uses_runtime_settings_db_path(tmp_path: Path, monkeypatch) -> None:
-    db_path = tmp_path / 'runtime-configured.db'
+def test_found02_dbconn_fails_closed_for_missing_expected_db(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / 'missing-expected.db'
     monkeypatch.setenv('MCP_STRAVA_DB_PATH', str(db_path))
     reset_settings_cache()
 
     try:
-        with DbConn() as conn:
-            conn.execute('CREATE TABLE IF NOT EXISTS phase01_probe (id INTEGER PRIMARY KEY)')
-            conn.commit()
+        with pytest.raises(Exception):
+            with DbConn():
+                pass
     finally:
         reset_settings_cache()
 
+    assert not db_path.exists()
+
+
+def test_found02_explicit_fixture_creation_path_is_available(tmp_path: Path) -> None:
+    db_path = tmp_path / 'fixture-created.db'
+    from mcp_strava.adapters.sqlite.connection import create_empty_mirror
+
+    create_empty_mirror(db_path)
     assert db_path.exists()
     with sqlite3.connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='phase01_probe'"
-        ).fetchone()
-    assert row is not None
+        row = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone()
+    assert row is None
 
 
 def test_found03_just_test_routes_to_pytest() -> None:
