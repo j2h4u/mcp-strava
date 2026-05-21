@@ -8,6 +8,8 @@ import urllib.parse
 import urllib.error
 from datetime import datetime, timedelta
 
+from mcp_strava.adapters.sqlite.connection import open_expected_mirror_db
+from mcp_strava.adapters.sqlite.migrations import run_preflight
 from mcp_strava.constants import Config, TRAINING_SPORTS
 from mcp_strava.settings import get_settings
 
@@ -26,12 +28,7 @@ class DbConn:
     """Context manager for SQLite connections — auto-closes on exit."""
 
     def __enter__(self):
-        db_path = _db_path()
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.execute("PRAGMA wal_autocheckpoint=1000")
+        self.conn = open_expected_mirror_db(_db_path())
         return self.conn
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -40,59 +37,8 @@ class DbConn:
 
 
 def init_db(conn):
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS activities (
-            id INTEGER PRIMARY KEY,
-            date TEXT, name TEXT, sport_type TEXT,
-            distance REAL, moving_time INTEGER, elapsed_time INTEGER,
-            total_elevation_gain REAL,
-            summary_json TEXT, detail_json TEXT, synced_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS streams (
-            activity_id INTEGER, time_offset INTEGER,
-            heartrate INTEGER, velocity REAL, altitude REAL,
-            cadence INTEGER, lat REAL, lng REAL, grade REAL,
-            PRIMARY KEY (activity_id, time_offset)
-        );
-        CREATE INDEX IF NOT EXISTS idx_streams_act ON streams(activity_id);
-        CREATE TABLE IF NOT EXISTS athlete_zones (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fetched_at TEXT, zones_json TEXT
-        );
-        CREATE TABLE IF NOT EXISTS sync_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            status TEXT NOT NULL,
-            activities_seen INTEGER,
-            activities_new INTEGER,
-            streams_fetched INTEGER,
-            details_fetched INTEGER,
-            api_calls INTEGER,
-            error TEXT
-        );
-        CREATE TABLE IF NOT EXISTS kudos (
-            activity_id INTEGER NOT NULL,
-            firstname TEXT NOT NULL DEFAULT '',
-            lastname TEXT NOT NULL DEFAULT '',
-            fetched_at TEXT NOT NULL,
-            PRIMARY KEY (activity_id, firstname, lastname)
-        );
-    """)
-    # Migrate: add GAP/moving columns if missing
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(streams)")}
-    if 'gap_speed' not in cols:
-        conn.execute("ALTER TABLE streams ADD COLUMN gap_speed REAL")
-    if 'gap_distance' not in cols:
-        conn.execute("ALTER TABLE streams ADD COLUMN gap_distance REAL")
-    if 'is_moving' not in cols:
-        conn.execute("ALTER TABLE streams ADD COLUMN is_moving INTEGER")
-    if 'latlng' not in cols:
-        conn.execute("ALTER TABLE streams ADD COLUMN latlng TEXT")
-    # Migrate: add kudos_fetched to sync_log
-    slog_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_log)")}
-    if 'kudos_fetched' not in slog_cols:
-        conn.execute("ALTER TABLE sync_log ADD COLUMN kudos_fetched INTEGER")
-    conn.commit()
+    # Phase 2: runtime paths do not run schema-changing DDL.
+    run_preflight(_db_path())
 
 
 # --- Auth ---
