@@ -28,11 +28,17 @@ dist/
 
 # Local data and databases
 data/*.db
+data/**/*.db
 data/*.sqlite
+data/**/*.sqlite
 data/*.sqlite3
+data/**/*.sqlite3
 data/*.db-*
+data/**/*.db-*
 data/*.sqlite-*
+data/**/*.sqlite-*
 data/*.sqlite3-*
+data/**/*.sqlite3-*
 
 # Logs and temporary files
 *.log
