@@ -148,8 +148,8 @@ def test_safe04_fail_closed_open_missing_expected_db_d05(tmp_path: Path, monkeyp
     monkeypatch.setenv("MCP_STRAVA_DB_PATH", str(missing))
     reset_settings_cache()
     try:
-        with pytest.raises(Exception):
-            open_expected_mirror_db()
+        with pytest.raises(sqlite3.OperationalError):
+            open_expected_mirror_db(missing)
     finally:
         reset_settings_cache()
     assert not missing.exists()
@@ -200,6 +200,43 @@ def test_safe02_backup_is_timestamped_openable_and_permissions_d04(tmp_path: Pat
     if hasattr(Path, "chmod"):
         mode = backup_path.stat().st_mode & 0o777
         assert mode == 0o600
+
+
+def test_safe02_backup_integrity_check_failure_blocks_success_d04(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mcp_strava.adapters.sqlite.backup as backup_module
+
+    fixture = tmp_path / "fixture.db"
+    _create_fixture_db(fixture)
+    backups_dir = tmp_path / "backups"
+    real_connect = backup_module.sqlite3.connect
+    calls: list[str] = []
+
+    class BadIntegrityConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, _exc_type, _exc_val, _exc_tb) -> None:
+            return None
+
+        def execute(self, _sql: str):
+            return self
+
+        def fetchone(self) -> tuple[str]:
+            return ("not ok",)
+
+    def fake_connect(*args, **kwargs):
+        calls.append(str(args[0]))
+        if len(calls) == 3:
+            return BadIntegrityConnection()
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(backup_module.sqlite3, "connect", fake_connect)
+
+    with pytest.raises(RuntimeError, match="Backup integrity check failed"):
+        backup_module.create_timestamped_backup(fixture, backups_dir=backups_dir)
 
 
 def test_safe03_baseline_migration_sets_user_version_to_1_idempotently_d02(tmp_path: Path) -> None:
@@ -265,6 +302,40 @@ def test_safe03_synthetic_schema_change_detects_row_or_load_parity_d06_d07(tmp_p
 
     result = evaluate_parity(before, after, tolerance=0.1)
     assert not result.ok
+
+
+def test_safe03_banister_series_tail_parity_is_enforced_d07() -> None:
+    from mcp_strava.adapters.sqlite.migrations import ParitySnapshot, evaluate_parity
+
+    before = ParitySnapshot(
+        row_counts={"activities": 1},
+        observed_trimp={"2026-01-01": 100.0},
+        banister_form=1.0,
+        banister_series_tail=[
+            {"date": "2026-01-01", "fitness": 10.0, "fatigue": 9.0, "form": 1.0, "trimp": 100.0},
+        ],
+        ewma7=10.0,
+        ewma28=10.0,
+        ewma42=10.0,
+        acwr_inputs={"atl": 9.0, "ctl": 10.0},
+    )
+    after = ParitySnapshot(
+        row_counts={"activities": 1},
+        observed_trimp={"2026-01-01": 100.0},
+        banister_form=1.0,
+        banister_series_tail=[
+            {"date": "2026-01-01", "fitness": 10.0, "fatigue": 7.0, "form": 3.0, "trimp": 100.0},
+        ],
+        ewma7=10.0,
+        ewma28=10.0,
+        ewma42=10.0,
+        acwr_inputs={"atl": 9.0, "ctl": 10.0},
+    )
+
+    result = evaluate_parity(before, after, tolerance=0.1)
+
+    assert not result.ok
+    assert any("banister_series_tail" in failure for failure in result.failures)
 
 
 def test_safe02_backup_retention_keeps_five_newest_d04(tmp_path: Path) -> None:

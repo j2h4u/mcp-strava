@@ -5,7 +5,8 @@ import json
 import time
 import socket
 import urllib.error
-from datetime import datetime
+from calendar import monthrange
+from datetime import date, datetime, timedelta
 
 from mcp_strava.adapters.sqlite.migrations import run_preflight
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
@@ -56,12 +57,37 @@ class RateLimiter:
         self.total += 1
 
 
-def _insert_streams(repo, act_id, data):
-    """Parse streams API response and insert into DB in batches."""
+def _is_iso_day(value: str) -> bool:
+    if len(value) != 10 or value[4] != "-" or value[7] != "-":
+        return False
+    year_text = value[:4]
+    month_text = value[5:7]
+    day_text = value[8:10]
+    if not (year_text.isdigit() and month_text.isdigit() and day_text.isdigit()):
+        return False
+    year = int(year_text)
+    month = int(month_text)
+    day = int(day_text)
+    if month < 1 or month > 12:
+        return False
+    max_day = monthrange(year, month)[1]
+    return 1 <= day <= max_day
+
+
+def _safe_quick_sync_start_day(latest_raw: object | None) -> str:
+    candidate = str(latest_raw or "2000-01-01")[:10]
+    latest_day = candidate if _is_iso_day(candidate) else "2000-01-01"
+    year = int(latest_day[:4])
+    month = int(latest_day[5:7])
+    day = int(latest_day[8:10])
+    return (date(year, month, day) - timedelta(days=7)).isoformat()
+
+
+def _stream_payload(data: dict) -> list[dict]:
     streams = parse_strava_streams(data)
     n = len(streams.time.data)
     if n == 0:
-        return 0
+        return []
     rows = []
     for idx in range(n):
         rows.append(
@@ -78,7 +104,23 @@ def _insert_streams(repo, act_id, data):
                 "is_moving": streams.moving.data[idx] if streams.moving and idx < len(streams.moving.data) else None,
             }
         )
+    return rows
+
+
+def _insert_streams(repo, act_id, data):
+    """Parse streams API response and insert into DB in batches."""
+    rows = _stream_payload(data)
+    if not rows:
+        return 0
     return repo.insert_stream_rows_chunked(act_id, rows, chunk_size=5000)
+
+
+def _replace_streams(repo, act_id, data):
+    """Parse streams API response and atomically replace existing DB rows."""
+    rows = _stream_payload(data)
+    if not rows:
+        return 0
+    return repo.replace_stream_rows_chunked(act_id, rows, chunk_size=5000)
 
 
 def _fetch_with_retry(path, token, limiter, label=""):
@@ -144,10 +186,8 @@ def sync_activities(quick=True):
         after_param = ""
         if quick:
             row = conn.execute("SELECT MAX(date) FROM activities").fetchone()
-            latest_date = row[0] if row[0] else '2000-01-01'
             # Subtract 7 days — catches late kudos/likes and timezone edge cases
-            from datetime import timedelta
-            safe_date = (datetime.strptime(latest_date, '%Y-%m-%d') - timedelta(days=7)).strftime('%Y-%m-%d')
+            safe_date = _safe_quick_sync_start_day(row[0] if row else None)
             after_ts = int(datetime.strptime(safe_date, '%Y-%m-%d').timestamp())
             after_param = f"&after={after_ts}"
             print(f"--- Quick Sync (since {safe_date}) ---", file=sys.stderr)
@@ -285,8 +325,7 @@ def backfill_activities():
                 f"/activities/{act_id}/streams?keys={STREAM_KEYS}&key_by_type=true",
                 token, limiter, f"{name} streams")
             if data and isinstance(data, dict):
-                repo.delete_stream_rows_for_activity(act_id)
-                n = _insert_streams(repo, act_id, data)
+                n = _replace_streams(repo, act_id, data)
             else:
                 if data:
                     print(f"  Unexpected streams response for {name}: {type(data).__name__}", file=sys.stderr)

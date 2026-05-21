@@ -564,6 +564,53 @@ class SQLiteRepository:
 
         return total
 
+    def replace_stream_rows_chunked(
+        self,
+        activity_id: int,
+        rows: Iterable[dict],
+        chunk_size: int = 5000,
+    ) -> int:
+        payload = list(rows)
+        total = len(payload)
+        if total == 0:
+            return 0
+
+        self.conn.execute("BEGIN")
+        try:
+            self.conn.execute("DELETE FROM streams WHERE activity_id = ?", (activity_id,))
+            for start in range(0, total, chunk_size):
+                chunk = payload[start : start + chunk_size]
+                bound = [
+                    (
+                        activity_id,
+                        row["time_offset"],
+                        row.get("heartrate"),
+                        row.get("velocity"),
+                        row.get("altitude"),
+                        row.get("cadence"),
+                        row.get("latlng"),
+                        row.get("grade"),
+                        row.get("gap_speed"),
+                        row.get("gap_distance"),
+                        row.get("is_moving"),
+                    )
+                    for row in chunk
+                ]
+                self.conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO streams
+                    (activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                     latlng, grade, gap_speed, gap_distance, is_moving)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    bound,
+                )
+        except Exception:
+            self.conn.rollback()
+            raise
+        self.conn.commit()
+        return total
+
     def delete_stream_rows_for_activity(self, activity_id: int) -> None:
         self.conn.execute("DELETE FROM streams WHERE activity_id = ?", (activity_id,))
         self.conn.commit()

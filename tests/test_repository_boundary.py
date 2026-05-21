@@ -197,6 +197,48 @@ def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_pat
         stream_rows = repo.activity_stream_rows(1)
         assert len(stream_rows) == 6001
 
+        with pytest.raises(KeyError):
+            repo.replace_stream_rows_chunked(
+                1,
+                [
+                    {
+                        "time_offset": 0,
+                        "heartrate": 150,
+                        "velocity": 3.5,
+                        "altitude": 100.0,
+                        "cadence": 85,
+                        "latlng": "[43.2,76.9]",
+                        "grade": 1.0,
+                        "gap_speed": 3.6,
+                        "gap_distance": 10.0,
+                        "is_moving": 1,
+                    },
+                    {"heartrate": 151},
+                ],
+                chunk_size=5000,
+            )
+        assert len(repo.activity_stream_rows(1)) == 6001
+
+        replaced = repo.replace_stream_rows_chunked(
+            1,
+            [
+                {
+                    "time_offset": 0,
+                    "heartrate": 150,
+                    "velocity": 3.5,
+                    "altitude": 100.0,
+                    "cadence": 85,
+                    "latlng": "[43.2,76.9]",
+                    "grade": 1.0,
+                    "gap_speed": 3.6,
+                    "gap_distance": 10.0,
+                    "is_moving": 1,
+                }
+            ],
+        )
+        assert replaced == 1
+        assert len(repo.activity_stream_rows(1)) == 1
+
         repo.insert_athlete_zones("2026-05-21T07:00:00Z", "[]")
         assert repo.latest_athlete_zones() is not None
 

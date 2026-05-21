@@ -35,6 +35,35 @@ def _num_close(a: float, b: float, tolerance: float) -> bool:
     return abs(float(a) - float(b)) <= tolerance
 
 
+def _compare_banister_series_tail(
+    before_tail: list[dict[str, float | str]],
+    after_tail: list[dict[str, float | str]],
+    tolerance: float,
+) -> list[str]:
+    failures: list[str] = []
+    if len(before_tail) != len(after_tail):
+        return [f"banister_series_tail:length:{len(before_tail)}!={len(after_tail)}"]
+
+    for idx, before_point in enumerate(before_tail):
+        after_point = after_tail[idx]
+        if before_point.get("date") != after_point.get("date"):
+            failures.append(f"banister_series_tail:{idx}:date_mismatch")
+            break
+        for key in ("fitness", "fatigue", "form", "trimp"):
+            before_value = before_point.get(key)
+            after_value = after_point.get(key)
+            if before_value is None or after_value is None:
+                failures.append(f"banister_series_tail:{idx}:{key}:missing")
+                break
+            if not _num_close(float(before_value), float(after_value), tolerance):
+                failures.append(f"banister_series_tail:{idx}:{key}:{before_value}!={after_value}")
+                break
+        if failures:
+            break
+
+    return failures
+
+
 def evaluate_parity(before: ParitySnapshot, after: ParitySnapshot, tolerance: float = 0.1) -> ParityResult:
     failures: list[str] = []
 
@@ -54,6 +83,14 @@ def evaluate_parity(before: ParitySnapshot, after: ParitySnapshot, tolerance: fl
 
     if not _num_close(before.banister_form, after.banister_form, tolerance):
         failures.append("banister_form_mismatch")
+
+    failures.extend(
+        _compare_banister_series_tail(
+            before.banister_series_tail,
+            after.banister_series_tail,
+            tolerance,
+        )
+    )
 
     for key in ("ewma7", "ewma28", "ewma42"):
         if not _num_close(getattr(before, key), getattr(after, key), tolerance):

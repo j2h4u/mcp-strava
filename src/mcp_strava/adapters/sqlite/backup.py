@@ -35,7 +35,10 @@ def create_timestamped_backup(
         raise RuntimeError(f"Backup failed or empty: {target}")
 
     with sqlite3.connect(str(target)) as verify_conn:
-        verify_conn.execute("PRAGMA integrity_check").fetchone()
+        row = verify_conn.execute("PRAGMA integrity_check").fetchone()
+    if not row or str(row[0]).lower() != "ok":
+        detail = row[0] if row else "unknown"
+        raise RuntimeError(f"Backup integrity check failed for {target}: {detail}")
 
     try:
         os.chmod(target, 0o600)
