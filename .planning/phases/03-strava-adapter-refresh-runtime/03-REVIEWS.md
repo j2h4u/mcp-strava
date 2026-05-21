@@ -1,153 +1,123 @@
 ---
 phase: 3
+cycle: 2
 reviewers: [opencode]
+opencode_model: deepseek-v4-pro
 reviewed_at: 2026-05-21
 plans_reviewed:
   - 03-01-PLAN.md
   - 03-02-PLAN.md
   - 03-03-PLAN.md
   - 03-04-PLAN.md
-opencode_model: deepseek-v4-pro
+cycle_1_highs_status:
+  HIGH-1_D-15: FULLY_RESOLVED
+  HIGH-2_D-16: FULLY_RESOLVED
+  HIGH-3_D-17: FULLY_RESOLVED
+  HIGH-4_D-18: FULLY_RESOLVED
+  HIGH-5_D-19: FULLY_RESOLVED
+new_highs_this_cycle: 0
 ---
 
-# Cross-AI Plan Review — Phase 3
+# Cross-AI Plan Review — Phase 3 (Cycle 2)
 
-## OpenCode Review
+> Cycle 1 review (OpenCode / deepseek-v4-pro) raised 5 HIGH-severity concerns
+> against the original plan set. Commit `57c4890` landed `03-DECISIONS.md`
+> (D-15…D-19) plus propagation edits to every PLAN.md and to PATTERNS.md.
+> This cycle independently verifies whether each cycle-1 HIGH is closed and
+> surfaces any newly raised concerns.
 
-# Cross-AI Plan Review: Phase 3 — Strava Adapter & Refresh Runtime
+## OpenCode Review (cycle 2)
 
-## 1. Summary
+## Part A — Cycle-1 HIGH Resolution Verification
 
-Phase 3's four-plan decomposition is architecturally sound and deeply grounded in the existing codebase. The TDD approach across all plans, the boundary enforcement via AST guards, and the hermetic test discipline are all strong. The primary structural risk is that **03-02 (refresh runtime) is under-specified regarding how existing sync logic maps into the new checkpoint stages**, and **03-04 (integration) glosses over the semantic mismatch between `run_once()` (daily idempotent refresh) and `sync_activities(quick=True)` (ad-hoc quick sync)**. If the implementer resolves these in Plan 03-02's execution, the phase should succeed.
-
----
-
-## 2. Strengths
-
-- **Architecture follows locked decisions precisely**: D-01 through D-14 are each traceable to specific modules and test assertions. The read-runtime/refresh-runtime split is enforced at the AST level, not just convention.
-- **TDD-first with hermetic fakes is excellent**: `FakeStravaTransport`, `FakeClock`, `FakeSleeper`, and module-level `urlopen` monkeypatches ensure zero live network access in tests. The "never log tokens" assertions are particularly well-specified.
-- **Token provider design is robust**: `fcntl.flock(LOCK_EX)` + tempfile + `os.fsync` + `os.replace` + `chmod 0o600` covers the race, crash, and permission concerns. The re-read-after-lock pattern handles cooperative single-writer refresh correctly.
-- **Dual-window rate-limit policy is correct**: Tracking all four Strava limit windows (overall_short, overall_long, read_short, read_long) and enforcing `min(remaining)` is the right abstraction. The graceful fallback for missing headers (returning `None`) matches Strava's actual behavior well.
-- **Checkpoint state machine maps directly to existing sync phases**: The five stages (summaries -> streams -> details -> schema_validate -> kudos -> complete) mirror the current `sync.py` structure exactly, minimizing the refactor surface.
-- **Migration v2 fits the Phase 2 gate cleanly**: Preflight -> backup -> migrate -> post-check -> parity is preserved. The `REQUIRED_TABLES` extension is idiomatic with the existing schema inventory pattern.
-- **AST boundary guards are concrete and enforceable**: The `_strava_adapter_import_violations()` and `test_urllib_lives_only_in_strava_adapter` patterns make boundary violations fail CI deterministically.
-- **Lease via atomic UPDATE WHERE is the right complexity level**: Single-row SQLite lease avoids introducing Redis/etcd for a single-user local tool.
-
----
-
-## 3. Concerns
-
-### HIGH Severity
-
-- **03-02 / 03-04: `run_once()` vs `sync_activities(quick=True)` semantic gap.** `run_once()` is designed as an idempotent daily refresh — it short-circuits if `last_success_at` is today. But `sync_activities(quick=True)` is called ad-hoc from the CLI to do an incremental sync regardless of whether today's refresh already ran. Plan 03-04 Task 1 says `sync_activities` becomes a thin wrapper around `run_once()`, which would break the ad-hoc sync use case (operator wants to pull new activities mid-day after a run). The plans need either a `force` parameter on `run_once()` or a separate `sync_now()` entrypoint that bypasses the daily-idempotency check while still using the checkpoint/lease machinery.
-
-- **03-04: `backfill_activities()` refactor is under-specified.** Backfill only syncs GAP streams and details — it doesn't run summaries, schema_validate, or kudos stages. The plan says "expose a sibling runtime entrypoint (planner discretion: either parameterize `run_once` with a `mode='backfill'` flag or add `refresh.runtime.run_backfill`)." This is a critical design decision left to the implementer. If done wrong, backfill could trigger full re-sync and burn quota. The plan should lock this decision.
-
-- **03-02: Existing sync helpers (`_sync_kudos`, `_insert_streams`, `_replace_streams`, `_stream_payload`, `STREAM_KEYS`) have no specified migration path.** Plan 03-04 says they "may remain in `sync.py` and be imported by `refresh/runtime.py`, or move into the runtime — keep them in one place only." This ambiguity means the implementer could accidentally create a circular import (`refresh/runtime.py` importing from `sync.py` which imports from `refresh/`). The plans should decide: move them to `refresh/` or keep them in `sync.py` and have `runtime.py` import from there (one-way dependency).
-
-- **03-01: Token refresh during transport retry has ambiguous error handling.** The transport's `fetch()` handles 401 by calling `token_provider.refresh()` and retrying once. But `TokenProvider.refresh()` itself makes an HTTP call — what if THAT call fails with a network error? The plans say the token provider takes an injected `http: Callable`, but don't specify who retries the token refresh call. The transport's retry budget should not be exhausted by token refresh attempts — they're a different failure domain.
-
-- **03-03: The dedupe constraint syntax needs exact SQLite DDL.** The plan references `UNIQUE(reason, requested_for_day, consumed_at_is_null)` but SQLite doesn't allow functions in UNIQUE constraints. The PATTERNS.md correctly specifies a partial unique index: `CREATE UNIQUE INDEX ... ON refresh_requests(reason, requested_for_day) WHERE consumed_at IS NULL`. The plan text should be corrected to avoid implementer confusion.
-
-### MEDIUM Severity
-
-- **03-01: Thread-based concurrency test may be flaky.** The test for `TokenProvider` uses `threading.Thread` with real `fcntl.flock`. On Linux, `flock` semantics across threads of the same process can differ from cross-process behavior. A `subprocess`-based test would be more realistic for the actual threat model (concurrent CLI invocations). The plans mention `subprocess.Popen` as an alternative — this should be the preferred approach.
-
-- **03-04: `get_zones()` leaves a direct Strava call + direct SQLite write in `db.py`.** The plan says this is "acceptable" for Phase 3 if Phase 4 owns the zone service. But `get_zones()` writes directly to `athlete_zones` via `conn.execute("INSERT INTO athlete_zones...")` — bypassing the repository. This is inconsistent with the architecture's "all persistence through repository" principle from Phase 2.
-
-- **03-02: Freshness state machine precedence needs explicit specification.** The plan says precedence is `refresh_in_progress` > `refresh_delayed` > `refresh_failed` > age-based. But what about `refresh_in_progress` AND `backoff_until > now()`? Can both be true? The state machine should document the exact `if/elif` chain with full condition coverage so implementers don't guess.
-
-- **03-02: `checkpoint_cursor` for summaries stage.** The research doc says cursor for summaries is "last page completed" — but the current code uses `after=<timestamp>` based on latest activity date, not page numbers. Strava's activity list is ordered by `start_date` descending, and the `after` parameter is more robust than page cursors (activities can shift between pages). The checkpoint should store the timestamp of the last-seen activity start_date, not a page number.
-
-- **03-03: `mark_refresh_requests_consumed(ids, consumed_at)` needs dynamic SQL.** SQLite's Python driver doesn't support `WHERE id IN (?)` with a list — you need `WHERE id IN (?, ?, ...)` with one placeholder per item. The plan should acknowledge this requires dynamic placeholder generation, which is slightly error-prone. Consider an alternative: `UPDATE refresh_requests SET consumed_at = ? WHERE consumed_at IS NULL` (mark-all-pending-at-once) since the refresh-runtime consumes all pending requests in one pass anyway.
-
-- **03-04: `load_env()` callers are not enumerated.** The plan says to delete `load_env` from `db.py` and provide a thin shim. But `load_env` is called from `sync.py` (line 13, 177, 295), `db.py::api_request` (line 123), `db.py::get_zones` (line 156), and `db.py::refresh_token` (line 65). After the refactor, `sync.py` calls `FileTokenProvider` directly, so the shim may be unused. But if any CLI command or test imports `load_env` directly, they'll break. The plan needs a call-site audit.
-
-- **03-02: `sync_in_progress` reason code is listed but never used.** D-13 includes `sync_in_progress` in the product-safe set, and `ALLOWED_REASON_CODES` includes it. But the runtime's `record_refresh_failure` uses `token_unavailable`, `rate_limited`, `network_unstable`, or `refresh_incomplete`. The `sync_in_progress` code appears to be unused — either it's a future placeholder or it should be removed from the whitelist to avoid confusion.
-
-### LOW Severity
-
-- **03-02: Timezone handling for "same local calendar day".** The `run_once()` daily-idempotency check compares `last_success_at` with `clock.now().date()`. If the clock is UTC but the user is in a different timezone, "today" may not align with the user's expectation. Mitigation: document that the clock should be local-time-aware or use a configurable timezone in Settings.
-
-- **03-01: `StravaTransport` uses `urllib.request.urlopen` directly as default injection.** The plan says `http=urlopen` is the default. But this means the transport module imports `urllib.request` at the top level. The AST guard in 03-04 checks that only `adapters/strava/` imports `urllib` — this is correct and intentional, but it means any test that monkeypatches `urllib.request.urlopen` module-wide will break the transport's default (since the transport already imported the real `urlopen` by the time the monkeypatch runs). The transport should use `import urllib.request; urllib.request.urlopen(...)` inside the method call rather than capturing the function reference at import time, OR tests should inject the fake `http` callable at construction time (which they already do — this is fine).
-
-- **03-03: `REQUIRED_INDEXES` is mentioned but may not exist in `schema.py`.** The existing `schema.py` uses `REQUIRED_TABLES` and `REQUIRED_COLUMNS` — `REQUIRED_INDEXES` would be a new concept. The plan should verify this pattern fits the existing preflight code or adjust accordingly.
-
-- **03-04: `Clock` and `Sleeper` types have no canonical home.** Both the adapter transport and refresh runtime inject these collaborators. The plans don't specify whether they live in `adapters/strava/types.py`, `refresh/policy.py`, or a shared location. A concrete `Protocol` or `ABC` for each would prevent duck-typing drift.
+- **HIGH-1 (D-15):** **FULLY RESOLVED** — D-15 adds `force` parameter to `run_once` and wires `sync_activities(quick=True)` to `run_once(force=True, mode='quick')`. The `db-refresh` CLI accepts `--force`. All affected plans (`03-02-PLAN.md` must‑haves and tasks, `03-04-PLAN.md` truths and boundary test `test_sync_activities_quick_invokes_run_once_with_force_true_per_D15`) enforce the contract.  
+- **HIGH-2 (D-16):** **FULLY RESOLVED** — `run_backfill` is a separate entrypoint with stage subset `streams_backfill`, `details_backfill`, distinct lease owner `refresh-backfill`. Plans `03-02` (Task 2, checks, `run_backfill` implementation) and `03-04` (truth “`backfill_activities` calls `run_backfill`”, test `test_backfill_activities_invokes_run_backfill_per_D16`) lock the design.  
+- **HIGH-3 (D-17):** **FULLY RESOLVED** — Helpers move to `refresh/_sync_ops.py` (private). One‑way dependency enforced by AST guard `test_refresh_does_not_import_sync` in `03-04` and explicit deletion from `sync.py`. Plans `03-02` truth “`refresh/*` no `from mcp_strava.sync`” and `03-04` truth “`sync.py` no longer defines those names” are consistent.  
+- **HIGH-4 (D-18):** **FULLY RESOLVED** — `TokenRefreshTransport` owns its own retry budget (3 attempts, `[2,8,30]` backoff) independent of data‑fetch transport. `FileTokenProvider` takes `TokenRefreshTransport`, not a raw callable. Plans `03-01` must‑haves, tests (`test_token_refresh_transport_owns_its_own_retry_budget`), and wiring in `03-04` Task 1 complete the separation.  
+- **HIGH-5 (D-19):** **FULLY RESOLVED** — Dedupe uses a partial unique index `idx_refresh_requests_dedupe … WHERE consumed_at IS NULL`. `mark_refresh_requests_consumed` takes only `consumed_at` (mark‑all‑pending). Plans `03-03` include the exact DDL and repository methods; `03-03` tests verify the index and idempotent behaviour.
 
 ---
 
-## 4. Suggestions
+## Part B — Cycle 2 Review
 
-1. **Resolve the `run_once()` vs `sync_activities(quick=True)` tension before implementation.** Add a `force: bool = False` parameter to `run_once()` that skips the daily-idempotency check but still uses the lease/checkpoint machinery. `sync_activities(quick=True)` calls `run_once(force=True, mode='quick')`. This keeps one code path while supporting both use cases.
+### 1. Summary
+The cycle‑2 plans convincingly close all five prior HIGHs by locking five explicit decisions and propagating them into every relevant plan. The design is now rigorous in its lease/checkpoint/freshness state machine, token retry split, and AST‑enforced boundary guards. The remaining issues are minor—an inconsistency in the decision text, a possible gap in the backfill query, and a few cosmetic oddities—but none would block implementation.
 
-2. **Move all sync helper functions (`_sync_kudos`, `_insert_streams`, `_replace_streams`, `_stream_payload`, `STREAM_KEYS`) into `refresh/runtime.py` or a sibling `refresh/_sync_ops.py`.** This eliminates the ambiguous import direction and keeps the refresh-runtime self-contained. `sync.py` becomes a pure collaborator-builder + delegator.
+### 2. Strengths
+- **Comprehensive decision propagation:** Every D‑15…D‑19 appears in the relevant `must_haves.truths`, task behaviour descriptions, and acceptance criteria, leaving no ambiguity for the executor.
+- **Robust test‑driven design:** Hermetic fakes, explicit requirement/decision tags in test names, and AST boundary walks guarantee the new boundaries are verifiable in CI.
+- **Clean split of token‑refresh retry budget:** `TokenRefreshTransport` isolates OAuth retries from data‑fetch retries, preventing cross‑contamination of failure domains.
+- **Idempotent and resumable refresh:** Lease, checkpoint cursor, and partial unique index together prevent thundering‑herd and data loss on interruption.
+- **Minimal impact on existing code:** `sync.py` and `db.py` become thin compatibility shims, preserving backward compatibility while moving logic to the adapter.
 
-3. **Add a dedicated `TokenRefreshTransport` inside `adapters/strava/`.** The token provider shouldn't take a raw `Callable` — it should take a small `TokenRefreshTransport` that encapsulates the OAuth POST with its own retry policy. This separates token refresh retries from data-fetch retries and prevents the data transport from wasting its retry budget on token issues.
+### 3. Concerns
 
-4. **Change `mark_refresh_requests_consumed` to mark ALL pending at once:** `UPDATE refresh_requests SET consumed_at = ? WHERE consumed_at IS NULL`. The refresh-runtime always consumes all pending requests in one run — there's no use case for partial consumption. This eliminates the dynamic-SQL problem.
+**MEDIUM**
+- **Inconsistency between D‑15 decision text and 03‑04‑PLAN truth.**  
+  `03‑DECISIONS.md` says: “`sync_activities()` (no `quick`) calls `run_once(..., force=False, mode='quick')` – same daily idempotency as the scheduled refresh.”  
+  However, `03‑04‑PLAN.md` must‑haves states: `sync_activities(quick: bool = False) … mode='quick' if quick else 'daily'`. The decision’s wording would force a `mode='quick'` label on a daily refresh, contradicting the default `mode='daily'` in `run_once`’s signature. The planning intent is obviously the opposite (daily → mode='daily'), so this is a typo in the decision file. Nevertheless, as the decision says “conflicting wording in a specific plan is superseded by this addendum”, an automated executor could pick the wrong mode. The implementer will need to resolve this ambiguity.
 
-5. **Move `get_zones()` into a small `ZonesService` that uses `SQLiteRepository` + `StravaTransport`.** Even if it lives in `db.py` with a compat shim for Phase 3, the implementation should use the repository for persistence (not raw `conn.execute`).
+- **`activities_missing_streams` query may miss activities that already have some stream rows.**  
+  The repository helper uses `LEFT JOIN streams s ON s.activity_id = a.id WHERE s.activity_id IS NULL`. If an activity has one stream type (e.g., alt) but another (e.g., HR) is missing, the activity will not be returned by `activities_missing_streams`. The `backfill` stage is intended to fill gaps, but this query only covers completely absent stream rows. Partial gap fills (e.g., after an interrupted daily refresh) could remain unfilled until the next daily run. The plan mentions D‑08 (“missing … must never be silently interpreted …”), but the backfill would silently skip those activities. The executor should either use a more precise completeness check (e.g., join against the expected `STREAM_KEYS`) or document this limitation for a later phase.
 
-6. **Add an `--force` flag to `db-refresh` CLI command** that maps to `run_once(force=True)`. This gives the operator a way to trigger a mid-day refresh without waiting for the next daily cycle.
+**LOW**
+- **Loss of historical “quick sync” behaviour.**  
+  The old `sync_activities(quick=True)` skipped stream/details fetching; the new `force=True` path runs the full five‑stage daily pipeline. While CLI‑03 permits syntax changes, operators accustomed to a fast, quota‑light mirror update may be surprised. The `mode='quick'` tag is currently only audit metadata; if a lightweight “summaries‑only” path is desired later, no hook exists in the stage machine.
 
-7. **Document the `Clock` and `Sleeper` protocols in `adapters/strava/types.py`** since they're shared between the adapter and refresh packages. A `typing.Protocol` is ideal for duck-type verification without runtime overhead.
+- **Mode label inconsistency in sync_activities(quick=False).**  
+  As noted above, the decision text typos; the eventual code should clearly document that `sync_activities()` without `quick` maps to `mode='daily'`.
 
-8. **Add a `state_machine_precedence_table` test** that parametrizes all overlapping state conditions (e.g., `backoff_until > now AND lease_expires_at > now`) and asserts deterministic output. Six combos are easy to miss in manual implementation.
+- **`checkpoint_stage` enum values could collide between daily and backfill stages.**  
+  The plan defines `Stage.streams_backfill`, `Stage.details_backfill`, etc., alongside the daily `streams`, `details`. The runtime distinguishes them, but a future merge error could route daily resume into a backfill stage. The minimal defence is the RuntimeError for incompatible checkpoint seen in `run_once`. This is acceptable but fragile.
 
-9. **Audit all `load_env()` call sites** before deleting from `db.py`. A quick `grep -r "load_env" src/ tests/` should surface every reference. Map each to its replacement (TokenProvider for new code, shim for legacy).
+### 4. Suggestions
+- **Clarify D‑15’s mode mapping in `03‑DECISIONS.md`.**  Change the line “`sync_activities()` (no `quick`) calls `run_once(..., force=False, mode='quick')`” to `… force=False, mode='daily'` to match the plans and the default parameter.  
+- **Refine the `activities_missing_streams` query or document the limitation.**  At minimum, add a comment in the repository method that activities with partial stream rows will not be re‑fetched by backfill; a future enhancement could check completeness against the known stream keys.  
+- **Consider exposing a `mode='quick-summaries'` in a later phase** if operators demand a low‑quota quick‑sync, but for Phase 3 the current full‑stage force is adequate.
+
+### 5. Risk Assessment
+**Overall risk: LOW**  
+All HIGH concerns are resolved. The remaining MEDIUM issues are resolvable with small clarifications or are acceptable trade‑offs for the phase scope. The architecture is cohesive, the test suite enforces the new boundaries, and the implementation can proceed with confidence.
 
 ---
 
-## 5. Risk Assessment
+## CYCLE 2 VERDICT
 
-**Overall risk: MEDIUM**
+- HIGH-1 (D-15): FULLY RESOLVED — `force` flag satisfies ad‑hoc sync; wiring, tests, and CLI are coherent apart from a minor decision‑text typo.
+- HIGH-2 (D-16): FULLY RESOLVED — `run_backfill` with stage subset and distinct lease owner is specified and tested.
+- HIGH-3 (D-17): FULLY RESOLVED — helpers move to `refresh/_sync_ops.py`, one‑way dependency enforced by AST guard and deletion from `sync.py`.
+- HIGH-4 (D-18): FULLY RESOLVED — `TokenRefreshTransport` owns retry budget; data‑transport does not burn its budget on token failures.
+- HIGH-5 (D-19): FULLY RESOLVED — partial unique index DDL is verbatim, `mark_refresh_requests_consumed` uses single‑parameter mark‑all‑pending, and tests cover dedupe.
 
-The phase has strong architectural foundations, thorough research, and well-specified test coverage. The risks are concentrated in the integration boundary (Plan 03-04) where legacy CLI/sync paths meet the new runtime, and in the under-specification of how existing 386-line `sync.py` logic maps into the checkpoint stages of `refresh/runtime.py`.
-
-The three HIGH-severity concerns (sync semantics mismatch, backfill refactor ambiguity, helper migration path) are all resolvable with clearer specification before execution begins. None requires rethinking the architecture. The MEDIUM concerns are implementation details that a careful implementer would catch, but specifying them upfront reduces rework.
-
-Recommended gate before execution: lock the decisions on:
-1. `run_once(force=)` vs separate `sync_now()`
-2. `backfill_activities()` -> `run_backfill()` vs parameterized `run_once(mode='backfill')`
-3. Helper function home: `refresh/` or `sync.py`
-4. `get_zones()` migration strategy (repo-backed now vs Phase 4)
-
-With those four decisions made, the implementation risk drops to LOW.
+New HIGHs raised this cycle: 0
+- None.
 
 ---
 
 ## Consensus Summary
 
-Only one reviewer (OpenCode / deepseek-v4-pro) was invoked for this cycle, so this section reproduces its key findings rather than synthesizing across reviewers.
+Only one external reviewer (OpenCode / deepseek-v4-pro) participated this cycle,
+so "consensus" reduces to a single-reviewer judgement.
 
-### Agreed Strengths
+### Cycle-1 HIGH Resolution
+| Prior HIGH | Decision | Status |
+|------------|----------|--------|
+| HIGH-1 — `run_once()` vs `sync_activities(quick=True)` semantic gap | D-15 | FULLY RESOLVED |
+| HIGH-2 — `backfill_activities()` under-specified | D-16 | FULLY RESOLVED |
+| HIGH-3 — sync helper migration path ambiguous | D-17 | FULLY RESOLVED |
+| HIGH-4 — token refresh retry budget shared with data fetch | D-18 | FULLY RESOLVED |
+| HIGH-5 — `refresh_requests` dedupe SQL syntax invalid | D-19 | FULLY RESOLVED |
 
-- TDD-first design with hermetic fakes (`FakeStravaTransport`, `FakeClock`, `FakeSleeper`)
-- Robust token provider locking (`fcntl.flock` + tempfile + `os.fsync` + `os.replace` + `chmod 0o600`)
-- Dual-window rate-limit policy tracking all four Strava limit windows correctly
-- Checkpoint state machine mirroring existing `sync.py` phases, minimizing refactor surface
-- AST boundary guards making layering violations fail deterministically in CI
-- Single-row SQLite lease — right complexity level for a single-user local tool
+### New HIGHs raised this cycle
+None.
 
-### Agreed Concerns (HIGH)
+### New MEDIUMs to track (non-blocking)
+- **D-15 wording typo** in `03-DECISIONS.md` — line saying `sync_activities()` (no `quick`) maps to `mode='quick'` contradicts the `mode='daily'` default in `run_once`'s signature in `03-04-PLAN.md` and the obvious intent. Fix during execution: change `mode='quick'` → `mode='daily'` in that sentence of D-15.
+- **`activities_missing_streams` query** in `03-03-PLAN.md` only flags activities with zero stream rows, so an activity with partial stream coverage is not re-fetched by `run_backfill`. Either widen the query or document this as a known limitation.
+- **`checkpoint_stage` enum overlap** between daily (`streams`, `details`) and backfill (`streams_backfill`, `details_backfill`) — protected today by the `run_once` RuntimeError on incompatible checkpoint, which the reviewer flagged as adequate-but-fragile.
 
-1. **`run_once()` vs `sync_activities(quick=True)` semantic gap** — daily-idempotency check would break ad-hoc quick sync. Needs `force` flag or separate entrypoint.
-2. **`backfill_activities()` refactor under-specified** — implementer choice between `mode='backfill'` flag and `run_backfill()` is left unresolved; wrong choice could burn quota.
-3. **Sync helper migration path is ambiguous** — risk of circular imports between `sync.py` and `refresh/runtime.py`.
-4. **Token-refresh-during-fetch error handling unclear** — who retries the OAuth POST if it fails with a network error? Transport retry budget should not be consumed by token-refresh failures.
-5. **Dedupe constraint syntax is invalid SQL** — `UNIQUE(reason, requested_for_day, consumed_at_is_null)` not legal; PATTERNS.md correctly uses a partial unique index, but PLAN text must be aligned.
-
-### Divergent Views
-
-N/A — single reviewer in this cycle. Cross-reviewer divergence will appear once additional reviewers (Gemini, Codex, etc.) are added.
-
-### Recommended Next Step
-
-Lock the four gate decisions in `03-04-PLAN.md` (or a new `03-DECISIONS.md` addendum) before execution:
-1. `run_once(force=)` parameter vs separate `sync_now()`
-2. Backfill entrypoint shape
-3. Helper function home (one-way dependency direction)
-4. `get_zones()` migration strategy
-
-Then re-run `/gsd-plan-phase 3 --reviews` to fold the addendum into the plans.
+### Convergence verdict
+With all 5 cycle-1 HIGHs FULLY RESOLVED and zero new HIGHs raised, the
+convergence loop has converged on Phase 3 plans. Remaining MEDIUMs are
+clarifications/edge cases that should be addressed during execution or in
+a follow-up phase, not blockers for `/gsd-execute-phase 3`.
