@@ -13,7 +13,7 @@ This roadmap refactors the current CLI-first codebase into a layered service arc
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Package Foundation & Settings** - Establish installable package/runtime configuration and keep smoke testing operational. (completed 2026-05-20)
-- [ ] **Phase 2: SQLite Safety & Repository Layer** - Add migration safety rails and move persistence access behind repository boundaries.
+- [x] **Phase 2: SQLite Safety & Repository Layer** - Add migration safety rails and move persistence access behind repository boundaries. (completed 2026-05-21)
 - [ ] **Phase 3: Strava Adapter & Refresh Runtime** - Isolate Strava transport/token logic and implement resilient automatic mirror refresh behavior.
 - [ ] **Phase 4: Application Services & CLI Refit** - Move user-facing analytics/reporting workflows into application services and route CLI through them.
 - [ ] **Phase 5: MCP HTTP Surface & Docker Hardening** - Expose read-only MCP tools and finalize local-safe container/runtime boundaries.
@@ -94,7 +94,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Package Foundation & Settings | 3/3 | Complete    | 2026-05-20 |
-| 2. SQLite Safety & Repository Layer | 3/4 | In Progress|  |
+| 2. SQLite Safety & Repository Layer | 4/4 | Complete   | 2026-05-21 |
 | 3. Strava Adapter & Refresh Runtime | 0/TBD | Not started | - |
 | 4. Application Services & CLI Refit | 0/TBD | Not started | - |
 | 5. MCP HTTP Surface & Docker Hardening | 0/TBD | Not started | - |
