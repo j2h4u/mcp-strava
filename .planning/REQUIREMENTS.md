@@ -22,8 +22,8 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 ### Repository
 
-- [ ] **REPO-01**: Application services can read activities, streams, zones, kudos, and sync metadata through a SQLite repository port instead of direct `sqlite3` calls in core logic
-- [ ] **REPO-02**: SQLite adapter keeps reads and writes behind explicit repository methods with WAL, busy timeout, and short transaction discipline
+- [x] **REPO-01**: Application services can read activities, streams, zones, kudos, and sync metadata through a SQLite repository port instead of direct `sqlite3` calls in core logic
+- [x] **REPO-02**: SQLite adapter keeps reads and writes behind explicit repository methods with WAL, busy timeout, and short transaction discipline
 - [ ] **REPO-03**: Missing-HR and missing-stream activities are represented explicitly as partial or unknown data instead of being treated as rest days
 
 ### Strava Adapter
@@ -116,8 +116,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SAFE-02 | Phase 2 | Complete |
 | SAFE-03 | Phase 2 | Complete |
 | SAFE-04 | Phase 2 | Complete |
-| REPO-01 | Phase 2 | Pending |
-| REPO-02 | Phase 2 | Pending |
+| REPO-01 | Phase 2 | Complete |
+| REPO-02 | Phase 2 | Complete |
 | REPO-03 | Phase 2 | Pending |
 | STRAVA-01 | Phase 3 | Pending |
 | STRAVA-02 | Phase 3 | Pending |
