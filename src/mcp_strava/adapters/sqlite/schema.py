@@ -11,6 +11,8 @@ REQUIRED_TABLES: tuple[str, ...] = (
     "athlete_zones",
     "sync_log",
     "kudos",
+    "refresh_state",
+    "refresh_requests",
 )
 
 REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
@@ -56,9 +58,39 @@ REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "kudos_fetched",
     ),
     "kudos": ("activity_id", "firstname", "lastname", "fetched_at"),
+    "refresh_state": (
+        "id",
+        "last_success_at",
+        "last_attempt_at",
+        "last_status",
+        "last_error_code",
+        "lease_owner",
+        "lease_expires_at",
+        "backoff_until",
+        "checkpoint_stage",
+        "checkpoint_cursor",
+    ),
+    "refresh_requests": ("id", "reason", "requested_for_day", "requested_at", "consumed_at"),
 }
 
-REQUIRED_INDEXES: tuple[str, ...] = ("idx_streams_act",)
+BASE_REQUIRED_TABLES: tuple[str, ...] = (
+    "activities",
+    "streams",
+    "athlete_zones",
+    "sync_log",
+    "kudos",
+)
+
+REFRESH_REQUIRED_TABLES: tuple[str, ...] = ("refresh_state", "refresh_requests")
+
+REQUIRED_INDEXES: dict[str, dict[str, object]] = {
+    "idx_streams_act": {"table": "streams", "columns": ("activity_id",), "partial": False},
+    "idx_refresh_requests_dedupe": {
+        "table": "refresh_requests",
+        "columns": ("reason", "requested_for_day"),
+        "partial": True,
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -82,9 +114,13 @@ def _columns_for_table(conn: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in rows}
 
 
-def _indexes(conn: sqlite3.Connection) -> set[str]:
-    rows = conn.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()
-    return {row[0] for row in rows if row[0]}
+def _index_rows(conn: sqlite3.Connection, table: str) -> list[sqlite3.Row | tuple]:
+    return conn.execute(f"PRAGMA index_list({table})").fetchall()
+
+
+def _index_columns(conn: sqlite3.Connection, index: str) -> tuple[str, ...]:
+    rows = conn.execute(f"PRAGMA index_info({index})").fetchall()
+    return tuple(row[2] for row in rows)
 
 
 def read_user_version(conn: sqlite3.Connection) -> int:
@@ -104,25 +140,42 @@ def integrity_check(conn: sqlite3.Connection) -> str:
 def row_counts(conn: sqlite3.Connection) -> dict[str, int]:
     counts: dict[str, int] = {}
     for table in REQUIRED_TABLES:
-        counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+        if _table_exists(conn, table):
+            counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
     return counts
 
 
 def validate_required_inventory(conn: sqlite3.Connection) -> None:
-    for table in REQUIRED_TABLES:
+    version = read_user_version(conn)
+    tables_to_check = list(BASE_REQUIRED_TABLES)
+    if version >= 2 or any(_table_exists(conn, table) for table in REFRESH_REQUIRED_TABLES):
+        tables_to_check.extend(REFRESH_REQUIRED_TABLES)
+
+    for table in tables_to_check:
         if not _table_exists(conn, table):
             raise RuntimeError(f"Missing required table: {table}")
 
-    for table, required in REQUIRED_COLUMNS.items():
+    for table in tables_to_check:
+        required = REQUIRED_COLUMNS[table]
         actual = _columns_for_table(conn, table)
         missing = [col for col in required if col not in actual]
         if missing:
             raise RuntimeError(f"Missing required columns in {table}: {', '.join(missing)}")
 
-    actual_indexes = _indexes(conn)
-    for idx in REQUIRED_INDEXES:
-        if idx not in actual_indexes:
+    for idx, spec in REQUIRED_INDEXES.items():
+        table = str(spec["table"])
+        if table not in tables_to_check:
+            continue
+        rows = _index_rows(conn, table)
+        matching = [row for row in rows if row[1] == idx]
+        if not matching:
             raise RuntimeError(f"Missing required index: {idx}")
+        actual_cols = _index_columns(conn, idx)
+        expected_cols = tuple(spec["columns"])
+        if actual_cols != expected_cols:
+            raise RuntimeError(f"Invalid index columns for {idx}: {actual_cols} != {expected_cols}")
+        if spec.get("partial") and len(matching[0]) >= 5 and int(matching[0][4]) != 1:
+            raise RuntimeError(f"Required index is not partial: {idx}")
 
 
 def run_preflight_checks(db_path: str | Path) -> PreflightReport:

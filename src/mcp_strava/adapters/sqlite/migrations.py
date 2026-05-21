@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
+from collections.abc import Callable
 
 from mcp_strava.adapters.sqlite.backup import create_timestamped_backup
 from mcp_strava.adapters.sqlite.schema import (
@@ -112,6 +113,44 @@ def _baseline_migration_v1(conn: sqlite3.Connection) -> None:
     set_user_version(conn, 1)
 
 
+def create_refresh_tables_and_seed_state(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS refresh_state (
+            id                  INTEGER PRIMARY KEY,
+            last_success_at     TEXT,
+            last_attempt_at     TEXT,
+            last_status         TEXT,
+            last_error_code     TEXT,
+            lease_owner         TEXT,
+            lease_expires_at    TEXT,
+            backoff_until       TEXT,
+            checkpoint_stage    TEXT,
+            checkpoint_cursor   TEXT
+        );
+        INSERT OR IGNORE INTO refresh_state (id) VALUES (1);
+
+        CREATE TABLE IF NOT EXISTS refresh_requests (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            reason            TEXT NOT NULL,
+            requested_for_day TEXT NOT NULL,
+            requested_at      TEXT NOT NULL,
+            consumed_at       TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_refresh_requests_dedupe
+            ON refresh_requests(reason, requested_for_day)
+            WHERE consumed_at IS NULL;
+        """
+    )
+    set_user_version(conn, 2)
+
+
+MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
+    1: _baseline_migration_v1,
+    2: create_refresh_tables_and_seed_state,
+}
+
+
 def run_migrations(db_path: str | Path) -> PreflightReport:
     path = Path(db_path)
     before = run_preflight(path)
@@ -120,8 +159,10 @@ def run_migrations(db_path: str | Path) -> PreflightReport:
     conn = sqlite3.connect(str(path), check_same_thread=False)
     try:
         current = read_user_version(conn)
-        if current < 1:
-            _baseline_migration_v1(conn)
+        for target_version in sorted(MIGRATIONS):
+            if current < target_version:
+                MIGRATIONS[target_version](conn)
+                current = target_version
         conn.commit()
     finally:
         conn.close()

@@ -9,7 +9,10 @@ from typing import Iterable
 from mcp_strava.adapters.sqlite.connection import open_expected_mirror_db, open_fixture_db
 from mcp_strava.constants import Config, TRAINING_SPORTS
 from mcp_strava.types import (
+    ALLOWED_REASON_CODES,
     DailyLoadPoint,
+    RefreshRequestRow,
+    RefreshStateRow,
     RepositoryActivityRow,
     RepositoryDailyLoadStatus,
     RepositorySyncLogEntry,
@@ -713,6 +716,166 @@ class SQLiteRepository:
             )
             for r in rows
         ]
+
+    # Refresh runtime metadata
+    def get_refresh_state(self) -> RefreshStateRow:
+        row = self.conn.execute("SELECT * FROM refresh_state WHERE id = 1").fetchone()
+        if row is None:
+            self.conn.execute("INSERT INTO refresh_state (id) VALUES (1)")
+            self.conn.commit()
+            row = self.conn.execute("SELECT * FROM refresh_state WHERE id = 1").fetchone()
+        return RefreshStateRow(
+            id=int(row["id"]),
+            last_success_at=row["last_success_at"],
+            last_attempt_at=row["last_attempt_at"],
+            last_status=row["last_status"],
+            last_error_code=row["last_error_code"],
+            lease_owner=row["lease_owner"],
+            lease_expires_at=row["lease_expires_at"],
+            backoff_until=row["backoff_until"],
+            checkpoint_stage=row["checkpoint_stage"],
+            checkpoint_cursor=row["checkpoint_cursor"],
+        )
+
+    def acquire_refresh_lease(self, owner: str, expires_at: str, now: str) -> bool:
+        cur = self.conn.execute(
+            """
+            UPDATE refresh_state
+            SET lease_owner = ?, lease_expires_at = ?
+            WHERE id = 1
+              AND (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at < ?)
+            """,
+            (owner, expires_at, now),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def release_refresh_lease(self, owner: str) -> None:
+        self.conn.execute(
+            """
+            UPDATE refresh_state
+            SET lease_owner = NULL, lease_expires_at = NULL
+            WHERE id = 1 AND lease_owner = ?
+            """,
+            (owner,),
+        )
+        self.conn.commit()
+
+    def set_checkpoint(self, stage: str, cursor: str | None) -> None:
+        self.conn.execute(
+            """
+            UPDATE refresh_state
+            SET checkpoint_stage = ?, checkpoint_cursor = ?
+            WHERE id = 1
+            """,
+            (stage, cursor),
+        )
+        self.conn.commit()
+
+    def record_refresh_attempt(self, at: str) -> None:
+        self.conn.execute(
+            "UPDATE refresh_state SET last_attempt_at = ? WHERE id = 1",
+            (at,),
+        )
+        self.conn.commit()
+
+    def record_refresh_success(self, at: str) -> None:
+        self.conn.execute(
+            """
+            UPDATE refresh_state
+            SET last_success_at = ?, last_attempt_at = ?, last_status = 'ok',
+                last_error_code = NULL, backoff_until = NULL
+            WHERE id = 1
+            """,
+            (at, at),
+        )
+        self.conn.commit()
+
+    def record_refresh_failure(self, at: str, reason_code: str, backoff_until: str | None) -> None:
+        if reason_code not in ALLOWED_REASON_CODES:
+            raise ValueError(f"Unknown refresh failure reason: {reason_code}")
+        self.conn.execute(
+            """
+            UPDATE refresh_state
+            SET last_attempt_at = ?, last_status = 'failed',
+                last_error_code = ?, backoff_until = ?
+            WHERE id = 1
+            """,
+            (at, reason_code, backoff_until),
+        )
+        self.conn.commit()
+
+    def enqueue_refresh_request(self, reason: str, requested_for_day: str, requested_at: str | None = None) -> bool:
+        timestamp = requested_at or requested_for_day
+        cur = self.conn.execute(
+            """
+            INSERT OR IGNORE INTO refresh_requests (reason, requested_for_day, requested_at)
+            VALUES (?, ?, ?)
+            """,
+            (reason, requested_for_day, timestamp),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def pending_refresh_requests(self) -> list[RefreshRequestRow]:
+        rows = self.conn.execute(
+            """
+            SELECT id, reason, requested_for_day, requested_at, consumed_at
+            FROM refresh_requests
+            WHERE consumed_at IS NULL
+            ORDER BY id
+            """
+        ).fetchall()
+        return [
+            RefreshRequestRow(
+                id=int(row["id"]),
+                reason=row["reason"],
+                requested_for_day=row["requested_for_day"],
+                requested_at=row["requested_at"],
+                consumed_at=row["consumed_at"],
+            )
+            for row in rows
+        ]
+
+    def mark_refresh_requests_consumed(self, consumed_at: str) -> int:
+        cur = self.conn.execute(
+            "UPDATE refresh_requests SET consumed_at = ? WHERE consumed_at IS NULL",
+            (consumed_at,),
+        )
+        self.conn.commit()
+        return cur.rowcount
+
+    def activities_missing_streams(self, since: str | None = None) -> list[RepositoryActivityRow]:
+        rows = self.conn.execute(
+            """
+            SELECT a.id, a.date, a.name, a.sport_type, a.distance, a.moving_time,
+                   a.elapsed_time, a.total_elevation_gain, a.summary_json,
+                   a.detail_json, a.synced_at
+            FROM activities a
+            LEFT JOIN streams s ON s.activity_id = a.id
+            WHERE s.activity_id IS NULL
+              AND (? IS NULL OR SUBSTR(a.date, 1, 10) >= ?)
+            GROUP BY a.id
+            ORDER BY a.date DESC
+            """,
+            (since, since),
+        ).fetchall()
+        return [self._to_activity_row(row) for row in rows]
+
+    def activities_missing_details(self, since: str | None = None) -> list[RepositoryActivityRow]:
+        rows = self.conn.execute(
+            """
+            SELECT id, date, name, sport_type, distance, moving_time,
+                   elapsed_time, total_elevation_gain, summary_json,
+                   detail_json, synced_at
+            FROM activities
+            WHERE detail_json IS NULL
+              AND (? IS NULL OR SUBSTR(date, 1, 10) >= ?)
+            ORDER BY date DESC
+            """,
+            (since, since),
+        ).fetchall()
+        return [self._to_activity_row(row) for row in rows]
 
     def _to_activity_row(self, row) -> RepositoryActivityRow:
         return RepositoryActivityRow(

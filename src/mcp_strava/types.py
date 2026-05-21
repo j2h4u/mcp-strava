@@ -517,6 +517,44 @@ class RepositorySyncLogEntry:
     kudos_fetched: int | None = None
 
 
+ALLOWED_REASON_CODES = frozenset(
+    {
+        "token_unavailable",
+        "rate_limited",
+        "network_unstable",
+        "refresh_incomplete",
+        "sync_in_progress",
+    }
+)
+
+
+@dataclass(frozen=True)
+class RefreshStateRow:
+    """Singleton refresh state row used by refresh runtime and read paths."""
+
+    id: int
+    last_success_at: str | None = None
+    last_attempt_at: str | None = None
+    last_status: str | None = None
+    last_error_code: str | None = None
+    lease_owner: str | None = None
+    lease_expires_at: str | None = None
+    backoff_until: str | None = None
+    checkpoint_stage: str | None = None
+    checkpoint_cursor: str | None = None
+
+
+@dataclass(frozen=True)
+class RefreshRequestRow:
+    """Pending or consumed local refresh signal."""
+
+    id: int
+    reason: str
+    requested_for_day: str
+    requested_at: str
+    consumed_at: str | None = None
+
+
 @dataclass
 class RepositoryPreflightResult:
     """Repository-level preflight summary shape."""
