@@ -72,8 +72,8 @@ overrides_applied: 0
 |----------|---------|--------|--------|
 | Adapter tests | `python3 -m pytest tests/test_strava_adapter.py -q` | Included in full run | PASS |
 | Runtime tests | `python3 -m pytest tests/test_refresh_runtime.py -q` | `11 passed` | PASS |
-| Boundary/smoke tests | `python3 -m pytest tests/test_security_guards.py tests/test_smoke.py -q` | Previously `27 passed`; included in full run after review fix | PASS |
-| Full regression | `just test` | `93 passed` | PASS |
+| Boundary/smoke/runtime tests | `python3 -m pytest tests/test_security_guards.py tests/test_smoke.py tests/test_refresh_runtime.py -q` | `39 passed` | PASS |
+| Full regression | `just test` | `94 passed` | PASS |
 | CLI help | `PYTHONPATH=src python3 -m mcp_strava db-refresh --help` | Shows `--force` and mid-day refresh description | PASS |
 | Schema drift | `gsd-sdk query verify.schema-drift 03` | `drift_detected=false` | PASS |
 
@@ -81,7 +81,7 @@ overrides_applied: 0
 
 | Gate | Result | Details |
 |------|--------|---------|
-| Code review | clean after fix | `03-REVIEW.md` recorded one review-driven fix (`5e3d1c2`) for backfill checkpoint stage preservation |
+| Code review | clean after fixes | `03-REVIEW.md` records review-driven fixes for checkpoint stage preservation and refresh-schema fail-fast behavior |
 
 ### Human Verification Required
 

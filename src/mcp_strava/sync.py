@@ -70,10 +70,19 @@ def build_refresh_collaborators(settings: Settings | None = None):
     return settings, clock, sleeper, transport, refresh_policy
 
 
+def ensure_refresh_schema(preflight_report) -> None:
+    row_counts = getattr(preflight_report, "row_counts", {})
+    if "refresh_state" not in row_counts or "refresh_requests" not in row_counts:
+        raise RuntimeError(
+            "Refresh metadata schema is missing. Run `python -m mcp_strava db-migrate` "
+            "before sync, backfill, or db-refresh."
+        )
+
+
 def sync_activities(quick: bool = False):
     """Run the standard refresh runtime behind the legacy sync entrypoint."""
     settings = get_settings()
-    run_preflight(settings.database_path)
+    ensure_refresh_schema(run_preflight(settings.database_path))
     _, clock, sleeper, transport, refresh_policy = build_refresh_collaborators(settings)
     with DbConn() as conn:
         repo = SQLiteRepository.from_connection(conn)
@@ -91,7 +100,7 @@ def sync_activities(quick: bool = False):
 def backfill_activities(since: str | None = None):
     """Run the backfill refresh runtime behind the legacy backfill entrypoint."""
     settings = get_settings()
-    run_preflight(settings.database_path)
+    ensure_refresh_schema(run_preflight(settings.database_path))
     _, clock, sleeper, transport, refresh_policy = build_refresh_collaborators(settings)
     with DbConn() as conn:
         repo = SQLiteRepository.from_connection(conn)

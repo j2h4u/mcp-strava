@@ -20,7 +20,7 @@ from mcp_strava.report import daily_report
 from mcp_strava.types import (
     parse_strava_activity, parse_strava_athlete, dc_to_dict
 )
-from mcp_strava.sync import backfill_activities, build_refresh_collaborators, sync_activities
+from mcp_strava.sync import backfill_activities, build_refresh_collaborators, ensure_refresh_schema, sync_activities
 from mcp_strava.trends import compute_trends
 from mcp_strava.settings import get_settings
 
@@ -155,8 +155,9 @@ def cmd_db_refresh(args):
         raise SystemExit(1)
 
     force = "--force" in args
+    settings = get_settings()
+    ensure_refresh_schema(run_preflight(settings.database_path))
     settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
-    run_preflight(settings.database_path)
     with DbConn() as conn:
         repo = SQLiteRepository.from_connection(conn)
         result = refresh_runtime.run_once(

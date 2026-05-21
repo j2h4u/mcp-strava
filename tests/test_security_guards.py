@@ -5,6 +5,8 @@ import ast
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -170,7 +172,11 @@ def test_cli_db_refresh_accepts_force_flag_per_D15(monkeypatch, tmp_path: Path) 
             "policy",
         ),
     )
-    monkeypatch.setattr(cli, "run_preflight", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        cli,
+        "run_preflight",
+        lambda *_args, **_kwargs: SimpleNamespace(row_counts={"refresh_state": 1, "refresh_requests": 0}),
+    )
     monkeypatch.setattr(cli, "DbConn", FakeDbConn)
     monkeypatch.setattr(cli.SQLiteRepository, "from_connection", staticmethod(lambda _conn: "repo"))
     monkeypatch.setattr(cli.refresh_runtime, "run_once", fake_run_once)
@@ -344,7 +350,11 @@ def test_sync_activities_quick_invokes_run_once_with_force_true_per_D15(monkeypa
         return RefreshResult(status="ok", mode=kwargs["mode"], checkpoint_stage="complete")
 
     monkeypatch.setattr(sync, "get_settings", lambda: SimpleNamespace(database_path=tmp_path / "strava.db"))
-    monkeypatch.setattr(sync, "run_preflight", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        sync,
+        "run_preflight",
+        lambda *_args, **_kwargs: SimpleNamespace(row_counts={"refresh_state": 1, "refresh_requests": 0}),
+    )
     monkeypatch.setattr(
         sync,
         "build_refresh_collaborators",
@@ -366,6 +376,22 @@ def test_sync_activities_quick_invokes_run_once_with_force_true_per_D15(monkeypa
     assert calls
     assert calls[0]["force"] is True
     assert calls[0]["mode"] == "quick"
+
+
+def test_sync_entrypoints_fail_fast_without_refresh_schema(monkeypatch, tmp_path: Path) -> None:
+    import mcp_strava.sync as sync
+
+    def _unexpected_collaborators(*_args, **_kwargs):
+        raise AssertionError("refresh collaborators must not be built before schema v2 exists")
+
+    monkeypatch.setattr(sync, "get_settings", lambda: SimpleNamespace(database_path=tmp_path / "strava.db"))
+    monkeypatch.setattr(sync, "run_preflight", lambda *_args, **_kwargs: SimpleNamespace(row_counts={}))
+    monkeypatch.setattr(sync, "build_refresh_collaborators", _unexpected_collaborators)
+
+    with pytest.raises(RuntimeError, match="db-migrate"):
+        sync.sync_activities()
+    with pytest.raises(RuntimeError, match="db-migrate"):
+        sync.backfill_activities()
 
 
 def test_backfill_activities_invokes_run_backfill_per_D16(monkeypatch, tmp_path: Path) -> None:
@@ -398,7 +424,11 @@ def test_backfill_activities_invokes_run_backfill_per_D16(monkeypatch, tmp_path:
         return RefreshResult(status="ok", mode="backfill", checkpoint_stage="complete_backfill")
 
     monkeypatch.setattr(sync, "get_settings", lambda: SimpleNamespace(database_path=tmp_path / "strava.db"))
-    monkeypatch.setattr(sync, "run_preflight", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        sync,
+        "run_preflight",
+        lambda *_args, **_kwargs: SimpleNamespace(row_counts={"refresh_state": 1, "refresh_requests": 0}),
+    )
     monkeypatch.setattr(
         sync,
         "build_refresh_collaborators",
