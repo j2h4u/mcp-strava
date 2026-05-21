@@ -17,7 +17,7 @@ created: 2026-05-21
 |----------|-------|
 | **Framework** | pytest |
 | **Config file** | `pyproject.toml` |
-| **Quick run command** | `python3 -m pytest tests/test_sqlite_safety.py tests/test_repository_boundary.py tests/test_load_status.py -q` |
+| **Quick run command** | `python3 -m pytest tests/test_sqlite_safety.py tests/test_repository_boundary.py tests/test_load_status.py tests/test_security_guards.py -q` |
 | **Full suite command** | `just test` |
 | **Estimated runtime** | ~30 seconds |
 
@@ -33,17 +33,18 @@ created: 2026-05-21
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
 | 02-01-01 | 01 | 1 | SAFE-01/SAFE-04/TEST-01 | T-02-01/T-02-02 | Missing/corrupt expected DB fails closed before writes | unit | `python3 -m pytest tests/test_sqlite_safety.py -q` | W0 creates | pending |
-| 02-01-02 | 01 | 1 | SAFE-02/SAFE-03/TEST-01 | T-02-03 | Backup is openable and parity can be checked before/after migration | unit | `python3 -m pytest tests/test_sqlite_safety.py -q` | W0 creates | pending |
+| 02-01-02 | 01 | 1 | SAFE-02/SAFE-03/TEST-01 | T-02-03 | Backup is openable and synthetic migration proves row/load parity helpers with frozen `as_of` inputs | unit | `python3 -m pytest tests/test_sqlite_safety.py -q` | W0 creates | pending |
 | 02-02-01 | 02 | 2 | REPO-01/REPO-02 | T-02-04 | Repository connection owns WAL/busy-timeout policy | unit | `python3 -m pytest tests/test_repository_boundary.py -q` | W0 creates | pending |
 | 02-02-02 | 02 | 2 | REPO-01/REPO-02 | T-02-05 | Activities, streams, zones, kudos, sync log flow through focused repository methods | unit | `python3 -m pytest tests/test_repository_boundary.py -q` | W0 creates | pending |
-| 02-03-01 | 03 | 2 | REPO-03/SAFE-03 | T-02-06 | Missing HR/stream sessions are not collapsed into rest days | unit | `python3 -m pytest tests/test_load_status.py -q` | W0 creates | pending |
-| 02-04-01 | 04 | 3 | SAFE-01/SAFE-02/SAFE-03/SAFE-04/REPO-01/REPO-02/REPO-03/TEST-01 | T-02-07 | Runtime paths use repository/migration gates and keep operator SQL isolated | integration | `just test` | existing + prior plans | pending |
+| 02-03-01 | 03 | 2 | REPO-03/SAFE-03 | T-02-06 | Missing HR/stream sessions are not collapsed into rest days and `training.py` consumes deterministic effective TRIMP inputs | unit | `python3 -m pytest tests/test_load_status.py -q` | W0 creates | pending |
+| 02-04-01 | 04 | 3 | SAFE-01/SAFE-02/SAFE-03/SAFE-04/REPO-01/REPO-02/REPO-03/TEST-01 | T-02-07 | Runtime paths use repository/migration gates, `init_db()` is absent or assertion-only, `metrics.py` is behind repository helpers, and operator SQL stays isolated | integration | `just test` | existing + prior plans | pending |
 
 ## Wave 0 Requirements
 
-- [ ] `tests/test_sqlite_safety.py` — failing tests for preflight, fail-closed open, backup, post-check, parity, and retention.
-- [ ] `tests/test_repository_boundary.py` — failing tests for WAL/busy-timeout repository connection policy, repository methods, boundary guard, and no live network.
-- [ ] `tests/test_load_status.py` — failing tests for `REST`, `UNKNOWN`, `PARTIAL`, `OBSERVED`, and observed numeric load preservation.
+- [ ] `tests/test_sqlite_safety.py` — failing tests for preflight, fail-closed open, backup, post-check, synthetic migration parity, frozen `as_of` numeric parity, and retention.
+- [ ] `tests/test_repository_boundary.py` — failing tests for WAL/busy-timeout repository connection policy, repository methods, AST boundary guard, and no live network.
+- [ ] `tests/test_load_status.py` — failing tests for `REST`, `UNKNOWN`, `PARTIAL`, `OBSERVED`, `effective_trimp=0.0` on missing-data statuses, and observed numeric load preservation through `training.py`.
+- [ ] `tests/test_security_guards.py` — failing tests that runtime/sync paths do not call schema-changing `init_db()` and `metrics.py` has no direct stream/activity SQL after repository adoption.
 
 ## Manual-Only Verifications
 
