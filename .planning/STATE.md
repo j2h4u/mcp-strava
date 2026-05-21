@@ -2,15 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-05-21T17:33:49.942Z"
-last_activity: 2026-05-21 -- Phase 04 execution started
+status: ready_to_plan
+last_updated: 2026-05-21T17:57:10.940Z
+last_activity: 2026-05-21 -- Phase 04 complete; ready to plan Phase 5
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 15
-  completed_plans: 11
-  percent: 60
+  completed_plans: 15
+  percent: 80
+stopped_at: Phase 04 complete (4/4) — ready to discuss Phase 5
 ---
 
 # Project State
@@ -20,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-20)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Phase 04 — application-services-cli-refit
+**Current focus:** Phase 5 — mcp http surface & docker hardening
 
 ## Current Position
 
-Phase: 04 (application-services-cli-refit) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 04
-Last activity: 2026-05-21 -- Phase 04 execution started
+Phase: 5
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-21
 
 Progress: [██████████] 100%
 
@@ -35,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 11
+- Total plans completed: 15
 - Average duration: 0 min
 - Total execution time: 0.0 hours
 
@@ -46,6 +47,7 @@ Progress: [██████████] 100%
 | 01 | 3 | - | - |
 | 02 | 4 | - | - |
 | 03 | 4 | - | - |
+| 04 | 4 | - | - |
 
 **Recent Trend:**
 
@@ -95,5 +97,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-05-21T16:50:08.844Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-application-services-cli-refit/04-CONTEXT.md
+Stopped at: Phase 04 complete; ready to discuss Phase 5
+Resume file: .planning/ROADMAP.md

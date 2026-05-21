@@ -34,16 +34,16 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 ### Application Services
 
-- [ ] **APP-01**: Application service can return a daily training report from the local mirror with freshness, completeness, warnings, and recommendation rationale
-- [ ] **APP-02**: Application service can return a weekly load summary from the local mirror with sport-aware aggregation and trend context
-- [ ] **APP-03**: Application service can return recent workouts and per-workout analytics without calling Strava at request time
-- [ ] **APP-04**: Application service can evaluate mirror freshness and expose freshness metadata without exposing sync as a user-facing operation
+- [x] **APP-01**: Application service can return a daily training report from the local mirror with freshness, completeness, warnings, and recommendation rationale
+- [x] **APP-02**: Application service can return a weekly load summary from the local mirror with sport-aware aggregation and trend context
+- [x] **APP-03**: Application service can return recent workouts and per-workout analytics without calling Strava at request time
+- [x] **APP-04**: Application service can evaluate mirror freshness and expose freshness metadata without exposing sync as a user-facing operation
 
 ### CLI
 
-- [ ] **CLI-01**: Operator can access report, weekly summary, recent workouts, freshness status, sync, backfill, SQL, and raw/debug workflows through the local CLI
-- [ ] **CLI-02**: CLI commands use application services and adapters instead of owning business logic directly
-- [ ] **CLI-03**: CLI command names and JSON shapes may change, but every retained operator capability has a documented replacement
+- [x] **CLI-01**: Operator can access report, weekly summary, recent workouts, freshness status, sync, backfill, SQL, and raw/debug workflows through the local CLI
+- [x] **CLI-02**: CLI commands use application services and adapters instead of owning business logic directly
+- [x] **CLI-03**: CLI command names and JSON shapes may change, but every retained operator capability has a documented replacement
 
 ### MCP
 
@@ -69,7 +69,7 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 - [x] **TEST-01**: Tests cover migration backup/preflight/post-check behavior against a copied SQLite database
 - [x] **TEST-02**: Tests cover Strava rate-limit/retry/checkpoint behavior without live Strava API calls
 - [ ] **TEST-03**: Tests cover MCP tool allowlist and prove forbidden sync/admin/debug tools are absent
-- [ ] **TEST-04**: Tests cover freshness metadata, missing-HR handling, and core daily/weekly report parity
+- [x] **TEST-04**: Tests cover freshness metadata, missing-HR handling, and core daily/weekly report parity
 
 ## v2 Requirements
 
@@ -122,13 +122,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STRAVA-01 | Phase 3 | Complete |
 | STRAVA-02 | Phase 3 | Complete |
 | STRAVA-03 | Phase 3 | Complete |
-| APP-01 | Phase 4 | Pending |
-| APP-02 | Phase 4 | Pending |
-| APP-03 | Phase 4 | Pending |
-| APP-04 | Phase 4 | Pending |
-| CLI-01 | Phase 4 | Pending |
-| CLI-02 | Phase 4 | Pending |
-| CLI-03 | Phase 4 | Pending |
+| APP-01 | Phase 4 | Complete |
+| APP-02 | Phase 4 | Complete |
+| APP-03 | Phase 4 | Complete |
+| APP-04 | Phase 4 | Complete |
+| CLI-01 | Phase 4 | Complete |
+| CLI-02 | Phase 4 | Complete |
+| CLI-03 | Phase 4 | Complete |
 | MCP-01 | Phase 5 | Pending |
 | MCP-02 | Phase 5 | Pending |
 | MCP-03 | Phase 5 | Pending |
@@ -142,7 +142,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-01 | Phase 2 | Complete |
 | TEST-02 | Phase 3 | Complete |
 | TEST-03 | Phase 5 | Pending |
-| TEST-04 | Phase 4 | Pending |
+| TEST-04 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 34 total
