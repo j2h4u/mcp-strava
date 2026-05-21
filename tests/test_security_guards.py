@@ -122,17 +122,41 @@ def _command_registry_names() -> set[str]:
     return commands
 
 
-def test_cli_has_operator_only_sql_and_explicit_db_safety_commands() -> None:
+def test_cli_has_product_admin_split_and_explicit_db_safety_commands() -> None:
     commands = _command_registry_names()
-    assert "sql" in commands
-    assert "db-preflight" in commands
-    assert "db-check" in commands
-    assert "db-migrate" in commands
-    assert "db-refresh" in commands
+    assert {"report", "weekly", "workouts", "workout", "freshness", "admin"}.issubset(commands)
+    assert {"sql", "db-preflight", "db-check", "db-migrate", "db-refresh"}.isdisjoint(commands)
 
 
-def test_cli_includes_db_refresh_command() -> None:
-    assert "db-refresh" in _command_registry_names()
+def test_cli_includes_namespaced_admin_refresh_commands() -> None:
+    import mcp_strava.cli as cli
+
+    assert "admin" in _command_registry_names()
+    assert "mirror-refresh" in cli.ADMIN_COMMANDS
+    assert "token-refresh" in cli.ADMIN_COMMANDS
+    assert "sync" not in cli.ADMIN_COMMANDS
+    assert "refresh" not in cli.ADMIN_COMMANDS
+
+
+def test_product_service_registry_excludes_admin_debug_commands() -> None:
+    from mcp_strava.application.registry import PRODUCT_SERVICES
+
+    forbidden = {
+        "admin",
+        "sync",
+        "backfill",
+        "sql",
+        "raw",
+        "log",
+        "db-refresh",
+        "mirror-refresh",
+        "token-refresh",
+        "db-preflight",
+        "db-check",
+        "db-migrate",
+    }
+
+    assert forbidden.isdisjoint(PRODUCT_SERVICES)
 
 
 def test_cli_db_refresh_accepts_force_flag_per_D15(monkeypatch, tmp_path: Path) -> None:
