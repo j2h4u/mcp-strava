@@ -141,7 +141,7 @@ Inputs come from existing `Settings.freshness` plus a new `RefreshPolicy` datacl
 
 Proposed shape (planner discretion on exact column names/types):
 - `refresh_state(id INTEGER PRIMARY KEY, last_success_at TEXT, last_attempt_at TEXT, last_status TEXT, last_error_code TEXT, lease_owner TEXT, lease_expires_at TEXT, backoff_until TEXT, checkpoint_stage TEXT, checkpoint_cursor TEXT)` — single row with `id=1`.
-- `refresh_requests(id INTEGER PRIMARY KEY AUTOINCREMENT, reason TEXT NOT NULL, requested_for_day TEXT NOT NULL, requested_at TEXT NOT NULL, consumed_at TEXT, UNIQUE(reason, requested_for_day, consumed_at_is_null))` — planner picks how to encode the dedupe (partial unique index OR a normalized `requested_for_day` shard).
+- `refresh_requests(id INTEGER PRIMARY KEY AUTOINCREMENT, reason TEXT NOT NULL, requested_for_day TEXT NOT NULL, requested_at TEXT NOT NULL, consumed_at TEXT)` PLUS `CREATE UNIQUE INDEX idx_refresh_requests_dedupe ON refresh_requests(reason, requested_for_day) WHERE consumed_at IS NULL` (locked by D-19 in 03-DECISIONS.md — SQLite does not support function expressions inside `UNIQUE(...)`, so the dedupe must live in a partial unique index).
 
 ### `src/mcp_strava/adapters/sqlite/migrations.py` (extension)
 
