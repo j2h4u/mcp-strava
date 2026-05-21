@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**:
   - [x] `01-01` Package Manifest & Source Layout - Wave 1
   - [x] `01-02` Typed Settings Boundary - Wave 2 *(blocked on Wave 1 completion)*
-  - [ ] `01-03` Pytest Smoke Workflow - Wave 3 *(blocked on Wave 2 completion)*
+  - [x] `01-03` Pytest Smoke Workflow - Wave 3 *(blocked on Wave 2 completion)*
 
 ### Phase 2: SQLite Safety & Repository Layer
 **Goal**: Data is preserved through controlled schema evolution, and application data access is isolated behind a SQLite repository interface.
