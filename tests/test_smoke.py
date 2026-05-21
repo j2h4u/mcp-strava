@@ -17,7 +17,7 @@ def test_imports():
     from mcp_strava.training import calc_banister, calc_weekly_plan, forward_simulate, ewma, trend
     from mcp_strava.analytics import weekly_digest
     from mcp_strava.report import daily_report
-    from mcp_strava.sync import sync_activities, backfill_activities, RateLimiter
+    from mcp_strava.sync import backfill_activities, build_refresh_collaborators, sync_activities
     from mcp_strava.trends import compute_trends
 
     # Verify Config hierarchy

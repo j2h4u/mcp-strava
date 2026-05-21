@@ -1,16 +1,20 @@
 """Database layer — connection management, auth, zones, TRIMP queries."""
 
 import sqlite3
-import os
 import json
-import urllib.request
-import urllib.parse
-import urllib.error
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from mcp_strava.adapters.sqlite.connection import open_expected_mirror_db
 from mcp_strava.adapters.sqlite.migrations import run_preflight
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+from mcp_strava.adapters.strava import (
+    FileTokenProvider,
+    RateLimitPolicy,
+    StravaTransport,
+    StravaUnavailable,
+    TokenRefreshTransport,
+)
 from mcp_strava.settings import get_settings
 
 
@@ -43,105 +47,98 @@ def init_db(conn):
 
 # --- Auth ---
 
-def load_env():
-    env = {}
-    env_path = _env_path()
-    if os.path.exists(env_path):
-        with open(env_path, 'r') as f:
-            for line in f:
-                if '=' in line and not line.startswith('#'):
-                    k, v = line.strip().split('=', 1)
-                    env[k] = v
-    return env
+class _RealClock:
+    def now(self) -> float:
+        return datetime.now().timestamp()
 
 
-def save_env(env):
-    with open(_env_path(), 'w') as f:
-        for k, v in env.items():
-            f.write(f"{k}={v}\n")
+class _RealSleeper:
+    def sleep(self, seconds: float) -> None:
+        import time
+        time.sleep(seconds)
+
+
+class _CompatTokenProvider:
+    def __init__(self, token: str | None, token_path: Path, clock, sleeper) -> None:
+        self._token = token
+        self._token_path = token_path
+        self._clock = clock
+        self._sleeper = sleeper
+        self._delegate = None
+
+    def access_token(self) -> str:
+        if self._token:
+            return self._token
+        return self._file_provider().access_token()
+
+    def refresh(self) -> str:
+        self._token = self._file_provider().refresh()
+        return self._token
+
+    def _file_provider(self) -> FileTokenProvider:
+        if self._delegate is None:
+            values = _read_token_values(self._token_path)
+            required = ("STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET")
+            missing = [key for key in required if not values.get(key)]
+            if missing:
+                raise RuntimeError(
+                    f"Missing env vars for Strava auth: {', '.join(missing)}. "
+                    f"Check {self._token_path}"
+                )
+            refresh_transport = TokenRefreshTransport(
+                client_id=values["STRAVA_CLIENT_ID"],
+                client_secret=values["STRAVA_CLIENT_SECRET"],
+                clock=self._clock,
+                sleeper=self._sleeper,
+            )
+            self._delegate = FileTokenProvider(self._token_path, refresh_transport, self._clock)
+        return self._delegate
+
+
+def _read_token_values(token_path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not token_path.exists():
+        return values
+    for raw_line in token_path.read_text(encoding="utf-8").splitlines():
+        stripped = raw_line.lstrip()
+        if not stripped or stripped.startswith("#") or "=" not in raw_line:
+            continue
+        key, value = raw_line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
+
+
+def _build_token_provider(token: str | None = None) -> _CompatTokenProvider:
+    settings = get_settings()
+    clock = _RealClock()
+    sleeper = _RealSleeper()
+    return _CompatTokenProvider(token, settings.token_path, clock, sleeper)
+
+
+def _build_transport(token: str | None = None) -> StravaTransport:
+    clock = _RealClock()
+    sleeper = _RealSleeper()
+    token_provider = _CompatTokenProvider(token, Path(_env_path()), clock, sleeper)
+    return StravaTransport(token_provider, RateLimitPolicy(), clock, sleeper)
 
 
 def refresh_token():
-    env = load_env()
-    required = ['STRAVA_CLIENT_ID', 'STRAVA_CLIENT_SECRET', 'STRAVA_REFRESH_TOKEN']
-    missing = [k for k in required if k not in env]
-    if missing:
-        env_path = _env_path()
-        raise RuntimeError(f"Missing env vars for Strava auth: {', '.join(missing)}. Check {env_path}")
-    data = urllib.parse.urlencode({
-        'client_id': env['STRAVA_CLIENT_ID'],
-        'client_secret': env['STRAVA_CLIENT_SECRET'],
-        'grant_type': 'refresh_token',
-        'refresh_token': env['STRAVA_REFRESH_TOKEN'],
-    }).encode()
-    req = urllib.request.Request("https://www.strava.com/oauth/token", data=data, method='POST')
     try:
-        with urllib.request.urlopen(req, timeout=30) as f:
-            res = json.loads(f.read().decode())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(
-            f"Strava OAuth token refresh failed: HTTP {e.code}. "
-            f"Refresh token may be expired — re-authorize at https://www.strava.com/settings/api"
-        ) from e
-    except (urllib.error.URLError, OSError) as e:
-        raise RuntimeError(f"Strava OAuth token refresh failed: network error — {e}") from e
-    env['STRAVA_ACCESS_TOKEN'] = res['access_token']
-    env['STRAVA_REFRESH_TOKEN'] = res['refresh_token']
-    save_env(env)
-    return res['access_token']
-
-
-def _parse_rate_headers(headers):
-    """Extract rate limit info from Strava response headers."""
-    info = {}
-    usage = headers.get('X-RateLimit-Usage')
-    limit_val = headers.get('X-RateLimit-Limit')
-    if usage:
-        parts = usage.split(',')
-        try:
-            info['usage_15min'] = int(parts[0].strip())
-        except (ValueError, IndexError):
-            pass
-        if len(parts) > 1:
-            try:
-                info['usage_daily'] = int(parts[1].strip())
-            except ValueError:
-                pass
-    if limit_val:
-        parts = limit_val.split(',')
-        try:
-            info['limit_15min'] = int(parts[0].strip())
-        except ValueError:
-            pass
-    return info
+        return _build_token_provider().refresh()
+    except StravaUnavailable as exc:
+        raise RuntimeError(f"Strava OAuth token refresh failed: {exc.reason}") from exc
 
 
 def api_request(path, token=None):
     """Strava API request. Returns (data, rate_headers) tuple.
     rate_headers contains usage_15min, usage_daily, limit_15min from X-RateLimit-* headers."""
-    if not token:
-        token = load_env().get('STRAVA_ACCESS_TOKEN', '')
-    url = f"https://www.strava.com/api/v3{path}"
-    req = urllib.request.Request(url)
-    req.add_header('Authorization', f'Bearer {token}')
     try:
-        with urllib.request.urlopen(req, timeout=30) as f:
-            data = json.loads(f.read().decode())
-            rate_info = _parse_rate_headers(f.headers)
-            return data, rate_info
-    except urllib.error.HTTPError as e:
-        if e.code == 401:
-            new_token = refresh_token()
-            req2 = urllib.request.Request(url)
-            req2.add_header('Authorization', f'Bearer {new_token}')
-            with urllib.request.urlopen(req2, timeout=30) as f:
-                data = json.loads(f.read().decode())
-                rate_info = _parse_rate_headers(f.headers)
-            return data, rate_info
-        if e.code == 429:
-            retry_after = e.headers.get('Retry-After')
-            return {"_rate_limited": True, "_retry_after": retry_after}, {}
-        raise
+        response = _build_transport(token).fetch(path)
+    except StravaUnavailable as exc:
+        if exc.reason == "rate_limited":
+            return {"_rate_limited": True, "_retry_after": None}, {}
+        raise RuntimeError(f"Strava API request failed: {exc.reason}") from exc
+    return response.data, response.rate_info.as_dict()
 
 
 # --- HR Zones ---
@@ -152,9 +149,8 @@ def get_zones():
         row = conn.execute("SELECT zones_json FROM athlete_zones ORDER BY fetched_at DESC LIMIT 1").fetchone()
         if row:
             return json.loads(row['zones_json'])
-    # Fetch from API
-    token = load_env().get('STRAVA_ACCESS_TOKEN', '')
-    data, _rate_info = api_request('/athlete/zones', token)
+    # Phase 4 follow-up: move zone writes behind a ZonesService over SQLiteRepository.
+    data, _rate_info = api_request('/athlete/zones')
     zones = [{'min': z['min'], 'max': z['max'] if z['max'] != -1 else 300}
              for z in data['heart_rate']['zones']]
     with DbConn() as conn:
