@@ -54,9 +54,9 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 ### Refresh Runtime
 
-- [x] **REFRESH-01**: Mirror refresh runs automatically at least once per day through a background or scheduled runtime path
-- [x] **REFRESH-02**: Request-time freshness checks can mark data stale and schedule or signal refresh work without making MCP clients trigger sync
-- [x] **REFRESH-03**: Background refresh uses locks/checkpoints so concurrent CLI, MCP, and refresh reads do not corrupt SQLite state
+- [x] **REFRESH-01**: Mirror refresh runtime can perform one normal refresh per local day when internally requested, while avoiding Strava API calls on days with no product use
+- [x] **REFRESH-02**: Request-time freshness checks can mark data stale and schedule or signal first-use refresh work without making MCP clients trigger sync
+- [x] **REFRESH-03**: Refresh runtime uses locks/checkpoints so concurrent CLI, MCP, and refresh reads do not corrupt SQLite state
 
 ### Docker Readiness
 
@@ -151,4 +151,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-05-20*
-*Last updated: 2026-05-20 after initial definition*
+*Last updated: 2026-05-21 after Phase 4 discussion*

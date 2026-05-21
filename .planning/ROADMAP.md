@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Package Foundation & Settings** - Establish installable package/runtime configuration and keep smoke testing operational. (completed 2026-05-20)
 - [x] **Phase 2: SQLite Safety & Repository Layer** - Add migration safety rails and move persistence access behind repository boundaries. (completed 2026-05-21)
-- [x] **Phase 3: Strava Adapter & Refresh Runtime** - Isolate Strava transport/token logic and implement resilient automatic mirror refresh behavior. (completed 2026-05-21)
+- [x] **Phase 3: Strava Adapter & Refresh Runtime** - Isolate Strava transport/token logic and implement resilient policy-driven mirror refresh behavior. (completed 2026-05-21)
 - [ ] **Phase 4: Application Services & CLI Refit** - Move user-facing analytics/reporting workflows into application services and route CLI through them.
 - [ ] **Phase 5: MCP HTTP Surface & Docker Hardening** - Expose read-only MCP tools and finalize local-safe container/runtime boundaries.
 
@@ -61,7 +61,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. OAuth refresh, retry/rate-limit behavior, request execution, and payload parsing run through a dedicated Strava adapter rather than repository/application logic.
   2. Token persistence is atomic and single-writer safe under concurrent refresh attempts.
   3. Incremental sync resumes from checkpoints after 429/network/partial-fetch interruptions without corrupting mirror state.
-  4. Mirror refresh runs automatically at least daily, and request-time freshness checks can signal/schedule refresh without exposing sync as a user action.
+  4. Mirror refresh runtime supports same-day idempotent refresh when internally requested, and request-time freshness checks can signal/schedule first-use refresh without exposing sync as a user action.
 **Plans**: TBD
 
 ### Phase 4: Application Services & CLI Refit
@@ -72,7 +72,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Operator can get daily report, weekly summary, recent workouts, and per-workout analytics from local mirror data without live Strava calls at request time.
   2. Returned analytics include freshness/completeness/warning metadata and recommendation rationale.
   3. CLI exposes report/weekly/workouts/freshness plus sync/backfill/sql/raw/debug operations through the new service stack, with documented replacement mapping for retained capabilities.
-  4. Freshness logic is enforced in application services (not interface glue), including stale-data signaling behavior.
+  4. Freshness logic is enforced in application services (not interface glue), including factual metadata and lazy first-use refresh signaling behavior.
 **Plans**: TBD
 
 ### Phase 5: MCP HTTP Surface & Docker Hardening
