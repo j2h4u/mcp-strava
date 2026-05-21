@@ -110,10 +110,15 @@ def sync_summaries(repo, transport, now_iso: str) -> tuple[int, int]:
     return seen, new
 
 
-def sync_streams(repo, transport, since: str | None = None) -> int:
+def sync_streams(
+    repo,
+    transport,
+    since: str | None = None,
+    checkpoint_stage: Stage = Stage.STREAMS,
+) -> int:
     fetched = 0
     for activity in repo.activities_missing_streams(since):
-        repo.set_checkpoint(Stage.STREAMS.value, str(activity.id))
+        repo.set_checkpoint(checkpoint_stage.value, str(activity.id))
         response = transport.fetch(f"/activities/{activity.id}/streams?keys={STREAM_KEYS}&key_by_type=true")
         if isinstance(response.data, dict):
             _insert_streams(repo, activity.id, response.data)
@@ -121,10 +126,15 @@ def sync_streams(repo, transport, since: str | None = None) -> int:
     return fetched
 
 
-def sync_details(repo, transport, since: str | None = None) -> int:
+def sync_details(
+    repo,
+    transport,
+    since: str | None = None,
+    checkpoint_stage: Stage = Stage.DETAILS,
+) -> int:
     fetched = 0
     for activity in repo.activities_missing_details(since):
-        repo.set_checkpoint(Stage.DETAILS.value, str(activity.id))
+        repo.set_checkpoint(checkpoint_stage.value, str(activity.id))
         response = transport.fetch(f"/activities/{activity.id}")
         if isinstance(response.data, dict):
             repo.update_activity_detail(activity.id, json.dumps(response.data))

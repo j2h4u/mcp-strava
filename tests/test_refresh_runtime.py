@@ -217,6 +217,31 @@ def test_run_once_failure_persists_backoff_and_resumes_per_D09_D13(tmp_path):
     assert skipped.reason == "refresh_delayed"
 
 
+def test_run_once_after_stream_failure_resumes_without_summary_page_walk_per_D09(tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, Stage, run_once
+
+    clock = FakeClock()
+    policy = RefreshPolicy()
+    with _repo(tmp_path) as repo:
+        failed = run_once(
+            repo,
+            FakeStravaTransport({"/streams": StravaUnavailable("rate_limited")}),
+            policy,
+            clock,
+            FakeSleeper(clock),
+        )
+        failed_state = repo.get_refresh_state()
+        clock.advance(policy.backoff_seconds_on_rate_limit_default + 1)
+        resumed_transport = FakeStravaTransport()
+        resumed = run_once(repo, resumed_transport, policy, clock, FakeSleeper(clock))
+
+    assert failed.status == "failed"
+    assert failed_state.checkpoint_stage == Stage.STREAMS.value
+    assert resumed.status == "ok"
+    assert resumed_transport.calls_by_path["/athlete/activities?per_page=100&page=1"] == 0
+    assert resumed_transport.calls_by_path["/activities/500/streams?keys=time,heartrate,velocity_smooth,altitude,cadence,latlng,grade_smooth,grade_adjusted_speed,grade_adjusted_distance,moving&key_by_type=true"] == 1
+
+
 def test_run_backfill_skips_summaries_and_kudos_per_D16(tmp_path):
     from mcp_strava.refresh import RefreshPolicy, Stage, run_backfill
 
@@ -243,6 +268,62 @@ def test_run_backfill_skips_summaries_and_kudos_per_D16(tmp_path):
     assert not any(path.startswith("/athlete/activities") for path in transport.calls_by_path)
     assert not any("kudos" in path for path in transport.calls_by_path)
     assert "refresh-backfill"
+
+
+def test_run_backfill_failure_preserves_backfill_checkpoint_per_D16(tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, Stage, run_backfill
+
+    clock = FakeClock()
+    with _repo(tmp_path) as repo:
+        repo.upsert_activity_summary(
+            activity_id=500,
+            date="2026-05-21T06:00:00Z",
+            name="Needs Backfill",
+            sport_type="Run",
+            distance=1000,
+            moving_time=600,
+            elapsed_time=620,
+            total_elevation_gain=10,
+            summary_json="{}",
+            synced_at="2026-05-21T07:00:00Z",
+        )
+        result = run_backfill(
+            repo,
+            FakeStravaTransport({"/streams": StravaUnavailable("rate_limited")}),
+            RefreshPolicy(),
+            clock,
+            FakeSleeper(clock),
+            since="2026-05-20",
+        )
+        state = repo.get_refresh_state()
+
+    assert result.status == "failed"
+    assert state.checkpoint_stage == Stage.STREAMS_BACKFILL.value
+
+
+def test_run_once_after_complete_backfill_starts_daily_refresh_per_D16(tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, run_backfill, run_once
+
+    clock = FakeClock()
+    with _repo(tmp_path) as repo:
+        repo.upsert_activity_summary(
+            activity_id=500,
+            date="2026-05-21T06:00:00Z",
+            name="Needs Backfill",
+            sport_type="Run",
+            distance=1000,
+            moving_time=600,
+            elapsed_time=620,
+            total_elevation_gain=10,
+            summary_json="{}",
+            synced_at="2026-05-21T07:00:00Z",
+        )
+        assert run_backfill(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock)).status == "ok"
+        daily_transport = FakeStravaTransport()
+        result = run_once(repo, daily_transport, RefreshPolicy(), clock, FakeSleeper(clock))
+
+    assert result.status == "ok"
+    assert daily_transport.calls_by_path["/athlete/activities?per_page=100&page=1"] == 1
 
 
 def test_freshness_evaluate_all_states_per_D05(tmp_path):

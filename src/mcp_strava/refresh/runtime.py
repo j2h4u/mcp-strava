@@ -7,8 +7,17 @@ from datetime import datetime, timedelta, timezone
 
 from mcp_strava.adapters.strava import StravaUnavailable
 from mcp_strava.refresh import _sync_ops
-from mcp_strava.refresh.checkpoints import Stage, is_backfill_stage
+from mcp_strava.refresh.checkpoints import Stage, is_active_backfill_stage
 from mcp_strava.refresh.policy import RefreshPolicy
+
+
+_DAILY_STAGE_ORDER = (
+    Stage.SUMMARIES,
+    Stage.STREAMS,
+    Stage.DETAILS,
+    Stage.SCHEMA_VALIDATE,
+    Stage.KUDOS,
+)
 
 
 @dataclass(frozen=True)
@@ -44,22 +53,34 @@ def run_once(
         state = repo.get_refresh_state()
         if state.backoff_until and state.backoff_until > now_iso:
             return RefreshSkipped("refresh_delayed")
-        if is_backfill_stage(state.checkpoint_stage):
+        if is_active_backfill_stage(state.checkpoint_stage):
             raise RuntimeError("incompatible checkpoint - backfill in progress, run run_backfill")
         if not force and state.last_success_at and state.last_success_at[:10] == now_iso[:10] and state.checkpoint_stage == Stage.COMPLETE.value:
             return RefreshSkipped("already_complete")
 
+        start_index = _daily_start_index(state.checkpoint_stage)
         repo.record_refresh_attempt(now_iso)
-        repo.set_checkpoint(Stage.SUMMARIES.value, None)
-        activities_seen, activities_new = _sync_ops.sync_summaries(repo, transport, now_iso)
-        repo.set_checkpoint(Stage.STREAMS.value, None)
-        streams_fetched = _sync_ops.sync_streams(repo, transport)
-        repo.set_checkpoint(Stage.DETAILS.value, None)
-        details_fetched = _sync_ops.sync_details(repo, transport)
-        repo.set_checkpoint(Stage.SCHEMA_VALIDATE.value, None)
-        _sync_ops.schema_validate(repo)
-        repo.set_checkpoint(Stage.KUDOS.value, None)
-        kudos_fetched = _sync_ops._sync_kudos(repo, transport, now_iso)
+        activities_seen = 0
+        activities_new = 0
+        streams_fetched = 0
+        details_fetched = 0
+        kudos_fetched = 0
+
+        if start_index <= _stage_index(Stage.SUMMARIES):
+            repo.set_checkpoint(Stage.SUMMARIES.value, None)
+            activities_seen, activities_new = _sync_ops.sync_summaries(repo, transport, now_iso)
+        if start_index <= _stage_index(Stage.STREAMS):
+            repo.set_checkpoint(Stage.STREAMS.value, None)
+            streams_fetched = _sync_ops.sync_streams(repo, transport)
+        if start_index <= _stage_index(Stage.DETAILS):
+            repo.set_checkpoint(Stage.DETAILS.value, None)
+            details_fetched = _sync_ops.sync_details(repo, transport)
+        if start_index <= _stage_index(Stage.SCHEMA_VALIDATE):
+            repo.set_checkpoint(Stage.SCHEMA_VALIDATE.value, None)
+            _sync_ops.schema_validate(repo)
+        if start_index <= _stage_index(Stage.KUDOS):
+            repo.set_checkpoint(Stage.KUDOS.value, None)
+            kudos_fetched = _sync_ops._sync_kudos(repo, transport, now_iso)
         repo.set_checkpoint(Stage.COMPLETE.value, None)
         repo.record_refresh_success(now_iso)
         repo.append_sync_log(
@@ -101,9 +122,9 @@ def run_backfill(
             return RefreshSkipped("refresh_delayed")
         repo.record_refresh_attempt(now_iso)
         repo.set_checkpoint(Stage.STREAMS_BACKFILL.value, None)
-        streams_fetched = _sync_ops.sync_streams(repo, transport, since)
+        streams_fetched = _sync_ops.sync_streams(repo, transport, since, Stage.STREAMS_BACKFILL)
         repo.set_checkpoint(Stage.DETAILS_BACKFILL.value, None)
-        details_fetched = _sync_ops.sync_details(repo, transport, since)
+        details_fetched = _sync_ops.sync_details(repo, transport, since, Stage.DETAILS_BACKFILL)
         repo.set_checkpoint(Stage.COMPLETE_BACKFILL.value, None)
         repo.append_sync_log(
             timestamp=now_iso,
@@ -135,6 +156,17 @@ def _backoff_seconds(reason: str, policy: RefreshPolicy) -> int:
     if reason == "token_unavailable":
         return policy.backoff_seconds_on_token_failure
     return policy.backoff_seconds_on_network
+
+
+def _stage_index(stage: Stage) -> int:
+    return _DAILY_STAGE_ORDER.index(stage)
+
+
+def _daily_start_index(stage: str | None) -> int:
+    for index, candidate in enumerate(_DAILY_STAGE_ORDER):
+        if stage == candidate.value:
+            return index
+    return 0
 
 
 def _now_dt(clock) -> datetime:
