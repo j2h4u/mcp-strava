@@ -3,8 +3,10 @@
 import sys
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from mcp_strava.constants import Config
+from mcp_strava.adapters.sqlite.migrations import run_migrations, run_preflight
 from mcp_strava.db import (
     DbConn, refresh_token,
     api_request, get_daily_trimp_history
@@ -17,6 +19,7 @@ from mcp_strava.types import (
 )
 from mcp_strava.sync import sync_activities, backfill_activities
 from mcp_strava.trends import compute_trends
+from mcp_strava.settings import get_settings
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -300,6 +303,60 @@ def cmd_kudos(args):
         print(f"  {r['firstname']} {r['lastname']}")
 
 
+def _preflight_to_dict(report):
+    return {
+        "path": str(report.path),
+        "user_version": report.user_version,
+        "row_counts": report.row_counts,
+        "integrity_result": report.integrity_result,
+    }
+
+
+def cmd_db_preflight(args):
+    _ = args
+    report = run_preflight(get_settings().database_path)
+    print(json.dumps({"status": "ok", "preflight": _preflight_to_dict(report)}, indent=2, ensure_ascii=False))
+
+
+def cmd_db_check(args):
+    _ = args
+    report = run_preflight(get_settings().database_path)
+    print(json.dumps({"status": "ok", "check": _preflight_to_dict(report)}, indent=2, ensure_ascii=False))
+
+
+def cmd_db_migrate(args):
+    _ = args
+    db_path = Path(get_settings().database_path)
+    backups_dir = db_path.parent / "backups"
+    before = set(backups_dir.glob("strava-*.db")) if backups_dir.exists() else set()
+    post = run_migrations(db_path)
+    after = set(backups_dir.glob("strava-*.db")) if backups_dir.exists() else set()
+    new_files = sorted(after - before, key=lambda p: p.name)
+    backup_path = new_files[-1] if new_files else (sorted(after, key=lambda p: p.name)[-1] if after else None)
+
+    backup_status = None
+    if backup_path is not None:
+        st = backup_path.stat()
+        backup_status = {
+            "path": str(backup_path),
+            "openable": True,
+            "size_bytes": st.st_size,
+            "mode_octal": oct(st.st_mode & 0o777),
+        }
+
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "migration": _preflight_to_dict(post),
+                "backup": backup_status,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════════════════════════════
@@ -319,6 +376,9 @@ COMMANDS = {
     'raw': cmd_strava_raw,
     'log': cmd_log,
     'kudos': cmd_kudos,
+    'db-preflight': cmd_db_preflight,
+    'db-check': cmd_db_check,
+    'db-migrate': cmd_db_migrate,
 }
 
 

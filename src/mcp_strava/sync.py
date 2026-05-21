@@ -7,7 +7,10 @@ import socket
 import urllib.error
 from datetime import datetime
 
-from mcp_strava.db import DbConn, init_db, load_env, api_request
+from mcp_strava.adapters.sqlite.migrations import run_preflight
+from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+from mcp_strava.db import DbConn, load_env, api_request
+from mcp_strava.settings import get_settings
 from mcp_strava.types import parse_strava_activity, parse_strava_streams
 from mcp_strava.sports import detect_new_types
 
@@ -53,38 +56,29 @@ class RateLimiter:
         self.total += 1
 
 
-def _insert_streams(conn, act_id, data):
+def _insert_streams(repo, act_id, data):
     """Parse streams API response and insert into DB in batches."""
     streams = parse_strava_streams(data)
     n = len(streams.time.data)
     if n == 0:
         return 0
-    batch_size = 5000
-    for start in range(0, n, batch_size):
-        end = min(start + batch_size, n)
-        rows = []
-        for idx in range(start, end):
-            rows.append((
-                act_id,
-                streams.time.data[idx],
-                streams.heartrate.data[idx] if streams.heartrate and idx < len(streams.heartrate.data) else None,
-                streams.velocity_smooth.data[idx] if streams.velocity_smooth and idx < len(streams.velocity_smooth.data) else None,
-                streams.altitude.data[idx] if streams.altitude and idx < len(streams.altitude.data) else None,
-                streams.cadence.data[idx] if streams.cadence and idx < len(streams.cadence.data) else None,
-                json.dumps(streams.latlng.data[idx]) if streams.latlng and idx < len(streams.latlng.data) else None,
-                streams.grade_smooth.data[idx] if streams.grade_smooth and idx < len(streams.grade_smooth.data) else None,
-                streams.grade_adjusted_speed.data[idx] if streams.grade_adjusted_speed and idx < len(streams.grade_adjusted_speed.data) else None,
-                streams.grade_adjusted_distance.data[idx] if streams.grade_adjusted_distance and idx < len(streams.grade_adjusted_distance.data) else None,
-                streams.moving.data[idx] if streams.moving and idx < len(streams.moving.data) else None,
-            ))
-        conn.executemany("""
-            INSERT OR REPLACE INTO streams
-            (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-             latlng, grade, gap_speed, gap_distance, is_moving)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, rows)
-        conn.commit()
-    return n
+    rows = []
+    for idx in range(n):
+        rows.append(
+            {
+                "time_offset": streams.time.data[idx],
+                "heartrate": streams.heartrate.data[idx] if streams.heartrate and idx < len(streams.heartrate.data) else None,
+                "velocity": streams.velocity_smooth.data[idx] if streams.velocity_smooth and idx < len(streams.velocity_smooth.data) else None,
+                "altitude": streams.altitude.data[idx] if streams.altitude and idx < len(streams.altitude.data) else None,
+                "cadence": streams.cadence.data[idx] if streams.cadence and idx < len(streams.cadence.data) else None,
+                "latlng": json.dumps(streams.latlng.data[idx]) if streams.latlng and idx < len(streams.latlng.data) else None,
+                "grade": streams.grade_smooth.data[idx] if streams.grade_smooth and idx < len(streams.grade_smooth.data) else None,
+                "gap_speed": streams.grade_adjusted_speed.data[idx] if streams.grade_adjusted_speed and idx < len(streams.grade_adjusted_speed.data) else None,
+                "gap_distance": streams.grade_adjusted_distance.data[idx] if streams.grade_adjusted_distance and idx < len(streams.grade_adjusted_distance.data) else None,
+                "is_moving": streams.moving.data[idx] if streams.moving and idx < len(streams.moving.data) else None,
+            }
+        )
+    return repo.insert_stream_rows_chunked(act_id, rows, chunk_size=5000)
 
 
 def _fetch_with_retry(path, token, limiter, label=""):
@@ -134,9 +128,10 @@ def sync_activities(quick=True):
     quick=True (default): uses after= to fetch only recent activities (~1-2 API calls).
     quick=False: full pagination from page 1 (~6 API calls) — catches back-dated uploads.
     """
+    run_preflight(get_settings().database_path)
     t0 = time.time()
     with DbConn() as conn:
-        init_db(conn)
+        repo = SQLiteRepository.from_connection(conn)
         token = load_env().get('STRAVA_ACCESS_TOKEN', '')
         limiter = RateLimiter()
 
@@ -175,26 +170,22 @@ def sync_activities(quick=True):
             added = 0
             for raw in data:
                 act = parse_strava_activity(raw)
-                existing = conn.execute("SELECT id FROM activities WHERE id=?", (act.id,)).fetchone()
-                if existing:
-                    conn.execute("""
-                        UPDATE activities SET name=?, sport_type=?, distance=?, moving_time=?,
-                        elapsed_time=?, total_elevation_gain=?, summary_json=?, synced_at=?
-                        WHERE id=?
-                    """, (act.name, act.sport_type, act.distance, act.moving_time,
-                          act.elapsed_time, act.total_elevation_gain, json.dumps(raw),
-                          datetime.now().isoformat(), act.id))
-                else:
-                    conn.execute("""
-                        INSERT INTO activities (id, date, name, sport_type, distance, moving_time,
-                        elapsed_time, total_elevation_gain, summary_json, synced_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (act.id, act.start_date_local[:10], act.name, act.sport_type, act.distance,
-                          act.moving_time, act.elapsed_time, act.total_elevation_gain, json.dumps(raw),
-                          datetime.now().isoformat()))
+                existing = repo.activity_by_id(act.id)
+                repo.upsert_activity_summary(
+                    activity_id=act.id,
+                    date=act.start_date_local[:10],
+                    name=act.name,
+                    sport_type=act.sport_type,
+                    distance=act.distance,
+                    moving_time=act.moving_time,
+                    elapsed_time=act.elapsed_time,
+                    total_elevation_gain=act.total_elevation_gain,
+                    summary_json=json.dumps(raw),
+                    synced_at=datetime.now().isoformat(),
+                )
+                if not existing:
                     added += 1
             activities_new += added
-            conn.commit()
             print(f"  Page {page}: {len(data)} activities, {added} new", file=sys.stderr)
             if len(data) < 100:
                 break
@@ -212,11 +203,10 @@ def sync_activities(quick=True):
                 f"/activities/{row['id']}/streams?keys={STREAM_KEYS}&key_by_type=true",
                 token, limiter, row['name'])
             if data and isinstance(data, dict):
-                _insert_streams(conn, row['id'], data)
+                _insert_streams(repo, row['id'], data)
                 streams_fetched += 1
             elif data:
                 print(f"  Unexpected streams response for {row['name']}: {type(data).__name__}", file=sys.stderr)
-        conn.commit()
 
         # Phase 3: Sync details
         print("--- Phase 3: Details ---", file=sys.stderr)
@@ -226,11 +216,10 @@ def sync_activities(quick=True):
         for row in missing_detail:
             data = _fetch_with_retry(f"/activities/{row['id']}", token, limiter, row['name'])
             if data and isinstance(data, dict):
-                conn.execute("UPDATE activities SET detail_json=? WHERE id=?", (json.dumps(data), row['id']))
+                repo.update_activity_detail(row['id'], json.dumps(data))
                 details_fetched += 1
             elif data:
                 print(f"  Unexpected detail response for {row['name']}: {type(data).__name__}", file=sys.stderr)
-        conn.commit()
 
         # Phase 4: Schema validation
         sport_types = [r['sport_type'] for r in conn.execute(
@@ -243,21 +232,26 @@ def sync_activities(quick=True):
         kudos_fetched = _sync_kudos(conn, token, limiter)
 
         duration_ms = int((time.time() - t0) * 1000)
-        conn.execute("""
-            INSERT INTO sync_log (timestamp, status, activities_seen, activities_new,
-                                  streams_fetched, details_fetched, kudos_fetched, api_calls)
-            VALUES (?, 'ok', ?, ?, ?, ?, ?, ?)
-        """, (datetime.now().isoformat(), activities_seen, activities_new,
-              streams_fetched, details_fetched, kudos_fetched, limiter.total))
-        conn.commit()
+        repo.append_sync_log(
+            timestamp=datetime.now().isoformat(),
+            status="ok",
+            activities_seen=activities_seen,
+            activities_new=activities_new,
+            streams_fetched=streams_fetched,
+            details_fetched=details_fetched,
+            api_calls=limiter.total,
+            error=None,
+            kudos_fetched=kudos_fetched,
+        )
 
         print(f"Sync done. {limiter.total} API calls used.", file=sys.stderr)
 
 
 def backfill_activities():
     """Incremental backfill: fetch missing GAP streams + details only."""
+    run_preflight(get_settings().database_path)
     with DbConn() as conn:
-        init_db(conn)
+        repo = SQLiteRepository.from_connection(conn)
         token = load_env().get('STRAVA_ACCESS_TOKEN', '')
         limiter = RateLimiter()
 
@@ -291,8 +285,8 @@ def backfill_activities():
                 f"/activities/{act_id}/streams?keys={STREAM_KEYS}&key_by_type=true",
                 token, limiter, f"{name} streams")
             if data and isinstance(data, dict):
-                conn.execute("DELETE FROM streams WHERE activity_id=?", (act_id,))
-                n = _insert_streams(conn, act_id, data)
+                repo.delete_stream_rows_for_activity(act_id)
+                n = _insert_streams(repo, act_id, data)
             else:
                 if data:
                     print(f"  Unexpected streams response for {name}: {type(data).__name__}", file=sys.stderr)
@@ -303,15 +297,13 @@ def backfill_activities():
             act_id, name, sport = row['id'], row['name'], row['sport_type']
             data = _fetch_with_retry(f"/activities/{act_id}", token, limiter, f"{name} detail")
             if data and isinstance(data, dict):
-                conn.execute("UPDATE activities SET detail_json=? WHERE id=?", (json.dumps(data), act_id))
+                repo.update_activity_detail(act_id, json.dumps(data))
                 n = 1
             else:
                 if data:
                     print(f"  Unexpected detail response for {name}: {type(data).__name__}", file=sys.stderr)
                 n = 0
             print(f"  [{i}/{total_detail}] {name} ({sport}): detail {'OK' if n else 'FAIL'}", file=sys.stderr)
-
-        conn.commit()
         print(f"Backfill done. {limiter.total} API calls used.", file=sys.stderr)
 
 
@@ -330,6 +322,7 @@ def _sync_kudos(conn, token, limiter, window_days=None):
         params.append(f'-{window_days} days')
     query += " ORDER BY a.date DESC"
 
+    repo = SQLiteRepository.from_connection(conn)
     rows = conn.execute(query, params).fetchall()
 
     if not rows:
@@ -344,13 +337,11 @@ def _sync_kudos(conn, token, limiter, window_days=None):
         if not data or not isinstance(data, list):
             continue
         for athlete in data:
-            conn.execute("""
-                INSERT OR REPLACE INTO kudos (activity_id, firstname, lastname, fetched_at)
-                VALUES (?, ?, ?, ?)
-            """, (row['id'],
-                  athlete.get('firstname', ''),
-                  athlete.get('lastname', ''),
-                  datetime.now().isoformat()))
+            repo.upsert_kudos(
+                row['id'],
+                athlete.get('firstname', ''),
+                athlete.get('lastname', ''),
+                datetime.now().isoformat(),
+            )
         fetched += 1
-    conn.commit()
     return fetched

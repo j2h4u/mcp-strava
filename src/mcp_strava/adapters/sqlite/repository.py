@@ -564,6 +564,10 @@ class SQLiteRepository:
 
         return total
 
+    def delete_stream_rows_for_activity(self, activity_id: int) -> None:
+        self.conn.execute("DELETE FROM streams WHERE activity_id = ?", (activity_id,))
+        self.conn.commit()
+
     # Zones
     def latest_athlete_zones(self) -> str | None:
         row = self.conn.execute(
