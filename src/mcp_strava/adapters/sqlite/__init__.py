@@ -8,6 +8,7 @@ from mcp_strava.adapters.sqlite.migrations import (
     run_migrations,
     run_preflight,
 )
+from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 
 __all__ = [
     "create_empty_mirror",
@@ -18,4 +19,5 @@ __all__ = [
     "run_migrations",
     "ParitySnapshot",
     "evaluate_parity",
+    "SQLiteRepository",
 ]

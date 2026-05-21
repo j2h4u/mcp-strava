@@ -482,6 +482,73 @@ class WeeklyDigest:
     this_week: list[dict] # activities this week
 
 
+# ─── Repository Contracts ───
+
+
+@dataclass
+class RepositoryActivityRow:
+    """SQLite activity row exposed by repository methods."""
+
+    id: int
+    date: str
+    name: str
+    sport_type: str
+    distance: float
+    moving_time: int
+    elapsed_time: int
+    total_elevation_gain: float
+    summary_json: str | None
+    detail_json: str | None
+    synced_at: str | None
+
+
+@dataclass
+class RepositorySyncLogEntry:
+    """Sync log entry returned by repository methods."""
+
+    timestamp: str
+    status: str
+    activities_seen: int | None = None
+    activities_new: int | None = None
+    streams_fetched: int | None = None
+    details_fetched: int | None = None
+    api_calls: int | None = None
+    error: str | None = None
+    kudos_fetched: int | None = None
+
+
+@dataclass
+class RepositoryPreflightResult:
+    """Repository-level preflight summary shape."""
+
+    user_version: int
+    row_counts: dict[str, int] = field(default_factory=dict)
+    integrity_result: str = "unknown"
+
+
+@dataclass
+class RepositoryMigrationResult:
+    """Repository-level migration status shape."""
+
+    applied: bool
+    from_version: int
+    to_version: int
+    backup_path: str | None = None
+
+
+@dataclass
+class RepositoryDailyLoadStatus:
+    """Daily load status split between observed/effective values."""
+
+    day: str
+    status: str  # REST | UNKNOWN | PARTIAL | OBSERVED
+    observed_trimp: float
+    effective_trimp: float
+    activity_count: int = 0
+    stream_points: int = 0
+    heartrate_points: int = 0
+
+
 # ─── Report ───
 
 
