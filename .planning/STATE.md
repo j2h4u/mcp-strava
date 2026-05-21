@@ -2,15 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-05-21T15:35:23.219Z"
+status: ready_to_plan
+last_updated: 2026-05-21T16:00:10.583Z
 last_activity: 2026-05-21 -- Phase 03 execution started
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 11
-  completed_plans: 8
+  completed_plans: 11
   percent: 40
+stopped_at: Phase 03 complete (4/4) — ready to discuss Phase 4
 ---
 
 # Project State
@@ -20,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-20)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Phase 03 — strava-adapter-refresh-runtime
+**Current focus:** Phase 4 — application services & cli refit
 
 ## Current Position
 
-Phase: 03 (strava-adapter-refresh-runtime) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 03
-Last activity: 2026-05-21 -- Phase 03 execution started
+Phase: 4
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-21
 
 Progress: [██████████] 100%
 
@@ -35,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 7
+- Total plans completed: 11
 - Average duration: 0 min
 - Total execution time: 0.0 hours
 
@@ -45,6 +46,7 @@ Progress: [██████████] 100%
 |-------|-------|-------|----------|
 | 01 | 3 | - | - |
 | 02 | 4 | - | - |
+| 03 | 4 | - | - |
 
 **Recent Trend:**
 

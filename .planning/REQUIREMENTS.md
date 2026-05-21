@@ -28,9 +28,9 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 ### Strava Adapter
 
-- [ ] **STRAVA-01**: Strava OAuth refresh, token persistence, HTTP requests, retry policy, and rate-limit handling live in a Strava adapter outside the repository layer
-- [ ] **STRAVA-02**: Token persistence uses an isolated provider with atomic write and single-writer protection
-- [ ] **STRAVA-03**: Incremental sync can resume safely from checkpoints after rate limits, network failures, or partial fetches
+- [x] **STRAVA-01**: Strava OAuth refresh, token persistence, HTTP requests, retry policy, and rate-limit handling live in a Strava adapter outside the repository layer
+- [x] **STRAVA-02**: Token persistence uses an isolated provider with atomic write and single-writer protection
+- [x] **STRAVA-03**: Incremental sync can resume safely from checkpoints after rate limits, network failures, or partial fetches
 
 ### Application Services
 
@@ -54,9 +54,9 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 ### Refresh Runtime
 
-- [ ] **REFRESH-01**: Mirror refresh runs automatically at least once per day through a background or scheduled runtime path
-- [ ] **REFRESH-02**: Request-time freshness checks can mark data stale and schedule or signal refresh work without making MCP clients trigger sync
-- [ ] **REFRESH-03**: Background refresh uses locks/checkpoints so concurrent CLI, MCP, and refresh reads do not corrupt SQLite state
+- [x] **REFRESH-01**: Mirror refresh runs automatically at least once per day through a background or scheduled runtime path
+- [x] **REFRESH-02**: Request-time freshness checks can mark data stale and schedule or signal refresh work without making MCP clients trigger sync
+- [x] **REFRESH-03**: Background refresh uses locks/checkpoints so concurrent CLI, MCP, and refresh reads do not corrupt SQLite state
 
 ### Docker Readiness
 
@@ -67,7 +67,7 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 ### Testing
 
 - [x] **TEST-01**: Tests cover migration backup/preflight/post-check behavior against a copied SQLite database
-- [ ] **TEST-02**: Tests cover Strava rate-limit/retry/checkpoint behavior without live Strava API calls
+- [x] **TEST-02**: Tests cover Strava rate-limit/retry/checkpoint behavior without live Strava API calls
 - [ ] **TEST-03**: Tests cover MCP tool allowlist and prove forbidden sync/admin/debug tools are absent
 - [ ] **TEST-04**: Tests cover freshness metadata, missing-HR handling, and core daily/weekly report parity
 
@@ -119,9 +119,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REPO-01 | Phase 2 | Complete |
 | REPO-02 | Phase 2 | Complete |
 | REPO-03 | Phase 2 | Complete |
-| STRAVA-01 | Phase 3 | Pending |
-| STRAVA-02 | Phase 3 | Pending |
-| STRAVA-03 | Phase 3 | Pending |
+| STRAVA-01 | Phase 3 | Complete |
+| STRAVA-02 | Phase 3 | Complete |
+| STRAVA-03 | Phase 3 | Complete |
 | APP-01 | Phase 4 | Pending |
 | APP-02 | Phase 4 | Pending |
 | APP-03 | Phase 4 | Pending |
@@ -133,14 +133,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MCP-02 | Phase 5 | Pending |
 | MCP-03 | Phase 5 | Pending |
 | MCP-04 | Phase 5 | Pending |
-| REFRESH-01 | Phase 3 | Pending |
-| REFRESH-02 | Phase 3 | Pending |
-| REFRESH-03 | Phase 3 | Pending |
+| REFRESH-01 | Phase 3 | Complete |
+| REFRESH-02 | Phase 3 | Complete |
+| REFRESH-03 | Phase 3 | Complete |
 | DOCKER-01 | Phase 5 | Pending |
 | DOCKER-02 | Phase 5 | Pending |
 | DOCKER-03 | Phase 5 | Pending |
 | TEST-01 | Phase 2 | Complete |
-| TEST-02 | Phase 3 | Pending |
+| TEST-02 | Phase 3 | Complete |
 | TEST-03 | Phase 5 | Pending |
 | TEST-04 | Phase 4 | Pending |
 
