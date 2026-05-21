@@ -103,6 +103,23 @@ class SQLiteRepository:
         ).fetchone()
         return row["day"] if row and row["day"] else None
 
+    def latest_activity_at(self) -> str | None:
+        """Return the newest local activity timestamp."""
+        row = self.conn.execute("SELECT MAX(date) as latest FROM activities").fetchone()
+        return row["latest"] if row and row["latest"] else None
+
+    def latest_activity_id(self) -> int | None:
+        """Return the id for the newest local activity by activity date."""
+        row = self.conn.execute(
+            """
+            SELECT id
+            FROM activities
+            ORDER BY date DESC, id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        return int(row["id"]) if row and row["id"] is not None else None
+
     def upsert_activity_summary(
         self,
         *,
