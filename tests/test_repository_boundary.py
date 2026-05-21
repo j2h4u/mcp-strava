@@ -103,6 +103,43 @@ def _guard_direct_sqlite_boundary() -> list[str]:
     return violations
 
 
+def _guard_load_paths_do_not_use_raw_activity_stream_sql() -> list[str]:
+    repo_root = Path(__file__).resolve().parents[1]
+    files = [
+        repo_root / "src" / "mcp_strava" / "report.py",
+        repo_root / "src" / "mcp_strava" / "analytics.py",
+        repo_root / "src" / "mcp_strava" / "trends.py",
+        repo_root / "src" / "mcp_strava" / "metrics.py",
+    ]
+    violations: list[str] = []
+
+    for py_file in files:
+        rel = py_file.relative_to(repo_root).as_posix()
+        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            if not (isinstance(fn, ast.Attribute) and fn.attr == "execute"):
+                continue
+            if not node.args:
+                continue
+            first = node.args[0]
+            sql_literal = None
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                sql_literal = first.value
+            elif isinstance(first, ast.JoinedStr):
+                sql_literal = "".join(
+                    part.value for part in first.values if isinstance(part, ast.Constant) and isinstance(part.value, str)
+                )
+            if not sql_literal:
+                continue
+            lower_sql = " ".join(sql_literal.lower().split())
+            if "from streams" in lower_sql or "from activities" in lower_sql:
+                violations.append(f"{rel}:{node.lineno}")
+    return violations
+
+
 def test_repository_connection_reports_wal_and_busy_timeout(tmp_path: Path) -> None:
     fixture = tmp_path / "repo.db"
     _create_fixture_db(fixture)
@@ -200,4 +237,9 @@ def test_repository_module_does_not_call_strava_network(monkeypatch: pytest.Monk
 
 def test_ast_guard_blocks_direct_sqlite_outside_allowlist() -> None:
     violations = _guard_direct_sqlite_boundary()
+    assert violations == []
+
+
+def test_load_paths_use_repository_instead_of_raw_activity_stream_sql() -> None:
+    violations = _guard_load_paths_do_not_use_raw_activity_stream_sql()
     assert violations == []
