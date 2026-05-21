@@ -167,12 +167,12 @@ def rolling_eff(acts_by_date, end_date, window_days, sports=None):
 
 # ─── Weekly Digest ───
 
-def weekly_digest(conn):
+def weekly_digest(conn, today=None):
     """Compute the full weekly analytics digest.
     
     Returns WeeklyDigest with: period, current_state (load/efficiency/volume), trends, yoy, context, this_week.
     """
-    today = datetime.now().date()
+    today = today or datetime.now().date()
     repo = SQLiteRepository.from_connection(conn)
     
     # 1) Daily TRIMP series (full history, gaps filled with 0)
