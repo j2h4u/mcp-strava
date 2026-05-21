@@ -3,6 +3,7 @@ import subprocess
 import sys
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
@@ -125,6 +126,61 @@ def test_cli_has_operator_only_sql_and_explicit_db_safety_commands() -> None:
     assert "db-preflight" in commands
     assert "db-check" in commands
     assert "db-migrate" in commands
+    assert "db-refresh" in commands
+
+
+def test_cli_includes_db_refresh_command() -> None:
+    assert "db-refresh" in _command_registry_names()
+
+
+def test_cli_db_refresh_accepts_force_flag_per_D15(monkeypatch, tmp_path: Path) -> None:
+    import mcp_strava.cli as cli
+    from mcp_strava.refresh.runtime import RefreshResult
+
+    calls: list[dict] = []
+
+    class FakeDbConn:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_run_once(repo, transport, policy, clock, sleeper, **kwargs):
+        calls.append(
+            {
+                "repo": repo,
+                "transport": transport,
+                "policy": policy,
+                "clock": clock,
+                "sleeper": sleeper,
+                **kwargs,
+            }
+        )
+        return RefreshResult(status="ok", mode=kwargs["mode"], checkpoint_stage="complete")
+
+    monkeypatch.setattr(
+        cli,
+        "build_refresh_collaborators",
+        lambda: (
+            SimpleNamespace(database_path=tmp_path / "strava.db"),
+            "clock",
+            "sleeper",
+            "transport",
+            "policy",
+        ),
+    )
+    monkeypatch.setattr(cli, "run_preflight", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli, "DbConn", FakeDbConn)
+    monkeypatch.setattr(cli.SQLiteRepository, "from_connection", staticmethod(lambda _conn: "repo"))
+    monkeypatch.setattr(cli.refresh_runtime, "run_once", fake_run_once)
+
+    cli.cmd_db_refresh(["--force"])
+
+    assert "--force" in _source_text("src/mcp_strava/cli.py")
+    assert calls
+    assert calls[0]["force"] is True
+    assert calls[0]["mode"] == "daily"
 
 
 def test_cmd_sql_is_not_reused_as_service_or_mcp_surface() -> None:
@@ -147,4 +203,221 @@ def test_direct_sqlite_access_stays_inside_allowed_boundaries() -> None:
 def test_sync_never_calls_init_db_and_db_init_db_has_no_ddl() -> None:
     sync_source = _source_text("src/mcp_strava/sync.py")
     assert "init_db(" not in sync_source
+    assert "class RateLimiter" not in sync_source
+    assert "def _fetch_with_retry" not in sync_source
     assert _assert_no_schema_ddl_in_init_db() == []
+
+
+def _import_violations(rel_path: str, disallowed_prefixes: tuple[str, ...]) -> list[str]:
+    root = Path(__file__).resolve().parents[1]
+    py_file = root / rel_path
+    module = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+    violations: list[str] = []
+    for node in ast.walk(module):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith(disallowed_prefixes):
+                    violations.append(f"{rel_path}:{node.lineno} import {alias.name}")
+        elif isinstance(node, ast.ImportFrom):
+            imported_module = node.module or ""
+            if imported_module.startswith(disallowed_prefixes):
+                violations.append(f"{rel_path}:{node.lineno} from {imported_module}")
+            if imported_module == "mcp_strava":
+                for alias in node.names:
+                    full_name = f"mcp_strava.{alias.name}"
+                    if full_name.startswith(disallowed_prefixes):
+                        violations.append(f"{rel_path}:{node.lineno} from mcp_strava import {alias.name}")
+    return violations
+
+
+def test_read_modules_do_not_import_strava_or_refresh() -> None:
+    read_modules = [
+        "src/mcp_strava/report.py",
+        "src/mcp_strava/analytics.py",
+        "src/mcp_strava/trends.py",
+        "src/mcp_strava/training.py",
+        "src/mcp_strava/metrics.py",
+        "src/mcp_strava/cardiac_drift.py",
+    ]
+    violations: list[str] = []
+    for rel_path in read_modules:
+        violations.extend(
+            _import_violations(
+                rel_path,
+                ("mcp_strava.adapters.strava", "mcp_strava.refresh"),
+            )
+        )
+    assert violations == []
+
+
+def test_urllib_lives_only_in_strava_adapter() -> None:
+    root = Path(__file__).resolve().parents[1]
+    violations: list[str] = []
+    for py_file in (root / "src" / "mcp_strava").rglob("*.py"):
+        rel = py_file.relative_to(root).as_posix()
+        if rel.startswith("src/mcp_strava/adapters/strava/"):
+            continue
+        module = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+        for node in ast.walk(module):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "urllib" or alias.name.startswith("urllib."):
+                        violations.append(f"{rel}:{node.lineno} import {alias.name}")
+            elif isinstance(node, ast.ImportFrom):
+                imported_module = node.module or ""
+                if imported_module == "urllib" or imported_module.startswith("urllib."):
+                    violations.append(f"{rel}:{node.lineno} from {imported_module}")
+    assert violations == []
+
+
+def test_refresh_does_not_import_sync_per_D17() -> None:
+    root = Path(__file__).resolve().parents[1]
+    violations: list[str] = []
+    for py_file in (root / "src" / "mcp_strava" / "refresh").rglob("*.py"):
+        rel = py_file.relative_to(root).as_posix()
+        module = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+        for node in ast.walk(module):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "mcp_strava.sync" or alias.name.startswith("mcp_strava.sync."):
+                        violations.append(f"{rel}:{node.lineno} import {alias.name}")
+            elif isinstance(node, ast.ImportFrom):
+                imported_module = node.module or ""
+                if imported_module == "mcp_strava.sync" or imported_module.startswith("mcp_strava.sync."):
+                    violations.append(f"{rel}:{node.lineno} from {imported_module}")
+                if imported_module == "mcp_strava":
+                    for alias in node.names:
+                        if alias.name == "sync":
+                            violations.append(f"{rel}:{node.lineno} from mcp_strava import sync")
+    assert violations == []
+
+
+def test_sync_does_not_define_moved_helpers_per_D17() -> None:
+    source = _source_text("src/mcp_strava/sync.py")
+    module = ast.parse(source)
+    moved = {
+        "_sync_kudos",
+        "_insert_streams",
+        "_replace_streams",
+        "_stream_payload",
+        "STREAM_KEYS",
+        "_is_iso_day",
+        "_safe_quick_sync_start_day",
+    }
+    defined: set[str] = set()
+    for node in module.body:
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)):
+            defined.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    defined.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            defined.add(node.target.id)
+    assert moved.intersection(defined) == set()
+
+
+def test_sync_activities_quick_invokes_run_once_with_force_true_per_D15(monkeypatch, tmp_path: Path) -> None:
+    import mcp_strava.sync as sync
+    from mcp_strava.refresh.runtime import RefreshResult
+
+    calls: list[dict] = []
+
+    class FakeDbConn:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_run_once(repo, transport, policy, clock, sleeper, **kwargs):
+        calls.append(
+            {
+                "repo": repo,
+                "transport": transport,
+                "policy": policy,
+                "clock": clock,
+                "sleeper": sleeper,
+                **kwargs,
+            }
+        )
+        return RefreshResult(status="ok", mode=kwargs["mode"], checkpoint_stage="complete")
+
+    monkeypatch.setattr(sync, "get_settings", lambda: SimpleNamespace(database_path=tmp_path / "strava.db"))
+    monkeypatch.setattr(sync, "run_preflight", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        sync,
+        "build_refresh_collaborators",
+        lambda _settings=None: (
+            SimpleNamespace(database_path=tmp_path / "strava.db"),
+            "clock",
+            "sleeper",
+            "transport",
+            "policy",
+        ),
+    )
+    monkeypatch.setattr(sync, "DbConn", FakeDbConn)
+    monkeypatch.setattr(sync.SQLiteRepository, "from_connection", staticmethod(lambda _conn: "repo"))
+    monkeypatch.setattr(sync.refresh_runtime, "run_once", fake_run_once)
+
+    result = sync.sync_activities(quick=True)
+
+    assert result.status == "ok"
+    assert calls
+    assert calls[0]["force"] is True
+    assert calls[0]["mode"] == "quick"
+
+
+def test_backfill_activities_invokes_run_backfill_per_D16(monkeypatch, tmp_path: Path) -> None:
+    import mcp_strava.sync as sync
+    from mcp_strava.refresh.runtime import RefreshResult
+
+    calls: list[dict] = []
+
+    class FakeDbConn:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_run_once(*_args, **_kwargs):
+        raise AssertionError("backfill_activities must not call run_once")
+
+    def fake_run_backfill(repo, transport, policy, clock, sleeper, **kwargs):
+        calls.append(
+            {
+                "repo": repo,
+                "transport": transport,
+                "policy": policy,
+                "clock": clock,
+                "sleeper": sleeper,
+                **kwargs,
+            }
+        )
+        return RefreshResult(status="ok", mode="backfill", checkpoint_stage="complete_backfill")
+
+    monkeypatch.setattr(sync, "get_settings", lambda: SimpleNamespace(database_path=tmp_path / "strava.db"))
+    monkeypatch.setattr(sync, "run_preflight", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        sync,
+        "build_refresh_collaborators",
+        lambda _settings=None: (
+            SimpleNamespace(database_path=tmp_path / "strava.db"),
+            "clock",
+            "sleeper",
+            "transport",
+            "policy",
+        ),
+    )
+    monkeypatch.setattr(sync, "DbConn", FakeDbConn)
+    monkeypatch.setattr(sync.SQLiteRepository, "from_connection", staticmethod(lambda _conn: "repo"))
+    monkeypatch.setattr(sync.refresh_runtime, "run_once", fake_run_once)
+    monkeypatch.setattr(sync.refresh_runtime, "run_backfill", fake_run_backfill)
+
+    result = sync.backfill_activities(since="2024-01-01")
+
+    assert result.status == "ok"
+    assert calls
+    assert calls[0]["since"] == "2024-01-01"
+    assert calls[0]["owner"] == "refresh-backfill"

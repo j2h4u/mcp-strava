@@ -7,17 +7,20 @@ from pathlib import Path
 
 from mcp_strava.constants import Config
 from mcp_strava.adapters.sqlite.migrations import run_migrations, run_preflight
+from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.db import (
     DbConn, refresh_token,
     api_request, get_daily_trimp_history
 )
+from mcp_strava.refresh import RefreshSkipped
 from mcp_strava.training import calc_banister, calc_weekly_plan, forward_simulate
 from mcp_strava.analytics import weekly_digest
 from mcp_strava.report import daily_report
 from mcp_strava.types import (
     parse_strava_activity, parse_strava_athlete, dc_to_dict
 )
-from mcp_strava.sync import sync_activities, backfill_activities
+from mcp_strava.sync import backfill_activities, build_refresh_collaborators, sync_activities
 from mcp_strava.trends import compute_trends
 from mcp_strava.settings import get_settings
 
@@ -129,11 +132,61 @@ def cmd_sync(args):
 
 def cmd_backfill(args):
     try:
-        backfill_activities()
+        since = args[0] if args else None
+        backfill_activities(since=since)
     except Exception as e:
         import traceback
         print(f"Backfill failed: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
+        raise SystemExit(1)
+
+
+def cmd_db_refresh(args):
+    if "--help" in args or "-h" in args:
+        print(
+            "Usage: python -m mcp_strava db-refresh [--force]\n\n"
+            "--force  Run a mid-day refresh; bypasses daily idempotency but honours lease/backoff."
+        )
+        return
+
+    unknown = [arg for arg in args if arg != "--force"]
+    if unknown:
+        print(f"Unknown db-refresh option: {unknown[0]}", file=sys.stderr)
+        raise SystemExit(1)
+
+    force = "--force" in args
+    settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
+    run_preflight(settings.database_path)
+    with DbConn() as conn:
+        repo = SQLiteRepository.from_connection(conn)
+        result = refresh_runtime.run_once(
+            repo,
+            transport,
+            refresh_policy,
+            clock,
+            sleeper,
+            force=force,
+            mode="daily",
+        )
+
+    if isinstance(result, RefreshSkipped):
+        payload = {
+            "status": "skipped",
+            "reason": result.reason,
+            "checkpoint_stage": None,
+            "forced": force,
+        }
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        raise SystemExit(2)
+
+    payload = {
+        "status": result.status,
+        "reason": result.reason,
+        "checkpoint_stage": result.checkpoint_stage,
+        "forced": force,
+    }
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    if result.status == "failed":
         raise SystemExit(1)
 
 
@@ -379,6 +432,7 @@ COMMANDS = {
     'db-preflight': cmd_db_preflight,
     'db-check': cmd_db_check,
     'db-migrate': cmd_db_migrate,
+    'db-refresh': cmd_db_refresh,
 }
 
 
