@@ -15,10 +15,10 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 ### Data Safety
 
-- [ ] **SAFE-01**: Operator can run a migration preflight that verifies required SQLite tables, schema version, row counts, and database readability before any schema change
-- [ ] **SAFE-02**: Operator gets a timestamped backup of `data/strava.db` before any migration that can alter the schema
-- [ ] **SAFE-03**: Developer can verify post-migration row-count parity and key report parity against the pre-migration database state
-- [ ] **SAFE-04**: Service fails closed instead of silently creating an empty replacement database when an existing mirror is expected but missing or invalid
+- [x] **SAFE-01**: Operator can run a migration preflight that verifies required SQLite tables, schema version, row counts, and database readability before any schema change
+- [x] **SAFE-02**: Operator gets a timestamped backup of `data/strava.db` before any migration that can alter the schema
+- [x] **SAFE-03**: Developer can verify post-migration row-count parity and key report parity against the pre-migration database state
+- [x] **SAFE-04**: Service fails closed instead of silently creating an empty replacement database when an existing mirror is expected but missing or invalid
 
 ### Repository
 
@@ -66,7 +66,7 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 ### Testing
 
-- [ ] **TEST-01**: Tests cover migration backup/preflight/post-check behavior against a copied SQLite database
+- [x] **TEST-01**: Tests cover migration backup/preflight/post-check behavior against a copied SQLite database
 - [ ] **TEST-02**: Tests cover Strava rate-limit/retry/checkpoint behavior without live Strava API calls
 - [ ] **TEST-03**: Tests cover MCP tool allowlist and prove forbidden sync/admin/debug tools are absent
 - [ ] **TEST-04**: Tests cover freshness metadata, missing-HR handling, and core daily/weekly report parity
@@ -112,10 +112,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FOUND-01 | Phase 1 | Complete |
 | FOUND-02 | Phase 1 | Complete |
 | FOUND-03 | Phase 1 | Complete |
-| SAFE-01 | Phase 2 | Pending |
-| SAFE-02 | Phase 2 | Pending |
-| SAFE-03 | Phase 2 | Pending |
-| SAFE-04 | Phase 2 | Pending |
+| SAFE-01 | Phase 2 | Complete |
+| SAFE-02 | Phase 2 | Complete |
+| SAFE-03 | Phase 2 | Complete |
+| SAFE-04 | Phase 2 | Complete |
 | REPO-01 | Phase 2 | Pending |
 | REPO-02 | Phase 2 | Pending |
 | REPO-03 | Phase 2 | Pending |
@@ -139,7 +139,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DOCKER-01 | Phase 5 | Pending |
 | DOCKER-02 | Phase 5 | Pending |
 | DOCKER-03 | Phase 5 | Pending |
-| TEST-01 | Phase 2 | Pending |
+| TEST-01 | Phase 2 | Complete |
 | TEST-02 | Phase 3 | Pending |
 | TEST-03 | Phase 5 | Pending |
 | TEST-04 | Phase 4 | Pending |
