@@ -16,7 +16,9 @@ def test_imports():
     from mcp_strava.metrics import enrich_activity, calc_decoupling_with_gate, calc_efficiency_factor
     from mcp_strava.training import calc_banister, calc_weekly_plan, forward_simulate, ewma, trend
     from mcp_strava.analytics import weekly_digest
+    from mcp_strava.application.freshness import get_freshness_service
     from mcp_strava.application.reports import get_daily_report_service, get_weekly_summary_service
+    from mcp_strava.application.workouts import get_recent_workouts_service, get_workout_analytics_service
     from mcp_strava.report import daily_report
     from mcp_strava.sync import backfill_activities, build_refresh_collaborators, sync_activities
     from mcp_strava.trends import compute_trends
@@ -37,6 +39,9 @@ def test_imports():
     import mcp_strava.types as package_types
     assert get_daily_report_service is not None
     assert get_weekly_summary_service is not None
+    assert get_recent_workouts_service is not None
+    assert get_workout_analytics_service is not None
+    assert get_freshness_service is not None
     expected_suffix = str(Path("src") / "mcp_strava" / "types.py")
     assert str(package_types.__file__).endswith(expected_suffix)
     print("  OK: all imports + Config paths verified")

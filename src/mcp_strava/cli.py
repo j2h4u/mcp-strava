@@ -8,6 +8,13 @@ from pathlib import Path
 from mcp_strava.constants import Config
 from mcp_strava.adapters.sqlite.migrations import run_migrations, run_preflight
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+from mcp_strava.application import (
+    get_daily_report_service,
+    get_freshness_service,
+    get_recent_workouts_service,
+    get_weekly_summary_service,
+    get_workout_analytics_service,
+)
 import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.db import (
     DbConn, refresh_token,
@@ -144,7 +151,7 @@ def cmd_backfill(args):
 def cmd_db_refresh(args):
     if "--help" in args or "-h" in args:
         print(
-            "Usage: python -m mcp_strava db-refresh [--force]\n\n"
+            "Usage: python -m mcp_strava admin mirror-refresh [--force]\n\n"
             "--force  Run a mid-day refresh; bypasses daily idempotency but honours lease/backoff."
         )
         return
@@ -282,19 +289,47 @@ def cmd_trend(args):
 
 
 def cmd_report(args):
-    """Daily training report."""
-    report = daily_report()
-    print(json.dumps(dc_to_dict(report), indent=2, ensure_ascii=False))
+    """Daily training report product command."""
+    json_output = _pop_json_flag(args)
+    if not args or args[0] != "daily":
+        _usage_error("Usage: python -m mcp_strava report daily [--json]")
+    envelope = get_daily_report_service()
+    _print_product_envelope(envelope, json_output=json_output, title="Daily Report", renderer=_render_daily_report)
 
 
 def cmd_weekly(args):
-    """Weekly digest."""
-    with DbConn() as conn:
-        result = weekly_digest(conn)
-    if result is None:
-        print('{"error": "no data"}')
-        return
-    print(json.dumps(dc_to_dict(result), indent=2, ensure_ascii=False))
+    """Weekly summary product command."""
+    json_output = _pop_json_flag(args)
+    envelope = get_weekly_summary_service()
+    _print_product_envelope(envelope, json_output=json_output, title="Weekly Summary", renderer=_render_weekly_summary)
+
+
+def cmd_workouts(args):
+    """Recent workouts product command."""
+    json_output = _pop_json_flag(args)
+    if not args or args[0] != "recent":
+        _usage_error("Usage: python -m mcp_strava workouts recent [--limit N] [--json]")
+    limit = _parse_limit(args[1:], default=15)
+    envelope = get_recent_workouts_service(limit=limit)
+    _print_product_envelope(envelope, json_output=json_output, title="Recent Workouts", renderer=_render_recent_workouts)
+
+
+def cmd_workout(args):
+    """Single workout analytics product command."""
+    json_output = _pop_json_flag(args)
+    if len(args) < 2 or args[0] != "analyze":
+        _usage_error("Usage: python -m mcp_strava workout analyze <id|latest> [--json]")
+    envelope = get_workout_analytics_service(args[1])
+    _print_product_envelope(envelope, json_output=json_output, title="Workout Analytics", renderer=_render_workout_analytics)
+
+
+def cmd_freshness(args):
+    """Freshness product command."""
+    json_output = _pop_json_flag(args)
+    if args:
+        _usage_error("Usage: python -m mcp_strava freshness [--json]")
+    envelope = get_freshness_service()
+    _print_product_envelope(envelope, json_output=json_output, title="Freshness", renderer=_render_freshness)
 
 
 def cmd_strava_raw(args):
@@ -411,29 +446,211 @@ def cmd_db_migrate(args):
     )
 
 
+def _pop_json_flag(args):
+    if "--json" not in args:
+        return False
+    args.remove("--json")
+    return True
+
+
+def _parse_limit(args, default):
+    if not args:
+        return default
+    if len(args) == 1 and args[0].isdigit():
+        return int(args[0])
+    if len(args) == 2 and args[0] == "--limit" and args[1].isdigit():
+        return int(args[1])
+    _usage_error("Usage: --limit N")
+
+
+def _usage_error(message):
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+
+def _print_product_envelope(envelope, *, json_output, title, renderer):
+    payload = dc_to_dict(envelope)
+    if json_output:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+
+    print(title)
+    print("=" * len(title))
+    renderer(payload.get("data"))
+    _render_metadata(payload)
+
+
+def _render_metadata(payload):
+    freshness = payload.get("freshness") or {}
+    completeness = payload.get("completeness") or {}
+    warnings = payload.get("warnings") or []
+    rationale = payload.get("rationale") or []
+
+    print()
+    print("Freshness")
+    print(f"- state: {freshness.get('freshness_state')}")
+    print(f"- checked_at: {freshness.get('checked_at')}")
+    print(f"- last_successful_refresh_at: {freshness.get('last_successful_refresh_at')}")
+    print(f"- refresh_age_seconds: {freshness.get('refresh_age_seconds')}")
+    print(f"- last_activity_at: {freshness.get('last_activity_at')}")
+    print(f"- last_activity_age_seconds: {freshness.get('last_activity_age_seconds')}")
+    if freshness.get("refresh_requested"):
+        print(f"- refresh_requested: {freshness.get('refresh_request_reason')}")
+
+    print()
+    print("Completeness")
+    print(f"- status: {completeness.get('status')}")
+    missing = completeness.get("missing") or []
+    print(f"- missing: {', '.join(missing) if missing else 'none'}")
+
+    print()
+    print("Warnings")
+    if warnings:
+        for warning in warnings:
+            print(f"- {warning.get('code')}: {warning.get('message')}")
+    else:
+        print("- none")
+
+    if rationale:
+        print()
+        print("Rationale")
+        for item in rationale:
+            print(f"- {item.get('code')}: {item.get('message')}")
+
+
+def _render_daily_report(data):
+    data = data or {}
+    print("Status")
+    print(f"- today: {data.get('today')}")
+    banister = data.get("banister") or {}
+    if banister:
+        print(f"- form: {banister.get('form')}")
+    recommendation = data.get("recommendation") or {}
+    print()
+    print("Recommendation")
+    if recommendation:
+        action = recommendation.get("action") or recommendation.get("message") or recommendation.get("summary")
+        confidence = recommendation.get("confidence")
+        print(f"- action: {action}")
+        if confidence:
+            print(f"- confidence: {confidence}")
+    else:
+        print("- none")
+    print()
+    print("Activities")
+    activities = data.get("yesterday_activities") or data.get("activities_14d") or []
+    if not activities:
+        print("- none")
+    for item in activities[:10]:
+        print(f"- {item.get('date')} {item.get('name')} {item.get('sport_type')} trimp={item.get('trimp')}")
+
+
+def _render_weekly_summary(data):
+    data = data or {}
+    print("Period")
+    for key, value in (data.get("period") or {}).items():
+        print(f"- {key}: {value}")
+    print()
+    print("Current State")
+    current = data.get("current_state") or {}
+    if current:
+        for key, value in current.items():
+            print(f"- {key}: {value}")
+    else:
+        print("- none")
+    print()
+    print("Trends")
+    trends = data.get("trends") or {}
+    if trends:
+        for key, value in trends.items():
+            print(f"- {key}: {value}")
+    else:
+        print("- none")
+
+
+def _render_recent_workouts(data):
+    rows = data or []
+    if not rows:
+        print("No workouts.")
+        return
+    print("| date | id | sport | distance_km | moving_min | trimp | name |")
+    print("| --- | --- | --- | --- | --- | --- | --- |")
+    for row in rows:
+        print(
+            f"| {row.get('date')} | {row.get('id')} | {row.get('sport_type')} | "
+            f"{row.get('distance_km')} | {row.get('moving_time_min')} | "
+            f"{row.get('trimp')} | {row.get('name')} |"
+        )
+
+
+def _render_workout_analytics(data):
+    data = data or {}
+    if not data:
+        print("Workout not found.")
+        return
+    print(f"- id: {data.get('id')}")
+    print(f"- date: {data.get('date')}")
+    print(f"- name: {data.get('name')}")
+    print(f"- sport_type: {data.get('sport_type')}")
+    print(f"- distance_km: {data.get('distance_km')}")
+    print(f"- moving_time_min: {data.get('moving_time_min')}")
+    print(f"- trimp: {data.get('trimp')}")
+    print(f"- avg_hr: {data.get('avg_hr')}")
+    print(f"- max_hr: {data.get('max_hr')}")
+    print(f"- cardiac_drift: {data.get('cardiac_drift')}")
+
+
+def _render_freshness(data):
+    data = data or {}
+    if data:
+        for key, value in data.items():
+            print(f"- {key}: {value}")
+    else:
+        print("- no additional freshness data")
+
+
+def cmd_admin(args):
+    if not args or args[0] in {"--help", "-h"}:
+        print(
+            "Usage: python -m mcp_strava admin <command> [args]\n"
+            f"Admin commands: {', '.join(ADMIN_COMMANDS)}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    command = args[0]
+    handler = ADMIN_COMMANDS.get(command)
+    if handler is None:
+        print(
+            f"Unknown admin command: {command}\nAdmin commands: {', '.join(ADMIN_COMMANDS)}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    handler(args[1:])
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════════════════════════════
 
+ADMIN_COMMANDS = {
+    "mirror-refresh": cmd_db_refresh,
+    "token-refresh": cmd_refresh,
+    "backfill": cmd_backfill,
+    "sql": cmd_sql,
+    "raw": cmd_strava_raw,
+    "log": cmd_log,
+    "db-preflight": cmd_db_preflight,
+    "db-check": cmd_db_check,
+    "db-migrate": cmd_db_migrate,
+}
+
 COMMANDS = {
-    'activities': cmd_activities,
-    'gear': cmd_gear,
-    'stats': cmd_stats,
-    'sql': cmd_sql,
-    'refresh': cmd_refresh,
-    'sync': cmd_sync,
-    'backfill': cmd_backfill,
-    'backtest': cmd_backtest,
-    'trend': cmd_trend,
-    'report': cmd_report,
-    'weekly': cmd_weekly,
-    'raw': cmd_strava_raw,
-    'log': cmd_log,
-    'kudos': cmd_kudos,
-    'db-preflight': cmd_db_preflight,
-    'db-check': cmd_db_check,
-    'db-migrate': cmd_db_migrate,
-    'db-refresh': cmd_db_refresh,
+    "report": cmd_report,
+    "weekly": cmd_weekly,
+    "workouts": cmd_workouts,
+    "workout": cmd_workout,
+    "freshness": cmd_freshness,
+    "admin": cmd_admin,
 }
 
 
