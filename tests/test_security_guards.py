@@ -298,6 +298,42 @@ def test_refresh_does_not_import_sync_per_D17() -> None:
     assert violations == []
 
 
+def test_application_product_modules_do_not_import_strava_sync_or_admin_runtime() -> None:
+    root = Path(__file__).resolve().parents[1]
+    app_root = root / "src" / "mcp_strava" / "application"
+    if not app_root.exists():
+        pytest.fail("src/mcp_strava/application must exist for product services")
+
+    disallowed = (
+        "mcp_strava.adapters.strava",
+        "mcp_strava.sync",
+        "mcp_strava.refresh.runtime",
+    )
+    violations: list[str] = []
+
+    for py_file in app_root.rglob("*.py"):
+        rel = py_file.relative_to(root).as_posix()
+        module = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+        for node in ast.walk(module):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith(disallowed):
+                        violations.append(f"{rel}:{node.lineno} import {alias.name}")
+            elif isinstance(node, ast.ImportFrom):
+                imported_module = node.module or ""
+                if imported_module.startswith(disallowed):
+                    violations.append(f"{rel}:{node.lineno} from {imported_module}")
+                for alias in node.names:
+                    full_name = f"{imported_module}.{alias.name}" if imported_module else alias.name
+                    if full_name in {
+                        "mcp_strava.db.api_request",
+                        "mcp_strava.db.refresh_token",
+                    }:
+                        violations.append(f"{rel}:{node.lineno} from {imported_module} import {alias.name}")
+
+    assert violations == []
+
+
 def test_sync_does_not_define_moved_helpers_per_D17() -> None:
     source = _source_text("src/mcp_strava/sync.py")
     module = ast.parse(source)
