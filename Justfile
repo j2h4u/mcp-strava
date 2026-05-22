@@ -8,7 +8,7 @@ default:
 
 test:
     {{compose}} build
-    {{compose}} up -d --force-recreate --wait --wait-timeout 90
+    {{compose}} up -d --force-recreate --remove-orphans --wait --wait-timeout 90
     {{compose}} exec -T mcp-strava {{smoke}} --url http://127.0.0.1:8080/mcp
 
 gateway-smoke:

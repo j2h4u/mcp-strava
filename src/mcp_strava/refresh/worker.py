@@ -8,6 +8,7 @@ import os
 import sys
 import time
 from datetime import datetime
+from threading import Event
 
 import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.sqlite.migrations import run_preflight
@@ -94,6 +95,30 @@ def _poll_seconds(raw: str | None) -> int:
     return value
 
 
+def run_forever(
+    *,
+    poll_seconds: int | None = None,
+    stop_event: Event | None = None,
+    emit_start: bool = True,
+) -> None:
+    resolved_poll_seconds = poll_seconds
+    if resolved_poll_seconds is None:
+        resolved_poll_seconds = _poll_seconds(os.environ.get("MCP_STRAVA_REFRESH_POLL_SECONDS"))
+    if emit_start:
+        _emit("refresh_worker_started", poll_seconds=resolved_poll_seconds)
+
+    while stop_event is None or not stop_event.is_set():
+        try:
+            run_pending_once(emit_idle=False)
+        except Exception as exc:  # noqa: BLE001
+            _emit("refresh_worker_error", error_type=type(exc).__name__)
+        if stop_event is not None:
+            if stop_event.wait(resolved_poll_seconds):
+                break
+        else:
+            time.sleep(resolved_poll_seconds)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Consume mcp-strava refresh requests")
     parser.add_argument("--once", action="store_true")
@@ -107,10 +132,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.once:
         return run_pending_once()
 
-    _emit("refresh_worker_started", poll_seconds=args.poll_seconds)
-    while True:
-        run_pending_once(emit_idle=False)
-        time.sleep(args.poll_seconds)
+    run_forever(poll_seconds=args.poll_seconds)
+    return 0
 
 
 if __name__ == "__main__":

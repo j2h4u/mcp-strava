@@ -1,4 +1,4 @@
-"""Container entrypoint that validates runtime DB before starting MCP HTTP server."""
+"""Container entrypoint that validates runtime DB before starting the service."""
 
 from __future__ import annotations
 
@@ -20,11 +20,10 @@ def main(argv: list[str] | None = None) -> int:
 
     os.execvp(
         sys.executable,
-        [sys.executable, "-m", "mcp_strava.interfaces.mcp_http"],
+        [sys.executable, "-m", "mcp_strava.deploy.service"],
     )
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
