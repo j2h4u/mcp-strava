@@ -1,232 +1,229 @@
-<!-- refreshed: 2026-05-20 -->
+---
+analysis_date: 2026-05-22
+last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
+---
 # Architecture
 
-**Analysis Date:** 2026-05-20
+**Analysis Date:** 2026-05-22
 
 ## System Overview
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│                      CLI and Test Harness                   │
-│   `scripts/cli.py`  ·  `scripts/run_tests.py`  ·  `Justfile`│
-├──────────────────┬──────────────────┬───────────────────────┤
-│  Command dispatch│   Smoke tests     │   Manual verification │
-│  `cmd_*` funcs   │ `tests/test_smoke.py`                    │
-└────────┬─────────┴────────┬─────────┴──────────┬────────────┘
-         │                  │                     │
-         ▼                  ▼                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Domain / Orchestration                   │
-│ `sync.py` · `metrics.py` · `training.py` · `analytics.py`   │
-│ `report.py` · `trends.py` · `sports.py` · `types.py`        │
-│ `cardiac_drift.py`                                           │
-└────────┬───────────────────────────────┬─────────────────────┘
-         │                               │
-         ▼                               ▼
-┌──────────────────────────────┐   ┌──────────────────────────┐
-│     Integration / Storage    │   │  Validation / Reference  │
-│ `db.py` · `api_schema.py`    │   │ `strava_api_reference.py`│
-│ `data/strava.db`             │   │                          │
-└────────┬─────────────────────┘   └──────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────────────────────┐
-│ External Services                                            │
-│ Strava REST API (`www.strava.com`)                           │
-│ Local `.env` token store                                     │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ Interfaces                                                           │
+│ `src/mcp_strava/cli.py`  `src/mcp_strava/interfaces/mcp_http.py`     │
+├──────────────────────────────────────────────────────────────────────┤
+│ Application services                                                  │
+│ `src/mcp_strava/application/*`                                       │
+├──────────────────────────────────────────────────────────────────────┤
+│ Domain and refresh orchestration                                      │
+│ `src/mcp_strava/{metrics,training,analytics,report,trends,refresh}`  │
+├──────────────────────────────────────────────────────────────────────┤
+│ Adapters and infrastructure                                           │
+│ `src/mcp_strava/adapters/*`  `src/mcp_strava/db.py`  `src/mcp_strava/sync.py`
+├──────────────────────────────────────────────────────────────────────┤
+│ Runtime and deployment helpers                                        │
+│ `src/mcp_strava/deploy/*`  `deploy/*`                                │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Component Responsibilities
 
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| CLI dispatcher | Parse subcommands and print JSON or tabular output | `scripts/cli.py` |
-| Sync pipeline | Incremental Strava ingest, backfill, kudos sync, rate limiting | `scripts/strava_lib/sync.py` |
-| Database/auth layer | SQLite lifecycle, `.env` token refresh, API requests, TRIMP history queries | `scripts/strava_lib/db.py` |
-| Typed contracts | Dataclasses for API payloads, metrics, plans, reports, and serialization | `scripts/strava_lib/types.py` |
-| Sports registry | Sport semantics for training/running/HR-based filtering | `scripts/strava_lib/sports.py` |
-| Metrics layer | Activity enrichment, decoupling, cardiac drift, HR recovery, vertical speed | `scripts/strava_lib/metrics.py` |
-| Drift algorithm | Pure Jenks-based cardiac drift implementation used by metrics | `scripts/strava_lib/cardiac_drift.py` |
-| Training layer | Banister model, progressive signal, weekly plan, forward simulation | `scripts/strava_lib/training.py` |
-| Weekly analytics | Rolling window load/efficiency summaries and trend output | `scripts/strava_lib/analytics.py` |
-| Daily report | 14-day panorama, ACWR, recommendation, safety warnings | `scripts/strava_lib/report.py` |
-| Trend analysis | Weekly form/TiZ/crash-rate output | `scripts/strava_lib/trends.py` |
-| Schema validation | Machine-readable Strava payload contract checks | `scripts/strava_lib/api_schema.py` |
-| Human API reference | Field map and endpoint notes for Strava payloads | `scripts/strava_lib/strava_api_reference.py` |
-| Smoke runner | Import and behavior smoke checks without pytest dependency | `scripts/run_tests.py` |
+| CLI dispatcher | Exposes legacy operator commands, product commands, and maintenance gates | `src/mcp_strava/cli.py` |
+| MCP HTTP server | Exposes the read-only tool surface over streamable HTTP | `src/mcp_strava/interfaces/mcp_http.py` |
+| Product services | Builds service envelopes for workouts, reports, freshness, and comparisons | `src/mcp_strava/application/*` |
+| Service registry | Whitelists the product services exposed to future dispatch | `src/mcp_strava/application/registry.py` |
+| SQLite repository | Owns all read/write SQL against the local mirror | `src/mcp_strava/adapters/sqlite/repository.py` |
+| SQLite safety gate | Validates schema, integrity, backups, and migration parity | `src/mcp_strava/adapters/sqlite/{schema,migrations,backup}.py` |
+| Strava adapter | Handles OAuth refresh, rate limits, HTTP transport, and token files | `src/mcp_strava/adapters/strava/*` |
+| Refresh runtime | Runs staged daily refresh and backfill orchestration with leases | `src/mcp_strava/refresh/*` |
+| Domain analytics | Computes metrics, training models, reports, and trend output | `src/mcp_strava/{metrics,training,analytics,report,trends}.py` |
+| Deployment helpers | Validates runtime DB and prepares container state | `src/mcp_strava/deploy/*` and `deploy/*` |
 
 ## Pattern Overview
 
-**Overall:** thin CLI over a modular, SQLite-backed analytics core.
+**Overall:** layered service-envelope architecture with a read-only MCP surface and a compatibility CLI on top of shared application services.
 
 **Key Characteristics:**
-- `scripts/cli.py` stays as a dispatcher; domain work lives in `scripts/strava_lib/*.py`.
-- `types.py` is the contract boundary between modules and JSON output.
-- `db.py` owns all Strava HTTP access, auth refresh, and SQLite connection details.
-- `report.py`, `analytics.py`, and `training.py` orchestrate computed outputs from shared primitives instead of reimplementing formulas.
-- `cardiac_drift.py` keeps the expensive Jenks-based drift algorithm isolated from the rest of the data model code.
-- `api_schema.py` and `strava_api_reference.py` are adjacent validation/reference layers, not part of the hot path.
+- `ServiceEnvelope`, `FreshnessMetadata`, `CompletenessMetadata`, `ServiceWarning`, and `ServiceRationale` are the public service contract in `src/mcp_strava/types.py`.
+- Interface code stays thin: `src/mcp_strava/cli.py` and `src/mcp_strava/interfaces/mcp_http.py` delegate to application services instead of recomputing analytics.
+- IO is isolated behind adapters: SQLite access lives in `src/mcp_strava/adapters/sqlite/`, Strava HTTP and OAuth live in `src/mcp_strava/adapters/strava/`.
+- Refresh is explicit and staged: `src/mcp_strava/refresh/runtime.py` coordinates summaries, streams, details, schema validation, and kudos with a DB lease.
 
 ## Layers
 
-**Command Layer:**
-- Purpose: expose user-facing commands and format results.
-- Location: `scripts/cli.py`
-- Contains: `cmd_activities`, `cmd_sync`, `cmd_report`, `cmd_weekly`, `cmd_trend`, `cmd_stats`, `cmd_gear`, `cmd_sql`, `cmd_log`, `cmd_kudos`
-- Depends on: `db.py`, `sync.py`, `training.py`, `analytics.py`, `report.py`, `trends.py`, `types.py`
-- Used by: direct CLI invocation
+**Interface layer**
+- Purpose: expose operator and MCP entry points.
+- Location: `src/mcp_strava/cli.py`, `src/mcp_strava/interfaces/mcp_http.py`, `src/mcp_strava/__main__.py`.
+- Contains: command dispatch, JSON rendering, MCP tool registration, transport security checks.
+- Depends on: application services, settings, refresh runtime, repository helpers.
+- Used by: `python -m mcp_strava`, `python -m mcp_strava.interfaces.mcp_http`.
 
-**Domain / Computation Layer:**
-- Purpose: compute derived training and analytics signals.
-- Location: `scripts/strava_lib/metrics.py`, `scripts/strava_lib/training.py`, `scripts/strava_lib/analytics.py`, `scripts/strava_lib/report.py`, `scripts/strava_lib/trends.py`, `scripts/strava_lib/cardiac_drift.py`
-- Contains: enrichment, Banister EWMA, progressive signal, weekly plan, rolling windows, recommendation logic, Jenks-based drift clustering
-- Depends on: `types.py`, `constants.py`, `sports.py`, `db.py`
-- Used by: `cli.py`, smoke tests, and neighboring modules
+**Application layer**
+- Purpose: assemble product-ready payloads from repository rows and analytics primitives.
+- Location: `src/mcp_strava/application/`.
+- Contains: workout listings, workout detail, daily report, weekly summary, freshness metadata, period comparison, fitness-state projection, metric registry.
+- Depends on: `SQLiteRepository`, `DbConn`, `RefreshPolicy`, `metrics.py`, `training.py`, `analytics.py`, `report.py`, `settings.py`.
+- Used by: CLI product commands and MCP tools.
 
-**Integration / Persistence Layer:**
-- Purpose: fetch Strava data, refresh tokens, and persist/query SQLite.
-- Location: `scripts/strava_lib/db.py`, `scripts/strava_lib/sync.py`
-- Contains: `DbConn`, `init_db`, `refresh_token`, `api_request`, `sync_activities`, `backfill_activities`
-- Depends on: standard library `sqlite3`, `urllib`, `json`, `os`
-- Used by: all higher-level modules that need activity history or live API calls
+**Domain/computation layer**
+- Purpose: compute training signals, summaries, and derived metrics.
+- Location: `src/mcp_strava/{metrics,training,analytics,report,trends,cardiac_drift}.py`.
+- Contains: TRIMP, Banister model, ACWR, progressive signal, workout enrichment, drift detection, weekly digest, daily report, and trend calculations.
+- Depends on: `src/mcp_strava/constants.py`, `src/mcp_strava/types.py`, `src/mcp_strava/adapters/sqlite/repository.py`.
+- Used by: application services and legacy CLI commands.
 
-**Contracts / Registry Layer:**
-- Purpose: centralize schemas, dataclasses, and sport semantics.
-- Location: `scripts/strava_lib/types.py`, `scripts/strava_lib/constants.py`, `scripts/strava_lib/sports.py`
-- Contains: dataclass models, SQL fragments, sport-type registry, serializer helper
-- Depends on: each other in a one-way order (`constants.py` imports `sports.py`)
-- Used by: every computation module and CLI output path
+**Refresh orchestration layer**
+- Purpose: run the staged mirror refresh and backfill flows.
+- Location: `src/mcp_strava/refresh/`.
+- Contains: `RefreshPolicy`, freshness evaluation, checkpoint stages, runtime lease handling, and sync step helpers.
+- Depends on: SQLite repository, Strava transport, token refresh transport, settings.
+- Used by: `src/mcp_strava/sync.py`, `src/mcp_strava/cli.py`, deployment maintenance commands.
 
-**Validation / Reference Layer:**
-- Purpose: describe Strava response shape and detect schema drift.
-- Location: `scripts/strava_lib/api_schema.py`, `scripts/strava_lib/strava_api_reference.py`
-- Contains: endpoint schemas, unknown-key detection, Summit-field checks, human-readable field catalog
-- Depends on: `strava_api_reference.py` as the human source and `api_schema.py` as the machine-readable representation
-- Used by: review tooling and future validation work; not wired into the current runtime path
+**Adapter/infrastructure layer**
+- Purpose: isolate SQLite and Strava integrations from business logic.
+- Location: `src/mcp_strava/adapters/sqlite/`, `src/mcp_strava/adapters/strava/`, `src/mcp_strava/db.py`, `src/mcp_strava/sync.py`.
+- Contains: connection policy, repository methods, schema validation, backup/migration, OAuth token refresh, rate limiting, HTTP transport, compatibility wrappers.
+- Depends on: stdlib `sqlite3`, `urllib`, `fcntl`, local `.env` token/config files.
+- Used by: every higher layer that needs persistence or live Strava access.
+
+**Deployment/runtime layer**
+- Purpose: prepare, validate, and launch the containerized runtime.
+- Location: `src/mcp_strava/deploy/` and `deploy/`.
+- Contains: runtime DB preflight, runtime preparation, container entrypoint, MCP smoke checker, Dockerfile, compose file, gateway registration helper.
+- Depends on: SQLite validation and MCP HTTP interface.
+- Used by: Docker startup and gateway rollout workflows.
 
 ## Data Flow
 
-### Primary Request Path: Daily Report
+### Primary Read Path
 
-1. `scripts/cli.py:227` dispatches `cmd_report()` and calls `daily_report()`.
-2. `scripts/strava_lib/report.py:15` opens `DbConn`, loads 14 days of activities, and enriches each row through `metrics.enrich_activity()`.
-3. `scripts/strava_lib/metrics.py:356` computes TRIMP, HR recovery, vertical speed, cardiac cost, HRR%, and cardiac drift from SQLite streams.
-4. `scripts/strava_lib/training.py:43` and `scripts/strava_lib/training.py:443` compute Banister form and the weekly plan, including progressive signal input from `calc_progressive_signal()`.
-5. `scripts/strava_lib/report.py:239` turns the raw signals into a recommendation and safety warnings.
-6. `scripts/strava_lib/types.py:542` serializes the dataclass tree to JSON-safe output for the CLI.
+1. MCP tool invocation enters `src/mcp_strava/interfaces/mcp_http.py` and is registered with `FastMCP`.
+2. Tool handlers call application services in `src/mcp_strava/application/` such as `get_fitness_state_service()` or `list_workouts_service()`.
+3. Application services open `DbConn` or use an injected connection, wrap the result in `ServiceEnvelope`, and return JSON-safe dataclasses.
+4. Repository methods in `src/mcp_strava/adapters/sqlite/repository.py` fetch activities, streams, refresh state, and load history from SQLite.
+5. Domain helpers in `src/mcp_strava/{metrics,training,analytics,report}.py` enrich and aggregate the rows before they are serialized with `dc_to_dict()`.
 
-### Ingest Path: Sync
+### CLI Product Path
 
-1. `scripts/cli.py:105` dispatches `cmd_sync()` and calls `sync_activities()`.
-2. `scripts/strava_lib/sync.py:132` initializes the schema, creates a `RateLimiter`, and decides quick vs full sync.
-3. `scripts/strava_lib/db.py:166` performs HTTP requests; 401 triggers `refresh_token()` in `scripts/strava_lib/db.py:112`.
-4. `scripts/strava_lib/sync.py:56` and `scripts/strava_lib/sync.py:318` parse activity summaries, streams, details, and kudos into SQLite tables.
-5. `scripts/strava_lib/sync.py:132` writes the run summary into `sync_log`, which `cmd_log()` reads back.
+1. `src/mcp_strava/cli.py` dispatches commands such as `report`, `weekly`, `workouts`, `workout`, and `freshness`.
+2. Product commands reuse the same application services used by the MCP surface.
+3. Legacy admin commands still call `src/mcp_strava/db.py`, `src/mcp_strava/sync.py`, and the refresh runtime for sync, backfill, preflight, and migration operations.
 
-### Analytics Paths
+### Refresh Path
 
-1. `scripts/cli.py:233` calls `weekly_digest()` for the weekly summary output.
-2. `scripts/strava_lib/analytics.py:171` computes daily TRIMP history, rolling efficiency windows, and sport-level trends.
-3. `scripts/cli.py:222` calls `compute_trends()` for the week-by-week form/velocity output.
-4. `scripts/strava_lib/trends.py:12` reuses `calc_banister_series()` instead of recomputing Banister state locally.
+1. `src/mcp_strava/deploy/entrypoint.py` validates the runtime DB and then starts `src/mcp_strava/interfaces/mcp_http.py`.
+2. `src/mcp_strava/refresh/runtime.py` acquires a lease in `refresh_state`, checks backoff and checkpoint state, and runs staged sync work.
+3. `src/mcp_strava/refresh/_sync_ops.py` fetches summaries, streams, details, schema checks, and kudos through `src/mcp_strava/adapters/strava/`.
+4. `src/mcp_strava/adapters/sqlite/repository.py` persists the mirror, `src/mcp_strava/adapters/sqlite/backup.py` creates backups, and `src/mcp_strava/adapters/sqlite/migrations.py` enforces parity gates.
 
 **State Management:**
-- Local persistence lives in `data/strava.db` with WAL sidecars `data/strava.db-wal` and `data/strava.db-shm`.
-- `scripts/strava_lib/metrics.py` keeps a module-level `_hr_max_cache`.
-- `scripts/strava_lib/sync.py` keeps per-run `RateLimiter` state in memory.
-- `scripts/strava_lib/constants.py` attaches SQL fragments to `Config.SQL` at import time.
+- `src/mcp_strava/settings.py` caches resolved settings in-process and derives the runtime, freshness, and network policy from environment or `.env`.
+- `src/mcp_strava/metrics.py` keeps a module-level `_hr_max_cache`.
+- `src/mcp_strava/refresh/runtime.py` stores live progress in SQLite via `refresh_state` and `refresh_requests`.
+- `src/mcp_strava/adapters/strava/rate_limit.py` keeps quota state in memory for the lifetime of a refresh run.
 
 ## Key Abstractions
 
-**`Config`:**
-- Purpose: single configuration tree for athlete profile, thresholds, model constants, and SQL fragments.
-- Examples: `scripts/strava_lib/constants.py:17`
-- Pattern: nested classes with eager, import-time values
+**ServiceEnvelope**
+- Purpose: carry product data plus freshness, completeness, warnings, and rationale together.
+- Examples: `src/mcp_strava/types.py`, `src/mcp_strava/application/*.py`, `src/mcp_strava/interfaces/mcp_http.py`.
+- Pattern: dataclass payload returned by all product services.
 
-**Dataclass contracts:**
-- Purpose: stable schema for downstream modules and JSON output.
-- Examples: `scripts/strava_lib/types.py:293`, `scripts/strava_lib/types.py:498`
-- Pattern: parse raw API payloads into typed objects, then serialize via `dc_to_dict()`
+**SQLiteRepository**
+- Purpose: own all SQLite queries and writes for the local mirror.
+- Examples: `src/mcp_strava/adapters/sqlite/repository.py`.
+- Pattern: explicit repository boundary with small query methods and chunked bulk writes.
 
-**`SportMeta` registry:**
-- Purpose: encode sport semantics once and reuse them across analytics, planning, and filtering.
-- Examples: `scripts/strava_lib/sports.py:23`
-- Pattern: central registry plus helper predicates like `is_training()` and `is_running()`
+**RefreshPolicy / Stage**
+- Purpose: describe freshness thresholds, lease durations, and checkpoint progression.
+- Examples: `src/mcp_strava/refresh/policy.py`, `src/mcp_strava/refresh/checkpoints.py`.
+- Pattern: policy object plus enumerated stages for staged runtime orchestration.
 
-**`DbConn`:**
-- Purpose: create short-lived SQLite connections with WAL mode and row access by column name.
-- Examples: `scripts/strava_lib/db.py:21`
-- Pattern: context manager around `sqlite3.connect(..., check_same_thread=False)`
+**StravaTransport / FileTokenProvider / TokenRefreshTransport**
+- Purpose: separate data fetch, token refresh, and token persistence.
+- Examples: `src/mcp_strava/adapters/strava/transport.py`, `src/mcp_strava/adapters/strava/token_provider.py`, `src/mcp_strava/adapters/strava/token_refresh.py`.
+- Pattern: injectable collaborators with fail-closed `StravaUnavailable` errors.
 
-**`RateLimiter`:**
-- Purpose: prevent Strava API quota overruns and honor server-reported rate headers.
-- Examples: `scripts/strava_lib/sync.py:21`
-- Pattern: local token bucket plus header-driven override
+**Settings**
+- Purpose: resolve runtime paths, HTTP bind policy, and freshness thresholds.
+- Examples: `src/mcp_strava/settings.py`, `src/mcp_strava/deploy/preflight.py`.
+- Pattern: immutable dataclass with cached loader and explicit validation.
 
 ## Entry Points
 
-**Primary CLI entry point:**
-- Location: `scripts/cli.py:325`
-- Triggers: `python3 scripts/cli.py <command> [args]`
-- Responsibilities: command dispatch, output formatting, process exit codes
+**Package CLI**
+- Location: `src/mcp_strava/__main__.py`
+- Triggers: `python -m mcp_strava`
+- Responsibilities: forward to the CLI dispatcher.
 
-**Test entry point:**
-- Location: `scripts/run_tests.py:25`
-- Triggers: `python3 scripts/run_tests.py`
-- Responsibilities: load `tests/test_smoke.py`, execute all `test_*` functions, report pass/fail
+**Operator CLI**
+- Location: `src/mcp_strava/cli.py`
+- Triggers: direct module execution or package entrypoint.
+- Responsibilities: product commands, sync/admin commands, reporting, and maintenance gates.
 
-**Smoke suite:**
-- Location: `tests/test_smoke.py:29`
-- Triggers: `scripts/run_tests.py` or manual import
-- Responsibilities: verify imports, pure functions, daily report path, and registry behavior
+**MCP HTTP Server**
+- Location: `src/mcp_strava/interfaces/mcp_http.py`
+- Triggers: `python -m mcp_strava.interfaces.mcp_http`
+- Responsibilities: build a read-only `FastMCP` server and expose the five public tools.
 
-**Justfile entry point:**
-- Location: `Justfile`
-- Triggers: `just test`
-- Responsibilities: forward to the smoke runner
+**Runtime Preflight**
+- Location: `src/mcp_strava/deploy/preflight.py`
+- Triggers: container health check, startup validation, runtime validation commands.
+- Responsibilities: fail closed if the SQLite mirror is missing or structurally invalid.
+
+**Runtime Prep**
+- Location: `src/mcp_strava/deploy/prepare_runtime.py`
+- Triggers: operator preparation step for the live Docker runtime.
+- Responsibilities: copy or back up the live DB, write `live.env`, and validate the target mirror.
 
 ## Architectural Constraints
 
-- **Threading:** synchronous single-process CLI. No async runtime, queue worker, or background service is present.
-- **SQLite access:** `DbConn` uses WAL and `check_same_thread=False`, but the commands run as short-lived one-shot processes.
-- **Global state:** module-level `_hr_max_cache` in `metrics.py`, `Config.SQL` late binding in `constants.py`, and `RateLimiter` counters in `sync.py`.
-- **Circular imports:** no active cycle is required for runtime flow. `constants.py` imports `sports.py` after `Config` is defined, then attaches SQL fragments.
-- **Token storage:** `refresh_token()` writes new credentials back to `.env`; the file is local configuration, not a secretless cache.
-- **Validation boundary:** `api_schema.py` exists as a validation layer, but current runtime commands do not call it.
+- **Threading:** the main application path is synchronous; no async runtime or worker queue exists outside the MCP SDK client smoke helper.
+- **Global state:** `src/mcp_strava/metrics.py` caches HR max, `src/mcp_strava/settings.py` caches resolved settings, and `src/mcp_strava/adapters/strava/rate_limit.py` keeps in-memory quota state.
+- **Circular imports:** `src/mcp_strava/constants.py` imports sport helpers at module end after `Config` is defined; keep that ordering intact.
+- **Local-only exposure:** `src/mcp_strava/interfaces/mcp_http.py` rejects unsafe bind settings unless the profile explicitly allows container binding.
+- **Data safety:** `src/mcp_strava/adapters/sqlite/migrations.py` always backs up before migration and rechecks parity after the write.
 
 ## Anti-Patterns
 
-### Fat CLI
+### Fat Edge Handler
 
-**What happens:** new logic is added directly to `scripts/cli.py`, turning the dispatcher into a second domain layer.
-**Why it's wrong:** it hides behavior from the shared modules, makes testing harder, and duplicates logic already present in `sync.py`, `training.py`, or `report.py`.
-**Do this instead:** add ingest logic in `scripts/strava_lib/sync.py`, computed metrics in `scripts/strava_lib/metrics.py`, and training math in `scripts/strava_lib/training.py`.
+**What happens:** business logic is reimplemented in `src/mcp_strava/cli.py` or `src/mcp_strava/interfaces/mcp_http.py` instead of using the application layer.
+**Why it's wrong:** it duplicates enrichment and freshness logic, increases drift between CLI and MCP responses, and makes testing harder.
+**Do this instead:** add or extend a service in `src/mcp_strava/application/` and have the edge handler call it.
 
-### Raw Dict Leakage
+### Unsafe Mirror Mutation
 
-**What happens:** new outputs are built as ad hoc nested dicts and passed across modules.
-**Why it's wrong:** the codebase already uses `scripts/strava_lib/types.py` as the cross-module contract, and raw dicts make the data flow fragile.
-**Do this instead:** add a dataclass in `scripts/strava_lib/types.py` and serialize it at the edge with `dc_to_dict()`.
+**What happens:** the live mirror is edited without a preflight, backup, or parity check.
+**Why it's wrong:** this can destroy the local Strava mirror or leave it structurally inconsistent.
+**Do this instead:** route changes through `src/mcp_strava/adapters/sqlite/{schema,migrations,backup}.py` or the deployment helpers in `src/mcp_strava/deploy/`.
+
+### MCP Admin Leakage
+
+**What happens:** operational commands are surfaced as MCP tools.
+**Why it's wrong:** the MCP surface is intended to be read-only and product-focused.
+**Do this instead:** keep sync, backfill, DB maintenance, and debug flows below the MCP boundary in `src/mcp_strava/cli.py` and `src/mcp_strava/deploy/`.
 
 ## Error Handling
 
-**Strategy:** fail closed at the command boundary, return `None` for insufficient data inside pure analytics functions, and retry transient Strava failures in `sync.py`.
+**Strategy:** fail closed on IO boundaries, return typed `None`/partial completeness when data is missing, and convert external failures into product-safe reasons.
 
 **Patterns:**
-- `sync.py` retries network and HTTP failures with backoff and 429 handling.
-- `db.py` refreshes OAuth tokens on 401 and converts token-refresh problems into actionable `RuntimeError`s.
-- `report.py` and `analytics.py` return `None` when there is not enough data rather than inventing defaults.
-- `cli.py` wraps sync commands with traceback printing and a last-chance sync_log write.
+- `StravaUnavailable` in `src/mcp_strava/adapters/strava/types.py` normalizes network, auth, and rate-limit failures.
+- `src/mcp_strava/deploy/preflight.py` and `src/mcp_strava/adapters/sqlite/schema.py` raise `RuntimeError` when the mirror is invalid.
+- `src/mcp_strava/cli.py` prints user-facing failures to stderr and exits non-zero for sync and maintenance commands.
+- Product services keep usable payloads and annotate missing data through `CompletenessMetadata` and warnings.
 
 ## Cross-Cutting Concerns
 
-**Logging:** `sync.py` writes progress and failures to stderr; `cli.py` prints user-facing JSON or plain text; `sync_log` persists audit history in SQLite.
-
-**Validation:** schema drift is represented in `scripts/strava_lib/api_schema.py`; runtime smoke coverage lives in `tests/test_smoke.py`.
-
-**Authentication:** OAuth refresh is centralized in `scripts/strava_lib/db.py:112`; credentials are loaded from and written back to `.env`.
+**Logging:** CLI command output is mostly stdout JSON or compact text, while sync and maintenance failures write to stderr.
+**Validation:** `src/mcp_strava/settings.py`, `src/mcp_strava/interfaces/mcp_http.py`, and `src/mcp_strava/deploy/preflight.py` validate runtime policy before serving traffic.
+**Authentication:** `src/mcp_strava/adapters/strava/token_provider.py` owns the token file, while `src/mcp_strava/adapters/strava/token_refresh.py` owns OAuth refresh.
+**Freshness:** every product service builds freshness metadata from the local mirror before returning data.
 
 ---
 
-*Architecture analysis: 2026-05-20*
+*Architecture analysis: 2026-05-22*

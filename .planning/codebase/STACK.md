@@ -1,74 +1,76 @@
+---
+analysis_date: 2026-05-22
+last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
+---
 # Technology Stack
 
-**Analysis Date:** 2026-05-20
+**Analysis Date:** 2026-05-22
 
 ## Languages
 
 **Primary:**
-- Python 3.13.5 - All runtime code in `scripts/strava_lib/*.py`, the CLI in `scripts/cli.py`, and smoke tests in `tests/test_smoke.py`.
+- Python 3.13+ - Runtime code in `src/mcp_strava/*.py`, deployment helpers in `deploy/*.py`, and package metadata in `pyproject.toml`.
 
 **Secondary:**
-- Bash - `Justfile` task runner syntax and shell execution.
+- YAML - Docker Compose and gateway catalog mutation in `deploy/docker-compose.yml` and `deploy/gateway_register.py`.
+- Dockerfile syntax - Container image build in `deploy/Dockerfile`.
 
 ## Runtime
 
 **Environment:**
-- CPython 3.13.5 in this workspace.
-- Standard-library-only runtime; imports under `scripts/` and `tests/` are `sqlite3`, `urllib.request`, `json`, `dataclasses`, `typing`, and other stdlib modules.
+- CPython 3.13 - The project declares `requires-python = ">=3.13"` in `pyproject.toml`, and the container image uses `python:3.13-slim` in `deploy/Dockerfile`.
+- Local package install - The container build installs the project from `/app` with `pip install --no-cache-dir /app`.
 
 **Package Manager:**
-- Not detected.
-- No `requirements.txt`, `pyproject.toml`, `poetry.lock`, `Pipfile`, or other Python lockfile is present.
-- Execution is driven directly with `python3` and `just`.
+- `uv` lockfile is present - `uv.lock` pins the resolved dependency graph.
+- `pip` is used during image build - `deploy/Dockerfile` installs the project directly from the source tree.
 
 ## Frameworks
 
 **Core:**
-- None detected.
-- The codebase uses a custom package layout under `scripts/strava_lib/` instead of a web or app framework.
+- `mcp` 1.27.1 - Provides `FastMCP`, the `streamable-http` transport, MCP client smoke tooling, and transport security in `src/mcp_strava/interfaces/mcp_http.py` and `src/mcp_strava/deploy/smoke.py`.
 
 **Testing:**
-- None detected.
-- Verification uses the custom runner in `scripts/run_tests.py` with tests in `tests/test_smoke.py`; `pytest` is intentionally not the primary entrypoint.
+- `pytest` - Declared as the `test` extra in `pyproject.toml`; not the primary runtime entrypoint.
 
 **Build/Dev:**
-- `just` - Local command runner defined in `Justfile`.
-- `python3` - Direct script execution for CLI and tests.
+- `setuptools` - Build backend declared in `pyproject.toml`.
+- `docker` / `docker compose` - Container build and service wiring in `deploy/Dockerfile` and `deploy/docker-compose.yml`.
 
 ## Key Dependencies
 
 **Critical:**
-- `sqlite3` (stdlib) - Local persistence layer used by `scripts/strava_lib/db.py` against `data/strava.db`.
-- `urllib.request` / `urllib.error` / `urllib.parse` (stdlib) - Direct HTTP client for Strava OAuth and API requests in `scripts/strava_lib/db.py` and `scripts/strava_lib/sync.py`.
-- `json` (stdlib) - Serialization for API payloads, DB blobs, and CLI output across `scripts/cli.py`, `scripts/strava_lib/db.py`, `scripts/strava_lib/sync.py`, and `scripts/strava_lib/types.py`.
+- `mcp` 1.27.1 - MCP server surface and SDK client support; the lockfile shows `anyio`, `httpx`, `jsonschema`, `pydantic`, `pydantic-settings`, `starlette`, `uvicorn`, and related transitive packages.
+- `PyYAML` 6.0.3 - YAML parsing/serialization for gateway registration in `deploy/gateway_register.py`.
 
 **Infrastructure:**
-- Local filesystem state - `.env` for secrets/config, `data/strava.db` for SQLite persistence, and `references/` for supporting research notes.
-- `dataclasses` / `typing` (stdlib) - Data contracts in `scripts/strava_lib/types.py` and `scripts/strava_lib/api_schema.py`.
+- `sqlite3` (stdlib) - Local mirror storage, preflight checks, backups, and migrations in `src/mcp_strava/adapters/sqlite/*`.
+- `urllib.request` / `urllib.error` / `urllib.parse` (stdlib) - Strava OAuth and API requests in `src/mcp_strava/adapters/strava/token_refresh.py` and `src/mcp_strava/adapters/strava/transport.py`.
+- `json` (stdlib) - Serialization of Strava payloads, MCP envelopes, and CLI output across `src/mcp_strava/*.py`.
 
 ## Configuration
 
 **Environment:**
-- Environment variables are loaded manually from `.env` in `scripts/strava_lib/db.py::load_env()`.
-- Token refresh writes updated values back to `.env` in `scripts/strava_lib/db.py::save_env()`.
-- Required Strava auth variables: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REFRESH_TOKEN`, `STRAVA_ACCESS_TOKEN`.
+- `src/mcp_strava/settings.py` loads `MCP_STRAVA_DB_PATH`, `MCP_STRAVA_TOKEN_PATH`, `MCP_STRAVA_RUNTIME_PROFILE`, `MCP_STRAVA_HTTP_HOST`, `MCP_STRAVA_HTTP_PORT`, `MCP_STRAVA_ALLOW_CONTAINER_BIND`, `MCP_STRAVA_ALLOWED_HOSTS`, `MCP_STRAVA_ALLOWED_ORIGINS`, `MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS`, `MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS`, and `MCP_STRAVA_PROJECT_ROOT`.
+- Strava auth values are file-backed in the token file: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REFRESH_TOKEN`, `STRAVA_ACCESS_TOKEN`, and `STRAVA_EXPIRES_AT` in `src/mcp_strava/adapters/strava/token_provider.py` and `src/mcp_strava/db.py`.
+- `deploy/Dockerfile` and `deploy/docker-compose.yml` hard-set container-safe defaults for `MCP_STRAVA_RUNTIME_PROFILE`, `MCP_STRAVA_HTTP_HOST`, `MCP_STRAVA_HTTP_PORT`, `MCP_STRAVA_ALLOW_CONTAINER_BIND`, and `MCP_STRAVA_DB_PATH`.
 
 **Build:**
-- `Justfile` defines the local command surface.
-- `scripts/run_tests.py` is the verification harness.
-- `.gitignore` excludes `.env` and `data/*.db*`.
+- `pyproject.toml` defines the build backend, package metadata, and the `src` package root.
+- `uv.lock` pins the full resolved dependency set.
+- `deploy/Dockerfile` and `deploy/docker-compose.yml` define the container runtime contract.
 
 ## Platform Requirements
 
 **Development:**
-- Python 3.13.x with access to the repo checkout.
-- Writable `data/` directory for SQLite files.
-- Network access to `https://www.strava.com` for token refresh and API calls.
+- Python 3.13+ with write access to the repo checkout, local `.env`, and `data/`.
+- Network access to `https://www.strava.com` for token refresh and API fetches.
+- Local SQLite mirror state under `data/strava.db` or the path selected by `MCP_STRAVA_DB_PATH`.
 
 **Production:**
-- No separate deployment target is detected.
-- The code runs as a local CLI process against a checked-in repo plus local SQLite state.
+- Docker container runtime on the local MCP network.
+- Local-only or container-network-safe HTTP binding enforced by `src/mcp_strava/interfaces/mcp_http.py` and `deploy/Dockerfile`.
 
 ---
 
-*Stack analysis: 2026-05-20*
+*Stack analysis: 2026-05-22*

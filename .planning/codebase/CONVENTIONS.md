@@ -1,108 +1,104 @@
+---
+analysis_date: 2026-05-22
+last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
+---
 # Coding Conventions
 
-**Analysis Date:** 2026-05-20
+**Analysis Date:** 2026-05-22
 
 ## Naming Patterns
 
 **Files:**
-- Module files are lower-case with underscores, for example `scripts/strava_lib/constants.py`, `scripts/strava_lib/training.py`, `scripts/strava_lib/report.py`, and `tests/test_smoke.py`.
-- The only top-level executable entrypoints in this repo are plain Python scripts such as `scripts/cli.py` and `scripts/run_tests.py`.
+- Use lower-case module names with underscores under `src/mcp_strava/`, for example `src/mcp_strava/application/metric_services.py`, `src/mcp_strava/adapters/sqlite/repository.py`, and `src/mcp_strava/interfaces/mcp_http.py`.
+- Keep package boundaries explicit: `application`, `adapters`, `refresh`, `interfaces`, and `deploy` are separate directories, not mixed utility buckets.
 
 **Functions:**
-- Use `snake_case` for all functions and helpers, for example `calc_banister()`, `calc_weekly_plan()`, `refresh_token()`, and `load_tests()`.
-- Command handlers in `scripts/cli.py` follow the `cmd_*` prefix, for example `cmd_activities()`, `cmd_sync()`, and `cmd_report()`.
-- Private helpers use a leading underscore, for example `_fetch_with_retry()`, `_form_zone()`, `_sim_one_day()`, and `_decoupling_invalid()`.
+- Use `snake_case` for functions and helpers, including private helpers such as `_compact_activity()` in `src/mcp_strava/application/workouts.py`, `_validate_ranges()` in `src/mcp_strava/settings.py`, and `_apply_connection_pragmas()` in `src/mcp_strava/adapters/sqlite/connection.py`.
+- Keep command and entrypoint functions descriptive and action-oriented, such as `main()`, `build_mcp_server()`, `run_once()`, and `validate_runtime_db()`.
 
 **Variables:**
-- Use `snake_case` for locals and module variables, for example `daily_trimp`, `alpha_fitness`, `after_param`, and `_hr_max_cache`.
-- Module-level constants use `UPPER_CASE`, for example `DB_PATH`, `ENV_PATH`, `STREAM_KEYS`, and `COMMANDS`.
+- Use `snake_case` for local variables and parameters.
+- Use explicit names for runtime collaborators and data handles, such as `repo`, `transport`, `policy`, `clock`, `sleeper`, and `connection`.
 
 **Types:**
-- Use `PascalCase` for dataclasses and classes, for example `Config`, `DbConn`, `StravaActivity`, `WeeklyPlan`, and `DailyReport`.
-- Type names live in `scripts/strava_lib/types.py` and are used as the shared data contract between modules.
+- Use `PascalCase` for dataclasses, classes, protocols, and enums, such as `Settings`, `SQLiteRepository`, `ServiceEnvelope`, `StravaTransport`, `RefreshPolicy`, and `Stage`.
+- Keep dataclasses in `src/mcp_strava/types.py` and adapter-specific contracts in `src/mcp_strava/adapters/strava/types.py`.
+
+**Constants:**
+- Use `UPPER_CASE` for module constants, including `MCP_TOOL_NAMES`, `FORBIDDEN_TOOL_NAMES`, `REQUIRED_RUNTIME_TABLES`, `MCP_TOOL_IDS`, and `BACKUP_RETENTION_DEFAULT`.
+- Keep tunable values centralized in `src/mcp_strava/constants.py` and runtime settings in `src/mcp_strava/settings.py`.
 
 ## Code Style
 
 **Formatting:**
-- The codebase uses standard Python formatting with no repo-local formatter config detected.
-- Imports are grouped by standard library first, then local `strava_lib` imports, as seen in `scripts/cli.py`, `scripts/strava_lib/report.py`, and `scripts/strava_lib/metrics.py`.
-- Section dividers and docstrings are used heavily to separate CLI, model, analytics, and sync responsibilities.
+- No repo-local formatter config is detected in `pyproject.toml`; the code follows conventional Python formatting and readability rules.
+- Docstrings are the main documentation style. Modules are usually documented with a short purpose string at the top.
 
-**Structure:**
-- Prefer small, domain-named functions over deep class hierarchies.
-- Keep orchestration thin at the edge and push computation into `scripts/strava_lib/*.py`.
-- Use dataclasses for structured results instead of raw dicts once data crosses a module boundary.
+**Import Style:**
+- Prefer standard-library imports first, third-party imports next, and local `mcp_strava` imports last.
+- `from __future__ import annotations` is used where forward references and lighter typing syntax are helpful.
+- Import aliases are used intentionally for clarity, for example `import mcp_strava.refresh.runtime as refresh_runtime` in `src/mcp_strava/cli.py`.
 
-## Import Organization
-
-**Order:**
-1. Standard library imports.
-2. Local project imports from `strava_lib`.
-3. In-module imports inside functions only when needed for optional or circular dependencies.
-
-**Path Aliases:**
-- Not detected. Imports use direct package paths such as `from strava_lib.constants import Config`.
+**Layout:**
+- Prefer thin edge modules and move business logic into `src/mcp_strava/application/` or `src/mcp_strava/adapters/`.
+- Keep each module focused on one boundary: CLI dispatch in `src/mcp_strava/cli.py`, HTTP MCP registration in `src/mcp_strava/interfaces/mcp_http.py`, SQLite access in `src/mcp_strava/adapters/sqlite/`, and Strava HTTP behavior in `src/mcp_strava/adapters/strava/`.
 
 ## Error Handling
 
 **Patterns:**
-- Hard failures raise `RuntimeError` with actionable messages in auth and API code, for example `scripts/strava_lib/db.py` in `refresh_token()` and `api_request()`.
-- Missing or insufficient data usually returns `None` instead of throwing, especially in metric functions such as `calc_efficiency_factor()`, `calc_hr_recovery()`, and `calc_vertical_speed()`.
-- CLI commands print user-facing errors to `stderr` and exit non-zero on failure, as in `scripts/cli.py` and `scripts/strava_lib/sync.py`.
-- Sync code catches transient network and HTTP problems, retries, and logs failures to `sync_log` in `data/strava.db` through `scripts/strava_lib/sync.py`.
+- Raise `RuntimeError` for hard fail-closed conditions that should stop the workflow, such as missing runtime DB invariants in `src/mcp_strava/deploy/preflight.py`, schema parity failures in `src/mcp_strava/adapters/sqlite/migrations.py`, and missing auth material in `src/mcp_strava/db.py` and `src/mcp_strava/sync.py`.
+- Raise `ValueError` for invalid configuration or unsafe transport settings, such as the host/origin validation in `src/mcp_strava/interfaces/mcp_http.py` and integer range checks in `src/mcp_strava/settings.py`.
+- Use `StravaUnavailable` reason codes in `src/mcp_strava/adapters/strava/types.py` to keep adapter failures product-safe and machine-readable.
+- Return `None` or incomplete envelope metadata when the data is missing or insufficient instead of inventing defaults, especially in `src/mcp_strava/application/workouts.py`, `src/mcp_strava/application/reports.py`, and `src/mcp_strava/refresh/freshness.py`.
+- CLI and runtime entrypoints print human-readable failures to `stderr` and exit non-zero instead of leaking raw tracebacks to callers, unless the command is explicitly a debugging path.
 
 ## Logging
 
-**Framework:** `print()` to stdout/stderr.
+**Framework:**
+- No logging framework is detected in the scoped files.
 
 **Patterns:**
-- Command output is usually JSON on stdout.
-- Progress, retries, and sync status go to stderr in `scripts/strava_lib/sync.py`.
-- Success and failure indicators are text-based and intentionally minimal, for example `✓` and `✗` in `cmd_log()` in `scripts/cli.py`.
+- Machine-readable command output is usually JSON on `stdout`, as in `src/mcp_strava/cli.py`.
+- Validation and smoke failures print concise diagnostics to `stderr`, as in `src/mcp_strava/deploy/preflight.py` and `src/mcp_strava/deploy/smoke.py`.
+- Progress and failure handling stay close to the command boundary; there is little evidence of cross-cutting logging helpers.
 
 ## Comments
 
 **When to Comment:**
-- Comments explain domain decisions, thresholds, and rationale, not trivial syntax.
-- Section headers and inline notes are used to explain why metrics were removed, why thresholds exist, and why particular data gates are applied.
-- Comments often mention the business reason for a rule, for example the steady-state requirement in `scripts/strava_lib/metrics.py` or the training-signal rationale in `scripts/strava_lib/report.py`.
+- Comment domain rules, thresholds, and safety rationale.
+- Avoid comments that restate trivial syntax or obvious control flow.
 
-**JSDoc/TSDoc:**
-- Not used. Python docstrings are the primary documentation style.
+**Observed Style:**
+- Comments are used to justify thresholds, explain phase-specific behavior, or preserve migration/history notes, for example in `src/mcp_strava/constants.py`, `src/mcp_strava/report.py`, `src/mcp_strava/db.py`, and `src/mcp_strava/deploy/preflight.py`.
+- Docstrings are preferred over inline prose for module and function intent.
 
 ## Function Design
 
 **Size:**
-- Functions are generally small and single-purpose.
-- CLI handlers in `scripts/cli.py` are thin wrappers around one query or one library call.
-- Core analytics functions in `scripts/strava_lib/*.py` are pure where possible and return typed records instead of mutating shared state.
+- Keep functions small and single-purpose.
+- Edge handlers should stay thin; the computation belongs in `src/mcp_strava/application/`, `src/mcp_strava/refresh/`, or `src/mcp_strava/adapters/`.
 
 **Parameters:**
-- Prefer explicit positional or keyword parameters with simple data structures.
-- `conn` is the standard database handle name.
-- Dates are usually passed as `YYYY-MM-DD` strings or `datetime.date` objects depending on the module.
+- Prefer explicit parameters and keyword-only arguments when a function orchestrates multiple collaborators or optional behaviors.
+- Use injectable collaborators instead of hidden globals where possible, especially for `connection`, `clock`, `sleeper`, `transport`, and `policy`.
 
 **Return Values:**
-- Structured results use dataclasses from `scripts/strava_lib/types.py`.
-- Optional computations return `None` when data is missing or invalid rather than sentinel numeric values.
-- CLI handlers print their output instead of returning it.
+- Return typed dataclasses or structured dicts instead of raw nested dicts once data crosses a module boundary.
+- Use envelope objects such as `ServiceEnvelope`, `FreshnessMetadata`, and `CompletenessMetadata` to carry both data and quality metadata.
 
 ## Module Design
 
 **Exports:**
-- Modules expose functions and dataclasses directly; `scripts/strava_lib/__init__.py` is empty and does not act as a barrel file.
-- Shared constants live in `scripts/strava_lib/constants.py`, and shared types live in `scripts/strava_lib/types.py`.
+- Modules generally export functions and dataclasses directly.
+- `src/mcp_strava/__init__.py` is empty, so the package does not act as a barrel file.
 
-**Barrel Files:**
-- Not used.
-
-## Practical Rules
-
-- Keep new business logic in `scripts/strava_lib/`, not in `scripts/cli.py`.
-- Keep new result shapes in `scripts/strava_lib/types.py` so downstream code stays typed and consistent.
-- Keep validation gates close to the metric they protect, as in `scripts/strava_lib/metrics.py` and `scripts/strava_lib/training.py`.
-- Prefer explicit, readable thresholds in `Config` over inline magic numbers.
+**Shared Boundaries:**
+- Shared contracts live in `src/mcp_strava/types.py`.
+- Shared config lives in `src/mcp_strava/settings.py`.
+- Shared algorithm constants live in `src/mcp_strava/constants.py`.
+- Repository and adapter boundaries stay explicit in `src/mcp_strava/adapters/sqlite/` and `src/mcp_strava/adapters/strava/`.
+- Read-only product exposure is concentrated in `src/mcp_strava/interfaces/mcp_http.py`.
 
 ---
 
-*Convention analysis: 2026-05-20*
+*Convention analysis: 2026-05-22*
