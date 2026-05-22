@@ -483,6 +483,15 @@ def test_sync_entrypoints_fail_fast_without_refresh_schema(monkeypatch, tmp_path
         sync.backfill_activities()
 
 
+def test_default_compose_has_no_public_host_port_binding() -> None:
+    compose = Path("deploy/docker-compose.yml")
+    if not compose.exists():
+        pytest.fail("deploy/docker-compose.yml must exist")
+    text = compose.read_text(encoding="utf-8")
+    assert '0.0.0.0:' not in text
+    assert 'ports: ["0.0.0.0' not in text
+
+
 def test_backfill_activities_invokes_run_backfill_per_D16(monkeypatch, tmp_path: Path) -> None:
     import mcp_strava.sync as sync
     from mcp_strava.refresh.runtime import RefreshResult
