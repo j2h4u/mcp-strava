@@ -3,9 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 5 planned; ready to execute Phase 5
-last_updated: "2026-05-22T09:37:57.990Z"
-last_activity: 2026-05-22 -- Phase 5 planning complete
+last_updated: "2026-05-22T10:11:35.366Z"
+last_activity: 2026-05-22 -- Phase 05 execution started
 progress:
   total_phases: 5
   completed_phases: 4
@@ -21,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-20)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Phase 5 — mcp http surface & docker hardening
+**Current focus:** Phase 05 — mcp-http-surface-docker-hardening
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-22 -- Phase 5 planning complete
+Phase: 05 (mcp-http-surface-docker-hardening) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 05
+Last activity: 2026-05-22 -- Phase 05 execution started
 
 Progress: [██████████] 100%
 
