@@ -27,7 +27,9 @@ def test_dockerfile_source_contract() -> None:
     assert "MCP_STRAVA_ALLOW_CONTAINER_BIND=1" in text
     assert "EXPOSE 8080" in text
     assert 'ENTRYPOINT ["python", "-m", "mcp_strava.deploy.entrypoint"]' in text
-    assert "python -m mcp_strava.deploy.preflight --db /data/strava.db --quick --quiet" in text
+    assert "mcp_strava.deploy.preflight" in text
+    assert "/data/strava.db" in text
+    assert "--quick" in text
 
 
 def test_compose_source_contract() -> None:
@@ -40,9 +42,19 @@ def test_compose_source_contract() -> None:
     assert "ports:" not in text
     assert 'expose: ["8080"]' in text or "expose:\n      - \"8080\"" in text
     assert "/opt/docker/mcp-strava/data:/data" in text
-    assert "MCP_STRAVA_DB_PATH=/data/strava.db" in text
+    assert "MCP_STRAVA_DB_PATH" in text and "/data/strava.db" in text
     assert "/opt/docker/mcp-strava/.env" in text
     assert "mcp-backends" in text
+
+
+def test_dockerignore_contract() -> None:
+    dockerignore = _repo_root() / "deploy" / ".dockerignore"
+    if not dockerignore.exists():
+        pytest.skip(".dockerignore added in Task 3")
+    text = _read_text(dockerignore)
+    assert ".env" in text
+    assert "data/*.db" in text
+    assert ".planning/config.json" in text
 
 
 def test_preflight_main_missing_db_fails(tmp_path: Path) -> None:

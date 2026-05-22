@@ -1,0 +1,11 @@
+.env
+data/*.db
+data/*.db-*
+.planning/config.json
+.git
+__pycache__/
+.pytest_cache/
+*.sqlite
+*.sqlite3
+backup/
+backups/

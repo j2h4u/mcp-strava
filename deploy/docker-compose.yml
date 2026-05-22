@@ -1,0 +1,26 @@
+services:
+  mcp-strava:
+    container_name: mcp-strava
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - /opt/docker/mcp-strava/.env
+    environment:
+      MCP_STRAVA_RUNTIME_PROFILE: container
+      MCP_STRAVA_HTTP_HOST: 0.0.0.0
+      MCP_STRAVA_HTTP_PORT: "8080"
+      MCP_STRAVA_ALLOW_CONTAINER_BIND: "1"
+      MCP_STRAVA_DB_PATH: /data/strava.db
+    volumes:
+      - /opt/docker/mcp-strava/data:/data
+    expose: ["8080"]
+    networks:
+      - mcp-backends
+    # Default profile intentionally avoids host port publication.
+
+networks:
+  mcp-backends:
+    external: true
+    name: mcp-backends

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import sqlite3
 import sys
 from pathlib import Path
 
+from mcp_strava.adapters.sqlite.connection import open_expected_mirror_db
 from mcp_strava.adapters.sqlite.schema import validate_required_inventory
 
 REQUIRED_RUNTIME_TABLES: tuple[str, ...] = (
@@ -20,14 +20,6 @@ REQUIRED_RUNTIME_TABLES: tuple[str, ...] = (
 )
 
 
-def _connect_readwrite(path: Path) -> sqlite3.Connection:
-    uri = f"file:{path}?mode=rw"
-    conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=1500")
-    return conn
-
-
 def validate_runtime_db(path: Path, *, quick: bool = False) -> None:
     """Validate runtime DB structure.
 
@@ -38,7 +30,7 @@ def validate_runtime_db(path: Path, *, quick: bool = False) -> None:
     if not path.exists():
         raise RuntimeError(f"Expected runtime DB does not exist: {path}")
 
-    with _connect_readwrite(path) as conn:
+    with open_expected_mirror_db(path) as conn:
         if quick:
             conn.execute("SELECT COUNT(*) FROM activities").fetchone()
             return
@@ -77,4 +69,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
