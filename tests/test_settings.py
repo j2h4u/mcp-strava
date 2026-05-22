@@ -13,6 +13,13 @@ def test_load_settings_defaults() -> None:
     assert settings.runtime_profile == 'local'
     assert settings.http.host == '127.0.0.1'
     assert settings.http.port == 8000
+    assert settings.http.allow_container_bind is False
+    assert settings.http.allowed_hosts == ('127.0.0.1', 'localhost', 'mcp-strava')
+    assert settings.http.allowed_origins == (
+        'http://127.0.0.1',
+        'http://localhost',
+        'http://[::1]',
+    )
     assert settings.freshness.warn_age_hours == 12
     assert settings.freshness.max_age_hours == 24
 
@@ -46,6 +53,9 @@ def test_load_settings_environment_overrides() -> None:
         'MCP_STRAVA_RUNTIME_PROFILE': 'docker',
         'MCP_STRAVA_HTTP_HOST': '0.0.0.0',
         'MCP_STRAVA_HTTP_PORT': '8123',
+        'MCP_STRAVA_ALLOW_CONTAINER_BIND': 'true',
+        'MCP_STRAVA_ALLOWED_HOSTS': 'api.local,mcp-strava',
+        'MCP_STRAVA_ALLOWED_ORIGINS': 'https://app.local,http://localhost:3000',
         'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS': '8',
         'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS': '20',
     }
@@ -57,6 +67,9 @@ def test_load_settings_environment_overrides() -> None:
     assert settings.runtime_profile == 'docker'
     assert settings.http.host == '0.0.0.0'
     assert settings.http.port == 8123
+    assert settings.http.allow_container_bind is True
+    assert settings.http.allowed_hosts == ('api.local', 'mcp-strava')
+    assert settings.http.allowed_origins == ('https://app.local', 'http://localhost:3000')
     assert settings.freshness.warn_age_hours == 8
     assert settings.freshness.max_age_hours == 20
 
@@ -74,6 +87,9 @@ def test_load_settings_env_file_compatibility(tmp_path: Path) -> None:
                 'MCP_STRAVA_RUNTIME_PROFILE=dev',
                 'MCP_STRAVA_HTTP_HOST=localhost',
                 'MCP_STRAVA_HTTP_PORT=8011',
+                'MCP_STRAVA_ALLOW_CONTAINER_BIND=yes',
+                'MCP_STRAVA_ALLOWED_HOSTS=127.0.0.1,localhost,mcp-strava',
+                'MCP_STRAVA_ALLOWED_ORIGINS=http://127.0.0.1,http://localhost',
                 'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS=7',
                 'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS=30',
                 'IGNORED_KEY=ignored',
@@ -90,8 +106,31 @@ def test_load_settings_env_file_compatibility(tmp_path: Path) -> None:
     assert settings.runtime_profile == 'dev'
     assert settings.http.host == 'localhost'
     assert settings.http.port == 8011
+    assert settings.http.allow_container_bind is True
+    assert settings.http.allowed_hosts == ('127.0.0.1', 'localhost', 'mcp-strava')
+    assert settings.http.allowed_origins == ('http://127.0.0.1', 'http://localhost')
     assert settings.freshness.warn_age_hours == 7
     assert settings.freshness.max_age_hours == 30
+
+
+@pytest.mark.parametrize(
+    ('raw', 'expected'),
+    [
+        ('1', True),
+        ('true', True),
+        ('yes', True),
+        ('0', False),
+        ('false', False),
+        ('no', False),
+        ('anything', False),
+    ],
+)
+def test_load_settings_parses_allow_container_bind(raw: str, expected: bool) -> None:
+    settings = load_settings(
+        environ={'MCP_STRAVA_ALLOW_CONTAINER_BIND': raw},
+        project_root=Path('/tmp/project'),
+    )
+    assert settings.http.allow_container_bind is expected
 
 
 def test_explicit_environ_wins_over_env_file(tmp_path: Path) -> None:
