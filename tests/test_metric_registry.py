@@ -1,5 +1,7 @@
 """Metric registry contract tests for Phase 05 plan 05-01."""
 
+from pathlib import Path
+
 from mcp_strava.application.metric_registry import (
     EXCLUDED_INTERPRETATIONS,
     MCP_TOOL_IDS,
@@ -146,3 +148,11 @@ def test_excluded_interpretations_map_to_preserved_numeric_facts():
 def test_unknown_tool_id_is_rejected():
     with pytest.raises(ValueError):
         metrics_for_tool("get_data_status")
+
+
+def test_docs_metrics_md_stays_in_sync_with_registry():
+    docs_text = Path("docs/metrics.md").read_text(encoding="utf-8")
+    for metric_id in METRIC_REGISTRY:
+        assert metric_id in docs_text, f"docs/metrics.md missing metric id: {metric_id}"
+    for key in EXCLUDED_INTERPRETATIONS:
+        assert key in docs_text, f"docs/metrics.md missing exclusion key: {key}"
