@@ -163,13 +163,12 @@ def test_mcp_tools_have_annotations_and_structured_output(monkeypatch) -> None:
         ("list_workouts", {}),
         ("get_workout_detail", {"workout_id": 10}),
         ("compare_periods", {"period_a_start": "2026-05-01", "period_a_end": "2026-05-07", "period_b_start": "2026-04-24", "period_b_end": "2026-04-30"}),
-        ("project_fitness_state", {"scenario": "rest", "days": 3}),
+        ("project_fitness_state", {"target_date": "2026-05-30", "scenarios": ["rest"]}),
     ):
-        result = asyncio.run(server.call_tool(tool_name, arguments))
-        assert result.structured_content is not None
-        payload = result.structured_content
+        content, payload = asyncio.run(server.call_tool(tool_name, arguments))
+        assert payload is not None
         assert set(payload.keys()) == {"data", "freshness", "completeness", "warnings", "rationale"}
-        assert result.is_error is False
+        assert len(content) <= 1
 
 
 def test_get_workout_detail_missing_id_is_unavailable(monkeypatch) -> None:
@@ -202,8 +201,7 @@ def test_get_workout_detail_missing_id_is_unavailable(monkeypatch) -> None:
     )
 
     server = mcp_http.build_mcp_server()
-    result = asyncio.run(server.call_tool("get_workout_detail", {"workout_id": 999999}))
-    payload = result.structured_content
-    assert result.is_error is False
+    content, payload = asyncio.run(server.call_tool("get_workout_detail", {"workout_id": 999999}))
+    assert len(content) <= 1
     assert payload["completeness"]["status"] == "unavailable"
     assert any(warning["code"] == "workout_not_found" for warning in payload["warnings"])
