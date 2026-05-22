@@ -84,7 +84,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. MCP surface does not include sync/backfill/raw/sql/token/admin/sync-log operations, and allowlist tests prove these tools are absent.
   3. MCP responses include freshness and completeness metadata when analytics may be stale or partial.
   4. Container runtime uses a persistent `data/` volume, fails startup on missing/unreadable expected mirror DB, runs non-root by default, and keeps local-safe bind defaults.
-**Plans**: TBD
+**Plans**:
+  - [ ] `05-01` Metric Registry & Synthetic Metric Inventory - Wave 1
+  - [ ] `05-02` Fitness & Workout Metric Services - Wave 2 *(blocked on Wave 1 completion)*
+  - [ ] `05-03` Period Comparison & Fitness Projection Services - Wave 3 *(blocked on Wave 2 completion)*
+  - [ ] `05-04` MCP HTTP Server & Tool Allowlist - Wave 4 *(blocked on Wave 3 completion)*
+  - [ ] `05-05` Container Runtime & Data Hardening - Wave 5 *(blocked on Wave 4 completion)*
+  - [ ] `05-06` Live Gateway Integration & Rollback Smoke - Wave 6 *(blocked on Wave 5 completion)*
 
 ## Progress
 
@@ -97,4 +103,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. SQLite Safety & Repository Layer | 4/4 | Complete    | 2026-05-21 |
 | 3. Strava Adapter & Refresh Runtime | 4/4 | Complete    | 2026-05-21 |
 | 4. Application Services & CLI Refit | 4/4 | Complete    | 2026-05-21 |
-| 5. MCP HTTP Surface & Docker Hardening | 0/TBD | Not started | - |
+| 5. MCP HTTP Surface & Docker Hardening | 0/6 | Planned | - |
