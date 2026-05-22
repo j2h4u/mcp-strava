@@ -208,7 +208,7 @@ def test_live_paths_require_apply_and_confirm_flags(tmp_path: Path) -> None:
             str(live_compose),
         ]
     )
-    assert rc_default != 0
+    assert rc_default == 0
 
     rc_apply_only = gateway_register.main(
         [

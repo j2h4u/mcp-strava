@@ -162,7 +162,7 @@ def register_strava_gateway(
         return EXIT_FAILED
 
     live_target = _is_live_target(catalog_path) or _is_live_target(compose_path)
-    if live_target and (not apply or not confirm_live_gateway):
+    if live_target and apply and not confirm_live_gateway:
         print("live gateway mutation requires --apply and --confirm-live-gateway", file=sys.stderr)
         return EXIT_FAILED
 
