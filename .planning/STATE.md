@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-22T10:11:35.366Z"
-last_activity: 2026-05-22 -- Phase 05 execution started
+last_updated: "2026-05-22T10:17:31.547Z"
+last_activity: 2026-05-22
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 21
-  completed_plans: 15
-  percent: 71
+  completed_plans: 16
+  percent: 76
 ---
 
 # Project State
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-05-20)
 ## Current Position
 
 Phase: 05 (mcp-http-surface-docker-hardening) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 05
-Last activity: 2026-05-22 -- Phase 05 execution started
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-05-22
 
-Progress: [██████████] 100%
+Progress: [████████░░] 76%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [██████████] 100%
 | Phase 02 P01 | 2100s | 2 tasks | 9 files |
 | Phase 02 P02 | 21m | 2 tasks | 4 files |
 | Phase 02 P04 | 41min | 3 tasks | 4 files |
+| Phase 05-mcp-http-surface-docker-hardening P05-01 | 8 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,8 @@ Recent decisions affecting current work:
 - [Phase 02]: Expected mirror DB open now fails closed with sqlite URI mode=rw.
 - [Phase 02]: Repository boundary implemented with focused methods and AST direct-sqlite guard.
 - [Phase 02]: Plan 02-04 enforces explicit DB safety commands and repository-backed sync writes.
+- [Phase 05-mcp-http-surface-docker-hardening]: Use final MCP tool ids only in metric registry exposure. — Matches D-03 and blocks accidental tool-id drift.
+- [Phase 05-mcp-http-surface-docker-hardening]: Exclude interpretation labels and preserve numeric/model metrics only. — Implements D-02 and D-18 by keeping MCP factual.
 
 ### Pending Todos
 
@@ -95,6 +98,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-21T16:50:08.844Z
+Last session: 2026-05-22T10:17:22.964Z
 Stopped at: Phase 04 complete; ready to discuss Phase 5
-Resume file: .planning/ROADMAP.md
+Resume file: None

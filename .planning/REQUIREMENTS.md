@@ -47,9 +47,9 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 ### MCP
 
-- [ ] **MCP-01**: MCP HTTP server exposes only read-only intent-level training tools for workouts, daily report, weekly load, readiness, and recommendations
+- [x] **MCP-01**: MCP HTTP server exposes only read-only intent-level training tools for workouts, daily report, weekly load, readiness, and recommendations
 - [ ] **MCP-02**: MCP tool registry excludes sync, backfill, raw Strava API calls, arbitrary SQL, token/admin operations, and sync-log inspection
-- [ ] **MCP-03**: MCP responses include freshness and data-completeness metadata when analytics may be stale or partial
+- [x] **MCP-03**: MCP responses include freshness and data-completeness metadata when analytics may be stale or partial
 - [ ] **MCP-04**: MCP HTTP transport defaults to local/container-network-safe binding and rejects unsafe origin/bind configurations unless explicitly enabled
 
 ### Refresh Runtime
@@ -68,7 +68,7 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 - [x] **TEST-01**: Tests cover migration backup/preflight/post-check behavior against a copied SQLite database
 - [x] **TEST-02**: Tests cover Strava rate-limit/retry/checkpoint behavior without live Strava API calls
-- [ ] **TEST-03**: Tests cover MCP tool allowlist and prove forbidden sync/admin/debug tools are absent
+- [x] **TEST-03**: Tests cover MCP tool allowlist and prove forbidden sync/admin/debug tools are absent
 - [x] **TEST-04**: Tests cover freshness metadata, missing-HR handling, and core daily/weekly report parity
 
 ## v2 Requirements
@@ -129,9 +129,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLI-01 | Phase 4 | Complete |
 | CLI-02 | Phase 4 | Complete |
 | CLI-03 | Phase 4 | Complete |
-| MCP-01 | Phase 5 | Pending |
+| MCP-01 | Phase 5 | Complete |
 | MCP-02 | Phase 5 | Pending |
-| MCP-03 | Phase 5 | Pending |
+| MCP-03 | Phase 5 | Complete |
 | MCP-04 | Phase 5 | Pending |
 | REFRESH-01 | Phase 3 | Complete |
 | REFRESH-02 | Phase 3 | Complete |
@@ -141,7 +141,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DOCKER-03 | Phase 5 | Pending |
 | TEST-01 | Phase 2 | Complete |
 | TEST-02 | Phase 3 | Complete |
-| TEST-03 | Phase 5 | Pending |
+| TEST-03 | Phase 5 | Complete |
 | TEST-04 | Phase 4 | Complete |
 
 **Coverage:**
