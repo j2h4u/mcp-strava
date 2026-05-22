@@ -190,6 +190,34 @@ def _fixture_conn(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _fixture_conn_compare(path: Path) -> sqlite3.Connection:
+    conn = _create_base_db(path)
+    # Period A: run + hike baseline
+    _insert_activity(conn, 801, "2026-05-01", sport_type="Run", with_hr=True)
+    _insert_streams(conn, 801, with_hr=True)
+    _insert_activity(conn, 802, "2026-05-03", sport_type="Run", with_hr=True)
+    _insert_streams(conn, 802, with_hr=True)
+    _insert_activity(conn, 803, "2026-05-05", sport_type="Hike", with_hr=False)
+    # Period B: run-heavy with higher volume and another hike
+    _insert_activity(conn, 811, "2026-05-08", sport_type="Run", with_hr=True)
+    _insert_streams(conn, 811, with_hr=True)
+    _insert_activity(conn, 812, "2026-05-10", sport_type="Run", with_hr=True)
+    _insert_streams(conn, 812, with_hr=True)
+    _insert_activity(conn, 813, "2026-05-12", sport_type="Run", with_hr=True)
+    _insert_streams(conn, 813, with_hr=True)
+    _insert_activity(conn, 814, "2026-05-13", sport_type="Hike", with_hr=False)
+    conn.execute(
+        """
+        UPDATE refresh_state
+        SET last_success_at = ?, last_attempt_at = ?, last_status = 'ok'
+        WHERE id = 1
+        """,
+        ("2026-05-14T06:00:00", "2026-05-14T06:00:00"),
+    )
+    conn.commit()
+    return conn
+
+
 def _walk_no_forbidden_keys(obj) -> None:
     if isinstance(obj, dict):
         for key, value in obj.items():
@@ -382,3 +410,97 @@ def test_metric_services_source_does_not_serialize_then_filter_daily_report() ->
         for node in module.body
     )
     assert has_projection
+
+
+def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_path: Path) -> None:
+    from mcp_strava.application.metric_services import compare_periods_service
+
+    conn = _fixture_conn_compare(tmp_path / "compare.db")
+    try:
+        envelope = compare_periods_service(
+            period_a_start="2026-05-01",
+            period_a_end="2026-05-07",
+            period_b_start="2026-05-08",
+            period_b_end="2026-05-14",
+            sport=None,
+            now=datetime.fromisoformat("2026-05-14T09:00:00"),
+            signal_first_use=False,
+            connection=conn,
+        )
+    finally:
+        conn.close()
+
+    payload = dc_to_dict(envelope)
+    assert set(payload) == {"data", "freshness", "completeness", "warnings", "rationale"}
+    assert "global" in payload["data"]
+    assert "per_sport" in payload["data"]
+
+    global_metrics = payload["data"]["global"]["metrics"]
+    per_sport = payload["data"]["per_sport"]
+    required = {
+        "trimp",
+        "distance_km",
+        "moving_time_min",
+        "elevation_m",
+        "fitness",
+        "fatigue",
+        "form",
+        "acwr",
+        "cardiac_cost",
+        "cardiac_cost_adjusted",
+        "cardiac_drift_pct",
+        "hr_recovery_median_bpm_per_min",
+        "hrr_pct",
+        "vertical_speed_m_per_h",
+        "time_in_hr_zones_min",
+    }
+    for metric_id in required:
+        assert metric_id in global_metrics or any(metric_id in values["metrics"] for values in per_sport.values())
+
+    scalar_record = global_metrics["trimp"]
+    for field in ("period_a", "period_b", "delta", "delta_pct", "trend_direction", "sample_size", "coverage", "missing_reasons"):
+        assert field in scalar_record
+    assert scalar_record["trend_direction"] in {"up", "down", "flat", "unavailable"}
+
+    run_metrics = per_sport["Run"]["metrics"]
+    assert "cardiac_cost" in run_metrics
+    assert "metric_id" not in run_metrics["cardiac_cost"]
+
+    dist = global_metrics["time_in_hr_zones_min"]
+    assert "buckets" in dist["period_a"]
+    assert "buckets" in dist["period_b"]
+    assert "bucket_deltas" in dist
+    assert "bucket_delta_pct" in dist
+    assert "distribution_overlap_pct" in dist
+    if dist["distribution_overlap_pct"] is None:
+        assert dist["missing_reasons"]
+
+    serialized = json.dumps(payload).lower()
+    for forbidden in ("heart_improved", "vessels_improved", "ready", "should", "recommendation"):
+        assert forbidden not in serialized
+
+
+def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_path: Path) -> None:
+    from mcp_strava.application.metric_services import compare_periods_service
+
+    conn = _fixture_conn_compare(tmp_path / "compare-run.db")
+    try:
+        envelope = compare_periods_service(
+            period_a_start="2026-05-01",
+            period_a_end="2026-05-07",
+            period_b_start="2026-05-08",
+            period_b_end="2026-05-14",
+            sport="Run",
+            now=datetime.fromisoformat("2026-05-14T09:00:00"),
+            signal_first_use=False,
+            connection=conn,
+        )
+    finally:
+        conn.close()
+
+    payload = dc_to_dict(envelope)
+    assert payload["data"]["global"]["scope_filter"] == "sport"
+    assert set(payload["data"]["per_sport"]) == {"Run"}
+    trimp = payload["data"]["global"]["metrics"]["trimp"]
+    assert trimp["period_a"]["sample_size"] == 2
+    assert trimp["period_b"]["sample_size"] == 3

@@ -8,6 +8,7 @@ from mcp_strava.application.metric_registry import (
     METRIC_REGISTRY,
     metrics_for_tool,
 )
+from mcp_strava.application import metric_services
 import pytest
 
 
@@ -156,3 +157,12 @@ def test_docs_metrics_md_stays_in_sync_with_registry():
         assert metric_id in docs_text, f"docs/metrics.md missing metric id: {metric_id}"
     for key in EXCLUDED_INTERPRETATIONS:
         assert key in docs_text, f"docs/metrics.md missing exclusion key: {key}"
+
+
+def test_compare_periods_registry_metrics_are_mapped_or_explicitly_skipped():
+    mapped = set(metric_services.COMPARE_PERIODS_HANDLERS.keys())
+    skipped = set(metric_services.COMPARE_PERIODS_SKIP_REASONS.keys())
+    for metric_id, definition in METRIC_REGISTRY.items():
+        if definition.comparison_mode == "none" or "compare_periods" not in definition.exposed_in:
+            continue
+        assert metric_id in mapped or metric_id in skipped, f"{metric_id} must be mapped or explicitly skipped"
