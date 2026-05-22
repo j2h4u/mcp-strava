@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
+from statistics import median
 
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.analytics import weekly_digest
@@ -34,6 +35,14 @@ SAFETY_WARNING_CODES = {
     "insufficient_history",
 }
 
+COMPARISON_MISSING_REASONS = {
+    "insufficient_history",
+    "missing_hr",
+    "missing_streams",
+    "metric_not_applicable",
+    "no_activity_in_period",
+}
+
 
 def _connection_context(connection):
     return nullcontext(connection) if connection is not None else DbConn()
@@ -46,6 +55,217 @@ def _policy() -> RefreshPolicy:
 def _metric_if_registered(payload: dict[str, object], metric_id: str, value) -> None:
     if metric_id in METRIC_REGISTRY:
         payload[metric_id] = value
+
+
+def load_period_activities(repo: SQLiteRepository, start_day: str, end_day: str, sport: str | None = None) -> list:
+    rows = repo.activity_rows_between(start_day, end_day)
+    if sport is None:
+        return rows
+    return [row for row in rows if row.sport_type == sport]
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float))
+
+
+def aggregate_metric_values(metric_id: str, activities: list, conn) -> tuple[list, list[str]]:
+    values: list = []
+    missing: list[str] = []
+    for row in activities:
+        enriched = enrich_activity(conn, row)
+        if metric_id == "trimp":
+            values.append(enriched.trimp)
+        elif metric_id == "distance_km":
+            values.append(enriched.distance_km)
+        elif metric_id == "moving_time_min":
+            values.append(enriched.moving_time_min)
+        elif metric_id == "elevation_m":
+            values.append(enriched.elevation_m)
+        elif metric_id == "cardiac_cost":
+            if enriched.cc is None:
+                missing.append("missing_streams")
+            else:
+                values.append(enriched.cc)
+        elif metric_id == "cardiac_cost_adjusted":
+            cc_adj = enriched.cc
+            if cc_adj is None:
+                missing.append("missing_streams")
+            else:
+                values.append(cc_adj)
+        elif metric_id == "cardiac_drift_pct":
+            if enriched.cardiac_drift is None or enriched.cardiac_drift.drift_pct is None:
+                missing.append("missing_streams")
+            else:
+                values.append(enriched.cardiac_drift.drift_pct)
+        elif metric_id == "hr_recovery_median_bpm_per_min":
+            if enriched.hr_recovery is None or enriched.hr_recovery.median_rate is None:
+                missing.append("missing_hr")
+            else:
+                values.append(enriched.hr_recovery.median_rate)
+        elif metric_id == "hrr_pct":
+            if enriched.hrr_pct is None:
+                missing.append("missing_hr")
+            else:
+                values.append(enriched.hrr_pct)
+        elif metric_id == "vertical_speed_m_per_h":
+            if enriched.vertical_speed is None or enriched.vertical_speed.vmh is None:
+                missing.append("missing_streams")
+            else:
+                values.append(enriched.vertical_speed.vmh)
+        elif metric_id == "time_in_hr_zones_min":
+            if not enriched.zone_minutes:
+                missing.append("missing_hr")
+            else:
+                values.append(enriched.zone_minutes)
+    return values, sorted(set(missing))
+
+
+def _compare_summary(values: list, comparison_mode: str):
+    if not values:
+        return None
+    if comparison_mode == "sum":
+        return round(float(sum(values)), 3)
+    if comparison_mode == "avg":
+        return round(float(sum(values) / len(values)), 3)
+    if comparison_mode == "median":
+        return round(float(median(values)), 3)
+    if comparison_mode == "last":
+        return round(float(values[-1]), 3)
+    if comparison_mode == "min":
+        return round(float(min(values)), 3)
+    if comparison_mode == "max":
+        return round(float(max(values)), 3)
+    if comparison_mode == "trend":
+        if len(values) < 2:
+            return None
+        return round(float(values[-1] - values[0]), 3)
+    return None
+
+
+def compare_scalar_metric(metric_id: str, comparison_mode: str, values_a: list, values_b: list, missing_a: list[str], missing_b: list[str]) -> dict[str, object]:
+    a_value = _compare_summary(values_a, comparison_mode)
+    b_value = _compare_summary(values_b, comparison_mode)
+    missing = sorted(set(missing_a + missing_b))
+    if not values_a:
+        missing.append("no_activity_in_period")
+    if not values_b:
+        missing.append("no_activity_in_period")
+    missing = sorted(set(missing))
+    delta = round(a_value - b_value, 3) if _is_number(a_value) and _is_number(b_value) else None
+    delta_pct = round((delta / b_value) * 100, 2) if _is_number(delta) and _is_number(b_value) and b_value != 0 else None
+    trend = "unavailable"
+    if _is_number(delta):
+        trend = "flat" if abs(delta) < 1e-9 else ("up" if delta > 0 else "down")
+    return {
+        "period_a": {"value": a_value, "sample_size": len(values_a)},
+        "period_b": {"value": b_value, "sample_size": len(values_b)},
+        "delta": delta,
+        "delta_pct": delta_pct,
+        "trend_direction": trend,
+        "sample_size": {"period_a": len(values_a), "period_b": len(values_b)},
+        "coverage": {"period_a": 1.0 if values_a else 0.0, "period_b": 1.0 if values_b else 0.0},
+        "missing_reasons": missing,
+    }
+
+
+def compare_distribution_metric(values_a: list, values_b: list, missing_a: list[str], missing_b: list[str]) -> dict[str, object]:
+    missing = sorted(set(missing_a + missing_b))
+    if not values_a or not values_b:
+        missing = sorted(set(missing + ["no_activity_in_period"]))
+    zone_count = 5
+    buckets_a = {f"z{i + 1}": 0.0 for i in range(zone_count)}
+    buckets_b = {f"z{i + 1}": 0.0 for i in range(zone_count)}
+    for zones in values_a:
+        for idx, value in enumerate(zones[:zone_count]):
+            buckets_a[f"z{idx + 1}"] += float(value or 0.0)
+    for zones in values_b:
+        for idx, value in enumerate(zones[:zone_count]):
+            buckets_b[f"z{idx + 1}"] += float(value or 0.0)
+    for key in buckets_a:
+        buckets_a[key] = round(buckets_a[key], 2)
+        buckets_b[key] = round(buckets_b[key], 2)
+    bucket_deltas = {key: round(buckets_a[key] - buckets_b[key], 2) for key in buckets_a}
+    bucket_delta_pct = {
+        key: (round((bucket_deltas[key] / buckets_b[key]) * 100, 2) if buckets_b[key] else None) for key in buckets_a
+    }
+    total_a = sum(buckets_a.values())
+    total_b = sum(buckets_b.values())
+    overlap = None
+    if total_a > 0 and total_b > 0:
+        overlap = round((sum(min(buckets_a[k], buckets_b[k]) for k in buckets_a) / max(total_a, total_b)) * 100, 2)
+    elif "insufficient_history" not in missing:
+        missing.append("insufficient_history")
+    return {
+        "period_a": {"buckets": buckets_a, "sample_size": len(values_a)},
+        "period_b": {"buckets": buckets_b, "sample_size": len(values_b)},
+        "bucket_deltas": bucket_deltas,
+        "bucket_delta_pct": bucket_delta_pct,
+        "distribution_overlap_pct": overlap,
+        "delta": None,
+        "delta_pct": None,
+        "trend_direction": "unavailable",
+        "sample_size": {"period_a": len(values_a), "period_b": len(values_b)},
+        "coverage": {"period_a": 1.0 if values_a else 0.0, "period_b": 1.0 if values_b else 0.0},
+        "missing_reasons": missing,
+    }
+
+
+def route_metric_by_sport_scope(metric, *, global_section: dict, per_sport_section: dict, sport_filter: str | None, all_sports: list[str], period_a_rows: list, period_b_rows: list, conn) -> None:
+    supported_global = metric.sport_scope in {"global", "both"}
+    supported_per_sport = metric.sport_scope in {"per_sport", "both"}
+
+    if supported_global:
+        values_a, missing_a = aggregate_metric_values(metric.metric_id, period_a_rows, conn)
+        values_b, missing_b = aggregate_metric_values(metric.metric_id, period_b_rows, conn)
+        if metric.comparison_mode == "distribution":
+            global_section["metrics"][metric.metric_id] = compare_distribution_metric(values_a, values_b, missing_a, missing_b)
+        else:
+            global_section["metrics"][metric.metric_id] = compare_scalar_metric(
+                metric.metric_id, metric.comparison_mode, values_a, values_b, missing_a, missing_b
+            )
+
+    if supported_per_sport:
+        for sport in all_sports:
+            if sport_filter is not None and sport != sport_filter:
+                continue
+            a_sport = [row for row in period_a_rows if row.sport_type == sport]
+            b_sport = [row for row in period_b_rows if row.sport_type == sport]
+            if not a_sport and not b_sport:
+                continue
+            values_a, missing_a = aggregate_metric_values(metric.metric_id, a_sport, conn)
+            values_b, missing_b = aggregate_metric_values(metric.metric_id, b_sport, conn)
+            per_sport_section.setdefault(sport, {"metrics": {}})
+            if metric.comparison_mode == "distribution":
+                per_sport_section[sport]["metrics"][metric.metric_id] = compare_distribution_metric(values_a, values_b, missing_a, missing_b)
+            else:
+                per_sport_section[sport]["metrics"][metric.metric_id] = compare_scalar_metric(
+                    metric.metric_id, metric.comparison_mode, values_a, values_b, missing_a, missing_b
+                )
+
+
+COMPARE_PERIODS_HANDLERS = {
+    "trimp": "aggregate_metric_values",
+    "distance_km": "aggregate_metric_values",
+    "moving_time_min": "aggregate_metric_values",
+    "elevation_m": "aggregate_metric_values",
+    "cardiac_cost": "aggregate_metric_values",
+    "cardiac_cost_adjusted": "aggregate_metric_values",
+    "cardiac_drift_pct": "aggregate_metric_values",
+    "hr_recovery_median_bpm_per_min": "aggregate_metric_values",
+    "hrr_pct": "aggregate_metric_values",
+    "vertical_speed_m_per_h": "aggregate_metric_values",
+    "time_in_hr_zones_min": "aggregate_metric_values",
+    "fitness": "model_from_report",
+    "fatigue": "model_from_report",
+    "form": "model_from_report",
+    "acwr": "model_from_report",
+}
+
+COMPARE_PERIODS_SKIP_REASONS = {
+    metric_id: "metric_not_applicable"
+    for metric_id, definition in METRIC_REGISTRY.items()
+    if "compare_periods" in definition.exposed_in and definition.comparison_mode != "none" and metric_id not in COMPARE_PERIODS_HANDLERS
+}
 
 
 def _project_fitness_state_metrics(report, digest) -> dict[str, object]:
@@ -235,6 +455,89 @@ def get_fitness_state_service(
         completeness=completeness,
         warnings=warnings,
         rationale=[ServiceRationale(code="metric_bundle_from_local_mirror", message="Metric bundle projected from local mirror model and activity facts.")],
+    )
+
+
+def compare_periods_service(
+    *,
+    period_a_start: str,
+    period_a_end: str,
+    period_b_start: str,
+    period_b_end: str,
+    sport: str | None = None,
+    now: datetime | None = None,
+    signal_first_use: bool = True,
+    connection=None,
+) -> ServiceEnvelope:
+    checked_at = now or datetime.now()
+    with _connection_context(connection) as conn:
+        repo = SQLiteRepository.from_connection(conn)
+        freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
+        period_a_rows = load_period_activities(repo, period_a_start, period_a_end, sport=sport)
+        period_b_rows = load_period_activities(repo, period_b_start, period_b_end, sport=sport)
+        sports = sorted(set([row.sport_type for row in period_a_rows + period_b_rows]))
+        global_section = {"scope_filter": "sport" if sport else "all", "metrics": {}}
+        per_sport_section: dict[str, dict[str, object]] = {}
+
+        for metric in METRIC_REGISTRY.values():
+            if "compare_periods" not in metric.exposed_in or metric.comparison_mode == "none":
+                continue
+            if metric.metric_id in {"fitness", "fatigue", "form", "acwr"}:
+                report_a = daily_report_from_connection(conn, now_local=datetime.fromisoformat(f"{period_a_end}T12:00:00"))
+                report_b = daily_report_from_connection(conn, now_local=datetime.fromisoformat(f"{period_b_end}T12:00:00"))
+                values_a = []
+                values_b = []
+                if metric.metric_id == "fitness":
+                    values_a = [report_a.banister.fitness] if report_a.banister else []
+                    values_b = [report_b.banister.fitness] if report_b.banister else []
+                elif metric.metric_id == "fatigue":
+                    values_a = [report_a.banister.fatigue] if report_a.banister else []
+                    values_b = [report_b.banister.fatigue] if report_b.banister else []
+                elif metric.metric_id == "form":
+                    values_a = [report_a.banister.form] if report_a.banister else []
+                    values_b = [report_b.banister.form] if report_b.banister else []
+                elif metric.metric_id == "acwr":
+                    values_a = [report_a.acwr] if report_a.acwr is not None else []
+                    values_b = [report_b.acwr] if report_b.acwr is not None else []
+                global_section["metrics"][metric.metric_id] = compare_scalar_metric(
+                    metric.metric_id, metric.comparison_mode, values_a, values_b, ["insufficient_history"] if not values_a else [], ["insufficient_history"] if not values_b else []
+                )
+                continue
+            route_metric_by_sport_scope(
+                metric,
+                global_section=global_section,
+                per_sport_section=per_sport_section,
+                sport_filter=sport,
+                all_sports=sports,
+                period_a_rows=period_a_rows,
+                period_b_rows=period_b_rows,
+                conn=conn,
+            )
+
+        data = {
+            "periods": {
+                "period_a": {"start": period_a_start, "end": period_a_end},
+                "period_b": {"start": period_b_start, "end": period_b_end},
+            },
+            "global": global_section,
+            "per_sport": per_sport_section,
+        }
+
+    completeness = CompletenessMetadata(
+        status="complete",
+        missing=[],
+        coverage={
+            "global_metrics": sorted(global_section["metrics"].keys()),
+            "per_sport": sorted(per_sport_section.keys()),
+            "supported_missing_reasons": sorted(COMPARISON_MISSING_REASONS),
+        },
+    )
+    return ServiceEnvelope(
+        data=data,
+        freshness=freshness,
+        completeness=completeness,
+        warnings=[],
+        rationale=[ServiceRationale(code="metric_bundle_from_local_mirror", message="Period comparison returns factual metric deltas and coverage only.")],
     )
 
 
