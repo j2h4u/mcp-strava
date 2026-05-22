@@ -782,7 +782,7 @@ def get_workout_detail_service(
                 data=None,
                 freshness=freshness,
                 completeness=completeness,
-                warnings=[ServiceWarning(code="metric_unavailable", severity="warning", message="Requested workout was not found.")],
+                warnings=[ServiceWarning(code="workout_not_found", severity="warning", message="Requested workout was not found.")],
                 rationale=[ServiceRationale(code="metric_bundle_from_local_mirror", message="Workout detail requested from local mirror id.")],
             )
 
