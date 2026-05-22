@@ -10,6 +10,9 @@ from typing import Mapping
 class HttpSettings:
     host: str
     port: int
+    allow_container_bind: bool
+    allowed_hosts: tuple[str, ...]
+    allowed_origins: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,9 @@ _KEYS = {
     'MCP_STRAVA_RUNTIME_PROFILE',
     'MCP_STRAVA_HTTP_HOST',
     'MCP_STRAVA_HTTP_PORT',
+    'MCP_STRAVA_ALLOW_CONTAINER_BIND',
+    'MCP_STRAVA_ALLOWED_HOSTS',
+    'MCP_STRAVA_ALLOWED_ORIGINS',
     'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS',
     'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS',
     'MCP_STRAVA_PROJECT_ROOT',
@@ -79,6 +85,15 @@ def _validate_ranges(http_port: int, warn_age_hours: int, max_age_hours: int) ->
             'Invalid freshness settings: MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS '
             'must be <= MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS'
         )
+
+
+def _parse_bool(raw: str) -> bool:
+    return raw.strip().lower() in {'1', 'true', 'yes'}
+
+
+def _parse_csv(raw: str) -> tuple[str, ...]:
+    values = tuple(part.strip() for part in raw.split(',') if part.strip())
+    return values
 
 
 def _resolve_project_root(
@@ -133,6 +148,14 @@ def load_settings(
 
     http_host = resolve('MCP_STRAVA_HTTP_HOST', '127.0.0.1')
     http_port = _parse_int(resolve('MCP_STRAVA_HTTP_PORT', '8000'), 'MCP_STRAVA_HTTP_PORT')
+    allow_container_bind = _parse_bool(resolve('MCP_STRAVA_ALLOW_CONTAINER_BIND', 'false'))
+    allowed_hosts = _parse_csv(resolve('MCP_STRAVA_ALLOWED_HOSTS', '127.0.0.1,localhost,mcp-strava'))
+    allowed_origins = _parse_csv(
+        resolve(
+            'MCP_STRAVA_ALLOWED_ORIGINS',
+            'http://127.0.0.1,http://localhost,http://[::1]',
+        )
+    )
     warn_age_hours = _parse_int(
         resolve('MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS', '12'),
         'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS',
@@ -148,7 +171,13 @@ def load_settings(
         database_path=database_path,
         token_path=token_path,
         runtime_profile=runtime_profile,
-        http=HttpSettings(host=http_host, port=http_port),
+        http=HttpSettings(
+            host=http_host,
+            port=http_port,
+            allow_container_bind=allow_container_bind,
+            allowed_hosts=allowed_hosts,
+            allowed_origins=allowed_origins,
+        ),
         freshness=FreshnessSettings(
             warn_age_hours=warn_age_hours,
             max_age_hours=max_age_hours,
