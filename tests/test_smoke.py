@@ -18,6 +18,7 @@ def test_imports():
     from mcp_strava.analytics import weekly_digest
     from mcp_strava.application.freshness import get_freshness_service
     import mcp_strava.interfaces.mcp_http as mcp_http
+    import mcp_strava.deploy.smoke as deploy_smoke
     import mcp_strava.application.metric_registry as metric_registry
     from mcp_strava.application.reports import get_daily_report_service, get_weekly_summary_service
     from mcp_strava.application.workouts import get_recent_workouts_service, get_workout_analytics_service
@@ -46,6 +47,7 @@ def test_imports():
     assert get_freshness_service is not None
     assert metric_registry is not None
     assert mcp_http is not None
+    assert deploy_smoke is not None
     expected_suffix = str(Path("src") / "mcp_strava" / "types.py")
     assert str(package_types.__file__).endswith(expected_suffix)
     print("  OK: all imports + Config paths verified")
