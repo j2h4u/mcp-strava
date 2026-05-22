@@ -27,11 +27,9 @@ from mcp_strava.report import daily_report
 from mcp_strava.types import (
     parse_strava_activity, parse_strava_athlete, dc_to_dict
 )
+from mcp_strava.refresh.bootstrap import build_refresh_collaborators, ensure_refresh_schema, record_refresh_misconfigured
 from mcp_strava.sync import (
     backfill_activities,
-    build_refresh_collaborators,
-    ensure_refresh_schema,
-    record_refresh_misconfigured,
     sync_activities,
 )
 from mcp_strava.trends import compute_trends

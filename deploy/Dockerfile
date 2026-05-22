@@ -21,6 +21,6 @@ USER 10001:10001
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD python -m mcp_strava.deploy.preflight --db "$MCP_STRAVA_DB_PATH" --quick --quiet
+  CMD python -m mcp_strava.deploy.healthcheck
 
 ENTRYPOINT ["python", "-m", "mcp_strava.deploy.entrypoint"]

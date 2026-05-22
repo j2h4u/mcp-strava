@@ -4,6 +4,7 @@ import urllib.request
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -357,6 +358,61 @@ def test_enqueue_refresh_request_if_stale_is_idempotent_per_D04_REFRESH_02(tmp_p
         assert not enqueue_refresh_request_if_stale(repo, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21")
         assert not enqueue_refresh_request_if_stale(repo, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21")
         assert len(repo.pending_refresh_requests()) == 1
+
+
+def test_worker_runs_daily_refresh_without_pending_requests(monkeypatch, tmp_path):
+    from mcp_strava.refresh import Stage
+    from mcp_strava.refresh import worker
+
+    calls = []
+    settings = SimpleNamespace(database_path=tmp_path / "refresh.db")
+    state = SimpleNamespace(
+        lease_owner=None,
+        lease_expires_at=None,
+        backoff_until=None,
+        checkpoint_stage=Stage.COMPLETE.value,
+        last_success_at="2026-05-20T12:00:00",
+    )
+
+    class FakeDbConn:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeRepo:
+        def get_refresh_state(self):
+            return state
+
+        def pending_refresh_requests(self):
+            return []
+
+        def mark_refresh_requests_consumed(self, consumed_at):
+            return 0
+
+    def fake_run_once(repo, transport, refresh_policy, clock, sleeper, *, owner, force, mode):
+        calls.append((owner, force, mode))
+        return SimpleNamespace(status="ok", checkpoint_stage=Stage.COMPLETE.value)
+
+    monkeypatch.setattr(worker, "get_settings", lambda: settings)
+    monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
+    monkeypatch.setattr(
+        worker,
+        "run_preflight",
+        lambda _path: SimpleNamespace(row_counts={"refresh_state": 1, "refresh_requests": 0}),
+    )
+    monkeypatch.setattr(worker, "DbConn", FakeDbConn)
+    monkeypatch.setattr(worker.SQLiteRepository, "from_connection", lambda _conn: FakeRepo())
+    monkeypatch.setattr(
+        worker,
+        "build_refresh_collaborators",
+        lambda _settings: (_settings, object(), object(), object(), object()),
+    )
+    monkeypatch.setattr(worker.refresh_runtime, "run_once", fake_run_once)
+
+    assert worker.run_pending_once(emit_idle=False) == 0
+    assert calls == [("refresh-worker", False, "daily")]
 
 
 def test_refresh_modules_do_not_import_sync_per_D17():

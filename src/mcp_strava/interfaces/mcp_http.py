@@ -122,7 +122,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         structured_output=True,
     )
     def get_fitness_state() -> dict[str, Any]:
-        return _envelope_payload(get_fitness_state_service())
+        return _envelope_payload(get_fitness_state_service(signal_first_use=False))
 
     @server.tool(
         name="list_workouts",
@@ -142,6 +142,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
                 start_date=start_date,
                 end_date=end_date,
                 sport=sport,
+                signal_first_use=False,
             )
         )
 
@@ -152,7 +153,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         structured_output=True,
     )
     def get_workout_detail(workout_id: int) -> dict[str, Any]:
-        return _envelope_payload(get_workout_detail_service(workout_id))
+        return _envelope_payload(get_workout_detail_service(workout_id, signal_first_use=False))
 
     @server.tool(
         name="compare_periods",
@@ -174,6 +175,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
                 period_b_start=period_b_start,
                 period_b_end=period_b_end,
                 sport=sport,
+                signal_first_use=False,
             )
         )
 
@@ -193,6 +195,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
                 target_date=target_date,
                 scenarios=scenarios,
                 custom_daily_trimp=custom_daily_trimp,
+                signal_first_use=False,
             )
         )
 

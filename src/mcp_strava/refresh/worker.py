@@ -1,4 +1,4 @@
-"""Background worker that consumes local refresh requests."""
+"""Background worker that maintains the local Strava mirror."""
 
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.sqlite.migrations import run_preflight
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.db import DbConn
-from mcp_strava.refresh import RefreshSkipped
+from mcp_strava.refresh import RefreshSkipped, Stage
+from mcp_strava.refresh.bootstrap import build_refresh_collaborators, ensure_refresh_schema, record_refresh_misconfigured
 from mcp_strava.settings import get_settings
-from mcp_strava.sync import build_refresh_collaborators, ensure_refresh_schema, record_refresh_misconfigured
 
 
 def _now_iso() -> str:
@@ -27,23 +27,44 @@ def _emit(event: str, **fields: object) -> None:
     print(json.dumps({"event": event, **fields}, ensure_ascii=False), flush=True)
 
 
-def _pending_request_count() -> int:
-    settings = get_settings()
-    ensure_refresh_schema(run_preflight(settings.database_path))
-    with DbConn() as conn:
-        repo = SQLiteRepository.from_connection(conn)
-        return len(repo.pending_refresh_requests())
+def _refresh_blocked_reason(state, now_iso: str) -> str | None:
+    if state.lease_owner is not None and state.lease_expires_at is not None and state.lease_expires_at > now_iso:
+        return "refresh_in_progress"
+    if state.backoff_until is not None and state.backoff_until > now_iso:
+        return "refresh_delayed"
+    return None
+
+
+def _daily_refresh_due(state, now_iso: str) -> bool:
+    if state.checkpoint_stage is not None and state.checkpoint_stage != Stage.COMPLETE.value:
+        return True
+    if not state.last_success_at:
+        return True
+    return state.last_success_at[:10] != now_iso[:10]
 
 
 def run_pending_once(*, emit_idle: bool = True) -> int:
-    """Run one refresh cycle when pending requests exist."""
-    pending_count = _pending_request_count()
-    if pending_count == 0:
+    """Run one refresh cycle when daily policy or queued requests require it."""
+    settings = get_settings()
+    ensure_refresh_schema(run_preflight(settings.database_path))
+    now_iso = _now_iso()
+
+    with DbConn() as conn:
+        repo = SQLiteRepository.from_connection(conn)
+        state = repo.get_refresh_state()
+        pending_count = len(repo.pending_refresh_requests())
+        blocked_reason = _refresh_blocked_reason(state, now_iso)
+        if blocked_reason is not None:
+            if emit_idle:
+                _emit("refresh_skipped", reason=blocked_reason)
+            return 0
+        refresh_due = _daily_refresh_due(state, now_iso)
+
+    if pending_count == 0 and not refresh_due:
         if emit_idle:
             _emit("refresh_idle")
         return 0
 
-    settings = get_settings()
     try:
         _, clock, sleeper, transport, refresh_policy = build_refresh_collaborators(settings)
     except RuntimeError:
@@ -53,7 +74,8 @@ def run_pending_once(*, emit_idle: bool = True) -> int:
 
     with DbConn() as conn:
         repo = SQLiteRepository.from_connection(conn)
-        if not repo.pending_refresh_requests():
+        pending_count = len(repo.pending_refresh_requests())
+        if pending_count == 0 and not refresh_due:
             if emit_idle:
                 _emit("refresh_idle")
             return 0
