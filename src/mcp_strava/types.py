@@ -523,6 +523,7 @@ ALLOWED_REASON_CODES = frozenset(
         "rate_limited",
         "network_unstable",
         "refresh_incomplete",
+        "refresh_misconfigured",
         "sync_in_progress",
     }
 )

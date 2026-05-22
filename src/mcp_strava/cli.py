@@ -27,7 +27,13 @@ from mcp_strava.report import daily_report
 from mcp_strava.types import (
     parse_strava_activity, parse_strava_athlete, dc_to_dict
 )
-from mcp_strava.sync import backfill_activities, build_refresh_collaborators, ensure_refresh_schema, sync_activities
+from mcp_strava.sync import (
+    backfill_activities,
+    build_refresh_collaborators,
+    ensure_refresh_schema,
+    record_refresh_misconfigured,
+    sync_activities,
+)
 from mcp_strava.trends import compute_trends
 from mcp_strava.settings import get_settings
 
@@ -164,7 +170,23 @@ def cmd_db_refresh(args):
     force = "--force" in args
     settings = get_settings()
     ensure_refresh_schema(run_preflight(settings.database_path))
-    settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
+    try:
+        settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
+    except RuntimeError:
+        record_refresh_misconfigured(settings)
+        print(
+            json.dumps(
+                {
+                    "status": "failed",
+                    "reason": "refresh_misconfigured",
+                    "checkpoint_stage": None,
+                    "forced": force,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        raise SystemExit(1)
     with DbConn() as conn:
         repo = SQLiteRepository.from_connection(conn)
         result = refresh_runtime.run_once(

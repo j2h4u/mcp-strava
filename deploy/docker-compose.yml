@@ -5,8 +5,6 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     restart: unless-stopped
-    env_file:
-      - /opt/docker/mcp-strava/.env
     environment:
       MCP_STRAVA_RUNTIME_PROFILE: container
       MCP_STRAVA_HTTP_HOST: 0.0.0.0
@@ -14,13 +12,31 @@ services:
       MCP_STRAVA_ALLOW_CONTAINER_BIND: "1"
       MCP_STRAVA_ALLOWED_HOSTS: 127.0.0.1:8080,localhost:8080,mcp-strava:8080,mcp-strava
       MCP_STRAVA_ALLOWED_ORIGINS: http://127.0.0.1:8080,http://localhost:8080,http://mcp-strava:8080
-      MCP_STRAVA_DB_PATH: /data/strava.db
+      MCP_STRAVA_DB_PATH: /runtime/data/strava.db
+      MCP_STRAVA_TOKEN_PATH: /runtime/.env
     volumes:
-      - /opt/docker/mcp-strava/data:/data
+      - /opt/docker/mcp-strava:/runtime
     expose: ["8080"]
     networks:
       - mcp-backends
     # Default profile intentionally avoids host port publication.
+
+  mcp-strava-refresh:
+    container_name: mcp-strava-refresh
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    entrypoint: ["python", "-m", "mcp_strava.refresh.worker"]
+    environment:
+      MCP_STRAVA_RUNTIME_PROFILE: container
+      MCP_STRAVA_DB_PATH: /runtime/data/strava.db
+      MCP_STRAVA_TOKEN_PATH: /runtime/.env
+      MCP_STRAVA_REFRESH_POLL_SECONDS: "60"
+    volumes:
+      - /opt/docker/mcp-strava:/runtime
+    networks:
+      - mcp-backends
 
 networks:
   mcp-backends:

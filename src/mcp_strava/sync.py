@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import mcp_strava.refresh.runtime as refresh_runtime
@@ -27,6 +28,32 @@ class RealClock:
 class RealSleeper:
     def sleep(self, seconds: float) -> None:
         time.sleep(seconds)
+
+
+def _now_iso() -> str:
+    return datetime.now().isoformat()
+
+
+def record_refresh_misconfigured(settings: Settings | None = None) -> None:
+    """Record a safe refresh configuration failure for freshness surfaces."""
+    settings = settings or get_settings()
+    ensure_refresh_schema(run_preflight(settings.database_path))
+    at = _now_iso()
+    backoff_until = (datetime.now() + timedelta(hours=1)).isoformat()
+    with DbConn() as conn:
+        repo = SQLiteRepository.from_connection(conn)
+        repo.record_refresh_failure(at, "refresh_misconfigured", backoff_until)
+        repo.append_sync_log(
+            timestamp=at,
+            status="error",
+            activities_seen=None,
+            activities_new=None,
+            streams_fetched=None,
+            details_fetched=None,
+            api_calls=None,
+            error="refresh_misconfigured",
+            kudos_fetched=None,
+        )
 
 
 def _read_token_values(token_path: Path) -> dict[str, str]:
