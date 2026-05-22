@@ -373,6 +373,20 @@ def test_metric_services_do_not_import_strava_sync_or_token_refresh() -> None:
     assert violations == []
 
 
+def test_mcp_http_interface_does_not_import_admin_sync_or_strava_adapter() -> None:
+    rel_path = "src/mcp_strava/interfaces/mcp_http.py"
+    violations = _import_violations(
+        rel_path,
+        (
+            "mcp_strava.adapters.strava",
+            "mcp_strava.sync",
+            "mcp_strava.refresh.runtime",
+            "mcp_strava.cli",
+        ),
+    )
+    assert violations == []
+
+
 def test_sync_does_not_define_moved_helpers_per_D17() -> None:
     source = _source_text("src/mcp_strava/sync.py")
     module = ast.parse(source)
