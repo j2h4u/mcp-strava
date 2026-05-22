@@ -504,3 +504,91 @@ def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_
     trimp = payload["data"]["global"]["metrics"]["trimp"]
     assert trimp["period_a"]["sample_size"] == 2
     assert trimp["period_b"]["sample_size"] == 3
+
+
+def test_project_fitness_state_service_supports_standard_scenarios(tmp_path: Path) -> None:
+    from mcp_strava.application.metric_services import project_fitness_state_service
+
+    conn = _fixture_conn_compare(tmp_path / "project.db")
+    try:
+        envelope = project_fitness_state_service(
+            target_date="2026-05-25",
+            scenarios=["rest", "easy", "maintain"],
+            custom_daily_trimp=None,
+            now=datetime.fromisoformat("2026-05-22T09:00:00"),
+            signal_first_use=False,
+            connection=conn,
+        )
+    finally:
+        conn.close()
+
+    payload = dc_to_dict(envelope)
+    assert set(payload) == {"data", "freshness", "completeness", "warnings", "rationale"}
+    for scenario in ("rest", "easy", "maintain"):
+        assert scenario in payload["data"]["scenarios"]
+        item = payload["data"]["scenarios"][scenario]
+        assert "daily_rows" in item
+        assert item["daily_rows"]
+        row = item["daily_rows"][0]
+        for key in ("projected_daily_trimp", "projected_fitness", "projected_fatigue", "projected_form"):
+            assert key in row
+        assert "target_date_form" in item
+        assert "model_assumptions" in item
+
+    serialized = json.dumps(payload).lower()
+    for forbidden in ("best_scenario", "recommended_scenario", "should_train", "ready", "on_track"):
+        assert forbidden not in serialized
+
+
+def test_project_fitness_state_service_validates_custom_rows(tmp_path: Path) -> None:
+    from mcp_strava.application.metric_services import project_fitness_state_service
+
+    conn = _fixture_conn_compare(tmp_path / "project-custom.db")
+    try:
+        envelope = project_fitness_state_service(
+            target_date="2026-05-25",
+            scenarios=["custom"],
+            custom_daily_trimp=[
+                {"date": "2026-05-22", "trimp": 40.0},
+                {"date": "2026-05-24", "trimp": 55.0},
+            ],
+            now=datetime.fromisoformat("2026-05-22T09:00:00"),
+            signal_first_use=False,
+            connection=conn,
+        )
+    finally:
+        conn.close()
+    payload = dc_to_dict(envelope)
+    custom = payload["data"]["scenarios"]["custom"]
+    assert custom["daily_rows"][-1]["date"] == "2026-05-25"
+    assert custom["daily_rows"][1]["projected_daily_trimp"] == 0.0
+
+    conn_invalid = _fixture_conn_compare(tmp_path / "project-invalid.db")
+    with pytest.raises(ValueError):
+        project_fitness_state_service(
+            target_date="2026-05-25",
+            scenarios=["custom"],
+            custom_daily_trimp=[{"date": "2026/05/22", "trimp": 40.0}],
+            now=datetime.fromisoformat("2026-05-22T09:00:00"),
+            signal_first_use=False,
+            connection=conn_invalid,
+        )
+    with pytest.raises(ValueError):
+        project_fitness_state_service(
+            target_date="2026-05-25",
+            scenarios=["custom"],
+            custom_daily_trimp=[{"date": "2026-05-21", "trimp": 40.0}],
+            now=datetime.fromisoformat("2026-05-22T09:00:00"),
+            signal_first_use=False,
+            connection=conn_invalid,
+        )
+    with pytest.raises(ValueError):
+        project_fitness_state_service(
+            target_date="2026-05-25",
+            scenarios=["custom"],
+            custom_daily_trimp=[{"date": "2026-05-22", "trimp": -1.0}],
+            now=datetime.fromisoformat("2026-05-22T09:00:00"),
+            signal_first_use=False,
+            connection=conn_invalid,
+        )
+    conn_invalid.close()
