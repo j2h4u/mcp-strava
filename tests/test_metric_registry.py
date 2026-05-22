@@ -4,7 +4,9 @@ from mcp_strava.application.metric_registry import (
     EXCLUDED_INTERPRETATIONS,
     MCP_TOOL_IDS,
     METRIC_REGISTRY,
+    metrics_for_tool,
 )
+import pytest
 
 
 REQUIRED_METRIC_IDS = {
@@ -139,3 +141,8 @@ def test_excluded_interpretations_map_to_preserved_numeric_facts():
     for key, exclusion in EXCLUDED_INTERPRETATIONS.items():
         assert exclusion.field == key
         assert exclusion.preserved_metric_ids, f"{key} must preserve at least one numeric/model input metric"
+
+
+def test_unknown_tool_id_is_rejected():
+    with pytest.raises(ValueError):
+        metrics_for_tool("get_data_status")

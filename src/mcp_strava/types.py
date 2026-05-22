@@ -660,6 +660,32 @@ class ServiceEnvelope:
     rationale: list[ServiceRationale] = field(default_factory=list)
 
 
+# ─── Metric Registry Contracts ───
+
+
+@dataclass(frozen=True)
+class MetricDefinition:
+    metric_id: str
+    label: str
+    unit: str
+    source: str
+    scope: str
+    sport_scope: str
+    comparison_mode: str
+    directionality: str
+    requirements: list[str]
+    missing_reasons: list[str]
+    exposed_in: list[str]
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class ExcludedInterpretation:
+    field: str
+    reason: str
+    preserved_metric_ids: list[str]
+
+
 # ─── Report ───
 
 
