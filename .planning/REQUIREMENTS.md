@@ -73,12 +73,12 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 ## v1.1 Requirements
 
-Requirements for the Full-Fidelity Strava Mirror milestone. This milestone changes the mirror contract from "analytics projection first" to "raw payload first, projections second" while preserving the existing database.
+Requirements for the Full-Fidelity Strava Mirror milestone. This milestone changes the mirror contract from "analytics projection first" to "lossless normalized stream mirror first, projections second" while preserving the existing SQLite database.
 
-### Raw Payload Retention
+### Lossless Mirror
 
-- [ ] **MIRROR-01**: Operator can preserve raw Strava activity summary, activity detail, and activity stream payloads with endpoint, request parameters, fetched-at timestamp, response hash, and parser/schema version metadata
-- [ ] **MIRROR-02**: Developer can treat normalized activity and stream tables as derived projections while raw Strava payloads remain queryable for audit and future reprocessing
+- [ ] **MIRROR-01**: Operator can preserve Strava activity summary, activity detail, stream channel values, and stream channel metadata in queryable SQLite structures with fetch, request, and schema-version metadata
+- [ ] **MIRROR-02**: Developer can treat current analytics columns as hot-path projections while full stream channel values remain available for audit and future reprocessing
 
 ### Stream Ingestion
 
@@ -93,12 +93,12 @@ Requirements for the Full-Fidelity Strava Mirror milestone. This milestone chang
 
 ### Coverage and Backfill
 
-- [ ] **COVERAGE-01**: Operator can inspect raw payload, stream channel, and GPS coverage by activity/date/sport without exposing secrets or unnecessary raw personal details
-- [ ] **BACKFILL-01**: Operator can run resumable, rate-limit-aware raw stream backfill only for activities missing raw payloads while preserving existing normalized rows
+- [ ] **COVERAGE-01**: Operator can inspect stream channel, channel metadata, and GPS coverage by activity/date/sport without exposing secrets or unnecessary raw personal details
+- [ ] **BACKFILL-01**: Operator can run resumable, rate-limit-aware stream-channel backfill only for activities missing channel values or metadata while preserving existing normalized rows
 
 ### Testing
 
-- [ ] **TEST-05**: Tests prove raw payload retention, all-channel ingestion, mixed GPS migration, and coverage reporting against temp or copied databases without live Strava API calls
+- [ ] **TEST-05**: Tests prove lossless normalized stream retention, all-channel ingestion, mixed GPS migration, and coverage reporting against temp or copied databases without live Strava API calls
 
 ## v2 Requirements
 
@@ -126,7 +126,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | Exact compatibility with old CLI command names and JSON shapes | No external compatibility obligation; clean service boundaries are more valuable |
 | MCP sync/backfill/force-refresh tools | Sync is core/application policy and background infrastructure, not an agent-facing action |
 | MCP raw Strava endpoint passthrough | Turns the server into an API wrapper instead of a training analytics product |
-| MCP raw mirror payload tools | Raw payloads are operator/audit data, not agent-facing training metrics |
+| MCP mirror coverage/backfill tools | Mirror coverage and backfill are operator/admin concerns, not agent-facing training metrics |
 | MCP arbitrary SQL tools | Exposes internal schema and creates security/data-integrity risk |
 | MCP token/admin/sync-log tools | Expands secret and operational blast radius outside the user-facing analytics boundary |
 | Public multi-user SaaS or account management | Project is local-first for one primary user |

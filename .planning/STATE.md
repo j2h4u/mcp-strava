@@ -92,8 +92,9 @@ Recent decisions affecting current work:
 - [Phase 05]: prepare_runtime writes canonical live.env paths under /opt/docker/mcp-strava for live CLI/admin alignment.
 - [Phase 05]: Gateway live-path checks allow dry-run but require --apply + --confirm-live-gateway for mutation.
 - [Phase 05]: Gateway registration mutates catalog/compose atomically with rollback restart on failure.
-- [Milestone v1.1]: Make Strava mirroring raw-first; normalized stream rows become derived projections, not the only stored copy.
+- [Milestone v1.1]: Make Strava stream mirroring lossless-normalized; analytics columns become hot-path projections, not the only stored copy.
 - [Milestone v1.1]: Unify mixed GPS storage formats locally before relying on track data as a clean mirror surface.
+- [Phase 06]: SQLite remains the primary mirror database; DuckDB is deferred as a possible future analytics/read-model layer.
 
 ### Pending Todos
 
@@ -101,7 +102,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 6 must preserve existing stream rows and GPS points while adding raw payload retention.
+- Phase 6 must preserve existing stream rows and GPS points while adding lossless stream-channel retention.
 - Backfill must be resumable and rate-limit-aware; no full Strava resync without explicit operator approval.
 
 ## Deferred Items

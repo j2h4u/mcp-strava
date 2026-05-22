@@ -12,14 +12,14 @@ Preserve the local Strava mirror and keep trusted training analytics working whi
 
 ## Current Milestone: v1.1 Full-Fidelity Strava Mirror
 
-**Goal:** Make the local Strava mirror raw-first so Strava API payloads are retained without avoidable loss before analytics projections are derived.
+**Goal:** Make the local Strava mirror lossless-normalized so Strava stream data is retained in queryable structured form before analytics projections are derived.
 
 **Target features:**
-- Preserve raw Strava payloads for activity details and streams with fetch metadata, schema/version metadata, and coverage reporting.
+- Preserve Strava activity and stream information in normalized SQLite structures with fetch metadata, schema/version metadata, and coverage reporting.
 - Ingest all stream channels returned by Strava, including channel metadata, rather than only the currently known analytics fields.
-- Normalize stream projections consistently for analytics while preserving raw payloads as the source of truth.
+- Normalize stream projections consistently for analytics while preserving all stream channel values in structured form.
 - Migrate existing mixed `lat`/`lng` and `latlng` stream storage into one canonical GPS representation without refetching data from Strava.
-- Backfill missing raw stream payloads through resumable, rate-limit-aware refresh work after explicit operator approval.
+- Backfill missing stream channels and channel metadata through resumable, rate-limit-aware refresh work after explicit operator approval.
 
 ## Requirements
 
@@ -44,10 +44,10 @@ Preserve the local Strava mirror and keep trusted training analytics working whi
 ### Active
 
 - [ ] Separate core/domain training logic from SQLite, Strava HTTP calls, CLI formatting, and MCP transport concerns
-- [ ] Preserve raw Strava payloads before deriving normalized analytics projections
+- [ ] Preserve Strava stream data in lossless normalized form before deriving analytics projections
 - [ ] Store stream channels and channel metadata without a fixed analytics allowlist
 - [ ] Unify existing GPS stream storage formats without deleting or refetching data
-- [ ] Provide coverage reporting for raw payload, stream channel, and GPS completeness
+- [ ] Provide coverage reporting for stream channel, channel metadata, and GPS completeness
 
 ### Out of Scope
 
@@ -66,7 +66,7 @@ The existing SQLite database at `data/strava.db` is valuable. It contains data t
 
 The desired architecture is not an API wrapper over Strava. It is a local mirror plus analytics core. Sync is infrastructure and policy, not an agent-facing action. MCP clients should ask questions about training and analytics; the core decides whether the mirror is fresh enough and whether an internal first-use refresh request is needed.
 
-The next milestone tightens the mirror contract. Raw Strava responses should be retained first, and typed/numeric analytics tables should become derived projections. The current streams table is useful for analytics but is not a complete raw mirror: recent rows store GPS as `latlng` JSON while older rows store split `lat`/`lng`, and the ingest path only stores selected stream fields.
+The next milestone tightens the mirror contract. Strava stream data should be retained in lossless normalized form, and typed/numeric analytics columns should become hot-path projections over that preserved stream information. The current streams table is useful for analytics but is not a complete lossless mirror: recent rows store GPS as `latlng` JSON while older rows store split `lat`/`lng`, and the ingest path only stores selected stream fields.
 
 Existing codebase concerns that should shape the roadmap:
 
@@ -98,7 +98,7 @@ Existing codebase concerns that should shape the roadmap:
 | MCP must not expose sync/admin/debug tools | Agents should consume training insight, not operate infrastructure controls | Product registry excludes admin/debug commands in Phase 4; MCP allowlist and forbidden-tool tests validated in Phase 5 |
 | Sync is lazy first-use core policy | The local mirror should refresh through internal policy only when product use requires it; MCP still must not expose sync controls | Validated in Phase 4 freshness application service metadata and internal refresh requests |
 | Prefer development efficiency over intermediate operability | The service does not need to stay fully usable during refactor; it only needs to be operational after the milestone is complete | Validated through Phase 4 refactor sequencing |
-| Raw-first mirror for v1.1 | The local database should preserve Strava-owned payloads before analytics code normalizes or filters them | Planned for v1.1 Full-Fidelity Strava Mirror |
+| Lossless normalized mirror for v1.1 | The local database should preserve Strava stream information in structured queryable form without making permanent raw JSON retention the main contract | Planned for v1.1 Full-Fidelity Strava Mirror |
 
 ## Evolution
 
