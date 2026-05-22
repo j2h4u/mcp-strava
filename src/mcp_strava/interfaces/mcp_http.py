@@ -108,6 +108,8 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
     server = FastMCP(
         name="mcp-strava",
         instructions="Read-only training metric facts from local Strava mirror.",
+        host=resolved_settings.http.host,
+        port=resolved_settings.http.port,
         streamable_http_path="/mcp",
         stateless_http=True,
         transport_security=build_transport_security(resolved_settings),
@@ -209,11 +211,7 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings()
     validate_http_settings(settings)
     app = build_mcp_server(settings)
-    app.run(
-        transport="streamable-http",
-        host=settings.http.host,
-        port=settings.http.port,
-    )
+    app.run(transport="streamable-http")
     return 0
 
 

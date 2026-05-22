@@ -39,13 +39,8 @@ async def _run_smoke(
                 if result.isError:
                     print("get_fitness_state returned error", file=sys.stderr)
                     return 1
-                payload_found = False
-                for item in result.content:
-                    data = getattr(item, "data", None)
-                    if isinstance(data, dict):
-                        payload_found = True
-                        break
-                if not payload_found:
+                structured_content = getattr(result, "structuredContent", None)
+                if not isinstance(structured_content, dict):
                     print("get_fitness_state returned no structured payload", file=sys.stderr)
                     return 1
 
