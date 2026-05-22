@@ -11,12 +11,13 @@ from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.analytics import weekly_digest
 from mcp_strava.application.freshness import build_freshness_metadata
 from mcp_strava.application.metric_registry import METRIC_REGISTRY
-from mcp_strava.constants import RUNNING_SPORTS
+from mcp_strava.constants import Config, RUNNING_SPORTS
 from mcp_strava.db import DbConn
 from mcp_strava.metrics import check_hr_anomalies, check_z5_minutes, enrich_activity
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.report import daily_report_from_connection
 from mcp_strava.settings import get_settings
+from mcp_strava.training import calc_banister, forward_simulate
 from mcp_strava.types import (
     CompletenessMetadata,
     ServiceEnvelope,
@@ -538,6 +539,166 @@ def compare_periods_service(
         completeness=completeness,
         warnings=[],
         rationale=[ServiceRationale(code="metric_bundle_from_local_mirror", message="Period comparison returns factual metric deltas and coverage only.")],
+    )
+
+
+def _validate_iso_day(value: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("custom_daily_trimp.date must be ISO YYYY-MM-DD") from exc
+
+
+def _validated_custom_series(custom_daily_trimp, today_day: date, target_day: date) -> dict[str, float]:
+    if not isinstance(custom_daily_trimp, list):
+        raise ValueError("custom_daily_trimp must be a list")
+    by_day: dict[str, float] = {}
+    prev = None
+    for row in sorted(custom_daily_trimp, key=lambda item: item["date"]):
+        day = _validate_iso_day(row["date"])
+        if day < today_day or day > target_day:
+            raise ValueError("custom_daily_trimp rows must be within today..target_date")
+        trimp = row.get("trimp")
+        if not isinstance(trimp, (int, float)):
+            raise ValueError("custom_daily_trimp.trimp must be numeric")
+        if trimp < 0:
+            raise ValueError("custom_daily_trimp.trimp must be non-negative")
+        day_key = day.isoformat()
+        if day_key in by_day:
+            raise ValueError("custom_daily_trimp dates must be unique")
+        if prev is not None and day < prev:
+            raise ValueError("custom_daily_trimp dates must be monotonic")
+        by_day[day_key] = float(trimp)
+        prev = day
+    return by_day
+
+
+def _scenario_trimps(
+    *,
+    scenario: str,
+    days: list[date],
+    today_day: date,
+    history_daily_trimp: dict[str, float],
+    custom_daily_trimp,
+) -> tuple[list[float], dict[str, object]]:
+    if scenario == "rest":
+        return [0.0 for _ in days], {"template_source": "rest_zero_load"}
+    if scenario == "easy":
+        easy_value = float(getattr(Config.Plan, "TRIMP_EASY", 80))
+        return [easy_value for _ in days], {"template_source": "config_plan_constants", "activity_template_trimp": easy_value}
+    if scenario == "maintain":
+        lookback_start = (today_day - timedelta(days=27)).isoformat()
+        lookback = {k: v for k, v in history_daily_trimp.items() if lookback_start <= k <= today_day.isoformat()}
+        nonzero = [v for v in lookback.values() if v > 0]
+        avg_nonzero = float(round(sum(nonzero) / len(nonzero), 2)) if nonzero else 0.0
+        weekday_has_training = {date.fromisoformat(k).weekday() for k, v in lookback.items() if v > 0}
+        trimps = [avg_nonzero if d.weekday() in weekday_has_training else 0.0 for d in days]
+        return trimps, {"template_source": "maintain_weekday_pattern", "mean_nonzero_trimp_28d": avg_nonzero}
+    if scenario == "custom":
+        custom_by_day = _validated_custom_series(custom_daily_trimp, today_day, days[-1])
+        return [float(custom_by_day.get(d.isoformat(), 0.0)) for d in days], {"template_source": "custom_input"}
+    raise ValueError(f"Unsupported scenario: {scenario}")
+
+
+def project_fitness_state_service(
+    *,
+    target_date: str,
+    scenarios: list[str],
+    custom_daily_trimp=None,
+    now: datetime | None = None,
+    signal_first_use: bool = True,
+    connection=None,
+) -> ServiceEnvelope:
+    allowed = {"rest", "easy", "maintain", "custom"}
+    if any(name not in allowed for name in scenarios):
+        raise ValueError("Supported scenarios are: rest, easy, maintain, custom")
+
+    checked_at = now or datetime.now()
+    today_day = checked_at.date()
+    target_day = date.fromisoformat(target_date)
+    horizon_days = (target_day - today_day).days
+    if horizon_days < 0:
+        raise ValueError("target_date must be today or later")
+    if horizon_days > 90:
+        raise ValueError("projection horizon must be <= 90 days")
+
+    days = [today_day + timedelta(days=offset) for offset in range(horizon_days + 1)]
+    with _connection_context(connection) as conn:
+        repo = SQLiteRepository.from_connection(conn)
+        freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
+        first_training_day = repo.first_activity_day(sport_filter="training")
+        history_daily_trimp = repo.effective_trimp_history(first_training_day, today_day.isoformat(), sport_filter="training") if first_training_day else {}
+        baseline = calc_banister(history_daily_trimp, today_day.isoformat()) if history_daily_trimp else None
+        if baseline is None:
+            baseline_fitness = 0.0
+            baseline_fatigue = 0.0
+        else:
+            baseline_fitness = baseline.fitness
+            baseline_fatigue = baseline.fatigue
+
+        report = daily_report_from_connection(conn, now_local=checked_at)
+        scenario_payload: dict[str, dict[str, object]] = {}
+        for scenario in scenarios:
+            trimps, assumptions = _scenario_trimps(
+                scenario=scenario,
+                days=days,
+                today_day=today_day,
+                history_daily_trimp=history_daily_trimp,
+                custom_daily_trimp=custom_daily_trimp,
+            )
+            sim = forward_simulate(
+                baseline_fitness,
+                baseline_fatigue,
+                trimps,
+                today_day,
+                Config.Model.Banister.ALPHA_FITNESS,
+                Config.Model.Banister.ALPHA_FATIGUE,
+            )
+            daily_rows = [
+                {
+                    "date": row.date,
+                    "projected_daily_trimp": float(trimps[index]),
+                    "projected_fitness": row.fitness,
+                    "projected_fatigue": row.fatigue,
+                    "projected_form": row.form,
+                }
+                for index, row in enumerate(sim)
+            ]
+            metadata: dict[str, object] = {"missing_reasons": []}
+            if target_day.weekday() in {4, 5, 6}:
+                monday = target_day + timedelta(days=(7 - target_day.weekday()))
+                monday_sim = forward_simulate(
+                    baseline_fitness,
+                    baseline_fatigue,
+                    trimps + [0.0] * (monday - target_day).days,
+                    today_day,
+                    Config.Model.Banister.ALPHA_FITNESS,
+                    Config.Model.Banister.ALPHA_FATIGUE,
+                )
+                metadata["post_weekend_monday_form"] = monday_sim[-1].form if monday_sim else None
+            else:
+                metadata["missing_reasons"] = ["target_not_weekend_context"]
+            scenario_payload[scenario] = {
+                "daily_rows": daily_rows,
+                "target_date_form": daily_rows[-1]["projected_form"] if daily_rows else None,
+                "model_assumptions": assumptions,
+                "progressive_load_bonus": report.progressive_signal.load_bonus if report.progressive_signal else None,
+                "activity_template_trimp": assumptions.get("activity_template_trimp"),
+                "post_weekend_monday_form": metadata.get("post_weekend_monday_form"),
+                "scenario_metadata": metadata,
+            }
+
+    completeness = CompletenessMetadata(
+        status="complete",
+        missing=[],
+        coverage={"scenarios": scenarios, "horizon_days": horizon_days},
+    )
+    return ServiceEnvelope(
+        data={"target_date": target_date, "scenarios": scenario_payload},
+        freshness=freshness,
+        completeness=completeness,
+        warnings=[],
+        rationale=[ServiceRationale(code="metric_bundle_from_local_mirror", message="Projection contains model simulation facts only.")],
     )
 
 

@@ -7,6 +7,7 @@ from mcp_strava.application.metric_services import (
     get_fitness_state_service,
     get_workout_detail_service,
     list_workouts_service,
+    project_fitness_state_service,
 )
 from mcp_strava.application.metric_registry import (
     EXCLUDED_INTERPRETATIONS,
@@ -42,4 +43,5 @@ __all__ = [
     "metric_catalog_payload",
     "metric_definition",
     "metrics_for_tool",
+    "project_fitness_state_service",
 ]
