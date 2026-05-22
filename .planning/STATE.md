@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-22T10:17:31.547Z"
+last_updated: "2026-05-22T10:24:17.516Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 21
-  completed_plans: 16
-  percent: 76
+  completed_plans: 17
+  percent: 80
 ---
 
 # Project State
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-05-20)
 ## Current Position
 
 Phase: 05 (mcp-http-surface-docker-hardening) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-05-22
 
-Progress: [████████░░] 76%
+Progress: [████████░░] 81%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [████████░░] 76%
 | Phase 02 P02 | 21m | 2 tasks | 4 files |
 | Phase 02 P04 | 41min | 3 tasks | 4 files |
 | Phase 05-mcp-http-surface-docker-hardening P05-01 | 8 min | 3 tasks | 6 files |
+| Phase 05 P05-02 | 3 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,8 @@ Recent decisions affecting current work:
 - [Phase 02]: Plan 02-04 enforces explicit DB safety commands and repository-backed sync writes.
 - [Phase 05-mcp-http-surface-docker-hardening]: Use final MCP tool ids only in metric registry exposure. — Matches D-03 and blocks accidental tool-id drift.
 - [Phase 05-mcp-http-surface-docker-hardening]: Exclude interpretation labels and preserve numeric/model metrics only. — Implements D-02 and D-18 by keeping MCP factual.
+- [Phase 05]: 05-02 explicit metric projection for get_fitness_state payloads — Avoid serialize-then-filter of report outputs
+- [Phase 05]: 05-02 closed safety warning code table — Keep warning contract machine-readable and bounded
 
 ### Pending Todos
 
@@ -98,6 +101,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-22T10:17:22.964Z
+Last session: 2026-05-22T10:23:55.967Z
 Stopped at: Phase 04 complete; ready to discuss Phase 5
 Resume file: None
