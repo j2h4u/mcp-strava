@@ -1,0 +1,384 @@
+from __future__ import annotations
+
+import ast
+import json
+import sqlite3
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+
+import pytest
+
+from mcp_strava.adapters.sqlite.migrations import run_migrations
+from mcp_strava.application.metric_registry import METRIC_REGISTRY
+from mcp_strava.types import ServiceEnvelope, dc_to_dict
+
+FORBIDDEN_KEYS = {
+    "recommendation",
+    "action",
+    "intensity",
+    "on_track",
+    "should",
+    "ready",
+    "best_scenario",
+    "sync_log",
+    "sql",
+    "token",
+    "raw_strava",
+}
+
+SAFETY_WARNING_CODES = {
+    "z5_excessive",
+    "hike_load_consecutive_high",
+    "running_volume_jump_high",
+    "cardiac_drift_severe_yesterday",
+    "hr_anomaly_burst",
+    "low_hr_data",
+    "insufficient_history",
+}
+
+
+@pytest.fixture(autouse=True)
+def forbid_live_network_and_reset_cache(monkeypatch):
+    def _blocked(*args, **kwargs):
+        raise RuntimeError("live network forbidden")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _blocked)
+
+    import mcp_strava.metrics as metrics
+
+    metrics._hr_max_cache = None
+    yield
+    metrics._hr_max_cache = None
+
+
+def _create_base_db(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE activities (
+            id INTEGER PRIMARY KEY,
+            date TEXT, name TEXT, sport_type TEXT,
+            distance REAL, moving_time INTEGER, elapsed_time INTEGER,
+            total_elevation_gain REAL,
+            summary_json TEXT, detail_json TEXT, synced_at TEXT
+        );
+        CREATE TABLE streams (
+            activity_id INTEGER, time_offset INTEGER,
+            heartrate INTEGER, velocity REAL, altitude REAL,
+            cadence INTEGER, lat REAL, lng REAL, grade REAL,
+            gap_speed REAL, gap_distance REAL, is_moving INTEGER, latlng TEXT,
+            PRIMARY KEY (activity_id, time_offset)
+        );
+        CREATE INDEX idx_streams_act ON streams(activity_id);
+        CREATE TABLE athlete_zones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fetched_at TEXT, zones_json TEXT
+        );
+        CREATE TABLE sync_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            status TEXT NOT NULL,
+            activities_seen INTEGER,
+            activities_new INTEGER,
+            streams_fetched INTEGER,
+            details_fetched INTEGER,
+            api_calls INTEGER,
+            error TEXT,
+            kudos_fetched INTEGER
+        );
+        CREATE TABLE kudos (
+            activity_id INTEGER NOT NULL,
+            firstname TEXT NOT NULL DEFAULT '',
+            lastname TEXT NOT NULL DEFAULT '',
+            fetched_at TEXT NOT NULL,
+            PRIMARY KEY (activity_id, firstname, lastname)
+        );
+        PRAGMA user_version=1;
+        """
+    )
+    conn.commit()
+    conn.close()
+    run_migrations(path)
+    opened = sqlite3.connect(path)
+    opened.row_factory = sqlite3.Row
+    return opened
+
+
+def _insert_activity(conn: sqlite3.Connection, activity_id: int, day: str, *, sport_type: str = "Run", with_hr: bool = True) -> None:
+    avg_hr = 145.0 if with_hr else None
+    max_hr = 165.0 if with_hr else None
+    summary = {
+        "id": activity_id,
+        "name": f"Workout {activity_id}",
+        "sport_type": sport_type,
+        "start_date_local": f"{day}T07:00:00",
+        "distance": 5000.0,
+        "moving_time": 1800,
+        "elapsed_time": 1830,
+        "total_elevation_gain": 30.0,
+        "has_heartrate": with_hr,
+        "average_heartrate": avg_hr,
+        "max_heartrate": max_hr,
+    }
+    conn.execute(
+        """
+        INSERT INTO activities (
+            id, date, name, sport_type, distance, moving_time, elapsed_time,
+            total_elevation_gain, summary_json, detail_json, synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            activity_id,
+            f"{day}T07:00:00",
+            f"Workout {activity_id}",
+            sport_type,
+            5000.0,
+            1800,
+            1830,
+            30.0,
+            json.dumps(summary),
+            None,
+            f"{day}T08:00:00",
+        ),
+    )
+
+
+def _insert_streams(conn: sqlite3.Connection, activity_id: int, *, with_hr: bool = True) -> None:
+    for second in range(130):
+        conn.execute(
+            """
+            INSERT INTO streams (
+                activity_id, time_offset, heartrate, velocity, altitude,
+                cadence, lat, lng, grade, gap_speed, gap_distance, is_moving, latlng
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                activity_id,
+                second,
+                145 if with_hr else None,
+                3.0,
+                100.0 + second * 0.01,
+                85,
+                None,
+                None,
+                0.0,
+                3.0,
+                float(second),
+                1,
+                "[43.2,76.9]",
+            ),
+        )
+
+
+def _fixture_conn(path: Path) -> sqlite3.Connection:
+    conn = _create_base_db(path)
+    _insert_activity(conn, 701, "2026-05-20", sport_type="Run", with_hr=True)
+    _insert_streams(conn, 701, with_hr=True)
+    _insert_activity(conn, 702, "2026-05-21", sport_type="Run", with_hr=True)
+    _insert_streams(conn, 702, with_hr=True)
+    _insert_activity(conn, 703, "2026-05-19", sport_type="Hike", with_hr=False)
+    conn.execute(
+        """
+        UPDATE refresh_state
+        SET last_success_at = ?, last_attempt_at = ?, last_status = 'ok'
+        WHERE id = 1
+        """,
+        ("2026-05-21T06:00:00", "2026-05-21T06:00:00"),
+    )
+    conn.commit()
+    return conn
+
+
+def _walk_no_forbidden_keys(obj) -> None:
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            lowered = str(key).lower()
+            assert lowered not in FORBIDDEN_KEYS
+            _walk_no_forbidden_keys(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            _walk_no_forbidden_keys(item)
+
+
+def _walk_no_cyrillic_or_coaching_text(obj) -> None:
+    coaching_markers = ("should", "ready", "rest day", "easy run", "weekly plan", "recommended")
+    if isinstance(obj, dict):
+        for value in obj.values():
+            _walk_no_cyrillic_or_coaching_text(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            _walk_no_cyrillic_or_coaching_text(item)
+    elif isinstance(obj, str):
+        assert not any("\u0400" <= ch <= "\u04FF" for ch in obj)
+        lowered = obj.lower()
+        assert not any(marker in lowered for marker in coaching_markers)
+
+
+def _assert_metric_ids_exist(metric_ids: set[str]) -> None:
+    for metric_id in metric_ids:
+        assert metric_id in METRIC_REGISTRY
+
+
+def _repo_metric_ids_for_tool(tool_id: str) -> set[str]:
+    return {metric_id for metric_id, definition in METRIC_REGISTRY.items() if tool_id in definition.exposed_in}
+
+
+def test_get_fitness_state_service_returns_metric_bundle_envelope(tmp_path: Path) -> None:
+    from mcp_strava.application.metric_services import get_fitness_state_service
+
+    conn = _fixture_conn(tmp_path / "fitness.db")
+    try:
+        envelope = get_fitness_state_service(
+            now=datetime.fromisoformat("2026-05-21T09:00:00"),
+            signal_first_use=False,
+            connection=conn,
+        )
+    finally:
+        conn.close()
+
+    payload = dc_to_dict(envelope)
+    assert isinstance(envelope, ServiceEnvelope)
+    assert set(payload) == {"data", "freshness", "completeness", "warnings", "rationale"}
+
+    expected_metrics = {
+        "fitness",
+        "fatigue",
+        "form",
+        "form_zone",
+        "acwr",
+        "atl",
+        "ctl",
+        "weekly_trimp",
+        "total_trimp_14d",
+        "avg_trimp_per_day",
+        "active_days",
+        "rest_days",
+        "daily_avg_trimp_7d",
+        "daily_avg_trimp_28d",
+        "daily_avg_trimp_90d",
+        "activity_streak_days",
+        "rest_streak_days",
+        "last_hike_days_ago",
+        "progressive_load_bonus",
+        "progressive_cc_trends",
+        "z5_seconds",
+        "hr_anomaly_count",
+    }
+    assert expected_metrics.issubset(set(payload["data"]))
+    _assert_metric_ids_exist(set(payload["data"]).intersection(_repo_metric_ids_for_tool("get_fitness_state")))
+
+    _walk_no_forbidden_keys(payload)
+    _walk_no_cyrillic_or_coaching_text(payload["data"])
+
+
+def test_list_workouts_service_respects_filters_and_returns_compact_rows(tmp_path: Path) -> None:
+    from mcp_strava.application.metric_services import list_workouts_service
+
+    conn = _fixture_conn(tmp_path / "workouts.db")
+    try:
+        envelope = list_workouts_service(
+            limit=2,
+            start_date="2026-05-20",
+            end_date="2026-05-21",
+            sport="Run",
+            now=datetime.fromisoformat("2026-05-21T09:00:00"),
+            signal_first_use=False,
+            connection=conn,
+        )
+    finally:
+        conn.close()
+
+    payload = dc_to_dict(envelope)
+    assert isinstance(envelope, ServiceEnvelope)
+    assert set(payload) == {"data", "freshness", "completeness", "warnings", "rationale"}
+    assert [row["activity_id"] for row in payload["data"]] == [702, 701]
+
+    required_row_keys = {
+        "activity_id",
+        "activity_date",
+        "sport_type",
+        "activity_name",
+        "distance_km",
+        "moving_time_min",
+        "elevation_m",
+        "trimp",
+        "avg_hr",
+        "max_hr",
+        "completeness",
+    }
+    for row in payload["data"]:
+        assert required_row_keys.issubset(set(row))
+        assert row["sport_type"] == "Run"
+        assert "2026-05-20" <= row["activity_date"] <= "2026-05-21"
+
+    _assert_metric_ids_exist(required_row_keys - {"completeness"})
+    _walk_no_forbidden_keys(payload)
+
+
+def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reasons(tmp_path: Path) -> None:
+    from mcp_strava.application.metric_services import get_workout_detail_service
+
+    conn = _fixture_conn(tmp_path / "detail.db")
+    try:
+        full = get_workout_detail_service(
+            activity_id=701,
+            now=datetime.fromisoformat("2026-05-21T09:00:00"),
+            signal_first_use=False,
+            connection=conn,
+        )
+        partial = get_workout_detail_service(
+            activity_id=703,
+            now=datetime.fromisoformat("2026-05-21T09:00:00"),
+            signal_first_use=False,
+            connection=conn,
+        )
+    finally:
+        conn.close()
+
+    full_payload = dc_to_dict(full)
+    partial_payload = dc_to_dict(partial)
+
+    required_detail_keys = {
+        "time_in_hr_zones_min",
+        "hr_recovery_median_bpm_per_min",
+        "vertical_speed_m_per_h",
+        "cardiac_cost",
+        "cardiac_drift_pct",
+        "cardiac_drift_quality",
+        "hrr_pct",
+    }
+    assert required_detail_keys.issubset(set(full_payload["data"]))
+    _assert_metric_ids_exist(required_detail_keys)
+
+    assert partial_payload["completeness"]["status"] == "partial"
+    assert set(partial_payload["completeness"]["missing"]) & {"missing_hr", "missing_streams", "metric_unavailable"}
+
+    for warning in full_payload["warnings"] + partial_payload["warnings"]:
+        assert warning["code"] in SAFETY_WARNING_CODES | {"mirror_stale", "missing_hr", "missing_streams", "metric_unavailable"}
+        if warning["code"] in SAFETY_WARNING_CODES:
+            evidence = warning.get("evidence") or {}
+            if evidence:
+                assert isinstance(evidence, dict)
+
+
+def test_metric_services_source_does_not_serialize_then_filter_daily_report() -> None:
+    source_path = Path("src/mcp_strava/application/metric_services.py")
+    text = source_path.read_text(encoding="utf-8")
+    lowered = text.lower()
+
+    forbidden_patterns = [
+        "dc_to_dict(report)",
+        "asdict(report)",
+        "dataclasses.asdict(report)",
+        "dailyreport",
+    ]
+    for pattern in forbidden_patterns:
+        assert pattern not in lowered
+
+    module = ast.parse(text)
+    has_projection = any(
+        isinstance(node, ast.FunctionDef) and node.name == "_project_fitness_state_metrics"
+        for node in module.body
+    )
+    assert has_projection
