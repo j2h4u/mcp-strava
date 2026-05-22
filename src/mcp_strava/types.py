@@ -614,6 +614,7 @@ class ServiceWarning:
     severity: str
     message: str
     field: str | None = None
+    evidence: dict[str, Any] | None = None
 
 
 @dataclass

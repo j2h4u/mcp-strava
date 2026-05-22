@@ -58,6 +58,46 @@ class SQLiteRepository:
         ).fetchall()
         return [self._to_activity_row(r) for r in rows]
 
+    def list_activities(
+        self,
+        *,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        sport: str | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> list[RepositoryActivityRow]:
+        where: list[str] = []
+        params: list[object] = []
+        if start_date is not None:
+            where.append("SUBSTR(date, 1, 10) >= ?")
+            params.append(start_date)
+        if end_date is not None:
+            where.append("SUBSTR(date, 1, 10) <= ?")
+            params.append(end_date)
+        if sport is not None:
+            where.append("sport_type = ?")
+            params.append(sport)
+        if cursor is not None:
+            where.append("date < ?")
+            params.append(cursor)
+
+        where_sql = " WHERE " + " AND ".join(where) if where else ""
+        rows = self.conn.execute(
+            """
+            SELECT id, date, name, sport_type, distance, moving_time, elapsed_time,
+                   total_elevation_gain, summary_json, detail_json, synced_at
+            FROM activities
+            """
+            + where_sql
+            + """
+            ORDER BY date DESC, id DESC
+            LIMIT ?
+            """,
+            [*params, limit],
+        ).fetchall()
+        return [self._to_activity_row(r) for r in rows]
+
     def activity_by_id(self, activity_id: int) -> RepositoryActivityRow | None:
         row = self.conn.execute(
             """
