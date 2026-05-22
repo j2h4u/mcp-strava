@@ -2,7 +2,7 @@
 
 ## Overview
 
-This roadmap refactors the current CLI-first codebase into a layered service architecture while preserving the existing `data/strava.db` mirror. The sequence is intentionally horizontal/layered for development efficiency: package/settings foundation, data layer hardening, Strava adapter and refresh runtime, application/CLI service layer, then MCP and Docker exposure.
+This roadmap refactors the current CLI-first codebase into a layered service architecture while preserving the existing `data/strava.db` mirror. The first milestone established package/settings, repository, Strava adapter, application/CLI, MCP, and Docker boundaries. The v1.1 milestone adds a full-fidelity mirror layer so raw Strava payloads are retained before analytics projections are derived.
 
 ## Phases
 
@@ -17,6 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Strava Adapter & Refresh Runtime** - Isolate Strava transport/token logic and implement resilient policy-driven mirror refresh behavior. (completed 2026-05-21)
 - [x] **Phase 4: Application Services & CLI Refit** - Move user-facing analytics/reporting workflows into application services and route CLI through them. (completed 2026-05-21)
 - [x] **Phase 5: MCP HTTP Surface & Docker Hardening** - Expose read-only MCP tools and finalize local-safe container/runtime boundaries. (completed 2026-05-22)
+- [ ] **Phase 6: Full-Fidelity Strava Mirror** - Preserve raw Strava activity and stream payloads, generalize stream ingestion, unify GPS storage, and backfill missing raw stream data safely.
 
 ## Phase Details
 
@@ -92,10 +93,32 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [ ] `05-05` Container Runtime & Data Hardening - Wave 5 *(blocked on Wave 4 completion)*
   - [ ] `05-06` Live Gateway Integration & Rollback Smoke - Wave 6 *(blocked on Wave 5 completion)*
 
+### Phase 6: Full-Fidelity Strava Mirror
+**Goal**: The SQLite mirror preserves raw Strava payloads before deriving normalized analytics projections, without deleting existing data or forcing a full resync.
+**Depends on**: Phase 5
+**Requirements**: MIRROR-01, MIRROR-02, STREAM-01, STREAM-02, STREAM-03, GPS-01, GPS-02, COVERAGE-01, BACKFILL-01, TEST-05
+**Success Criteria** (what must be TRUE):
+  1. Raw Strava summary/detail/stream payloads are stored with endpoint, request, fetch, hash, and schema metadata before projection code filters or transforms them.
+  2. Stream ingestion handles every channel returned by Strava, including unknown channel names and channel metadata, while still producing the current analytics columns.
+  3. Existing mixed GPS storage is migrated into one canonical representation with backup, preflight, post-check, row-count parity, GPS coverage parity, and analytics parity.
+  4. Operator can inspect raw payload, stream channel, and GPS coverage from Docker/runtime-safe tooling without exposing secrets or broad raw data through MCP.
+  5. Missing raw stream payloads can be backfilled incrementally and resumably under Strava rate limits without deleting current normalized rows.
+**Plans**:
+  - [ ] `06-01` Raw Payload Store & Coverage Inventory - Wave 1
+  - [ ] `06-02` Generalized Stream Ingest & Projection - Wave 2 *(blocked on Wave 1 completion)*
+  - [ ] `06-03` Canonical GPS Migration - Wave 3 *(blocked on Wave 2 projection contract)*
+  - [ ] `06-04` Raw Backfill Runtime & Docker Verification - Wave 4 *(blocked on Wave 3 migration safety)*
+
+**Cross-cutting constraints:**
+  - Do not run full Strava resync unless explicitly approved during execution.
+  - Back up and verify the live mirror before any schema or data migration.
+  - Keep raw mirror/audit surfaces out of MCP; MCP remains read-only training metrics only.
+  - Prefer raw retention plus derived projections over lossy replacement of the existing `streams` table.
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -104,3 +127,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. Strava Adapter & Refresh Runtime | 4/4 | Complete    | 2026-05-21 |
 | 4. Application Services & CLI Refit | 4/4 | Complete    | 2026-05-21 |
 | 5. MCP HTTP Surface & Docker Hardening | 6/6 | Complete    | 2026-05-22 |
+| 6. Full-Fidelity Strava Mirror | 0/4 | Planned | |

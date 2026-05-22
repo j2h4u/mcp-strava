@@ -10,6 +10,17 @@ The long-term shape is a Docker-packaged local MCP server connected to the user'
 
 Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
 
+## Current Milestone: v1.1 Full-Fidelity Strava Mirror
+
+**Goal:** Make the local Strava mirror raw-first so Strava API payloads are retained without avoidable loss before analytics projections are derived.
+
+**Target features:**
+- Preserve raw Strava payloads for activity details and streams with fetch metadata, schema/version metadata, and coverage reporting.
+- Ingest all stream channels returned by Strava, including channel metadata, rather than only the currently known analytics fields.
+- Normalize stream projections consistently for analytics while preserving raw payloads as the source of truth.
+- Migrate existing mixed `lat`/`lng` and `latlng` stream storage into one canonical GPS representation without refetching data from Strava.
+- Backfill missing raw stream payloads through resumable, rate-limit-aware refresh work after explicit operator approval.
+
 ## Requirements
 
 ### Validated
@@ -33,6 +44,10 @@ Preserve the local Strava mirror and keep trusted training analytics working whi
 ### Active
 
 - [ ] Separate core/domain training logic from SQLite, Strava HTTP calls, CLI formatting, and MCP transport concerns
+- [ ] Preserve raw Strava payloads before deriving normalized analytics projections
+- [ ] Store stream channels and channel metadata without a fixed analytics allowlist
+- [ ] Unify existing GPS stream storage formats without deleting or refetching data
+- [ ] Provide coverage reporting for raw payload, stream channel, and GPS completeness
 
 ### Out of Scope
 
@@ -51,10 +66,13 @@ The existing SQLite database at `data/strava.db` is valuable. It contains data t
 
 The desired architecture is not an API wrapper over Strava. It is a local mirror plus analytics core. Sync is infrastructure and policy, not an agent-facing action. MCP clients should ask questions about training and analytics; the core decides whether the mirror is fresh enough and whether an internal first-use refresh request is needed.
 
+The next milestone tightens the mirror contract. Raw Strava responses should be retained first, and typed/numeric analytics tables should become derived projections. The current streams table is useful for analytics but is not a complete raw mirror: recent rows store GPS as `latlng` JSON while older rows store split `lat`/`lng`, and the ingest path only stores selected stream fields.
+
 Existing codebase concerns that should shape the roadmap:
 
 - `src/mcp_strava/db.py` still mixes `.env` token storage, OAuth refresh, Strava HTTP requests, and compatibility wrappers around repository-backed SQLite access.
 - `src/mcp_strava/sync.py` still mixes sync orchestration, API retry/rate-limit behavior, and stderr progress output, although persistence writes now go through repository methods.
+- `src/mcp_strava/refresh/_sync_ops.py` parses stream responses through a known-channel contract and writes selected fields into `streams`, which can discard raw channel metadata and unrequested stream keys.
 - `.env` is a mutable plaintext token store.
 - `cmd_sql` is intentionally local-only and must not become remote/MCP-accessible.
 - Current tests now include SQLite safety/repository coverage, but sync retry, OAuth, freshness policy, and MCP transport still need focused coverage as the refactor proceeds.
@@ -64,7 +82,7 @@ Existing codebase concerns that should shape the roadmap:
 - **Data preservation**: Existing `data/strava.db` must not be deleted or overwritten during refactor; schema work requires backup/preflight/verification.
 - **Rate limits**: Strava API calls are expensive and rate-limited; avoid plans that require full resync unless explicitly approved.
 - **MCP boundary**: MCP exposes workouts, analytics, reports, and recommendations only; operational sync/admin/debug capabilities stay below the MCP surface.
-- **Sync policy**: The local mirror refreshes lazily on first user-facing use per local day; if nobody asks for data, the service should not spend Strava API quota just because a day passed.
+- **Sync policy**: The local mirror refreshes through internal runtime policy and currently defaults to a fixed hourly cadence; MCP clients must remain unaware of sync controls.
 - **Deployment target**: Future runtime should fit Docker and the local MCP gateway/network, but the first milestone should establish clean service boundaries before full rollout.
 - **Local-first security**: Default HTTP serving must be local/container-network safe and avoid public unauthenticated exposure.
 - **Testing**: Existing behavior must remain verifiable with `just test`; new boundaries need targeted tests for repositories, migrations, freshness, and MCP tools.
@@ -80,6 +98,7 @@ Existing codebase concerns that should shape the roadmap:
 | MCP must not expose sync/admin/debug tools | Agents should consume training insight, not operate infrastructure controls | Product registry excludes admin/debug commands in Phase 4; MCP allowlist and forbidden-tool tests validated in Phase 5 |
 | Sync is lazy first-use core policy | The local mirror should refresh through internal policy only when product use requires it; MCP still must not expose sync controls | Validated in Phase 4 freshness application service metadata and internal refresh requests |
 | Prefer development efficiency over intermediate operability | The service does not need to stay fully usable during refactor; it only needs to be operational after the milestone is complete | Validated through Phase 4 refactor sequencing |
+| Raw-first mirror for v1.1 | The local database should preserve Strava-owned payloads before analytics code normalizes or filters them | Planned for v1.1 Full-Fidelity Strava Mirror |
 
 ## Evolution
 
@@ -99,4 +118,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 after Phase 5 completion*
+*Last updated: 2026-05-22 for v1.1 Full-Fidelity Strava Mirror*

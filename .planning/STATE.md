@@ -1,36 +1,33 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: milestone_complete
-last_updated: 2026-05-22T14:47:00.000Z
+milestone: v1.1
+milestone_name: Full-Fidelity Strava Mirror
+status: planning
+last_updated: "2026-05-22T15:20:53.432Z"
 last_activity: 2026-05-22
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 5
   total_plans: 21
   completed_plans: 21
-  percent: 100
-stopped_at: Milestone complete (Phase 05 was final phase)
+  percent: 83
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-20)
+See: .planning/PROJECT.md (updated 2026-05-22)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Milestone complete
+**Current focus:** v1.1 Full-Fidelity Strava Mirror
 
 ## Current Position
 
-Phase: 05
+Phase: 06
 Plan: Not started
-Status: Milestone complete
-Last activity: 2026-05-22
-
-Progress: [██████████] 100%
+Status: Ready for discussion
+Last activity: 2026-05-22 — Milestone v1.1 roadmap created
 
 ## Performance Metrics
 
@@ -49,6 +46,7 @@ Progress: [██████████] 100%
 | 03 | 4 | - | - |
 | 04 | 4 | - | - |
 | 05 | 6 | - | - |
+| 06 | 4 | - | - |
 
 **Recent Trend:**
 
@@ -94,6 +92,8 @@ Recent decisions affecting current work:
 - [Phase 05]: prepare_runtime writes canonical live.env paths under /opt/docker/mcp-strava for live CLI/admin alignment.
 - [Phase 05]: Gateway live-path checks allow dry-run but require --apply + --confirm-live-gateway for mutation.
 - [Phase 05]: Gateway registration mutates catalog/compose atomically with rollback restart on failure.
+- [Milestone v1.1]: Make Strava mirroring raw-first; normalized stream rows become derived projections, not the only stored copy.
+- [Milestone v1.1]: Unify mixed GPS storage formats locally before relying on track data as a clean mirror surface.
 
 ### Pending Todos
 
@@ -101,7 +101,8 @@ None yet.
 
 ### Blockers/Concerns
 
-- Requirement-to-implementation mapping must preserve data and avoid accidental empty-DB bootstrap behavior during refactor.
+- Phase 6 must preserve existing stream rows and GPS points while adding raw payload retention.
+- Backfill must be resumable and rate-limit-aware; no full Strava resync without explicit operator approval.
 
 ## Deferred Items
 
@@ -113,8 +114,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-22T14:47:00.000Z
-Stopped at: Quick task 260522-ra3 complete; milestone remains complete
+Last session: 2026-05-22T15:20:53.432Z
+Stopped at: Milestone v1.1 initialized; next step is Phase 6 discussion
 Resume file: None
 
 ## Quick Tasks Completed

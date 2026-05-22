@@ -71,6 +71,35 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 - [x] **TEST-03**: Tests cover MCP tool allowlist and prove forbidden sync/admin/debug tools are absent
 - [x] **TEST-04**: Tests cover freshness metadata, missing-HR handling, and core daily/weekly report parity
 
+## v1.1 Requirements
+
+Requirements for the Full-Fidelity Strava Mirror milestone. This milestone changes the mirror contract from "analytics projection first" to "raw payload first, projections second" while preserving the existing database.
+
+### Raw Payload Retention
+
+- [ ] **MIRROR-01**: Operator can preserve raw Strava activity summary, activity detail, and activity stream payloads with endpoint, request parameters, fetched-at timestamp, response hash, and parser/schema version metadata
+- [ ] **MIRROR-02**: Developer can treat normalized activity and stream tables as derived projections while raw Strava payloads remain queryable for audit and future reprocessing
+
+### Stream Ingestion
+
+- [ ] **STREAM-01**: Refresh runtime requests the complete known Strava stream key set plus configured extra keys and records unsupported or unavailable keys without failing the whole activity
+- [ ] **STREAM-02**: Repository stores every stream channel returned by Strava, including unknown or future channel keys and channel metadata such as `original_size`, `resolution`, and `series_type`
+- [ ] **STREAM-03**: Analytics projections keep existing scalar columns for current metrics and retain all per-point extra channel values in structured JSON
+
+### GPS Migration
+
+- [ ] **GPS-01**: Operator can migrate existing split `lat`/`lng` and JSON `latlng` stream rows into one canonical GPS representation without live Strava calls
+- [ ] **GPS-02**: Migration creates a backup, runs preflight/post-checks, and verifies stream row counts, GPS point counts, and key analytics parity
+
+### Coverage and Backfill
+
+- [ ] **COVERAGE-01**: Operator can inspect raw payload, stream channel, and GPS coverage by activity/date/sport without exposing secrets or unnecessary raw personal details
+- [ ] **BACKFILL-01**: Operator can run resumable, rate-limit-aware raw stream backfill only for activities missing raw payloads while preserving existing normalized rows
+
+### Testing
+
+- [ ] **TEST-05**: Tests prove raw payload retention, all-channel ingestion, mixed GPS migration, and coverage reporting against temp or copied databases without live Strava API calls
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in the current roadmap.
@@ -97,6 +126,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | Exact compatibility with old CLI command names and JSON shapes | No external compatibility obligation; clean service boundaries are more valuable |
 | MCP sync/backfill/force-refresh tools | Sync is core/application policy and background infrastructure, not an agent-facing action |
 | MCP raw Strava endpoint passthrough | Turns the server into an API wrapper instead of a training analytics product |
+| MCP raw mirror payload tools | Raw payloads are operator/audit data, not agent-facing training metrics |
 | MCP arbitrary SQL tools | Exposes internal schema and creates security/data-integrity risk |
 | MCP token/admin/sync-log tools | Expands secret and operational blast radius outside the user-facing analytics boundary |
 | Public multi-user SaaS or account management | Project is local-first for one primary user |
@@ -143,12 +173,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-02 | Phase 3 | Complete |
 | TEST-03 | Phase 5 | Complete |
 | TEST-04 | Phase 4 | Complete |
+| MIRROR-01 | Phase 6 | Planned |
+| MIRROR-02 | Phase 6 | Planned |
+| STREAM-01 | Phase 6 | Planned |
+| STREAM-02 | Phase 6 | Planned |
+| STREAM-03 | Phase 6 | Planned |
+| GPS-01 | Phase 6 | Planned |
+| GPS-02 | Phase 6 | Planned |
+| COVERAGE-01 | Phase 6 | Planned |
+| BACKFILL-01 | Phase 6 | Planned |
+| TEST-05 | Phase 6 | Planned |
 
 **Coverage:**
 - v1 requirements: 34 total
 - Mapped to phases: 34
 - Unmapped: 0
+- v1.1 requirements: 10 total
+- Mapped to phases: 10
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-05-20*
-*Last updated: 2026-05-21 after Phase 4 discussion*
+*Last updated: 2026-05-22 for v1.1 Full-Fidelity Strava Mirror*
