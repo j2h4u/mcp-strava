@@ -116,6 +116,30 @@ def test_validate_http_settings_and_transport_security() -> None:
     assert ts.allowed_hosts
     assert ts.allowed_origins
 
+    unsafe_host = SimpleNamespace(
+        runtime_profile="container",
+        http=SimpleNamespace(
+            host="0.0.0.0",
+            allow_container_bind=True,
+            allowed_hosts=("*",),
+            allowed_origins=("http://localhost",),
+        ),
+    )
+    with pytest.raises(ValueError, match="allowed_hosts"):
+        mcp_http.build_transport_security(unsafe_host)
+
+    unsafe_origin = SimpleNamespace(
+        runtime_profile="container",
+        http=SimpleNamespace(
+            host="0.0.0.0",
+            allow_container_bind=True,
+            allowed_hosts=("mcp-strava",),
+            allowed_origins=("*",),
+        ),
+    )
+    with pytest.raises(ValueError, match="allowed_origins"):
+        mcp_http.build_transport_security(unsafe_origin)
+
 
 def test_mcp_tools_have_annotations_and_structured_output(monkeypatch) -> None:
     from mcp_strava.interfaces import mcp_http

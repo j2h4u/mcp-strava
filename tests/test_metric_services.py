@@ -591,4 +591,46 @@ def test_project_fitness_state_service_validates_custom_rows(tmp_path: Path) -> 
             signal_first_use=False,
             connection=conn_invalid,
         )
+    with pytest.raises(ValueError, match="rows must include date and trimp"):
+        project_fitness_state_service(
+            target_date="2026-05-25",
+            scenarios=["custom"],
+            custom_daily_trimp=[{"trimp": 40.0}],
+            now=datetime.fromisoformat("2026-05-22T09:00:00"),
+            signal_first_use=False,
+            connection=conn_invalid,
+        )
+    with pytest.raises(ValueError, match="rows must include date and trimp"):
+        project_fitness_state_service(
+            target_date="2026-05-25",
+            scenarios=["custom"],
+            custom_daily_trimp=["2026-05-22"],
+            now=datetime.fromisoformat("2026-05-22T09:00:00"),
+            signal_first_use=False,
+            connection=conn_invalid,
+        )
     conn_invalid.close()
+
+
+def test_list_workouts_service_validates_limit(tmp_path: Path) -> None:
+    from mcp_strava.application.metric_services import list_workouts_service
+
+    conn = _fixture_conn(tmp_path / "limit.db")
+    try:
+        for limit in (0, -1, 201):
+            with pytest.raises(ValueError, match="limit must be between 1 and 200"):
+                list_workouts_service(
+                    limit=limit,
+                    now=datetime.fromisoformat("2026-05-22T09:00:00"),
+                    signal_first_use=False,
+                    connection=conn,
+                )
+        with pytest.raises(ValueError, match="limit must be an integer"):
+            list_workouts_service(
+                limit=1.5,
+                now=datetime.fromisoformat("2026-05-22T09:00:00"),
+                signal_first_use=False,
+                connection=conn,
+            )
+    finally:
+        conn.close()

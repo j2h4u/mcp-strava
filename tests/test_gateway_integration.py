@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 import shutil
 
@@ -122,6 +123,42 @@ def test_supports_string_command_and_preserves_existing_servers(tmp_path: Path) 
     assert "--servers=ozon,telegram,beads,dotmd,strava" in command
 
 
+def test_string_command_rewrite_preserves_quoted_arguments(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog.yaml"
+    compose = tmp_path / "compose.yaml"
+    _write_fixture(catalog, CATALOG_FIXTURE)
+    _write_fixture(
+        compose,
+        """services:
+  mcp-gateway:
+    command: "--catalog=/mcp/catalog.yaml --label 'gateway prod' --servers=ozon,telegram --transport=streaming"
+""",
+    )
+
+    rc = gateway_register.register_strava_gateway(
+        catalog_path=catalog,
+        compose_path=compose,
+        backup_dir=tmp_path / "backups",
+        smoke_cmd=["echo", "smoke"],
+        restart_cmd=["echo", "restart"],
+        rollback_restart_cmd=["echo", "rollback-restart"],
+        compose_config_cmd=["echo", "config-ok"],
+        apply=True,
+        confirm_live_gateway=True,
+        run_cmd=lambda _cmd: 0,
+    )
+    assert rc == 0
+    command = _read_yaml(compose)["services"]["mcp-gateway"]["command"]
+    assert "--label 'gateway prod'" in command
+    assert shlex.split(command) == [
+        "--catalog=/mcp/catalog.yaml",
+        "--label",
+        "gateway prod",
+        "--servers=ozon,telegram,strava",
+        "--transport=streaming",
+    ]
+
+
 def test_idempotent_when_strava_already_present(tmp_path: Path) -> None:
     catalog = tmp_path / "catalog.yaml"
     compose = tmp_path / "compose.yaml"
@@ -162,6 +199,46 @@ def test_idempotent_when_strava_already_present(tmp_path: Path) -> None:
     assert rc == 0
     assert catalog.read_bytes() == before_catalog
     assert compose.read_bytes() == before_compose
+
+
+def test_reconciles_stale_existing_strava_entry(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog.yaml"
+    compose = tmp_path / "compose.yaml"
+    _write_fixture(
+        catalog,
+        CATALOG_FIXTURE
+        + """
+  strava:
+    remote:
+      url: "http://old-strava:9999/mcp"
+      transport_type: http
+""",
+    )
+    _write_fixture(
+        compose,
+        """services:
+  mcp-gateway:
+    command:
+      - --catalog=/mcp/catalog.yaml
+      - --servers=ozon,telegram,beads,dotmd,strava
+""",
+    )
+
+    rc = gateway_register.register_strava_gateway(
+        catalog_path=catalog,
+        compose_path=compose,
+        backup_dir=tmp_path / "backups",
+        smoke_cmd=["echo", "smoke"],
+        restart_cmd=["echo", "restart"],
+        rollback_restart_cmd=["echo", "rollback-restart"],
+        compose_config_cmd=["echo", "config-ok"],
+        apply=True,
+        confirm_live_gateway=True,
+        run_cmd=lambda _cmd: 0,
+    )
+    assert rc == 0
+    updated_catalog = _read_yaml(catalog)
+    assert updated_catalog["registry"]["strava"]["remote"]["url"] == "http://mcp-strava:8080/mcp"
 
 
 def test_default_is_dry_run_and_no_writes_no_backups_no_restart(tmp_path: Path) -> None:

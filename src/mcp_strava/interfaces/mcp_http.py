@@ -50,6 +50,7 @@ FORBIDDEN_TOOL_NAMES = {
 
 _SAFE_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _WILDCARD_HOSTS = {"0.0.0.0", "::"}
+_UNSAFE_TRANSPORT_VALUES = {"*", "0.0.0.0", "::"}
 
 
 def _tool_annotations() -> ToolAnnotations:
@@ -88,6 +89,12 @@ def build_transport_security(settings: Settings) -> TransportSecuritySettings:
         raise ValueError("allowed_hosts must not be empty")
     if not settings.http.allowed_origins:
         raise ValueError("allowed_origins must not be empty")
+    for value in settings.http.allowed_hosts:
+        if value.strip().lower() in _UNSAFE_TRANSPORT_VALUES:
+            raise ValueError("allowed_hosts contains unsafe wildcard entries")
+    for value in settings.http.allowed_origins:
+        if value.strip().lower() in _UNSAFE_TRANSPORT_VALUES:
+            raise ValueError("allowed_origins contains unsafe wildcard entries")
     return TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=list(settings.http.allowed_hosts),

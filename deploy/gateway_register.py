@@ -78,7 +78,7 @@ def append_server_to_command(command: str | list[str], service_name: str) -> str
                 break
         if not replaced:
             tokens.append(f"--servers={service_name}")
-        return " ".join(tokens)
+        return shlex.join(tokens)
 
     raise RuntimeError("mcp-gateway command must be a string or list")
 
@@ -118,13 +118,12 @@ def _build_mutations(
 ) -> tuple[str, str]:
     updated_catalog = dict(catalog_obj)
     registry = dict(updated_catalog.get("registry") or {})
-    if service_name not in registry:
-        registry[service_name] = {
-            "remote": {
-                "url": service_url,
-                "transport_type": "http",
-            }
+    registry[service_name] = {
+        "remote": {
+            "url": service_url,
+            "transport_type": "http",
         }
+    }
     updated_catalog["registry"] = registry
 
     updated_compose = dict(compose_obj)

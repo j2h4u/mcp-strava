@@ -554,6 +554,11 @@ def _validated_custom_series(custom_daily_trimp, today_day: date, target_day: da
         raise ValueError("custom_daily_trimp must be a list")
     by_day: dict[str, float] = {}
     prev = None
+    for row in custom_daily_trimp:
+        if not isinstance(row, dict):
+            raise ValueError("custom_daily_trimp rows must include date and trimp")
+        if "date" not in row or "trimp" not in row:
+            raise ValueError("custom_daily_trimp rows must include date and trimp")
     for row in sorted(custom_daily_trimp, key=lambda item: item["date"]):
         day = _validate_iso_day(row["date"])
         if day < today_day or day > target_day:
@@ -722,6 +727,10 @@ def list_workouts_service(
     signal_first_use: bool = True,
     connection=None,
 ) -> ServiceEnvelope:
+    if not isinstance(limit, int):
+        raise ValueError("limit must be an integer")
+    if limit < 1 or limit > 200:
+        raise ValueError("limit must be between 1 and 200")
     checked_at = now or datetime.now()
     with _connection_context(connection) as conn:
         repo = SQLiteRepository.from_connection(conn)
