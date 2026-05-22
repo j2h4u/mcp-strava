@@ -60,8 +60,8 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 ### Docker Readiness
 
-- [ ] **DOCKER-01**: Container runtime uses an explicit persistent volume for `data/` and fails startup if an expected mirror database is absent or unreadable
-- [ ] **DOCKER-02**: Container runtime runs as non-root by default and avoids public host-port exposure unless explicitly configured
+- [x] **DOCKER-01**: Container runtime uses an explicit persistent volume for `data/` and fails startup if an expected mirror database is absent or unreadable
+- [x] **DOCKER-02**: Container runtime runs as non-root by default and avoids public host-port exposure unless explicitly configured
 - [ ] **DOCKER-03**: Local MCP gateway integration path is documented without requiring gateway rollout in the first implementation phase
 
 ### Testing
@@ -136,8 +136,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REFRESH-01 | Phase 3 | Complete |
 | REFRESH-02 | Phase 3 | Complete |
 | REFRESH-03 | Phase 3 | Complete |
-| DOCKER-01 | Phase 5 | Pending |
-| DOCKER-02 | Phase 5 | Pending |
+| DOCKER-01 | Phase 5 | Complete |
+| DOCKER-02 | Phase 5 | Complete |
 | DOCKER-03 | Phase 5 | Pending |
 | TEST-01 | Phase 2 | Complete |
 | TEST-02 | Phase 3 | Complete |

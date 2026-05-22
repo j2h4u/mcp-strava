@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-22T10:43:28.498Z"
+last_updated: "2026-05-22T11:45:56.607Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 21
-  completed_plans: 19
+  completed_plans: 20
   percent: 80
 ---
 
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-05-20)
 ## Current Position
 
 Phase: 05 (mcp-http-surface-docker-hardening) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-05-22
 
-Progress: [█████████░] 90%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [█████████░] 90%
 | Phase 05-mcp-http-surface-docker-hardening P05-01 | 8 min | 3 tasks | 6 files |
 | Phase 05 P05-02 | 3 min | 2 tasks | 6 files |
 | Phase 05 P04 | completed in-session | 4 tasks | 11 files |
+| Phase 05 P05 | 12 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-02 closed safety warning code table — Keep warning contract machine-readable and bounded
 - [Phase 05]: MCP HTTP surface restricted to exact five read-only metric tools. — Enforces D-03/D-06 and prevents sync/admin/debug/raw exposure.
 - [Phase 05]: just test now runs through uv-managed python3. — Ensures pinned MCP SDK dependency resolves during full test execution.
+- [Phase 05]: Docker runtime defaults use expose-only compose networking with no host ports by default.
+- [Phase 05]: Container startup now fails closed through deploy preflight before MCP HTTP server exec.
+- [Phase 05]: prepare_runtime writes canonical live.env paths under /opt/docker/mcp-strava for live CLI/admin alignment.
 
 ### Pending Todos
 
@@ -104,6 +108,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-22T10:43:15.615Z
+Last session: 2026-05-22T11:45:30.229Z
 Stopped at: Phase 04 complete; ready to discuss Phase 5
 Resume file: None

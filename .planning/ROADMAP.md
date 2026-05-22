@@ -103,4 +103,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. SQLite Safety & Repository Layer | 4/4 | Complete    | 2026-05-21 |
 | 3. Strava Adapter & Refresh Runtime | 4/4 | Complete    | 2026-05-21 |
 | 4. Application Services & CLI Refit | 4/4 | Complete    | 2026-05-21 |
-| 5. MCP HTTP Surface & Docker Hardening | 4/6 | In Progress|  |
+| 5. MCP HTTP Surface & Docker Hardening | 5/6 | In Progress|  |
