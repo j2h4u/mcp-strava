@@ -16,6 +16,7 @@ services:
       MCP_STRAVA_TOKEN_PATH: /runtime/.env
       MCP_STRAVA_REFRESH_WORKER_ENABLED: "1"
       MCP_STRAVA_REFRESH_POLL_SECONDS: "60"
+      MCP_STRAVA_REFRESH_INTERVAL_SECONDS: "3600"
     volumes:
       - /opt/docker/mcp-strava:/runtime
     expose: ["8080"]

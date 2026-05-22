@@ -22,12 +22,18 @@ class FreshnessSettings:
 
 
 @dataclass(frozen=True)
+class RefreshSettings:
+    interval_seconds: int
+
+
+@dataclass(frozen=True)
 class Settings:
     database_path: Path
     token_path: Path
     runtime_profile: str
     http: HttpSettings
     freshness: FreshnessSettings
+    refresh: RefreshSettings
 
 
 _KEYS = {
@@ -41,6 +47,7 @@ _KEYS = {
     'MCP_STRAVA_ALLOWED_ORIGINS',
     'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS',
     'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS',
+    'MCP_STRAVA_REFRESH_INTERVAL_SECONDS',
     'MCP_STRAVA_PROJECT_ROOT',
 }
 
@@ -73,7 +80,12 @@ def _parse_int(raw: str, key: str) -> int:
         raise ValueError(f'Invalid integer for {key}: {raw}') from exc
 
 
-def _validate_ranges(http_port: int, warn_age_hours: int, max_age_hours: int) -> None:
+def _validate_ranges(
+    http_port: int,
+    warn_age_hours: int,
+    max_age_hours: int,
+    refresh_interval_seconds: int,
+) -> None:
     if http_port < 1 or http_port > 65535:
         raise ValueError('Invalid integer for MCP_STRAVA_HTTP_PORT: out of range')
     if warn_age_hours < 0:
@@ -85,6 +97,8 @@ def _validate_ranges(http_port: int, warn_age_hours: int, max_age_hours: int) ->
             'Invalid freshness settings: MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS '
             'must be <= MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS'
         )
+    if refresh_interval_seconds < 60:
+        raise ValueError('Invalid integer for MCP_STRAVA_REFRESH_INTERVAL_SECONDS: out of range')
 
 
 def _parse_bool(raw: str) -> bool:
@@ -164,8 +178,12 @@ def load_settings(
         resolve('MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS', '24'),
         'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS',
     )
+    refresh_interval_seconds = _parse_int(
+        resolve('MCP_STRAVA_REFRESH_INTERVAL_SECONDS', '3600'),
+        'MCP_STRAVA_REFRESH_INTERVAL_SECONDS',
+    )
 
-    _validate_ranges(http_port, warn_age_hours, max_age_hours)
+    _validate_ranges(http_port, warn_age_hours, max_age_hours, refresh_interval_seconds)
 
     return Settings(
         database_path=database_path,
@@ -181,6 +199,9 @@ def load_settings(
         freshness=FreshnessSettings(
             warn_age_hours=warn_age_hours,
             max_age_hours=max_age_hours,
+        ),
+        refresh=RefreshSettings(
+            interval_seconds=refresh_interval_seconds,
         ),
     )
 

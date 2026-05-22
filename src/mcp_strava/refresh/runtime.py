@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from mcp_strava.adapters.strava import StravaUnavailable
 from mcp_strava.refresh import _sync_ops
 from mcp_strava.refresh.checkpoints import Stage, is_active_backfill_stage
-from mcp_strava.refresh.policy import RefreshPolicy
+from mcp_strava.refresh.policy import RefreshPolicy, refresh_interval_elapsed
 
 
 _DAILY_STAGE_ORDER = (
@@ -55,7 +55,15 @@ def run_once(
             return RefreshSkipped("refresh_delayed")
         if is_active_backfill_stage(state.checkpoint_stage):
             raise RuntimeError("incompatible checkpoint - backfill in progress, run run_backfill")
-        if not force and state.last_success_at and state.last_success_at[:10] == now_iso[:10] and state.checkpoint_stage == Stage.COMPLETE.value:
+        if (
+            not force
+            and state.checkpoint_stage == Stage.COMPLETE.value
+            and not refresh_interval_elapsed(
+                state.last_success_at,
+                now_iso,
+                policy.regular_refresh_interval_seconds,
+            )
+        ):
             return RefreshSkipped("already_complete")
 
         start_index = _daily_start_index(state.checkpoint_stage)

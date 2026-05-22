@@ -163,19 +163,29 @@ def test_run_once_completes_daily_refresh_per_REFRESH_01_STRAVA_03(tmp_path):
     assert logs
 
 
-def test_run_once_same_day_skips_then_force_re_runs_per_D06_D15(tmp_path):
+def test_run_once_skips_until_refresh_interval_then_re_runs_per_D06_D15(tmp_path):
     from mcp_strava.refresh import RefreshPolicy, RefreshSkipped, run_once
 
     clock = FakeClock()
+    policy = RefreshPolicy(regular_refresh_interval_seconds=3600)
     transport = FakeStravaTransport()
     with _repo(tmp_path) as repo:
-        assert run_once(repo, transport, RefreshPolicy(), clock, FakeSleeper(clock)).status == "ok"
-        skipped = run_once(repo, transport, RefreshPolicy(), clock, FakeSleeper(clock))
+        assert run_once(repo, transport, policy, clock, FakeSleeper(clock)).status == "ok"
+        skipped = run_once(repo, transport, policy, clock, FakeSleeper(clock))
         assert isinstance(skipped, RefreshSkipped)
         assert skipped.reason == "already_complete"
+        clock.advance(3599)
+        skipped = run_once(repo, transport, policy, clock, FakeSleeper(clock))
+        assert isinstance(skipped, RefreshSkipped)
+        assert skipped.reason == "already_complete"
+        calls_before_periodic = dict(transport.calls_by_path)
+        clock.advance(1)
+        periodic = run_once(repo, transport, policy, clock, FakeSleeper(clock), mode="periodic")
         calls_before_force = dict(transport.calls_by_path)
-        forced = run_once(repo, transport, RefreshPolicy(), clock, FakeSleeper(clock), force=True, mode="quick")
+        forced = run_once(repo, transport, policy, clock, FakeSleeper(clock), force=True, mode="quick")
 
+    assert periodic.status == "ok"
+    assert transport.calls_by_path["/athlete/activities?per_page=100&page=1"] > calls_before_periodic["/athlete/activities?per_page=100&page=1"]
     assert forced.status == "ok"
     assert transport.calls_by_path["/athlete/activities?per_page=100&page=1"] > calls_before_force["/athlete/activities?per_page=100&page=1"]
 
@@ -360,12 +370,16 @@ def test_enqueue_refresh_request_if_stale_is_idempotent_per_D04_REFRESH_02(tmp_p
         assert len(repo.pending_refresh_requests()) == 1
 
 
-def test_worker_runs_daily_refresh_without_pending_requests(monkeypatch, tmp_path):
+def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_path):
     from mcp_strava.refresh import Stage
     from mcp_strava.refresh import worker
 
     calls = []
-    settings = SimpleNamespace(database_path=tmp_path / "refresh.db")
+    settings = SimpleNamespace(
+        database_path=tmp_path / "refresh.db",
+        freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
+        refresh=SimpleNamespace(interval_seconds=3600),
+    )
     state = SimpleNamespace(
         lease_owner=None,
         lease_expires_at=None,
@@ -412,7 +426,56 @@ def test_worker_runs_daily_refresh_without_pending_requests(monkeypatch, tmp_pat
     monkeypatch.setattr(worker.refresh_runtime, "run_once", fake_run_once)
 
     assert worker.run_pending_once(emit_idle=False) == 0
-    assert calls == [("refresh-worker", False, "daily")]
+    assert calls == [("refresh-worker", False, "periodic")]
+
+
+def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
+    from mcp_strava.refresh import Stage
+    from mcp_strava.refresh import worker
+
+    settings = SimpleNamespace(
+        database_path=tmp_path / "refresh.db",
+        freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
+        refresh=SimpleNamespace(interval_seconds=3600),
+    )
+    state = SimpleNamespace(
+        lease_owner=None,
+        lease_expires_at=None,
+        backoff_until=None,
+        checkpoint_stage=Stage.COMPLETE.value,
+        last_success_at="2026-05-21T11:30:00",
+    )
+
+    class FakeDbConn:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeRepo:
+        def get_refresh_state(self):
+            return state
+
+        def pending_refresh_requests(self):
+            return []
+
+    monkeypatch.setattr(worker, "get_settings", lambda: settings)
+    monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
+    monkeypatch.setattr(
+        worker,
+        "run_preflight",
+        lambda _path: SimpleNamespace(row_counts={"refresh_state": 1, "refresh_requests": 0}),
+    )
+    monkeypatch.setattr(worker, "DbConn", FakeDbConn)
+    monkeypatch.setattr(worker.SQLiteRepository, "from_connection", lambda _conn: FakeRepo())
+    monkeypatch.setattr(
+        worker,
+        "build_refresh_collaborators",
+        lambda _settings: pytest.fail("refresh collaborators should not be built before interval elapses"),
+    )
+
+    assert worker.run_pending_once(emit_idle=False) == 0
 
 
 def test_refresh_modules_do_not_import_sync_per_D17():

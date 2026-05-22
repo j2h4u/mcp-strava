@@ -22,6 +22,7 @@ def test_load_settings_defaults() -> None:
     )
     assert settings.freshness.warn_age_hours == 12
     assert settings.freshness.max_age_hours == 24
+    assert settings.refresh.interval_seconds == 3600
 
 
 def test_load_settings_defaults_to_current_working_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,6 +38,19 @@ def test_load_settings_reads_process_environment_when_environ_omitted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    for key in (
+        'MCP_STRAVA_TOKEN_PATH',
+        'MCP_STRAVA_RUNTIME_PROFILE',
+        'MCP_STRAVA_HTTP_HOST',
+        'MCP_STRAVA_HTTP_PORT',
+        'MCP_STRAVA_ALLOW_CONTAINER_BIND',
+        'MCP_STRAVA_ALLOWED_HOSTS',
+        'MCP_STRAVA_ALLOWED_ORIGINS',
+        'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS',
+        'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS',
+        'MCP_STRAVA_REFRESH_INTERVAL_SECONDS',
+    ):
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv('MCP_STRAVA_PROJECT_ROOT', str(tmp_path))
     monkeypatch.setenv('MCP_STRAVA_DB_PATH', str(tmp_path / 'custom.db'))
 
@@ -58,6 +72,7 @@ def test_load_settings_environment_overrides() -> None:
         'MCP_STRAVA_ALLOWED_ORIGINS': 'https://app.local,http://localhost:3000',
         'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS': '8',
         'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS': '20',
+        'MCP_STRAVA_REFRESH_INTERVAL_SECONDS': '7200',
     }
 
     settings = load_settings(environ=env, project_root=Path('/tmp/project'))
@@ -72,6 +87,7 @@ def test_load_settings_environment_overrides() -> None:
     assert settings.http.allowed_origins == ('https://app.local', 'http://localhost:3000')
     assert settings.freshness.warn_age_hours == 8
     assert settings.freshness.max_age_hours == 20
+    assert settings.refresh.interval_seconds == 7200
 
 
 def test_load_settings_env_file_compatibility(tmp_path: Path) -> None:
@@ -92,6 +108,7 @@ def test_load_settings_env_file_compatibility(tmp_path: Path) -> None:
                 'MCP_STRAVA_ALLOWED_ORIGINS=http://127.0.0.1,http://localhost',
                 'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS=7',
                 'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS=30',
+                'MCP_STRAVA_REFRESH_INTERVAL_SECONDS=5400',
                 'IGNORED_KEY=ignored',
             ]
         )
@@ -111,6 +128,7 @@ def test_load_settings_env_file_compatibility(tmp_path: Path) -> None:
     assert settings.http.allowed_origins == ('http://127.0.0.1', 'http://localhost')
     assert settings.freshness.warn_age_hours == 7
     assert settings.freshness.max_age_hours == 30
+    assert settings.refresh.interval_seconds == 5400
 
 
 @pytest.mark.parametrize(
@@ -177,6 +195,8 @@ def test_get_settings_cache_can_be_reset(tmp_path: Path) -> None:
         ('MCP_STRAVA_HTTP_PORT', '70000'),
         ('MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS', 'x'),
         ('MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS', 'y'),
+        ('MCP_STRAVA_REFRESH_INTERVAL_SECONDS', 'bad'),
+        ('MCP_STRAVA_REFRESH_INTERVAL_SECONDS', '59'),
     ],
 )
 def test_load_settings_rejects_invalid_port(key: str, value: str) -> None:

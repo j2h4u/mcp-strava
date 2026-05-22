@@ -16,6 +16,7 @@ from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.db import DbConn
 from mcp_strava.refresh import RefreshSkipped, Stage
 from mcp_strava.refresh.bootstrap import build_refresh_collaborators, ensure_refresh_schema, record_refresh_misconfigured
+from mcp_strava.refresh.policy import RefreshPolicy, refresh_interval_elapsed
 from mcp_strava.settings import get_settings
 
 
@@ -35,19 +36,23 @@ def _refresh_blocked_reason(state, now_iso: str) -> str | None:
     return None
 
 
-def _daily_refresh_due(state, now_iso: str) -> bool:
+def _regular_refresh_due(state, now_iso: str, policy: RefreshPolicy) -> bool:
     if state.checkpoint_stage is not None and state.checkpoint_stage != Stage.COMPLETE.value:
         return True
-    if not state.last_success_at:
-        return True
-    return state.last_success_at[:10] != now_iso[:10]
+    return refresh_interval_elapsed(
+        state.last_success_at,
+        now_iso,
+        policy.regular_refresh_interval_seconds,
+    )
 
 
 def run_pending_once(*, emit_idle: bool = True) -> int:
-    """Run one refresh cycle when daily policy or queued requests require it."""
+    """Run one refresh cycle when interval policy or queued requests require it."""
     settings = get_settings()
     ensure_refresh_schema(run_preflight(settings.database_path))
     now_iso = _now_iso()
+
+    refresh_policy = RefreshPolicy.from_settings(settings)
 
     with DbConn() as conn:
         repo = SQLiteRepository.from_connection(conn)
@@ -58,7 +63,7 @@ def run_pending_once(*, emit_idle: bool = True) -> int:
             if emit_idle:
                 _emit("refresh_skipped", reason=blocked_reason)
             return 0
-        refresh_due = _daily_refresh_due(state, now_iso)
+        refresh_due = _regular_refresh_due(state, now_iso, refresh_policy)
 
     if pending_count == 0 and not refresh_due:
         if emit_idle:
@@ -88,7 +93,7 @@ def run_pending_once(*, emit_idle: bool = True) -> int:
             sleeper,
             owner="refresh-worker",
             force=False,
-            mode="daily",
+            mode="periodic",
         )
 
         if isinstance(result, RefreshSkipped):
@@ -142,7 +147,7 @@ def run_forever(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Consume mcp-strava refresh requests")
+    parser = argparse.ArgumentParser(description="Run the mcp-strava mirror refresh worker")
     parser.add_argument("--once", action="store_true")
     parser.add_argument(
         "--poll-seconds",
