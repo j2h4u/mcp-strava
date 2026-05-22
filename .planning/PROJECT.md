@@ -27,13 +27,12 @@ Preserve the local Strava mirror and keep trusted training analytics working whi
 - [x] Lazy first-use mirror freshness policy is represented in application metadata and internal refresh requests without exposing sync as a product/MCP action — validated in Phase 4
 - [x] Application services return daily report, weekly summary, recent workouts, per-workout analytics, and freshness envelopes from the local mirror with factual freshness/completeness/warnings/rationale — validated in Phase 4
 - [x] CLI has product commands over application services and namespaced local admin/debug workflows with documented replacement mapping — validated in Phase 4
+- [x] HTTP MCP server exposes five read-only metric tools with freshness/completeness metadata, forbidden admin/sync/raw/sql surface tests, and no coaching interpretation — validated in Phase 5
+- [x] Docker runtime and gateway integration tooling provide non-root container startup, fail-closed DB preflight, dry-run gateway registration, rollback, and explicit operator confirmation for live gateway mutation — validated in Phase 5
 
 ### Active
 
 - [ ] Separate core/domain training logic from SQLite, Strava HTTP calls, CLI formatting, and MCP transport concerns
-- [ ] Add an HTTP MCP server skeleton using the modern MCP HTTP transport and read-only user-facing tools for workouts, analytics, reports, and recommendations
-- [ ] Keep sync, backfill, raw API calls, arbitrary SQL, and sync logs out of the MCP tool surface
-- [ ] Prepare Docker packaging and local MCP-gateway integration boundaries without making container rollout the first milestone
 
 ### Out of Scope
 
@@ -75,10 +74,10 @@ Existing codebase concerns that should shape the roadmap:
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Refactor first for v1 | Clean boundaries prevent CLI/MCP surfaces from cementing the current coupling | Validated through Phase 4 package, repository, adapter, application-service, and CLI boundaries |
-| v1 includes CLI parity at capability level plus MCP HTTP skeleton | Gives a vertical proof of the new architecture without forcing full MCP coverage immediately | CLI capability parity validated in Phase 4; MCP skeleton remains Phase 5 |
+| v1 includes CLI parity at capability level plus MCP HTTP skeleton | Gives a vertical proof of the new architecture without forcing full MCP coverage immediately | CLI capability parity validated in Phase 4; MCP HTTP surface and Docker/gateway boundaries validated in Phase 5 |
 | Do not preserve exact old CLI names or JSON formats | The project has no external compatibility obligations, so cleanup is allowed | Validated in Phase 4 with product/admin CLI split and replacement mapping |
 | Preserve existing Strava data as durable mirror state | Refetching is slow and rate-limited; data loss would be costly | Validated in Phase 2 with fail-closed open, preflight, backup, migration, and parity gates |
-| MCP must not expose sync/admin/debug tools | Agents should consume training insight, not operate infrastructure controls | Product registry excludes admin/debug commands in Phase 4; MCP enforcement remains Phase 5 |
+| MCP must not expose sync/admin/debug tools | Agents should consume training insight, not operate infrastructure controls | Product registry excludes admin/debug commands in Phase 4; MCP allowlist and forbidden-tool tests validated in Phase 5 |
 | Sync is lazy first-use core policy | The local mirror should refresh through internal policy only when product use requires it; MCP still must not expose sync controls | Validated in Phase 4 freshness application service metadata and internal refresh requests |
 | Prefer development efficiency over intermediate operability | The service does not need to stay fully usable during refactor; it only needs to be operational after the milestone is complete | Validated through Phase 4 refactor sequencing |
 
@@ -100,4 +99,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-21 after Phase 4 completion*
+*Last updated: 2026-05-22 after Phase 5 completion*
