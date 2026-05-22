@@ -48,9 +48,9 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 ### MCP
 
 - [x] **MCP-01**: MCP HTTP server exposes only read-only intent-level training tools for workouts, daily report, weekly load, readiness, and recommendations
-- [ ] **MCP-02**: MCP tool registry excludes sync, backfill, raw Strava API calls, arbitrary SQL, token/admin operations, and sync-log inspection
+- [x] **MCP-02**: MCP tool registry excludes sync, backfill, raw Strava API calls, arbitrary SQL, token/admin operations, and sync-log inspection
 - [x] **MCP-03**: MCP responses include freshness and data-completeness metadata when analytics may be stale or partial
-- [ ] **MCP-04**: MCP HTTP transport defaults to local/container-network-safe binding and rejects unsafe origin/bind configurations unless explicitly enabled
+- [x] **MCP-04**: MCP HTTP transport defaults to local/container-network-safe binding and rejects unsafe origin/bind configurations unless explicitly enabled
 
 ### Refresh Runtime
 
@@ -130,9 +130,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLI-02 | Phase 4 | Complete |
 | CLI-03 | Phase 4 | Complete |
 | MCP-01 | Phase 5 | Complete |
-| MCP-02 | Phase 5 | Pending |
+| MCP-02 | Phase 5 | Complete |
 | MCP-03 | Phase 5 | Complete |
-| MCP-04 | Phase 5 | Pending |
+| MCP-04 | Phase 5 | Complete |
 | REFRESH-01 | Phase 3 | Complete |
 | REFRESH-02 | Phase 3 | Complete |
 | REFRESH-03 | Phase 3 | Complete |
