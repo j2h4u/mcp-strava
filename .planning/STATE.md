@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-24T11:30:33.147Z"
-last_activity: 2026-05-24 -- Completed 07-02 dirty invalidation
+last_updated: "2026-05-24T11:38:10.971Z"
+last_activity: 2026-05-24 -- Completed 07-03 read-model materializer
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 31
-  completed_plans: 27
-  percent: 86
+  completed_plans: 28
+  percent: 90
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-05-22)
 ## Current Position
 
 Phase: 07
-Plan: 07-03
+Plan: 07-04
 Status: Ready to execute next plan
-Last activity: 2026-05-24 -- Completed 07-02 dirty invalidation
+Last activity: 2026-05-24 -- Completed 07-03 read-model materializer
 
 ## Performance Metrics
 
@@ -47,7 +47,7 @@ Last activity: 2026-05-24 -- Completed 07-02 dirty invalidation
 | 04 | 4 | - | - |
 | 05 | 6 | - | - |
 | 06 | 4 | - | - |
-| 07 | 2 | 54min | 27min |
+| 07 | 3 | 62min | 21min |
 
 **Recent Trend:**
 
@@ -71,6 +71,7 @@ Last activity: 2026-05-24 -- Completed 07-02 dirty invalidation
 | Phase 06 P04 | 6 min | 4 tasks | 12 files |
 | Phase 07 P07-01 | 44min | 2 tasks | 7 files |
 | Phase 07 P07-02 | 10min | 2 tasks | 2 files |
+| Phase 07 P07-03 | 8min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,8 @@ Recent decisions affecting current work:
 - [Phase 07]: Pre-Phase-7 backups use a pinned filename class and are excluded from ordinary retention pruning.
 - [Phase 07]: Dirty invalidation is owned by repository source-write methods, not refresh orchestration.
 - [Phase 07]: Non-semantic timestamp and batch fields are excluded from source hashes.
+- [Phase 07]: Materializer runs below MCP and writes metric-versioned SQLite facts from repository dirty rows.
+- [Phase 07]: Dirty rows clear only in the same successful transaction as facts and run audit.
 
 ### Pending Todos
 
@@ -136,8 +139,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-24T11:30:33.135Z
-Stopped at: Completed 07-02-PLAN.md
+Last session: 2026-05-24T11:38:10.959Z
+Stopped at: Completed 07-03-PLAN.md
 Resume file: None
 
 ## Quick Tasks Completed
