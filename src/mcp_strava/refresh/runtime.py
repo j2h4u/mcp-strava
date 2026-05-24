@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION
 from mcp_strava.adapters.strava import StravaUnavailable
 from mcp_strava.refresh import _sync_ops
 from mcp_strava.refresh.checkpoints import Stage, is_active_backfill_stage, is_stream_channel_backfill_stage
@@ -16,9 +17,16 @@ _DAILY_STAGE_ORDER = (
     Stage.STREAMS,
     Stage.DETAILS,
     Stage.SCHEMA_VALIDATE,
+    Stage.READ_MODEL_MATERIALIZE,
     Stage.KUDOS,
 )
+_BACKFILL_STAGE_ORDER = (
+    Stage.STREAMS_BACKFILL,
+    Stage.DETAILS_BACKFILL,
+    Stage.READ_MODEL_MATERIALIZE_BACKFILL,
+)
 _STREAM_CHANNEL_BACKFILL_MIN_LEASE_SECONDS = 30 * 60
+_READ_MODEL_LEASE_ERROR = "refresh lease lost during read-model materialization"
 
 
 @dataclass(frozen=True)
@@ -89,6 +97,14 @@ def run_once(
         if start_index <= _stage_index(Stage.SCHEMA_VALIDATE):
             repo.set_checkpoint(Stage.SCHEMA_VALIDATE.value, None)
             _sync_ops.schema_validate(repo)
+        if start_index <= _stage_index(Stage.READ_MODEL_MATERIALIZE):
+            repo.set_checkpoint(Stage.READ_MODEL_MATERIALIZE.value, None)
+            _sync_ops.materialize_read_model_stage(
+                repo,
+                CURRENT_METRIC_VERSION,
+                now_iso,
+                _lease_renewer(repo, clock, owner, policy.lease_duration_seconds),
+            )
         if start_index <= _stage_index(Stage.KUDOS):
             repo.set_checkpoint(Stage.KUDOS.value, None)
             kudos_fetched = _sync_ops._sync_kudos(repo, transport, now_iso)
@@ -133,11 +149,24 @@ def run_backfill(
             return RefreshSkipped("refresh_delayed")
         if is_stream_channel_backfill_stage(state.checkpoint_stage):
             raise RuntimeError("incompatible checkpoint - stream-channel backfill must resume via backfill-streams")
+        start_index = _backfill_start_index(state.checkpoint_stage)
         repo.record_refresh_attempt(now_iso)
-        repo.set_checkpoint(Stage.STREAMS_BACKFILL.value, None)
-        streams_fetched = _sync_ops.sync_streams(repo, transport, since, Stage.STREAMS_BACKFILL)
-        repo.set_checkpoint(Stage.DETAILS_BACKFILL.value, None)
-        details_fetched = _sync_ops.sync_details(repo, transport, since, Stage.DETAILS_BACKFILL)
+        streams_fetched = 0
+        details_fetched = 0
+        if start_index <= _backfill_stage_index(Stage.STREAMS_BACKFILL):
+            repo.set_checkpoint(Stage.STREAMS_BACKFILL.value, None)
+            streams_fetched = _sync_ops.sync_streams(repo, transport, since, Stage.STREAMS_BACKFILL)
+        if start_index <= _backfill_stage_index(Stage.DETAILS_BACKFILL):
+            repo.set_checkpoint(Stage.DETAILS_BACKFILL.value, None)
+            details_fetched = _sync_ops.sync_details(repo, transport, since, Stage.DETAILS_BACKFILL)
+        if start_index <= _backfill_stage_index(Stage.READ_MODEL_MATERIALIZE_BACKFILL):
+            repo.set_checkpoint(Stage.READ_MODEL_MATERIALIZE_BACKFILL.value, None)
+            _sync_ops.materialize_read_model_stage(
+                repo,
+                CURRENT_METRIC_VERSION,
+                now_iso,
+                _lease_renewer(repo, clock, owner, policy.lease_duration_seconds),
+            )
         repo.set_checkpoint(Stage.COMPLETE_BACKFILL.value, None)
         repo.append_sync_log(
             timestamp=now_iso,
@@ -220,6 +249,12 @@ def run_backfill_stream_channels(
             checkpoint_stage=Stage.STREAM_CHANNELS_BACKFILL,
             on_progress=renew_lease,
         )
+        _sync_ops.materialize_read_model_stage(
+            repo,
+            CURRENT_METRIC_VERSION,
+            now_iso,
+            _lease_renewer(repo, clock, owner, lease_seconds),
+        )
         repo.set_checkpoint(Stage.COMPLETE.value, None)
         return {
             "status": "ok",
@@ -268,11 +303,31 @@ def _stage_index(stage: Stage) -> int:
     return _DAILY_STAGE_ORDER.index(stage)
 
 
+def _backfill_stage_index(stage: Stage) -> int:
+    return _BACKFILL_STAGE_ORDER.index(stage)
+
+
 def _daily_start_index(stage: str | None) -> int:
     for index, candidate in enumerate(_DAILY_STAGE_ORDER):
         if stage == candidate.value:
             return index
     return 0
+
+
+def _backfill_start_index(stage: str | None) -> int:
+    for index, candidate in enumerate(_BACKFILL_STAGE_ORDER):
+        if stage == candidate.value:
+            return index
+    return 0
+
+
+def _lease_renewer(repo, clock, owner: str, lease_seconds: int):
+    def renew() -> None:
+        renewed = repo.renew_refresh_lease(owner, _plus_seconds_iso(clock, lease_seconds))
+        if not renewed:
+            raise RuntimeError(_READ_MODEL_LEASE_ERROR)
+
+    return renew
 
 
 def _now_dt(clock) -> datetime:

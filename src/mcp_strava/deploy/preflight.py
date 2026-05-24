@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from mcp_strava.adapters.sqlite.connection import open_expected_mirror_db
-from mcp_strava.adapters.sqlite.schema import validate_required_inventory
+from mcp_strava.adapters.sqlite.schema import READ_MODEL_TABLES_V5, read_user_version, validate_required_inventory
 
 REQUIRED_RUNTIME_TABLES: tuple[str, ...] = (
     "activities",
@@ -18,6 +18,13 @@ REQUIRED_RUNTIME_TABLES: tuple[str, ...] = (
     "refresh_state",
     "refresh_requests",
 )
+
+
+def _table_exists(conn, table: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone() is not None
 
 
 def _stream_columns(conn) -> set[str]:
@@ -42,7 +49,30 @@ def _validate_phase6_versioned_stream_inventory(conn) -> None:
     raise RuntimeError(f"Unsupported runtime schema version for Phase 6: user_version={user_version}")
 
 
-def validate_runtime_db(path: Path, *, quick: bool = False) -> None:
+def _read_model_readiness(conn) -> dict[str, object]:
+    version = read_user_version(conn)
+    missing_tables = [table for table in READ_MODEL_TABLES_V5 if not _table_exists(conn, table)]
+    schema_ready = version >= 5 and not missing_tables
+    dirty_count = None
+    activity_fact_count = None
+    ok_run_count = None
+    if schema_ready:
+        dirty_count = int(conn.execute("SELECT COUNT(*) FROM metric_dirty_activities").fetchone()[0])
+        activity_fact_count = int(conn.execute("SELECT COUNT(*) FROM activity_metric_facts").fetchone()[0])
+        ok_run_count = int(
+            conn.execute("SELECT COUNT(*) FROM read_model_refresh_runs WHERE status = 'ok'").fetchone()[0]
+        )
+    return {
+        "schema_ready": schema_ready,
+        "missing_tables": missing_tables,
+        "dirty_count": dirty_count,
+        "activity_fact_count": activity_fact_count,
+        "ok_run_count": ok_run_count,
+        "facts_current": bool(schema_ready and dirty_count == 0 and activity_fact_count and ok_run_count),
+    }
+
+
+def validate_runtime_db(path: Path, *, quick: bool = False) -> dict[str, object]:
     """Validate runtime DB structure.
 
     Runtime is expected to use `/opt/docker/mcp-strava/data/strava.db` after live
@@ -54,8 +84,8 @@ def validate_runtime_db(path: Path, *, quick: bool = False) -> None:
 
     with open_expected_mirror_db(path) as conn:
         if quick:
-            conn.execute("SELECT COUNT(*) FROM activities").fetchone()
-            return
+            activity_count = int(conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0])
+            return {"path": str(path), "quick": True, "activity_count": activity_count}
 
         validate_required_inventory(conn)
         _validate_phase6_versioned_stream_inventory(conn)
@@ -63,12 +93,14 @@ def validate_runtime_db(path: Path, *, quick: bool = False) -> None:
         if integrity.lower() != "ok":
             raise RuntimeError(f"SQLite integrity check failed: {integrity}")
         for table in REQUIRED_RUNTIME_TABLES:
-            exists = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                (table,),
-            ).fetchone()
-            if exists is None:
+            if not _table_exists(conn, table):
                 raise RuntimeError(f"Missing required runtime table: {table}")
+        return {
+            "path": str(path),
+            "user_version": read_user_version(conn),
+            "integrity_result": integrity,
+            "read_model": _read_model_readiness(conn),
+        }
 
 
 def main(argv: list[str] | None = None) -> int:

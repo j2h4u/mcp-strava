@@ -7,6 +7,7 @@ from calendar import monthrange
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable
 
+from mcp_strava.adapters.sqlite.read_model_materializer import materialize_read_model
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.types import parse_strava_activity, parse_strava_stream_channels
 
@@ -246,6 +247,20 @@ def sync_details(
 
 def schema_validate(repo) -> None:
     return None
+
+
+def materialize_read_model_stage(
+    repo,
+    metric_version: int,
+    now_iso: str,
+    renew_lease: Callable[[], None] | None,
+) -> dict[str, object]:
+    return materialize_read_model(
+        repo,
+        metric_version=metric_version,
+        now=now_iso,
+        renew_lease=renew_lease,
+    )
 
 
 def estimate_stream_channel_backfill(
