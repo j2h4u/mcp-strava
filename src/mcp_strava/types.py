@@ -518,6 +518,185 @@ class WeeklyDigest:
 # ─── Repository Contracts ───
 
 
+@dataclass(frozen=True)
+class ActivitySourceState:
+    """Read-model provenance for one source activity."""
+
+    activity_id: int
+    activity_day: str
+    source_hash: str
+    source_revision: int
+    changed_at: str
+    summary_hash: str | None = None
+    detail_hash: str | None = None
+    streams_hash: str | None = None
+    channels_hash: str | None = None
+
+
+@dataclass(frozen=True)
+class MetricDirtyActivity:
+    """Durable recompute queue row for one activity/day/metric version."""
+
+    activity_id: int
+    activity_day: str
+    metric_version: int
+    source_revision: int
+    reason: str
+    queued_at: str
+    attempt_count: int = 0
+    last_error: str | None = None
+
+
+@dataclass(frozen=True)
+class ActivityMetricFact:
+    """Materialized per-activity training metrics with provenance."""
+
+    activity_id: int
+    activity_day: str
+    sport_type: str
+    source_hash: str
+    source_revision: int
+    metric_version: int
+    computed_at: str
+    completeness_status: str
+    missing_reasons_json: str = "[]"
+    trimp: float | None = None
+    zone1_seconds: int = 0
+    zone2_seconds: int = 0
+    zone3_seconds: int = 0
+    zone4_seconds: int = 0
+    zone5_seconds: int = 0
+    hr_recovery_median_rate: float | None = None
+    hr_recovery_best_rate: float | None = None
+    hr_recovery_worst_rate: float | None = None
+    hr_recovery_avg_rate: float | None = None
+    vertical_speed_vmh: int | None = None
+    vertical_speed_total_ascent_m: float | None = None
+    vertical_speed_duration_hours: float | None = None
+    cardiac_cost: float | None = None
+    adjusted_cardiac_cost: float | None = None
+    cardiac_drift_pct: float | None = None
+    cardiac_drift_severity: str | None = None
+    hrr_pct: float | None = None
+    z5_seconds: int = 0
+    anomaly_count: int = 0
+    distance_m: float | None = None
+    moving_time_s: int | None = None
+    elapsed_time_s: int | None = None
+    elevation_gain_m: float | None = None
+    heartrate_sample_count: int = 0
+    stream_sample_count: int = 0
+
+
+@dataclass(frozen=True)
+class DailyLoadFact:
+    """Materialized daily load aggregate for a scope/sport."""
+
+    day: str
+    scope: str
+    sport_type: str
+    metric_version: int
+    computed_at: str
+    completeness_status: str
+    missing_reasons_json: str = "[]"
+    activity_count: int = 0
+    stream_point_count: int = 0
+    heartrate_point_count: int = 0
+    observed_trimp: float | None = None
+    effective_trimp: float = 0.0
+    distance_m: float = 0.0
+    moving_time_s: int = 0
+    elevation_gain_m: float = 0.0
+    zone4_seconds: int = 0
+    zone5_seconds: int = 0
+    high_zone_seconds: int = 0
+    anomaly_count: int = 0
+
+
+@dataclass(frozen=True)
+class TrainingModelDailyFact:
+    """Materialized daily fitness/fatigue/form model state."""
+
+    day: str
+    scope: str
+    sport_type: str
+    metric_version: int
+    computed_at: str
+    completeness_status: str
+    missing_reasons_json: str = "[]"
+    effective_trimp: float = 0.0
+    observed_trimp: float | None = None
+    fitness: float | None = None
+    fatigue: float | None = None
+    form: float | None = None
+    form_zone: str | None = None
+    atl: float | None = None
+    ctl: float | None = None
+    acwr: float | None = None
+    load_7d: float | None = None
+    load_28d: float | None = None
+    load_42d: float | None = None
+    input_days: int = 0
+    missing_days: int = 0
+
+
+@dataclass(frozen=True)
+class RollingPeriodFact:
+    """Materialized fixed-window aggregate for MCP read paths."""
+
+    as_of_day: str
+    window_days: int
+    scope: str
+    sport_type: str
+    metric_version: int
+    computed_at: str
+    completeness_status: str
+    missing_reasons_json: str = "[]"
+    activity_count: int = 0
+    active_days: int = 0
+    rest_days: int = 0
+    observed_trimp: float | None = None
+    effective_trimp: float = 0.0
+    distance_m: float = 0.0
+    moving_time_s: int = 0
+    elevation_gain_m: float = 0.0
+    high_zone_seconds: int = 0
+    anomaly_count: int = 0
+    fitness: float | None = None
+    fatigue: float | None = None
+    form: float | None = None
+    atl: float | None = None
+    ctl: float | None = None
+    acwr: float | None = None
+    median_cardiac_cost: float | None = None
+    median_adjusted_cardiac_cost: float | None = None
+    median_hr_recovery: float | None = None
+    median_cardiac_drift_pct: float | None = None
+
+
+@dataclass(frozen=True)
+class ReadModelRefreshRun:
+    """Audit/checkpoint row for a materialization run."""
+
+    id: int | None
+    started_at: str
+    status: str
+    metric_version: int
+    finished_at: str | None = None
+    trigger_reason: str | None = None
+    lease_owner: str | None = None
+    activities_considered: int = 0
+    activities_materialized: int = 0
+    daily_facts_materialized: int = 0
+    model_facts_materialized: int = 0
+    rolling_facts_materialized: int = 0
+    dirty_rows_claimed: int = 0
+    dirty_rows_cleared: int = 0
+    checkpoint_cursor: str | None = None
+    attempt_count: int = 0
+    last_error: str | None = None
+
+
 @dataclass
 class RepositoryActivityRow:
     """SQLite activity row exposed by repository methods."""

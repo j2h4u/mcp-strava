@@ -6,7 +6,7 @@ import sqlite3
 import json
 from collections.abc import Callable
 
-from mcp_strava.adapters.sqlite.backup import create_timestamped_backup
+from mcp_strava.adapters.sqlite.backup import create_pre_phase_7_backup, create_timestamped_backup
 from mcp_strava.adapters.sqlite.schema import (
     PreflightReport,
     integrity_check,
@@ -367,11 +367,202 @@ def create_canonical_gps_inventory_v4(conn: sqlite3.Connection) -> None:
         raise
 
 
+def create_read_model_inventory_v5(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS activity_source_state (
+            activity_id INTEGER PRIMARY KEY,
+            activity_day TEXT NOT NULL,
+            summary_hash TEXT,
+            detail_hash TEXT,
+            streams_hash TEXT,
+            channels_hash TEXT,
+            source_hash TEXT NOT NULL,
+            source_revision INTEGER NOT NULL DEFAULT 1,
+            changed_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_activity_source_state_day
+            ON activity_source_state(activity_day);
+
+        CREATE TABLE IF NOT EXISTS metric_dirty_activities (
+            activity_id INTEGER NOT NULL,
+            activity_day TEXT NOT NULL,
+            metric_version INTEGER NOT NULL,
+            source_revision INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            queued_at TEXT NOT NULL,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            PRIMARY KEY (activity_id, activity_day, metric_version)
+        );
+        CREATE INDEX IF NOT EXISTS idx_metric_dirty_lookup
+            ON metric_dirty_activities(metric_version, activity_day, activity_id);
+
+        CREATE TABLE IF NOT EXISTS activity_metric_facts (
+            activity_id INTEGER NOT NULL,
+            activity_day TEXT NOT NULL,
+            sport_type TEXT NOT NULL,
+            source_hash TEXT NOT NULL,
+            source_revision INTEGER NOT NULL,
+            metric_version INTEGER NOT NULL,
+            computed_at TEXT NOT NULL,
+            completeness_status TEXT NOT NULL,
+            missing_reasons_json TEXT NOT NULL DEFAULT '[]',
+            trimp REAL,
+            zone1_seconds INTEGER NOT NULL DEFAULT 0,
+            zone2_seconds INTEGER NOT NULL DEFAULT 0,
+            zone3_seconds INTEGER NOT NULL DEFAULT 0,
+            zone4_seconds INTEGER NOT NULL DEFAULT 0,
+            zone5_seconds INTEGER NOT NULL DEFAULT 0,
+            hr_recovery_median_rate REAL,
+            hr_recovery_best_rate REAL,
+            hr_recovery_worst_rate REAL,
+            hr_recovery_avg_rate REAL,
+            vertical_speed_vmh INTEGER,
+            vertical_speed_total_ascent_m REAL,
+            vertical_speed_duration_hours REAL,
+            cardiac_cost REAL,
+            adjusted_cardiac_cost REAL,
+            cardiac_drift_pct REAL,
+            cardiac_drift_severity TEXT,
+            hrr_pct REAL,
+            z5_seconds INTEGER NOT NULL DEFAULT 0,
+            anomaly_count INTEGER NOT NULL DEFAULT 0,
+            distance_m REAL,
+            moving_time_s INTEGER,
+            elapsed_time_s INTEGER,
+            elevation_gain_m REAL,
+            heartrate_sample_count INTEGER NOT NULL DEFAULT 0,
+            stream_sample_count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (activity_id, metric_version)
+        );
+        CREATE INDEX IF NOT EXISTS idx_activity_metric_day_sport_version
+            ON activity_metric_facts(activity_day, sport_type, metric_version);
+        CREATE INDEX IF NOT EXISTS idx_activity_metric_activity_version
+            ON activity_metric_facts(activity_id, metric_version);
+
+        CREATE TABLE IF NOT EXISTS daily_load_facts (
+            day TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            sport_type TEXT NOT NULL,
+            metric_version INTEGER NOT NULL,
+            computed_at TEXT NOT NULL,
+            completeness_status TEXT NOT NULL,
+            missing_reasons_json TEXT NOT NULL DEFAULT '[]',
+            activity_count INTEGER NOT NULL DEFAULT 0,
+            stream_point_count INTEGER NOT NULL DEFAULT 0,
+            heartrate_point_count INTEGER NOT NULL DEFAULT 0,
+            observed_trimp REAL,
+            effective_trimp REAL NOT NULL DEFAULT 0.0,
+            distance_m REAL NOT NULL DEFAULT 0.0,
+            moving_time_s INTEGER NOT NULL DEFAULT 0,
+            elevation_gain_m REAL NOT NULL DEFAULT 0.0,
+            zone4_seconds INTEGER NOT NULL DEFAULT 0,
+            zone5_seconds INTEGER NOT NULL DEFAULT 0,
+            high_zone_seconds INTEGER NOT NULL DEFAULT 0,
+            anomaly_count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (day, scope, sport_type, metric_version)
+        );
+        CREATE INDEX IF NOT EXISTS idx_daily_load_day_scope_sport_version
+            ON daily_load_facts(day, scope, sport_type, metric_version);
+
+        CREATE TABLE IF NOT EXISTS training_model_daily (
+            day TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            sport_type TEXT NOT NULL,
+            metric_version INTEGER NOT NULL,
+            computed_at TEXT NOT NULL,
+            completeness_status TEXT NOT NULL,
+            missing_reasons_json TEXT NOT NULL DEFAULT '[]',
+            effective_trimp REAL NOT NULL DEFAULT 0.0,
+            observed_trimp REAL,
+            fitness REAL,
+            fatigue REAL,
+            form REAL,
+            form_zone TEXT,
+            atl REAL,
+            ctl REAL,
+            acwr REAL,
+            load_7d REAL,
+            load_28d REAL,
+            load_42d REAL,
+            input_days INTEGER NOT NULL DEFAULT 0,
+            missing_days INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (day, scope, sport_type, metric_version)
+        );
+        CREATE INDEX IF NOT EXISTS idx_training_model_day_scope_sport_version
+            ON training_model_daily(day, scope, sport_type, metric_version);
+
+        CREATE TABLE IF NOT EXISTS rolling_period_facts (
+            as_of_day TEXT NOT NULL,
+            window_days INTEGER NOT NULL,
+            scope TEXT NOT NULL,
+            sport_type TEXT NOT NULL,
+            metric_version INTEGER NOT NULL,
+            computed_at TEXT NOT NULL,
+            completeness_status TEXT NOT NULL,
+            missing_reasons_json TEXT NOT NULL DEFAULT '[]',
+            activity_count INTEGER NOT NULL DEFAULT 0,
+            active_days INTEGER NOT NULL DEFAULT 0,
+            rest_days INTEGER NOT NULL DEFAULT 0,
+            observed_trimp REAL,
+            effective_trimp REAL NOT NULL DEFAULT 0.0,
+            distance_m REAL NOT NULL DEFAULT 0.0,
+            moving_time_s INTEGER NOT NULL DEFAULT 0,
+            elevation_gain_m REAL NOT NULL DEFAULT 0.0,
+            high_zone_seconds INTEGER NOT NULL DEFAULT 0,
+            anomaly_count INTEGER NOT NULL DEFAULT 0,
+            fitness REAL,
+            fatigue REAL,
+            form REAL,
+            atl REAL,
+            ctl REAL,
+            acwr REAL,
+            median_cardiac_cost REAL,
+            median_adjusted_cardiac_cost REAL,
+            median_hr_recovery REAL,
+            median_cardiac_drift_pct REAL,
+            PRIMARY KEY (as_of_day, window_days, scope, sport_type, metric_version)
+        );
+        CREATE INDEX IF NOT EXISTS idx_rolling_period_asof_window_scope_sport_version
+            ON rolling_period_facts(as_of_day, window_days, scope, sport_type, metric_version);
+
+        CREATE TABLE IF NOT EXISTS read_model_refresh_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            status TEXT NOT NULL,
+            metric_version INTEGER NOT NULL,
+            trigger_reason TEXT,
+            lease_owner TEXT,
+            activities_considered INTEGER NOT NULL DEFAULT 0,
+            activities_materialized INTEGER NOT NULL DEFAULT 0,
+            daily_facts_materialized INTEGER NOT NULL DEFAULT 0,
+            model_facts_materialized INTEGER NOT NULL DEFAULT 0,
+            rolling_facts_materialized INTEGER NOT NULL DEFAULT 0,
+            dirty_rows_claimed INTEGER NOT NULL DEFAULT 0,
+            dirty_rows_cleared INTEGER NOT NULL DEFAULT 0,
+            checkpoint_cursor TEXT,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_activities_date_id
+            ON activities(date, id);
+        CREATE INDEX IF NOT EXISTS idx_activities_sport_date_id
+            ON activities(sport_type, date, id);
+        """
+    )
+    set_user_version(conn, 5)
+    conn.execute("PRAGMA optimize")
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _baseline_migration_v1,
     2: create_refresh_tables_and_seed_state,
     3: create_lossless_stream_inventory_v3,
     4: create_canonical_gps_inventory_v4,
+    5: create_read_model_inventory_v5,
 }
 
 
@@ -379,6 +570,7 @@ def run_migrations(db_path: str | Path) -> PreflightReport:
     path = Path(db_path)
     before = run_preflight(path)
     backup_path = create_timestamped_backup(path)
+    pinned_phase_7_backup: Path | None = None
     pre_snapshot: GpsMigrationSnapshot | None = None
     if before.user_version < 4:
         with sqlite3.connect(str(path), check_same_thread=False) as conn:
@@ -389,6 +581,9 @@ def run_migrations(db_path: str | Path) -> PreflightReport:
         current = read_user_version(conn)
         for target_version in sorted(MIGRATIONS):
             if current < target_version:
+                if target_version == 5 and pinned_phase_7_backup is None:
+                    pinned_phase_7_backup = create_pre_phase_7_backup(path)
+                    backup_path = pinned_phase_7_backup
                 MIGRATIONS[target_version](conn)
                 current = target_version
         conn.commit()

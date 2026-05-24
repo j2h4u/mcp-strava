@@ -122,7 +122,7 @@ def test_migration_v3_adds_lossless_stream_inventory(tmp_path: Path) -> None:
     report = run_migrations(fixture)
 
     with sqlite3.connect(fixture) as conn:
-        assert report.user_version == 4
+        assert report.user_version == 5
         stream_cols = {row[1] for row in conn.execute("PRAGMA table_info(streams)").fetchall()}
         assert "values_json" in stream_cols
         assert "latlng" not in stream_cols
@@ -514,11 +514,11 @@ def test_migration_v4_contract_present_and_idempotent(tmp_path: Path) -> None:
 
     first = run_migrations(fixture)
     second = run_migrations(fixture)
-    assert first.user_version == 4
-    assert second.user_version == 4
+    assert first.user_version == 5
+    assert second.user_version == 5
 
     with sqlite3.connect(fixture) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
         columns = [row[1] for row in conn.execute("PRAGMA table_info(streams)").fetchall()]
         assert "latlng" not in columns
         assert "lat" in columns and "lng" in columns and "values_json" in columns

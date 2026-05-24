@@ -7,6 +7,15 @@ import sqlite3
 
 BASE_TABLES_V1: tuple[str, ...] = ("activities", "streams", "athlete_zones", "sync_log", "kudos")
 REFRESH_TABLES_V2: tuple[str, ...] = ("refresh_state", "refresh_requests")
+READ_MODEL_TABLES_V5: tuple[str, ...] = (
+    "activity_source_state",
+    "metric_dirty_activities",
+    "activity_metric_facts",
+    "daily_load_facts",
+    "training_model_daily",
+    "rolling_period_facts",
+    "read_model_refresh_runs",
+)
 
 REQUIRED_TABLES_BY_VERSION: dict[int, tuple[str, ...]] = {
     1: BASE_TABLES_V1,
@@ -14,6 +23,7 @@ REQUIRED_TABLES_BY_VERSION: dict[int, tuple[str, ...]] = {
     3: BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",),
     # Reserved for 06-03 canonical GPS cleanup; latlng removal is intentional here.
     4: BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",),
+    5: BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",) + READ_MODEL_TABLES_V5,
 }
 
 REQUIRED_COLUMNS_BY_VERSION: dict[int, dict[str, tuple[str, ...]]] = {
@@ -122,6 +132,159 @@ REQUIRED_COLUMNS_BY_VERSION: dict[int, dict[str, tuple[str, ...]]] = {
             "values_json",
         ),
     },
+    5: {
+        "activity_source_state": (
+            "activity_id",
+            "activity_day",
+            "summary_hash",
+            "detail_hash",
+            "streams_hash",
+            "channels_hash",
+            "source_hash",
+            "source_revision",
+            "changed_at",
+        ),
+        "metric_dirty_activities": (
+            "activity_id",
+            "activity_day",
+            "metric_version",
+            "source_revision",
+            "reason",
+            "queued_at",
+            "attempt_count",
+            "last_error",
+        ),
+        "activity_metric_facts": (
+            "activity_id",
+            "activity_day",
+            "sport_type",
+            "source_hash",
+            "source_revision",
+            "metric_version",
+            "computed_at",
+            "completeness_status",
+            "missing_reasons_json",
+            "trimp",
+            "zone1_seconds",
+            "zone2_seconds",
+            "zone3_seconds",
+            "zone4_seconds",
+            "zone5_seconds",
+            "hr_recovery_median_rate",
+            "hr_recovery_best_rate",
+            "hr_recovery_worst_rate",
+            "hr_recovery_avg_rate",
+            "vertical_speed_vmh",
+            "vertical_speed_total_ascent_m",
+            "vertical_speed_duration_hours",
+            "cardiac_cost",
+            "adjusted_cardiac_cost",
+            "cardiac_drift_pct",
+            "cardiac_drift_severity",
+            "hrr_pct",
+            "z5_seconds",
+            "anomaly_count",
+            "distance_m",
+            "moving_time_s",
+            "elapsed_time_s",
+            "elevation_gain_m",
+            "heartrate_sample_count",
+            "stream_sample_count",
+        ),
+        "daily_load_facts": (
+            "day",
+            "scope",
+            "sport_type",
+            "metric_version",
+            "computed_at",
+            "completeness_status",
+            "missing_reasons_json",
+            "activity_count",
+            "stream_point_count",
+            "heartrate_point_count",
+            "observed_trimp",
+            "effective_trimp",
+            "distance_m",
+            "moving_time_s",
+            "elevation_gain_m",
+            "zone4_seconds",
+            "zone5_seconds",
+            "high_zone_seconds",
+            "anomaly_count",
+        ),
+        "training_model_daily": (
+            "day",
+            "scope",
+            "sport_type",
+            "metric_version",
+            "computed_at",
+            "completeness_status",
+            "missing_reasons_json",
+            "effective_trimp",
+            "observed_trimp",
+            "fitness",
+            "fatigue",
+            "form",
+            "form_zone",
+            "atl",
+            "ctl",
+            "acwr",
+            "load_7d",
+            "load_28d",
+            "load_42d",
+            "input_days",
+            "missing_days",
+        ),
+        "rolling_period_facts": (
+            "as_of_day",
+            "window_days",
+            "scope",
+            "sport_type",
+            "metric_version",
+            "computed_at",
+            "completeness_status",
+            "missing_reasons_json",
+            "activity_count",
+            "active_days",
+            "rest_days",
+            "observed_trimp",
+            "effective_trimp",
+            "distance_m",
+            "moving_time_s",
+            "elevation_gain_m",
+            "high_zone_seconds",
+            "anomaly_count",
+            "fitness",
+            "fatigue",
+            "form",
+            "atl",
+            "ctl",
+            "acwr",
+            "median_cardiac_cost",
+            "median_adjusted_cardiac_cost",
+            "median_hr_recovery",
+            "median_cardiac_drift_pct",
+        ),
+        "read_model_refresh_runs": (
+            "id",
+            "started_at",
+            "finished_at",
+            "status",
+            "metric_version",
+            "trigger_reason",
+            "lease_owner",
+            "activities_considered",
+            "activities_materialized",
+            "daily_facts_materialized",
+            "model_facts_materialized",
+            "rolling_facts_materialized",
+            "dirty_rows_claimed",
+            "dirty_rows_cleared",
+            "checkpoint_cursor",
+            "attempt_count",
+            "last_error",
+        ),
+    },
 }
 
 REQUIRED_INDEXES_BY_VERSION: dict[int, dict[str, dict[str, object]]] = {
@@ -143,6 +306,53 @@ REQUIRED_INDEXES_BY_VERSION: dict[int, dict[str, dict[str, object]]] = {
         }
     },
     4: {},
+    5: {
+        "idx_activity_source_state_day": {
+            "table": "activity_source_state",
+            "columns": ("activity_day",),
+            "partial": False,
+        },
+        "idx_metric_dirty_lookup": {
+            "table": "metric_dirty_activities",
+            "columns": ("metric_version", "activity_day", "activity_id"),
+            "partial": False,
+        },
+        "idx_activity_metric_day_sport_version": {
+            "table": "activity_metric_facts",
+            "columns": ("activity_day", "sport_type", "metric_version"),
+            "partial": False,
+        },
+        "idx_activity_metric_activity_version": {
+            "table": "activity_metric_facts",
+            "columns": ("activity_id", "metric_version"),
+            "partial": False,
+        },
+        "idx_daily_load_day_scope_sport_version": {
+            "table": "daily_load_facts",
+            "columns": ("day", "scope", "sport_type", "metric_version"),
+            "partial": False,
+        },
+        "idx_training_model_day_scope_sport_version": {
+            "table": "training_model_daily",
+            "columns": ("day", "scope", "sport_type", "metric_version"),
+            "partial": False,
+        },
+        "idx_rolling_period_asof_window_scope_sport_version": {
+            "table": "rolling_period_facts",
+            "columns": ("as_of_day", "window_days", "scope", "sport_type", "metric_version"),
+            "partial": False,
+        },
+        "idx_activities_date_id": {
+            "table": "activities",
+            "columns": ("date", "id"),
+            "partial": False,
+        },
+        "idx_activities_sport_date_id": {
+            "table": "activities",
+            "columns": ("sport_type", "date", "id"),
+            "partial": False,
+        },
+    },
 }
 
 
@@ -215,7 +425,7 @@ def _required_indexes_for_version(version: int) -> dict[str, dict[str, object]]:
 
 def row_counts(conn: sqlite3.Connection) -> dict[str, int]:
     counts: dict[str, int] = {}
-    table_names = set(BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",))
+    table_names = set(BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",) + READ_MODEL_TABLES_V5)
     for table in sorted(table_names):
         if _table_exists(conn, table):
             counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
