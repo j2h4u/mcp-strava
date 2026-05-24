@@ -7,7 +7,8 @@ from pathlib import Path
 
 from mcp_strava.constants import Config
 from mcp_strava.adapters.sqlite.migrations import run_migrations, run_preflight
-from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+from mcp_strava.adapters.sqlite.read_model_materializer import materialize_read_model
+from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION, SQLiteRepository
 from mcp_strava.application import (
     get_daily_report_service,
     get_freshness_service,
@@ -575,6 +576,132 @@ def cmd_backfill_streams(args):
             print(f"- {key}: {value}")
 
 
+def _parse_read_model_materialize_args(args: list[str]) -> dict[str, object]:
+    options: dict[str, object] = {
+        "db_path": None,
+        "dry_run": False,
+        "limit": None,
+        "metric_version": CURRENT_METRIC_VERSION,
+    }
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token == "--dry-run":
+            options["dry_run"] = True
+            index += 1
+            continue
+        if token == "--db":
+            if index + 1 >= len(args):
+                _usage_error("Usage: --db <path>")
+            options["db_path"] = args[index + 1]
+            index += 2
+            continue
+        if token == "--limit":
+            if index + 1 >= len(args) or not args[index + 1].isdigit():
+                _usage_error("Usage: --limit N")
+            options["limit"] = int(args[index + 1])
+            index += 2
+            continue
+        if token == "--metric-version":
+            if index + 1 >= len(args) or not args[index + 1].isdigit():
+                _usage_error("Usage: --metric-version N")
+            options["metric_version"] = int(args[index + 1])
+            index += 2
+            continue
+        _usage_error(
+            "Usage: python -m mcp_strava admin read-model-materialize "
+            "[--db <path>] [--dry-run] [--limit N] [--metric-version N] [--json]"
+        )
+    return options
+
+
+def _read_model_dirty_snapshot(repo: SQLiteRepository, metric_version: int) -> dict[str, object]:
+    rows = repo.dirty_activity_rows(metric_version)
+    oldest_dirty_day = min((str(row["activity_day"]) for row in rows), default=None)
+    return {
+        "dirty_count": len(rows),
+        "oldest_dirty_day": oldest_dirty_day,
+    }
+
+
+def _latest_read_model_run_id(repo: SQLiteRepository, metric_version: int) -> int | None:
+    row = repo.conn.execute(
+        """
+        SELECT id
+        FROM read_model_refresh_runs
+        WHERE metric_version = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (metric_version,),
+    ).fetchone()
+    return int(row["id"]) if row is not None else None
+
+
+def _print_read_model_materialize_payload(payload: dict[str, object], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    print("Read Model Materialize")
+    for key, value in payload.items():
+        print(f"- {key}: {value}")
+
+
+def cmd_read_model_materialize(args):
+    json_output = _pop_json_flag(args)
+    options = _parse_read_model_materialize_args(args)
+    db_path = Path(str(options["db_path"])) if options["db_path"] is not None else Path(get_settings().database_path)
+    metric_version = int(options["metric_version"])
+    limit = options["limit"]
+    run_id = None
+
+    try:
+        run_preflight(db_path)
+        with SQLiteRepository.from_path(db_path) as repo:
+            before = _read_model_dirty_snapshot(repo, metric_version)
+            if options["dry_run"]:
+                after = before
+                payload = {
+                    "status": "dry_run",
+                    "metric_version": metric_version,
+                    "dirty_count_before": before["dirty_count"],
+                    "dirty_count_after": after["dirty_count"],
+                    "facts_written": 0,
+                    "oldest_dirty_day": before["oldest_dirty_day"],
+                    "run_id": None,
+                }
+            else:
+                result = materialize_read_model(repo, metric_version=metric_version, limit=limit)
+                run_id = result.get("run_id") if isinstance(result, dict) else None
+                if run_id is None:
+                    run_id = _latest_read_model_run_id(repo, metric_version)
+                after = _read_model_dirty_snapshot(repo, metric_version)
+                payload = {
+                    "status": result.get("status", "ok") if isinstance(result, dict) else "ok",
+                    "metric_version": metric_version,
+                    "dirty_count_before": before["dirty_count"],
+                    "dirty_count_after": after["dirty_count"],
+                    "facts_written": result.get("activities_materialized", 0) if isinstance(result, dict) else 0,
+                    "oldest_dirty_day": before["oldest_dirty_day"],
+                    "run_id": run_id,
+                }
+    except Exception as exc:
+        payload = {
+            "status": "failed",
+            "metric_version": metric_version,
+            "dirty_count_before": None,
+            "dirty_count_after": None,
+            "facts_written": 0,
+            "oldest_dirty_day": None,
+            "run_id": run_id,
+            "error": str(exc),
+        }
+        _print_read_model_materialize_payload(payload, json_output=json_output)
+        raise SystemExit(1)
+
+    _print_read_model_materialize_payload(payload, json_output=json_output)
+
+
 def _pop_json_flag(args):
     if "--json" not in args:
         return False
@@ -766,6 +893,7 @@ def cmd_admin(args):
 ADMIN_COMMANDS = {
     "mirror-refresh": cmd_db_refresh,
     "mirror-coverage": cmd_mirror_coverage,
+    "read-model-materialize": cmd_read_model_materialize,
     "token-refresh": cmd_refresh,
     "backfill": cmd_backfill,
     "backfill-streams": cmd_backfill_streams,
