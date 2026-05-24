@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-24T11:21:55.432Z"
-last_activity: 2026-05-24 -- Completed 07-01 read-model schema foundation
+last_updated: "2026-05-24T11:30:33.147Z"
+last_activity: 2026-05-24 -- Completed 07-02 dirty invalidation
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 31
-  completed_plans: 26
-  percent: 84
+  completed_plans: 27
+  percent: 86
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-05-22)
 ## Current Position
 
 Phase: 07
-Plan: 07-02
+Plan: 07-03
 Status: Ready to execute next plan
-Last activity: 2026-05-24 -- Completed 07-01 read-model schema foundation
+Last activity: 2026-05-24 -- Completed 07-02 dirty invalidation
 
 ## Performance Metrics
 
@@ -47,7 +47,7 @@ Last activity: 2026-05-24 -- Completed 07-01 read-model schema foundation
 | 04 | 4 | - | - |
 | 05 | 6 | - | - |
 | 06 | 4 | - | - |
-| 07 | 1 | 44min | 44min |
+| 07 | 2 | 54min | 27min |
 
 **Recent Trend:**
 
@@ -70,6 +70,7 @@ Last activity: 2026-05-24 -- Completed 07-01 read-model schema foundation
 | Phase 06 P03 | 74min | 3 tasks | 8 files |
 | Phase 06 P04 | 6 min | 4 tasks | 12 files |
 | Phase 07 P07-01 | 44min | 2 tasks | 7 files |
+| Phase 07 P07-02 | 10min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -113,6 +114,8 @@ Recent decisions affecting current work:
 - [Phase 06]: Runtime preflight accepts v3 intermediate and enforces v4 as final no-latlng schema.
 - [Phase 07]: Runtime schema target is now user_version=5 for read-model tables.
 - [Phase 07]: Pre-Phase-7 backups use a pinned filename class and are excluded from ordinary retention pruning.
+- [Phase 07]: Dirty invalidation is owned by repository source-write methods, not refresh orchestration.
+- [Phase 07]: Non-semantic timestamp and batch fields are excluded from source hashes.
 
 ### Pending Todos
 
@@ -133,8 +136,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-24T11:21:55.420Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-05-24T11:30:33.135Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
 
 ## Quick Tasks Completed
