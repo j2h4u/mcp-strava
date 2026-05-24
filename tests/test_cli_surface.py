@@ -42,6 +42,7 @@ ADMIN_COMMANDS = {
     "mirror-coverage",
     "token-refresh",
     "backfill",
+    "backfill-streams",
     "sql",
     "raw",
     "log",
@@ -232,6 +233,42 @@ def test_admin_mirror_coverage_json_output(tmp_path: Path, monkeypatch: pytest.M
 
     assert payload["status"] == "ok"
     for key in ("activities_with_streams", "stream_points", "gps_points", "channels", "backfill_needed"):
+        assert key in payload
+
+
+def test_admin_backfill_streams_dry_run_json_fields(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    import mcp_strava.cli as cli
+
+    def fake_backfill(*_args, **kwargs):
+        return {
+            "status": "ok",
+            "mode": "backfill_stream_channels",
+            "activities_considered": 10,
+            "activities_to_backfill": 3,
+            "missing_channels": {"watts": 3},
+            "metadata_missing": 3,
+            "estimated_api_calls": 3,
+            "checkpoint_stage": "stream_channels_backfill",
+        }
+
+    monkeypatch.setattr(cli, "backfill_stream_channels", fake_backfill, raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["mcp_strava", "admin", "backfill-streams", "--dry-run", "--json"],
+    )
+    cli.main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    for key in (
+        "mode",
+        "activities_considered",
+        "activities_to_backfill",
+        "missing_channels",
+        "metadata_missing",
+        "estimated_api_calls",
+        "checkpoint_stage",
+    ):
         assert key in payload
 
 

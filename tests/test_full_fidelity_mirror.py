@@ -287,6 +287,74 @@ def test_replace_stream_rows_and_channel_metadata_records_unavailable_channel_st
     assert status_row[0] == "unavailable"
 
 
+def test_merge_stream_channel_values_is_update_only_and_preserves_existing_keys(tmp_path: Path) -> None:
+    fixture = tmp_path / "v2.db"
+    _create_v2_fixture(fixture)
+    run_migrations(fixture)
+
+    with SQLiteRepository.from_path(fixture) as repo:
+        repo.insert_stream_rows_chunked(
+            10,
+            [
+                {
+                    "time_offset": 1,
+                    "heartrate": 151,
+                    "velocity": 3.7,
+                    "altitude": 511.0,
+                    "cadence": 86,
+                    "lat": 43.2001,
+                    "lng": 76.9002,
+                    "grade": 2.2,
+                    "gap_speed": 3.6,
+                    "gap_distance": 26.0,
+                    "is_moving": 1,
+                    "values_json": json.dumps({"distance": 11.2, "temp": 20}),
+                }
+            ],
+        )
+        repo.upsert_stream_channel_metadata(
+            activity_id=10,
+            channel_key="distance",
+            original_size=2,
+            resolution="high",
+            series_type="distance",
+            fetched_at="2026-05-01T08:00:00Z",
+            batch_id=None,
+            status="available",
+            error=None,
+        )
+        before = repo.conn.execute(
+            "SELECT heartrate, velocity, values_json FROM streams WHERE activity_id = 10 AND time_offset = 1"
+        ).fetchone()
+        repo.merge_stream_channel_values(
+            10,
+            rows=[{"time_offset": 1, "values": {"watts": 240}}],
+            metadata=[
+                {
+                    "channel_key": "watts",
+                    "original_size": 2,
+                    "resolution": "high",
+                    "series_type": "distance",
+                    "fetched_at": "2026-05-01T08:01:00Z",
+                    "batch_id": None,
+                    "status": "available",
+                    "error": None,
+                }
+            ],
+            missing_channel_keys=[],
+        )
+        after = repo.conn.execute(
+            "SELECT heartrate, velocity, values_json FROM streams WHERE activity_id = 10 AND time_offset = 1"
+        ).fetchone()
+
+    assert before[0] == after[0]
+    assert before[1] == after[1]
+    values = json.loads(after[2])
+    assert values["distance"] == pytest.approx(11.2)
+    assert values["temp"] == 20
+    assert values["watts"] == 240
+
+
 def _create_v3_mixed_gps_fixture(db_path: Path) -> None:
     _create_v2_fixture(db_path)
     with sqlite3.connect(db_path) as conn:

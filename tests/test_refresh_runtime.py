@@ -614,3 +614,192 @@ def test_sync_streams_records_missing_requested_channels_without_failure(tmp_pat
 
     assert fetched == 1
     assert missing > 0
+
+
+def test_stream_channel_backfill_dry_run_reports_remaining_work_without_transport_calls(tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, run_backfill_stream_channels
+
+    transport = FakeStravaTransport()
+    with _repo(tmp_path) as repo:
+        repo.upsert_activity_summary(
+            activity_id=500,
+            date="2026-05-21T06:00:00Z",
+            name="Channel Gap Run",
+            sport_type="Run",
+            distance=1000,
+            moving_time=600,
+            elapsed_time=620,
+            total_elevation_gain=10,
+            summary_json="{}",
+            synced_at="2026-05-21T07:00:00Z",
+        )
+        repo.insert_stream_rows_chunked(
+            500,
+            [
+                {
+                    "time_offset": 0,
+                    "heartrate": 140,
+                    "velocity": 3.0,
+                    "altitude": 501.0,
+                    "cadence": 84,
+                    "lat": 43.21,
+                    "lng": 76.91,
+                    "grade": 1.1,
+                    "gap_speed": 3.05,
+                    "gap_distance": 0.0,
+                    "is_moving": 1,
+                    "values_json": json.dumps({"distance": 0.0}),
+                }
+            ],
+        )
+        result = run_backfill_stream_channels(
+            repo,
+            transport,
+            RefreshPolicy(),
+            FakeClock(),
+            FakeSleeper(),
+            dry_run=True,
+        )
+
+    assert result["status"] == "ok"
+    assert result["mode"] == "backfill_stream_channels"
+    assert result["activities_considered"] >= 1
+    assert result["activities_to_backfill"] >= 1
+    assert "missing_channels" in result
+    assert "metadata_missing" in result
+    assert result["estimated_api_calls"] == result["activities_to_backfill"]
+    assert "checkpoint_stage" in result
+    assert transport.calls_by_path == {}
+
+
+def test_run_once_rejects_active_stream_channel_backfill_checkpoint(tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, Stage, run_once
+
+    with _repo(tmp_path) as repo:
+        repo.set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, "500")
+        with pytest.raises(RuntimeError, match="admin backfill-streams"):
+            run_once(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper())
+
+
+def test_legacy_run_backfill_rejects_stream_channel_backfill_checkpoint(tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, Stage, run_backfill
+
+    with _repo(tmp_path) as repo:
+        repo.set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, "500")
+        with pytest.raises(RuntimeError, match="backfill-streams"):
+            run_backfill(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper())
+
+
+def test_stream_channel_backfill_uses_only_streams_endpoint(tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, run_backfill_stream_channels
+
+    class StreamsOnlyTransport(FakeStravaTransport):
+        def fetch(self, path: str) -> StravaResponse:
+            self.calls_by_path[path] += 1
+            if path.startswith("/athlete/activities"):
+                raise AssertionError("must not call summaries endpoint")
+            if path.startswith("/activities/500/kudos"):
+                raise AssertionError("must not call kudos endpoint")
+            if path.startswith("/activities/500/streams"):
+                return StravaResponse(
+                    data={
+                        "time": {"data": [0]},
+                        "distance": {"data": [0.0]},
+                        "watts": {"data": [220]},
+                    },
+                    rate_info=StravaRateInfo(),
+                    status=200,
+                )
+            if path.startswith("/activities/500"):
+                raise AssertionError("must not call details endpoint")
+            return StravaResponse(data=[], rate_info=StravaRateInfo(), status=200)
+
+    transport = StreamsOnlyTransport()
+    with _repo(tmp_path) as repo:
+        repo.upsert_activity_summary(
+            activity_id=500,
+            date="2026-05-21T06:00:00Z",
+            name="Streams Only",
+            sport_type="Run",
+            distance=1000,
+            moving_time=600,
+            elapsed_time=620,
+            total_elevation_gain=10,
+            summary_json="{}",
+            synced_at="2026-05-21T07:00:00Z",
+        )
+        repo.insert_stream_rows_chunked(
+            500,
+            [
+                {
+                    "time_offset": 0,
+                    "heartrate": 140,
+                    "velocity": 3.0,
+                    "altitude": 501.0,
+                    "cadence": 84,
+                    "lat": 43.21,
+                    "lng": 76.91,
+                    "grade": 1.1,
+                    "gap_speed": 3.05,
+                    "gap_distance": 0.0,
+                    "is_moving": 1,
+                    "values_json": json.dumps({"distance": 0.0}),
+                }
+            ],
+        )
+        result = run_backfill_stream_channels(repo, transport, RefreshPolicy(), FakeClock(), FakeSleeper())
+
+    assert result["status"] in {"ok", "delayed"}
+    assert any(path.startswith("/activities/500/streams") for path in transport.calls_by_path)
+    assert not any(path.startswith("/athlete/activities") for path in transport.calls_by_path)
+    assert not any(path.endswith("/kudos?per_page=100") for path in transport.calls_by_path)
+
+
+def test_stream_channel_backfill_rate_limit_keeps_checkpoint_and_rows(tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, Stage, run_backfill_stream_channels
+
+    with _repo(tmp_path) as repo:
+        repo.upsert_activity_summary(
+            activity_id=500,
+            date="2026-05-21T06:00:00Z",
+            name="Rate Limited Backfill",
+            sport_type="Run",
+            distance=1000,
+            moving_time=600,
+            elapsed_time=620,
+            total_elevation_gain=10,
+            summary_json="{}",
+            synced_at="2026-05-21T07:00:00Z",
+        )
+        repo.insert_stream_rows_chunked(
+            500,
+            [
+                {
+                    "time_offset": 0,
+                    "heartrate": 140,
+                    "velocity": 3.0,
+                    "altitude": 501.0,
+                    "cadence": 84,
+                    "lat": 43.21,
+                    "lng": 76.91,
+                    "grade": 1.1,
+                    "gap_speed": 3.05,
+                    "gap_distance": 0.0,
+                    "is_moving": 1,
+                    "values_json": json.dumps({"distance": 0.0}),
+                }
+            ],
+        )
+        result = run_backfill_stream_channels(
+            repo,
+            FakeStravaTransport({"/streams": StravaUnavailable("rate_limited")}),
+            RefreshPolicy(),
+            FakeClock(),
+            FakeSleeper(),
+        )
+        state = repo.get_refresh_state()
+        rows = repo.activity_stream_rows(500)
+
+    assert result["status"] in {"failed", "delayed"}
+    assert state.checkpoint_stage == Stage.STREAM_CHANNELS_BACKFILL.value
+    assert len(rows) == 1
