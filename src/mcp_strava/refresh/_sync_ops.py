@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from calendar import monthrange
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from mcp_strava.refresh.checkpoints import Stage
@@ -169,10 +169,7 @@ def _insert_streams(repo, act_id: int, data: dict, fetched_at: str | None = None
     rows, metadata = _stream_payload(data, fetched_at=fetched_at)
     if not rows:
         return 0
-    inserted = repo.insert_stream_rows_chunked(act_id, rows, chunk_size=5000)
-    for item in metadata:
-        repo.upsert_stream_channel_metadata(activity_id=act_id, **item)
-    return inserted
+    return repo.replace_stream_rows_and_channel_metadata(act_id, rows=rows, metadata=metadata, chunk_size=5000)
 
 
 def _replace_streams(repo, act_id: int, data: dict, fetched_at: str | None = None) -> int:
@@ -228,7 +225,7 @@ def sync_streams(
         repo.set_checkpoint(checkpoint_stage.value, str(activity.id))
         response = transport.fetch(f"/activities/{activity.id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
         if isinstance(response.data, dict):
-            _insert_streams(repo, activity.id, response.data, fetched_at=datetime.utcnow().isoformat())
+            _insert_streams(repo, activity.id, response.data, fetched_at=datetime.now(UTC).replace(tzinfo=None).isoformat())
             fetched += 1
     return fetched
 
