@@ -12,6 +12,7 @@ import pytest
 from mcp_strava.adapters.sqlite.migrations import run_migrations
 from mcp_strava.application.metric_registry import METRIC_REGISTRY
 from mcp_strava.types import ServiceEnvelope, dc_to_dict
+from tests.test_read_model_queries import READ_MODEL_METADATA_KEYS, _repo_with_facts
 
 FORBIDDEN_KEYS = {
     "recommendation",
@@ -36,6 +37,8 @@ SAFETY_WARNING_CODES = {
     "low_hr_data",
     "insufficient_history",
 }
+
+ENVELOPE_KEYS = {"data", "freshness", "completeness", "warnings", "rationale"}
 
 
 @pytest.fixture(autouse=True)
@@ -251,22 +254,50 @@ def _repo_metric_ids_for_tool(tool_id: str) -> set[str]:
     return {metric_id for metric_id, definition in METRIC_REGISTRY.items() if tool_id in definition.exposed_in}
 
 
-def test_get_fitness_state_service_returns_metric_bundle_envelope(tmp_path: Path) -> None:
+def _assert_read_model_metadata(payload: dict) -> None:
+    metadata = payload["completeness"]["coverage"].get("read_model")
+    assert isinstance(metadata, dict)
+    assert READ_MODEL_METADATA_KEYS <= set(metadata)
+    assert metadata["last_materialized_at"] == "2026-05-21T06:20:00"
+    assert metadata["metric_versions_present"] == [1]
+
+
+def _block_legacy_recompute(monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcp_strava.application.metric_services as metric_services
+
+    def _blocked(*_args, **_kwargs):
+        raise AssertionError("MCP metric service must not recompute from raw mirror data")
+
+    for name in (
+        "enrich_activity",
+        "daily_report_from_connection",
+        "weekly_digest",
+        "check_z5_minutes",
+        "check_hr_anomalies",
+        "calc_banister",
+    ):
+        if hasattr(metric_services, name):
+            monkeypatch.setattr(metric_services, name, _blocked, raising=False)
+
+
+def test_get_fitness_state_service_returns_metric_bundle_envelope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from mcp_strava.application.metric_services import get_fitness_state_service
 
-    conn = _fixture_conn(tmp_path / "fitness.db")
+    _block_legacy_recompute(monkeypatch)
+    repo = _repo_with_facts(tmp_path / "fitness.db")
     try:
         envelope = get_fitness_state_service(
             now=datetime.fromisoformat("2026-05-21T09:00:00"),
             signal_first_use=False,
-            connection=conn,
+            connection=repo.conn,
         )
     finally:
-        conn.close()
+        repo.close()
 
     payload = dc_to_dict(envelope)
     assert isinstance(envelope, ServiceEnvelope)
-    assert set(payload) == {"data", "freshness", "completeness", "warnings", "rationale"}
+    assert set(payload) == ENVELOPE_KEYS
+    _assert_read_model_metadata(payload)
 
     expected_metrics = {
         "fitness",
@@ -299,10 +330,11 @@ def test_get_fitness_state_service_returns_metric_bundle_envelope(tmp_path: Path
     _walk_no_cyrillic_or_coaching_text(payload["data"])
 
 
-def test_list_workouts_service_respects_filters_and_returns_compact_rows(tmp_path: Path) -> None:
+def test_list_workouts_service_respects_filters_and_returns_compact_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from mcp_strava.application.metric_services import list_workouts_service
 
-    conn = _fixture_conn(tmp_path / "workouts.db")
+    _block_legacy_recompute(monkeypatch)
+    repo = _repo_with_facts(tmp_path / "workouts.db")
     try:
         envelope = list_workouts_service(
             limit=2,
@@ -311,14 +343,15 @@ def test_list_workouts_service_respects_filters_and_returns_compact_rows(tmp_pat
             sport="Run",
             now=datetime.fromisoformat("2026-05-21T09:00:00"),
             signal_first_use=False,
-            connection=conn,
+            connection=repo.conn,
         )
     finally:
-        conn.close()
+        repo.close()
 
     payload = dc_to_dict(envelope)
     assert isinstance(envelope, ServiceEnvelope)
-    assert set(payload) == {"data", "freshness", "completeness", "warnings", "rationale"}
+    assert set(payload) == ENVELOPE_KEYS
+    _assert_read_model_metadata(payload)
     assert [row["activity_id"] for row in payload["data"]] == [702, 701]
 
     required_row_keys = {
@@ -343,28 +376,31 @@ def test_list_workouts_service_respects_filters_and_returns_compact_rows(tmp_pat
     _walk_no_forbidden_keys(payload)
 
 
-def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reasons(tmp_path: Path) -> None:
+def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reasons(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from mcp_strava.application.metric_services import get_workout_detail_service
 
-    conn = _fixture_conn(tmp_path / "detail.db")
+    _block_legacy_recompute(monkeypatch)
+    repo = _repo_with_facts(tmp_path / "detail.db")
     try:
         full = get_workout_detail_service(
             activity_id=701,
             now=datetime.fromisoformat("2026-05-21T09:00:00"),
             signal_first_use=False,
-            connection=conn,
+            connection=repo.conn,
         )
         partial = get_workout_detail_service(
-            activity_id=703,
+            activity_id=702,
             now=datetime.fromisoformat("2026-05-21T09:00:00"),
             signal_first_use=False,
-            connection=conn,
+            connection=repo.conn,
         )
     finally:
-        conn.close()
+        repo.close()
 
     full_payload = dc_to_dict(full)
     partial_payload = dc_to_dict(partial)
+    _assert_read_model_metadata(full_payload)
+    _assert_read_model_metadata(partial_payload)
 
     required_detail_keys = {
         "time_in_hr_zones_min",
@@ -411,26 +447,28 @@ def test_metric_services_source_does_not_serialize_then_filter_daily_report() ->
     assert has_projection
 
 
-def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_path: Path) -> None:
+def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from mcp_strava.application.metric_services import compare_periods_service
 
-    conn = _fixture_conn_compare(tmp_path / "compare.db")
+    _block_legacy_recompute(monkeypatch)
+    repo = _repo_with_facts(tmp_path / "compare.db")
     try:
         envelope = compare_periods_service(
-            period_a_start="2026-05-01",
-            period_a_end="2026-05-07",
-            period_b_start="2026-05-08",
-            period_b_end="2026-05-14",
+            period_a_start="2026-05-20",
+            period_a_end="2026-05-21",
+            period_b_start="2026-05-19",
+            period_b_end="2026-05-20",
             sport=None,
-            now=datetime.fromisoformat("2026-05-14T09:00:00"),
+            now=datetime.fromisoformat("2026-05-21T09:00:00"),
             signal_first_use=False,
-            connection=conn,
+            connection=repo.conn,
         )
     finally:
-        conn.close()
+        repo.close()
 
     payload = dc_to_dict(envelope)
-    assert set(payload) == {"data", "freshness", "completeness", "warnings", "rationale"}
+    assert set(payload) == ENVELOPE_KEYS
+    _assert_read_model_metadata(payload)
     assert "global" in payload["data"]
     assert "per_sport" in payload["data"]
 
@@ -464,6 +502,7 @@ def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_p
     run_metrics = per_sport["Run"]["metrics"]
     assert "cardiac_cost" in run_metrics
     assert "metric_id" not in run_metrics["cardiac_cost"]
+    assert run_metrics["cardiac_cost"]["metric_version_status"] in {"consistent", "missing", "mixed"}
 
     dist = global_metrics["time_in_hr_zones_min"]
     assert "buckets" in dist["period_a"]
@@ -479,36 +518,38 @@ def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_p
         assert forbidden not in serialized
 
 
-def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_path: Path) -> None:
+def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from mcp_strava.application.metric_services import compare_periods_service
 
-    conn = _fixture_conn_compare(tmp_path / "compare-run.db")
+    _block_legacy_recompute(monkeypatch)
+    repo = _repo_with_facts(tmp_path / "compare-run.db")
     try:
         envelope = compare_periods_service(
-            period_a_start="2026-05-01",
-            period_a_end="2026-05-07",
-            period_b_start="2026-05-08",
-            period_b_end="2026-05-14",
+            period_a_start="2026-05-20",
+            period_a_end="2026-05-21",
+            period_b_start="2026-05-19",
+            period_b_end="2026-05-20",
             sport="Run",
-            now=datetime.fromisoformat("2026-05-14T09:00:00"),
+            now=datetime.fromisoformat("2026-05-21T09:00:00"),
             signal_first_use=False,
-            connection=conn,
+            connection=repo.conn,
         )
     finally:
-        conn.close()
+        repo.close()
 
     payload = dc_to_dict(envelope)
     assert payload["data"]["global"]["scope_filter"] == "sport"
     assert set(payload["data"]["per_sport"]) == {"Run"}
     trimp = payload["data"]["global"]["metrics"]["trimp"]
     assert trimp["period_a"]["sample_size"] == 2
-    assert trimp["period_b"]["sample_size"] == 3
+    assert trimp["period_b"]["sample_size"] == 0
 
 
-def test_project_fitness_state_service_supports_standard_scenarios(tmp_path: Path) -> None:
+def test_project_fitness_state_service_supports_standard_scenarios(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from mcp_strava.application.metric_services import project_fitness_state_service
 
-    conn = _fixture_conn_compare(tmp_path / "project.db")
+    _block_legacy_recompute(monkeypatch)
+    repo = _repo_with_facts(tmp_path / "project.db")
     try:
         envelope = project_fitness_state_service(
             target_date="2026-05-25",
@@ -516,13 +557,14 @@ def test_project_fitness_state_service_supports_standard_scenarios(tmp_path: Pat
             custom_daily_trimp=None,
             now=datetime.fromisoformat("2026-05-22T09:00:00"),
             signal_first_use=False,
-            connection=conn,
+            connection=repo.conn,
         )
     finally:
-        conn.close()
+        repo.close()
 
     payload = dc_to_dict(envelope)
-    assert set(payload) == {"data", "freshness", "completeness", "warnings", "rationale"}
+    assert set(payload) == ENVELOPE_KEYS
+    _assert_read_model_metadata(payload)
     for scenario in ("rest", "easy", "maintain"):
         assert scenario in payload["data"]["scenarios"]
         item = payload["data"]["scenarios"][scenario]

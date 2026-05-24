@@ -10,6 +10,7 @@ from mcp_strava.types import (
     ServiceRationale,
     ServiceWarning,
 )
+from tests.test_read_model_queries import READ_MODEL_METADATA_KEYS
 
 
 EXPECTED_TOOL_NAMES = (
@@ -35,7 +36,17 @@ def _envelope(data: dict, *, unavailable: bool = False) -> ServiceEnvelope:
         completeness=CompletenessMetadata(
             status="unavailable" if unavailable else "complete",
             missing=["workout_not_found"] if unavailable else [],
-            coverage={"sample_size": 1},
+            coverage={
+                "sample_size": 1,
+                "read_model": {
+                    "status": "current",
+                    "last_materialized_at": "2026-05-22T09:30:00Z",
+                    "dirty_count": 0,
+                    "oldest_dirty_day": None,
+                    "metric_versions_present": [1],
+                    "stale_reason": None,
+                },
+            },
         ),
         warnings=(
             [ServiceWarning(code="workout_not_found", severity="info", message="Workout not found")]
@@ -168,6 +179,7 @@ def test_mcp_tools_have_annotations_and_structured_output(monkeypatch) -> None:
         content, payload = asyncio.run(server.call_tool(tool_name, arguments))
         assert payload is not None
         assert set(payload.keys()) == {"data", "freshness", "completeness", "warnings", "rationale"}
+        assert READ_MODEL_METADATA_KEYS <= set(payload["completeness"]["coverage"]["read_model"])
         assert len(content) <= 1
 
 

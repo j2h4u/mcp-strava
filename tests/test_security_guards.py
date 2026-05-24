@@ -373,6 +373,57 @@ def test_metric_services_do_not_import_strava_sync_or_token_refresh() -> None:
     assert violations == []
 
 
+def test_metric_services_do_not_import_or_call_request_time_recompute_helpers() -> None:
+    rel_path = "src/mcp_strava/application/metric_services.py"
+    source = _source_text(rel_path)
+    module = ast.parse(source)
+    forbidden_imports = {
+        "mcp_strava.analytics.weekly_digest",
+        "mcp_strava.metrics.enrich_activity",
+        "mcp_strava.metrics.check_z5_minutes",
+        "mcp_strava.metrics.check_hr_anomalies",
+        "mcp_strava.report.daily_report_from_connection",
+    }
+    forbidden_calls = {
+        "weekly_digest",
+        "enrich_activity",
+        "check_z5_minutes",
+        "check_hr_anomalies",
+        "daily_report_from_connection",
+        "activity_stream_rows",
+        "stream_hr_velocity_rows",
+        "stream_hr_velocity_simple_rows",
+        "stream_hr_velocity_time_rows",
+        "stream_hr_time_rows",
+        "stream_altitude_rows",
+        "activity_trimp",
+        "activity_cc",
+        "activity_z5_seconds",
+    }
+    violations: list[str] = []
+    for node in ast.walk(module):
+        if isinstance(node, ast.ImportFrom):
+            imported_module = node.module or ""
+            for alias in node.names:
+                full_name = f"{imported_module}.{alias.name}"
+                if full_name in forbidden_imports:
+                    violations.append(f"{rel_path}:{node.lineno} import {full_name}")
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in forbidden_calls:
+                violations.append(f"{rel_path}:{node.lineno} call {node.func.id}")
+            elif isinstance(node.func, ast.Attribute) and node.func.attr in forbidden_calls:
+                violations.append(f"{rel_path}:{node.lineno} call {node.func.attr}")
+
+    assert violations == []
+
+
+def test_metric_services_do_not_query_raw_streams() -> None:
+    source = _source_text("src/mcp_strava/application/metric_services.py").lower()
+    assert " from streams" not in source
+    assert " join streams" not in source
+    assert " streams " not in source
+
+
 def test_mcp_http_interface_does_not_import_admin_sync_or_strava_adapter() -> None:
     rel_path = "src/mcp_strava/interfaces/mcp_http.py"
     violations = _import_violations(
