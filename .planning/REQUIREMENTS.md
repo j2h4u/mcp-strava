@@ -77,14 +77,14 @@ Requirements for the Full-Fidelity Strava Mirror milestone. This milestone chang
 
 ### Lossless Mirror
 
-- [ ] **MIRROR-01**: Operator can preserve Strava activity summary, activity detail, stream channel values, and stream channel metadata in queryable SQLite structures with fetch, request, and schema-version metadata
-- [ ] **MIRROR-02**: Developer can treat current analytics columns as hot-path projections while full stream channel values remain available for audit and future reprocessing
+- [x] **MIRROR-01**: Operator can preserve Strava activity summary, activity detail, stream channel values, and stream channel metadata in queryable SQLite structures with fetch, request, and schema-version metadata
+- [x] **MIRROR-02**: Developer can treat current analytics columns as hot-path projections while full stream channel values remain available for audit and future reprocessing
 
 ### Stream Ingestion
 
 - [ ] **STREAM-01**: Refresh runtime requests the complete known Strava stream key set plus configured extra keys and records unsupported or unavailable keys without failing the whole activity
-- [ ] **STREAM-02**: Repository stores every stream channel returned by Strava, including unknown or future channel keys and channel metadata such as `original_size`, `resolution`, and `series_type`
-- [ ] **STREAM-03**: Analytics projections keep existing scalar columns for current metrics and retain all per-point extra channel values in structured JSON
+- [x] **STREAM-02**: Repository stores every stream channel returned by Strava, including unknown or future channel keys and channel metadata such as `original_size`, `resolution`, and `series_type`
+- [x] **STREAM-03**: Analytics projections keep existing scalar columns for current metrics and retain all per-point extra channel values in structured JSON
 
 ### GPS Migration
 
@@ -93,12 +93,12 @@ Requirements for the Full-Fidelity Strava Mirror milestone. This milestone chang
 
 ### Coverage and Backfill
 
-- [ ] **COVERAGE-01**: Operator can inspect stream channel, channel metadata, and GPS coverage by activity/date/sport without exposing secrets or unnecessary raw personal details
+- [x] **COVERAGE-01**: Operator can inspect stream channel, channel metadata, and GPS coverage by activity/date/sport without exposing secrets or unnecessary raw personal details
 - [ ] **BACKFILL-01**: Operator can run resumable, rate-limit-aware stream-channel backfill only for activities missing channel values or metadata while preserving existing normalized rows
 
 ### Testing
 
-- [ ] **TEST-05**: Tests prove lossless normalized stream retention, all-channel ingestion, mixed GPS migration, and coverage reporting against temp or copied databases without live Strava API calls
+- [x] **TEST-05**: Tests prove lossless normalized stream retention, all-channel ingestion, mixed GPS migration, and coverage reporting against temp or copied databases without live Strava API calls
 
 ## v2 Requirements
 

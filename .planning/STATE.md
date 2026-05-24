@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-24T07:24:52.154Z"
-last_activity: 2026-05-24 -- Phase 06 execution started
+last_updated: "2026-05-24T07:35:36.876Z"
+last_activity: 2026-05-24
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 25
-  completed_plans: 21
+  completed_plans: 22
   percent: 83
 ---
 
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-05-22)
 ## Current Position
 
 Phase: 06 (full-fidelity-strava-mirror) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 06
-Last activity: 2026-05-24 -- Phase 06 execution started
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-05-24
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Last activity: 2026-05-24 -- Phase 06 execution started
 | Phase 05 P04 | completed in-session | 4 tasks | 11 files |
 | Phase 05 P05 | 12 min | 3 tasks | 9 files |
 | Phase 05 P06 | completed in-session | 4 tasks | 6 files |
+| Phase 06 P01 | 3300 | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,9 @@ Recent decisions affecting current work:
 - [Milestone v1.1]: Make Strava stream mirroring lossless-normalized; analytics columns become hot-path projections, not the only stored copy.
 - [Milestone v1.1]: Unify mixed GPS storage formats locally before relying on track data as a clean mirror surface.
 - [Phase 06]: SQLite remains the primary mirror database; DuckDB is deferred as a possible future analytics/read-model layer.
+- [Phase 06]: SQLite user_version advanced to 3 with lossless stream inventory — Phase 06-01 requirements MIRROR-01/STREAM-02 require stream metadata and extra channel retention.
+- [Phase 06]: Schema inventory is version-aware by PRAGMA user_version — Keeps v3 latlng contract separate from reserved v4 migration scope.
+- [Phase 06]: mirror-coverage is admin-only — Operational coverage controls must not cross into product/MCP boundaries.
 
 ### Pending Todos
 
@@ -115,9 +119,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-22T16:05:30.454Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-full-fidelity-strava-mirror/06-CONTEXT.md
+Last session: 2026-05-24T07:35:36.574Z
+Stopped at: Completed 06-01-PLAN.md
+Resume file: None
 
 ## Quick Tasks Completed
 
