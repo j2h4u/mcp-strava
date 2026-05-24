@@ -231,6 +231,105 @@ def test_replace_stream_rows_and_channel_metadata_is_atomic(tmp_path: Path) -> N
     assert channels == 0
 
 
+def test_replace_stream_rows_and_channel_metadata_preserves_other_activities(tmp_path: Path) -> None:
+    fixture = tmp_path / "v2.db"
+    _create_v2_fixture(fixture)
+    run_migrations(fixture)
+
+    with SQLiteRepository.from_path(fixture) as repo:
+        repo.insert_stream_rows_chunked(
+            20,
+            [
+                {
+                    "time_offset": 0,
+                    "heartrate": 140,
+                    "velocity": 2.8,
+                    "altitude": 500.0,
+                    "cadence": 80,
+                    "lat": 43.1,
+                    "lng": 76.8,
+                    "grade": 0.5,
+                    "gap_speed": 2.9,
+                    "gap_distance": 10.0,
+                    "is_moving": 1,
+                    "values_json": json.dumps({"distance": 10.0, "watts": 180}),
+                }
+            ],
+        )
+        repo.upsert_stream_channel_metadata(
+            activity_id=20,
+            channel_key="watts",
+            original_size=1,
+            resolution="high",
+            series_type="distance",
+            fetched_at="2026-05-01T08:00:00Z",
+            batch_id="neighbor",
+            status="available",
+            error=None,
+        )
+        before_stream = repo.conn.execute(
+            "SELECT heartrate, velocity, values_json FROM streams WHERE activity_id = 20 AND time_offset = 0"
+        ).fetchone()
+        before_channel = repo.conn.execute(
+            """
+            SELECT original_size, resolution, series_type, fetched_at, batch_id, status, error
+            FROM stream_channels
+            WHERE activity_id = 20 AND channel_key = 'watts'
+            """
+        ).fetchone()
+
+        replaced = repo.replace_stream_rows_and_channel_metadata(
+            10,
+            rows=[
+                {
+                    "time_offset": 0,
+                    "heartrate": 152,
+                    "velocity": 3.8,
+                    "altitude": 512.0,
+                    "cadence": 87,
+                    "lat": 43.21,
+                    "lng": 76.91,
+                    "grade": 1.1,
+                    "gap_speed": 3.7,
+                    "gap_distance": 25.0,
+                    "is_moving": 1,
+                    "values_json": json.dumps({"distance": 25.0}),
+                }
+            ],
+            metadata=[
+                {
+                    "channel_key": "distance",
+                    "original_size": 1,
+                    "resolution": "high",
+                    "series_type": "distance",
+                    "fetched_at": "2026-05-01T08:01:00Z",
+                    "batch_id": None,
+                    "status": "available",
+                    "error": None,
+                }
+            ],
+        )
+
+        after_stream = repo.conn.execute(
+            "SELECT heartrate, velocity, values_json FROM streams WHERE activity_id = 20 AND time_offset = 0"
+        ).fetchone()
+        after_channel = repo.conn.execute(
+            """
+            SELECT original_size, resolution, series_type, fetched_at, batch_id, status, error
+            FROM stream_channels
+            WHERE activity_id = 20 AND channel_key = 'watts'
+            """
+        ).fetchone()
+
+    assert replaced == 1
+    assert before_stream is not None
+    assert after_stream is not None
+    assert tuple(after_stream) == tuple(before_stream)
+    assert before_channel is not None
+    assert after_channel is not None
+    assert tuple(after_channel) == tuple(before_channel)
+
+
 def test_replace_stream_rows_and_channel_metadata_records_unavailable_channel_status(tmp_path: Path) -> None:
     fixture = tmp_path / "v2.db"
     _create_v2_fixture(fixture)

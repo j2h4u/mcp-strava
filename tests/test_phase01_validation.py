@@ -65,7 +65,9 @@ def test_found02_explicit_fixture_creation_path_is_available(tmp_path: Path) -> 
     assert row is None
 
 
-def test_found03_just_test_routes_to_pytest() -> None:
+def test_found03_just_test_routes_to_docker_smoke() -> None:
     justfile = Path('Justfile').read_text(encoding='utf-8')
-    assert 'python3 -m pytest' in justfile
+    assert 'docker compose -f deploy/docker-compose.yml' in justfile
+    assert 'python -m mcp_strava.deploy.smoke' in justfile
+    assert '--forbid-tool sync' in justfile
     assert 'scripts/run_tests.py' not in justfile

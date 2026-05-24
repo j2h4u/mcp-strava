@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -227,6 +228,14 @@ def test_admin_mirror_coverage_json_output(tmp_path: Path, monkeypatch: pytest.M
 
     fixture = tmp_path / "coverage.db"
     _create_v2_fixture(fixture)
+    with sqlite3.connect(fixture) as conn:
+        conn.execute(
+            "UPDATE activities SET summary_json = ?, detail_json = ? WHERE id = 10",
+            (
+                json.dumps({"STRAVA_ACCESS_TOKEN": "summary-secret"}),
+                json.dumps({"refresh_token": "detail-secret"}),
+            ),
+        )
     run_migrations(fixture)
 
     monkeypatch.setattr(sys, "argv", ["mcp_strava", "admin", "mirror-coverage", "--db", str(fixture), "--json"])
@@ -236,6 +245,13 @@ def test_admin_mirror_coverage_json_output(tmp_path: Path, monkeypatch: pytest.M
     assert payload["status"] == "ok"
     for key in ("activities_with_streams", "stream_points", "gps_points", "channels", "backfill_needed"):
         assert key in payload
+    rendered = json.dumps(payload, sort_keys=True)
+    assert "summary_json" not in rendered
+    assert "detail_json" not in rendered
+    assert "summary-secret" not in rendered
+    assert "detail-secret" not in rendered
+    assert "access_token" not in rendered.lower()
+    assert "refresh_token" not in rendered.lower()
 
 
 def test_admin_backfill_streams_dry_run_json_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
