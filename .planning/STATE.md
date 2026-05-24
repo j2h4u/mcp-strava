@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
-status: executing
-last_updated: "2026-05-24T07:59:24.639Z"
+status: verifying
+last_updated: "2026-05-24T08:11:22.224Z"
 last_activity: 2026-05-24
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 25
-  completed_plans: 24
-  percent: 83
+  completed_plans: 25
+  percent: 100
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-22)
 
 Phase: 06 (full-fidelity-strava-mirror) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-24
 
 ## Performance Metrics
@@ -67,6 +67,7 @@ Last activity: 2026-05-24
 | Phase 06 P01 | 3300 | 3 tasks | 10 files |
 | Phase 06 P02 | 35min | 3 tasks | 5 files |
 | Phase 06 P03 | 74min | 3 tasks | 8 files |
+| Phase 06 P04 | 6 min | 4 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Persist requested-but-absent channels as unavailable metadata rather than failing stream ingestion. — Preserves observability and supports planned backfill/merge flows without destructive replacement behavior.
 - [Phase 06]: Phase 06-03 canonical runtime stream schema is v4 with lat/lng plus values_json and no streams.latlng
 - [Phase 06]: Migration reports malformed/conflict counts from pre-migration scan while preserving scalar GPS precedence
+- [Phase 06]: Stream-channel backfill runs only for activities with existing stream rows and streams endpoint only.
+- [Phase 06]: Daily refresh and legacy backfill reject stream-channel backfill checkpoints explicitly.
+- [Phase 06]: Runtime preflight accepts v3 intermediate and enforces v4 as final no-latlng schema.
 
 ### Pending Todos
 
@@ -125,7 +129,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-24T07:58:45.473Z
+Last session: 2026-05-24T08:11:13.946Z
 Stopped at: Completed 06-01-PLAN.md
 Resume file: None
 

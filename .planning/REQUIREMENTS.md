@@ -94,7 +94,7 @@ Requirements for the Full-Fidelity Strava Mirror milestone. This milestone chang
 ### Coverage and Backfill
 
 - [x] **COVERAGE-01**: Operator can inspect stream channel, channel metadata, and GPS coverage by activity/date/sport without exposing secrets or unnecessary raw personal details
-- [ ] **BACKFILL-01**: Operator can run resumable, rate-limit-aware stream-channel backfill only for activities missing channel values or metadata while preserving existing normalized rows
+- [x] **BACKFILL-01**: Operator can run resumable, rate-limit-aware stream-channel backfill only for activities missing channel values or metadata while preserving existing normalized rows
 
 ### Testing
 
