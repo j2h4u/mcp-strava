@@ -955,6 +955,10 @@ class SQLiteRepository:
         requested_channels: Iterable[str],
     ) -> list[dict]:
         channel_list = list(requested_channels)
+        has_channel_table = (
+            self.conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='stream_channels'").fetchone()
+            is not None
+        )
         rows = self.conn.execute(
             """
             SELECT a.id, a.date
@@ -973,13 +977,15 @@ class SQLiteRepository:
             missing_channels: list[str] = []
             metadata_missing = False
             for channel in channel_list:
-                meta = self.conn.execute(
-                    """
-                    SELECT status FROM stream_channels
-                    WHERE activity_id=? AND channel_key=?
-                    """,
-                    (activity_id, channel),
-                ).fetchone()
+                meta = None
+                if has_channel_table:
+                    meta = self.conn.execute(
+                        """
+                        SELECT status FROM stream_channels
+                        WHERE activity_id=? AND channel_key=?
+                        """,
+                        (activity_id, channel),
+                    ).fetchone()
                 if meta is None:
                     metadata_missing = True
                     missing_channels.append(channel)
