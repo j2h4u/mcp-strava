@@ -2,32 +2,33 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
-status: complete
-last_updated: "2026-05-24T22:26:53+05:00"
-last_activity: 2026-05-24 -- Completed quick task 260524-v31 Python 3.14 runtime baseline
+status: milestone_complete
+last_updated: "2026-05-24T22:59:41+05:00"
+last_activity: 2026-05-24 -- Completed Phase 7 self-UAT and marked milestone complete
 progress:
   total_phases: 7
   completed_phases: 7
   total_plans: 31
   completed_plans: 31
   percent: 100
+stopped_at: Milestone complete (Phase 7 was final phase)
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-22)
+See: .planning/PROJECT.md (updated 2026-05-24)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Phase 7 complete; live read-model migration/materialization accepted; Docker runtime baseline moved to Python 3.14
+**Current focus:** Milestone complete
 
 ## Current Position
 
 Phase: 07
-Plan: 07-06
-Status: Complete
-Last activity: 2026-05-24 -- Completed quick task 260524-v31 Python 3.14 runtime baseline
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-05-24 -- Completed Phase 7 self-UAT and marked milestone complete
 
 ## Performance Metrics
 
@@ -125,6 +126,7 @@ Recent decisions affecting current work:
 - [Phase 07]: Refresh, legacy backfill, and stream-channel backfill now call the same read-model materialization stage below MCP.
 - [Phase 07]: Read-model materialization lease renewal must not commit an already-active materializer transaction.
 - [Phase 07]: Read-model materialization remains runtime-owned automation only; MCP enforces the exact five product tools rather than a redundant forbidden-name list.
+- [Phase 07]: Phase 7 self-UAT passed against Docker MCP with live v5 read-model facts and sub-500ms p95 for all product tools.
 - [Quick 260524-v31]: Docker/runtime Python baseline is Python 3.14.
 
 ### Pending Todos
@@ -133,8 +135,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 7 must keep raw Strava mirror as source of truth while materializing derived facts for MCP latency.
-- Derived facts require source revision/hash, metric version, dirty queue, and transactional invalidation.
+None currently.
 
 ## Deferred Items
 
@@ -146,8 +147,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-24T22:26:53+05:00
-Stopped at: Completed quick task 260524-v31 Python 3.14 runtime baseline
+Last session: 2026-05-24T22:59:41+05:00
+Stopped at: Phase 7 complete; milestone v1.1 ready for completion/archive
 Resume file: None
 
 ## Quick Tasks Completed

@@ -44,6 +44,10 @@ Preserve the local Strava mirror and keep trusted training analytics working whi
 - [x] Stream ingestion stores all returned channels, unknown channel values, and channel metadata without a fixed analytics-only allowlist — validated in Phase 6
 - [x] Mixed GPS stream storage is migrated into canonical `lat`/`lng` columns with backup, preflight, post-check, row-count parity, GPS parity, and analytics parity — validated in Phase 6
 - [x] Local admin tooling reports stream/channel/GPS coverage and supports resumable, rate-limit-aware stream-channel backfill without exposing those controls through MCP — validated in Phase 6
+- [x] Derived activity, daily load, training-model, and rolling-window facts are persisted as versioned SQLite read-model data with source provenance — validated in Phase 7
+- [x] Source mirror writes invalidate derived metrics through durable `source_hash`, `source_revision`, `metric_version`, and dirty-queue semantics — validated in Phase 7
+- [x] Refresh and backfill runtime materializes read-model facts below the MCP boundary without exposing recompute/admin tools — validated in Phase 7
+- [x] MCP metric tools read prepared facts and pass the sub-500 ms warm p95 target on the live Docker runtime — validated in Phase 7
 
 ### Active
 
@@ -66,7 +70,7 @@ The existing SQLite database at `data/strava.db` is valuable. It contains data t
 
 The desired architecture is not an API wrapper over Strava. It is a local mirror plus analytics core. Sync is infrastructure and policy, not an agent-facing action. MCP clients should ask questions about training and analytics; the core decides whether the mirror is fresh enough and whether an internal first-use refresh request is needed.
 
-The next milestone tightens the mirror contract. Strava stream data should be retained in lossless normalized form, and typed/numeric analytics columns should become hot-path projections over that preserved stream information. The current streams table is useful for analytics but is not a complete lossless mirror: recent rows store GPS as `latlng` JSON while older rows store split `lat`/`lng`, and the ingest path only stores selected stream fields.
+The v1.1 milestone tightened the mirror contract. Strava stream data is now retained in lossless normalized form, and derived training metrics are materialized into versioned SQLite read-model facts so MCP tools can read prepared data instead of recomputing expensive stream-derived metrics on request.
 
 Existing codebase concerns that should shape the roadmap:
 
@@ -99,6 +103,8 @@ Existing codebase concerns that should shape the roadmap:
 | Sync is lazy first-use core policy | The local mirror should refresh through internal policy only when product use requires it; MCP still must not expose sync controls | Validated in Phase 4 freshness application service metadata and internal refresh requests |
 | Prefer development efficiency over intermediate operability | The service does not need to stay fully usable during refactor; it only needs to be operational after the milestone is complete | Validated through Phase 4 refactor sequencing |
 | Lossless normalized mirror for v1.1 | The local database should preserve Strava stream information in structured queryable form without making permanent raw JSON retention the main contract | Planned for v1.1 Full-Fidelity Strava Mirror |
+| Materialized read model below MCP | MCP tools should remain factual/product-only while refresh/backfill automation owns recomputation and invalidation | Validated in Phase 7 with v5 read-model tables, dirty queue, runtime materialization, and live Docker p95 smoke |
+| Performance gates are explicit | Normal Docker smoke should stay fast, while the full warm p95 check remains available as a deliberate acceptance gate | Validated in Phase 7 through `just mcp-read-model-perf` |
 
 ## Evolution
 
@@ -118,5 +124,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 for v1.1 Full-Fidelity Strava Mirror*
-*Completion updated: 2026-05-24 after Phase 6 verification*
+*Last updated: 2026-05-24 after Phase 7 verification*
+*Completion updated: 2026-05-24 after Phase 7 self-UAT*

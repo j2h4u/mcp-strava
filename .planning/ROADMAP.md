@@ -140,7 +140,7 @@ Plans:
   - [x] `07-03-PLAN.md` — Materialized activity, daily, training-model, and rolling-window fact pipeline
   - [x] `07-04-PLAN.md` — Refresh/backfill materialization stage, admin command, and MCP boundary preservation
   - [x] `07-05-PLAN.md` — MCP service cutover to fact-only read-model queries with read-model metadata
-  - [ ] `07-06-PLAN.md` — Query-plan, Docker-first, and warm p95 performance validation gates
+  - [x] `07-06-PLAN.md` — Query-plan, Docker-first, and warm p95 performance validation gates
 
 ## Progress
 
@@ -155,4 +155,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 4. Application Services & CLI Refit | 4/4 | Complete    | 2026-05-21 |
 | 5. MCP HTTP Surface & Docker Hardening | 6/6 | Complete    | 2026-05-22 |
 | 6. Full-Fidelity Strava Mirror | 4/4 | Complete    | 2026-05-24 |
-| 7. Materialized Metrics Read Model | 6/6 | Complete   | 2026-05-24 |
+| 7. Materialized Metrics Read Model | 6/6 | Complete    | 2026-05-24 |
