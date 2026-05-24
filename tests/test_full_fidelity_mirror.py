@@ -225,3 +225,60 @@ def test_replace_stream_rows_and_channel_metadata_is_atomic(tmp_path: Path) -> N
         channels = conn.execute("SELECT COUNT(*) FROM stream_channels WHERE activity_id = 10").fetchone()[0]
     assert points >= 1
     assert channels == 0
+
+
+def test_replace_stream_rows_and_channel_metadata_records_unavailable_channel_status(tmp_path: Path) -> None:
+    fixture = tmp_path / "v2.db"
+    _create_v2_fixture(fixture)
+    run_migrations(fixture)
+
+    with SQLiteRepository.from_path(fixture) as repo:
+        repo.replace_stream_rows_and_channel_metadata(
+            10,
+            rows=[
+                {
+                    "time_offset": 0,
+                    "heartrate": 150,
+                    "velocity": 3.6,
+                    "altitude": 510.0,
+                    "cadence": 85,
+                    "lat": 43.2,
+                    "lng": 76.9,
+                    "latlng": "[43.2,76.9]",
+                    "grade": 2.1,
+                    "gap_speed": 3.5,
+                    "gap_distance": 25.0,
+                    "is_moving": 1,
+                    "values_json": json.dumps({"distance": 0.0}),
+                }
+            ],
+            metadata=[
+                {
+                    "channel_key": "distance",
+                    "original_size": 1,
+                    "resolution": "high",
+                    "series_type": "distance",
+                    "fetched_at": "2026-05-01T08:00:00Z",
+                    "batch_id": None,
+                    "status": "available",
+                    "error": None,
+                },
+                {
+                    "channel_key": "watts",
+                    "original_size": None,
+                    "resolution": None,
+                    "series_type": None,
+                    "fetched_at": "2026-05-01T08:00:00Z",
+                    "batch_id": None,
+                    "status": "unavailable",
+                    "error": None,
+                },
+            ],
+        )
+
+    with sqlite3.connect(fixture) as conn:
+        status_row = conn.execute(
+            "SELECT status FROM stream_channels WHERE activity_id = 10 AND channel_key = 'watts'"
+        ).fetchone()
+    assert status_row is not None
+    assert status_row[0] == "unavailable"

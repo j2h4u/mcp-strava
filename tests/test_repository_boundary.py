@@ -272,6 +272,59 @@ def test_repository_has_stream_channel_coverage_methods(tmp_path: Path) -> None:
         assert hasattr(repo, "stream_channel_coverage")
 
 
+def test_replace_stream_rows_and_channel_metadata_stores_null_values_json_when_no_extra_values(
+    tmp_path: Path,
+) -> None:
+    from mcp_strava.adapters.sqlite.migrations import run_migrations
+    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+
+    fixture = tmp_path / "repo.db"
+    _create_fixture_db(fixture)
+    run_migrations(fixture)
+
+    with SQLiteRepository.from_path(fixture) as repo:
+        repo.upsert_activity_summary(
+            activity_id=1,
+            date="2026-05-21T06:00:00Z",
+            name="Morning Run",
+            sport_type="Run",
+            distance=10000.0,
+            moving_time=3600,
+            elapsed_time=3700,
+            total_elevation_gain=120.0,
+            summary_json="{}",
+            synced_at="2026-05-21T07:00:00Z",
+        )
+        repo.replace_stream_rows_and_channel_metadata(
+            1,
+            rows=[
+                {
+                    "time_offset": 0,
+                    "heartrate": 150,
+                    "velocity": 3.5,
+                    "altitude": 100.0,
+                    "cadence": 85,
+                    "lat": 43.2,
+                    "lng": 76.9,
+                    "latlng": "[43.2,76.9]",
+                    "grade": 1.0,
+                    "gap_speed": 3.6,
+                    "gap_distance": 10.0,
+                    "is_moving": 1,
+                    "values_json": None,
+                }
+            ],
+            metadata=[],
+        )
+
+        row = repo.conn.execute(
+            "SELECT values_json FROM streams WHERE activity_id = 1 AND time_offset = 0"
+        ).fetchone()
+
+    assert row is not None
+    assert row[0] is None
+
+
 def test_repository_exposes_refresh_methods() -> None:
     from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 

@@ -492,3 +492,122 @@ def test_refresh_modules_do_not_import_sync_per_D17():
                 violations.append(f"{py_file}:{node.lineno}")
 
     assert violations == []
+
+
+def test_sync_streams_requests_all_configured_channels_and_writes_projection_metadata(tmp_path):
+    from mcp_strava.refresh._sync_ops import sync_streams
+
+    class RichStreamsTransport(FakeStravaTransport):
+        def fetch(self, path: str) -> StravaResponse:
+            self.calls_by_path[path] += 1
+            if path.startswith("/activities/500/streams"):
+                return StravaResponse(
+                    data={
+                        "time": {"data": [0, 1], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "distance": {"data": [0.0, 11.2], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "heartrate": {"data": [140, 141], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "velocity_smooth": {"data": [3.0, 3.1], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "altitude": {"data": [501.0, 502.0], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "cadence": {"data": [84, 85], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "latlng": {"data": [[43.21, 76.91], [43.22, 76.92]], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "grade_smooth": {"data": [1.1, 1.2], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "grade_adjusted_speed": {"data": [3.05, 3.15], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "grade_adjusted_distance": {"data": [0.0, 10.9], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "moving": {"data": [1, 1], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "watts": {"data": [220, 230], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "temp": {"data": [20, 21], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "unknown_future_key": {"data": ["a", "b"], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                    },
+                    rate_info=StravaRateInfo(),
+                    status=200,
+                )
+            return super().fetch(path)
+
+    transport = RichStreamsTransport()
+    with _repo(tmp_path) as repo:
+        repo.upsert_activity_summary(
+            activity_id=500,
+            date="2026-05-21T06:00:00Z",
+            name="Morning Run",
+            sport_type="Run",
+            distance=1000,
+            moving_time=600,
+            elapsed_time=620,
+            total_elevation_gain=10,
+            summary_json="{}",
+            synced_at="2026-05-21T07:00:00Z",
+        )
+        fetched = sync_streams(repo, transport, since="2026-05-20")
+        stream_rows = repo.activity_stream_rows(500)
+        channel_rows = repo.conn.execute(
+            "SELECT channel_key, original_size, resolution, series_type, status, error FROM stream_channels WHERE activity_id = 500 ORDER BY channel_key"
+        ).fetchall()
+
+    assert fetched == 1
+    stream_call = next(path for path in transport.calls_by_path if path.startswith("/activities/500/streams"))
+    assert "watts" in stream_call and "temp" in stream_call
+    assert len(stream_rows) == 2
+    first = stream_rows[0]
+    assert first["heartrate"] == 140
+    assert first["velocity"] == pytest.approx(3.0)
+    assert first["altitude"] == pytest.approx(501.0)
+    assert first["cadence"] == 84
+    assert first["grade"] == pytest.approx(1.1)
+    assert first["gap_speed"] == pytest.approx(3.05)
+    assert first["gap_distance"] == pytest.approx(0.0)
+    assert first["is_moving"] == 1
+    assert first["lat"] == pytest.approx(43.21)
+    assert first["lng"] == pytest.approx(76.91)
+    values = json.loads(first["values_json"])
+    assert values["distance"] == pytest.approx(0.0)
+    assert values["watts"] == 220
+    assert values["temp"] == 20
+    assert values["unknown_future_key"] == "a"
+    assert "latlng" not in values
+
+    assert channel_rows
+    for row in channel_rows:
+        assert row["original_size"] == 2
+        assert row["resolution"] == "high"
+        assert row["series_type"] == "distance"
+        assert row["status"] == "available"
+        assert row["error"] is None
+
+
+def test_sync_streams_records_missing_requested_channels_without_failure(tmp_path):
+    from mcp_strava.refresh._sync_ops import sync_streams
+
+    class PartialStreamsTransport(FakeStravaTransport):
+        def fetch(self, path: str) -> StravaResponse:
+            self.calls_by_path[path] += 1
+            if path.startswith("/activities/500/streams"):
+                return StravaResponse(
+                    data={
+                        "time": {"data": [0], "original_size": 1, "resolution": "high", "series_type": "distance"},
+                        "heartrate": {"data": [142], "original_size": 1, "resolution": "high", "series_type": "distance"},
+                    },
+                    rate_info=StravaRateInfo(),
+                    status=200,
+                )
+            return super().fetch(path)
+
+    with _repo(tmp_path) as repo:
+        repo.upsert_activity_summary(
+            activity_id=500,
+            date="2026-05-21T06:00:00Z",
+            name="Missing Channels",
+            sport_type="Run",
+            distance=1000,
+            moving_time=600,
+            elapsed_time=620,
+            total_elevation_gain=10,
+            summary_json="{}",
+            synced_at="2026-05-21T07:00:00Z",
+        )
+        fetched = sync_streams(repo, PartialStreamsTransport(), since="2026-05-20")
+        missing = repo.conn.execute(
+            "SELECT COUNT(*) FROM stream_channels WHERE activity_id = 500 AND status = 'unavailable'"
+        ).fetchone()[0]
+
+    assert fetched == 1
+    assert missing > 0
