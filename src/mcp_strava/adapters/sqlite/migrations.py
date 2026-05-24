@@ -3,15 +3,21 @@
 from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
+import json
 from collections.abc import Callable
 
 from mcp_strava.adapters.sqlite.backup import create_timestamped_backup
 from mcp_strava.adapters.sqlite.schema import (
     PreflightReport,
+    integrity_check,
+    row_counts,
     read_user_version,
     run_preflight_checks,
+    validate_required_inventory,
     set_user_version,
 )
+
+LAST_MIGRATION_POSTCHECK: dict[str, int] = {}
 
 
 @dataclass(frozen=True)
@@ -30,6 +36,16 @@ class ParitySnapshot:
 class ParityResult:
     ok: bool
     failures: list[str]
+
+
+@dataclass(frozen=True)
+class GpsMigrationSnapshot:
+    stream_rows: int
+    gps_points_from_lat_lng: int
+    gps_points_from_latlng: int
+    gps_scalar_latlng_conflict_count: int
+    gps_malformed_latlng_count: int
+    values_json_non_null_count: int
 
 
 def _num_close(a: float, b: float, tolerance: float) -> bool:
@@ -172,17 +188,201 @@ def create_lossless_stream_inventory_v3(conn: sqlite3.Connection) -> None:
     set_user_version(conn, 3)
 
 
+def _json_latlng_pair(latlng_raw: object) -> tuple[float, float] | None:
+    if latlng_raw is None:
+        return None
+    try:
+        parsed = json.loads(str(latlng_raw))
+    except Exception:
+        return None
+    if not isinstance(parsed, list) or len(parsed) < 2:
+        return None
+    try:
+        lat = float(parsed[0])
+        lng = float(parsed[1])
+    except (TypeError, ValueError):
+        return None
+    return lat, lng
+
+
+def _v4_gps_snapshot(conn: sqlite3.Connection) -> GpsMigrationSnapshot:
+    stream_rows = int(conn.execute("SELECT COUNT(*) FROM streams").fetchone()[0])
+    gps_points = int(
+        conn.execute("SELECT COUNT(*) FROM streams WHERE lat IS NOT NULL AND lng IS NOT NULL").fetchone()[0]
+    )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(streams)").fetchall()}
+    if "values_json" in columns:
+        values_json_non_null = int(
+            conn.execute("SELECT COUNT(*) FROM streams WHERE values_json IS NOT NULL").fetchone()[0]
+        )
+    else:
+        values_json_non_null = 0
+    gps_from_latlng = 0
+    conflict_count = 0
+    malformed_count = 0
+    if "latlng" not in columns:
+        return GpsMigrationSnapshot(
+            stream_rows=stream_rows,
+            gps_points_from_lat_lng=gps_points,
+            gps_points_from_latlng=0,
+            gps_scalar_latlng_conflict_count=0,
+            gps_malformed_latlng_count=0,
+            values_json_non_null_count=values_json_non_null,
+        )
+    rows = conn.execute("SELECT lat, lng, latlng FROM streams").fetchall()
+    for row in rows:
+        latlng_pair = _json_latlng_pair(row[2])
+        if row[2] is not None and latlng_pair is None:
+            malformed_count += 1
+        if latlng_pair is None:
+            continue
+        gps_from_latlng += 1
+        lat, lng = latlng_pair
+        scalar_lat = row[0]
+        scalar_lng = row[1]
+        if scalar_lat is not None and scalar_lng is not None:
+            if abs(float(scalar_lat) - lat) > 1e-6 or abs(float(scalar_lng) - lng) > 1e-6:
+                conflict_count += 1
+    return GpsMigrationSnapshot(
+        stream_rows=stream_rows,
+        gps_points_from_lat_lng=gps_points,
+        gps_points_from_latlng=gps_from_latlng,
+        gps_scalar_latlng_conflict_count=conflict_count,
+        gps_malformed_latlng_count=malformed_count,
+        values_json_non_null_count=values_json_non_null,
+    )
+
+
+def _choose_v4_lat_lng(
+    scalar_lat: object,
+    scalar_lng: object,
+    latlng_raw: object,
+    *,
+    tolerance: float = 1e-6,
+) -> tuple[float | None, float | None, bool, bool]:
+    malformed = False
+    conflict = False
+    json_pair = None
+    if latlng_raw is not None:
+        json_pair = _json_latlng_pair(latlng_raw)
+        malformed = json_pair is None
+    scalar_lat_f = float(scalar_lat) if scalar_lat is not None else None
+    scalar_lng_f = float(scalar_lng) if scalar_lng is not None else None
+    if json_pair is None:
+        return scalar_lat_f, scalar_lng_f, conflict, malformed
+
+    json_lat, json_lng = json_pair
+    if scalar_lat_f is not None and scalar_lng_f is not None:
+        if abs(scalar_lat_f - json_lat) > tolerance or abs(scalar_lng_f - json_lng) > tolerance:
+            conflict = True
+        return scalar_lat_f, scalar_lng_f, conflict, malformed
+
+    if scalar_lat_f is None and scalar_lng_f is None:
+        return json_lat, json_lng, conflict, malformed
+
+    if scalar_lat_f is not None and scalar_lng_f is None:
+        if abs(scalar_lat_f - json_lat) <= tolerance:
+            return scalar_lat_f, json_lng, conflict, malformed
+        conflict = True
+        return scalar_lat_f, None, conflict, malformed
+
+    if scalar_lng_f is not None and scalar_lat_f is None:
+        if abs(scalar_lng_f - json_lng) <= tolerance:
+            return json_lat, scalar_lng_f, conflict, malformed
+        conflict = True
+        return None, scalar_lng_f, conflict, malformed
+
+    return scalar_lat_f, scalar_lng_f, conflict, malformed
+
+
+def create_canonical_gps_inventory_v4(conn: sqlite3.Connection) -> None:
+    conn.execute("BEGIN")
+    try:
+        conn.execute(
+            """
+            CREATE TABLE streams_new (
+                activity_id INTEGER NOT NULL,
+                time_offset INTEGER NOT NULL,
+                heartrate INTEGER,
+                velocity REAL,
+                altitude REAL,
+                cadence INTEGER,
+                lat REAL,
+                lng REAL,
+                grade REAL,
+                gap_speed REAL,
+                gap_distance REAL,
+                is_moving INTEGER,
+                values_json TEXT,
+                PRIMARY KEY (activity_id, time_offset)
+            )
+            """
+        )
+
+        rows = conn.execute(
+            """
+            SELECT activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                   lat, lng, grade, gap_speed, gap_distance, is_moving, latlng, values_json
+            FROM streams
+            ORDER BY activity_id, time_offset
+            """
+        ).fetchall()
+        converted: list[tuple] = []
+        for row in rows:
+            lat, lng, _conflict, _malformed = _choose_v4_lat_lng(row[6], row[7], row[12])
+            converted.append(
+                (
+                    row[0],
+                    row[1],
+                    row[2],
+                    row[3],
+                    row[4],
+                    row[5],
+                    lat,
+                    lng,
+                    row[8],
+                    row[9],
+                    row[10],
+                    row[11],
+                    row[13],
+                )
+            )
+        conn.executemany(
+            """
+            INSERT INTO streams_new (
+                activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                lat, lng, grade, gap_speed, gap_distance, is_moving, values_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            converted,
+        )
+        conn.execute("DROP TABLE streams")
+        conn.execute("ALTER TABLE streams_new RENAME TO streams")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_streams_act ON streams(activity_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_stream_channels_activity ON stream_channels(activity_id)")
+        set_user_version(conn, 4)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _baseline_migration_v1,
     2: create_refresh_tables_and_seed_state,
     3: create_lossless_stream_inventory_v3,
+    4: create_canonical_gps_inventory_v4,
 }
 
 
 def run_migrations(db_path: str | Path) -> PreflightReport:
     path = Path(db_path)
     before = run_preflight(path)
-    create_timestamped_backup(path)
+    backup_path = create_timestamped_backup(path)
+    pre_snapshot: GpsMigrationSnapshot | None = None
+    if before.user_version < 4:
+        with sqlite3.connect(str(path), check_same_thread=False) as conn:
+            pre_snapshot = _v4_gps_snapshot(conn)
 
     conn = sqlite3.connect(str(path), check_same_thread=False)
     try:
@@ -202,5 +402,25 @@ def run_migrations(db_path: str | Path) -> PreflightReport:
             raise RuntimeError(
                 f"Post-migration row parity failed for {table}: {before_count} != {after.row_counts.get(table)}"
             )
+
+    if pre_snapshot is not None:
+        with sqlite3.connect(str(path), check_same_thread=False) as conn:
+            post_snapshot = _v4_gps_snapshot(conn)
+            LAST_MIGRATION_POSTCHECK.clear()
+            LAST_MIGRATION_POSTCHECK.update({
+                "gps_scalar_latlng_conflict_count": pre_snapshot.gps_scalar_latlng_conflict_count,
+                "gps_malformed_latlng_count": pre_snapshot.gps_malformed_latlng_count,
+                "stream_rows": post_snapshot.stream_rows,
+                "gps_points_from_lat_lng": post_snapshot.gps_points_from_lat_lng,
+                "gps_points_from_latlng": pre_snapshot.gps_points_from_latlng,
+            })
+            validate_required_inventory(conn)
+            if integrity_check(conn).lower() != "ok":
+                raise RuntimeError(f"Post-check failed: integrity (backup: {backup_path})")
+            row_count_parity = row_counts(conn).get("streams", 0) == pre_snapshot.stream_rows
+            if not row_count_parity:
+                raise RuntimeError(f"Post-check failed: stream_rows_parity (backup: {backup_path})")
+            if post_snapshot.gps_points_from_lat_lng < pre_snapshot.gps_points_from_lat_lng:
+                raise RuntimeError(f"Post-check failed: gps_point_count (backup: {backup_path})")
 
     return after

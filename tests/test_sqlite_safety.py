@@ -239,7 +239,7 @@ def test_safe02_backup_integrity_check_failure_blocks_success_d04(
         backup_module.create_timestamped_backup(fixture, backups_dir=backups_dir)
 
 
-def test_safe03_baseline_migration_sets_user_version_to_3_idempotently_d02(tmp_path: Path) -> None:
+def test_safe03_baseline_migration_sets_user_version_to_4_idempotently_d02(tmp_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import run_migrations
 
     fixture = tmp_path / "fixture.db"
@@ -251,7 +251,7 @@ def test_safe03_baseline_migration_sets_user_version_to_3_idempotently_d02(tmp_p
         count = conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
         refresh_state_count = conn.execute("SELECT COUNT(*) FROM refresh_state").fetchone()[0]
         refresh_requests_count = conn.execute("SELECT COUNT(*) FROM refresh_requests").fetchone()[0]
-    assert user_version == 3
+    assert user_version == 4
     assert count == 42
     assert refresh_state_count == 1
     assert refresh_requests_count == 0
@@ -281,7 +281,7 @@ def test_migration_v1_to_v3_creates_refresh_tables_and_preserves_parity(tmp_path
         refresh_state_count = conn.execute("SELECT COUNT(*) FROM refresh_state").fetchone()[0]
         refresh_requests_count = conn.execute("SELECT COUNT(*) FROM refresh_requests").fetchone()[0]
 
-    assert user_version == 3
+    assert user_version == 4
     assert refresh_state_count == 1
     assert refresh_requests_count == 0
     assert after_counts == before_counts
@@ -296,7 +296,7 @@ def test_preflight_v3_includes_refresh_tables(tmp_path: Path) -> None:
 
     report = run_preflight(fixture)
 
-    assert report.user_version == 3
+    assert report.user_version == 4
     assert report.row_counts["refresh_state"] == 1
     assert report.row_counts["refresh_requests"] == 0
 

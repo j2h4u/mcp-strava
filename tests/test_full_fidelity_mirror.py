@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from mcp_strava.adapters.sqlite.migrations import MIGRATIONS, run_migrations
+from mcp_strava.adapters.sqlite.migrations import (
+    LAST_MIGRATION_POSTCHECK,
+    MIGRATIONS,
+    create_lossless_stream_inventory_v3,
+    run_migrations,
+)
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 
 
@@ -117,10 +122,10 @@ def test_migration_v3_adds_lossless_stream_inventory(tmp_path: Path) -> None:
     report = run_migrations(fixture)
 
     with sqlite3.connect(fixture) as conn:
-        assert report.user_version == 3
+        assert report.user_version == 4
         stream_cols = {row[1] for row in conn.execute("PRAGMA table_info(streams)").fetchall()}
         assert "values_json" in stream_cols
-        assert "latlng" in stream_cols
+        assert "latlng" not in stream_cols
 
         channel_cols = {row[1] for row in conn.execute("PRAGMA table_info(stream_channels)").fetchall()}
         assert channel_cols >= {
@@ -170,7 +175,6 @@ def test_insert_stream_rows_chunked_persists_lat_lng_and_values_json(tmp_path: P
                     "cadence": 86,
                     "lat": 43.2001,
                     "lng": 76.9002,
-                    "latlng": "[43.2001,76.9002]",
                     "grade": 2.2,
                     "gap_speed": 3.6,
                     "gap_distance": 26.0,
@@ -200,7 +204,7 @@ def test_replace_stream_rows_and_channel_metadata_is_atomic(tmp_path: Path) -> N
         repo.insert_stream_rows_chunked(
             10,
             [{"time_offset": 4, "heartrate": 155, "velocity": 3.3, "altitude": 505.0, "cadence": 84,
-              "lat": 43.2, "lng": 76.9, "latlng": "[43.2,76.9]", "grade": 1.0, "gap_speed": 3.2,
+              "lat": 43.2, "lng": 76.9, "grade": 1.0, "gap_speed": 3.2,
               "gap_distance": 21.0, "is_moving": 1, "values_json": None}],
         )
 
@@ -213,7 +217,7 @@ def test_replace_stream_rows_and_channel_metadata_is_atomic(tmp_path: Path) -> N
             failing_repo.replace_stream_rows_and_channel_metadata(
                 10,
                 rows=[{"time_offset": 9, "heartrate": 160, "velocity": 3.9, "altitude": 520.0, "cadence": 90,
-                       "lat": 43.22, "lng": 76.93, "latlng": "[43.22,76.93]", "grade": 1.2, "gap_speed": 3.8,
+                       "lat": 43.22, "lng": 76.93, "grade": 1.2, "gap_speed": 3.8,
                        "gap_distance": 30.0, "is_moving": 1, "values_json": None}],
                 metadata=[{"channel_key": "heartrate", "original_size": 1, "resolution": "high", "series_type": "distance",
                            "fetched_at": "2026-05-01T08:00:00Z", "batch_id": None, "status": "available", "error": None}],
@@ -244,7 +248,6 @@ def test_replace_stream_rows_and_channel_metadata_records_unavailable_channel_st
                     "cadence": 85,
                     "lat": 43.2,
                     "lng": 76.9,
-                    "latlng": "[43.2,76.9]",
                     "grade": 2.1,
                     "gap_speed": 3.5,
                     "gap_distance": 25.0,
@@ -286,8 +289,8 @@ def test_replace_stream_rows_and_channel_metadata_records_unavailable_channel_st
 
 def _create_v3_mixed_gps_fixture(db_path: Path) -> None:
     _create_v2_fixture(db_path)
-    run_migrations(db_path)
     with sqlite3.connect(db_path) as conn:
+        create_lossless_stream_inventory_v3(conn)
         conn.execute("PRAGMA user_version=3")
         conn.execute(
             """
@@ -381,3 +384,5 @@ def test_migration_v4_surfaces_conflict_and_malformed_counts(tmp_path: Path) -> 
         ).fetchone()[0]
     assert conflict_count == 1
     assert malformed_count == 1
+    assert LAST_MIGRATION_POSTCHECK["gps_scalar_latlng_conflict_count"] >= 1
+    assert LAST_MIGRATION_POSTCHECK["gps_malformed_latlng_count"] >= 1
