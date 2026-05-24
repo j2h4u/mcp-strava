@@ -319,6 +319,14 @@ def test_refresh_requests_partial_unique_index_exists(tmp_path: Path) -> None:
     assert [row[2] for row in columns] == ["reason", "requested_for_day"]
 
 
+def test_full_fidelity_migration_tests_use_temp_paths_only(tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture.db"
+    _create_fixture_db(fixture)
+    resolved = fixture.resolve()
+    assert "/data/strava.db" not in str(resolved)
+    assert "/opt/docker/mcp-strava" not in str(resolved)
+
+
 def test_safe03_synthetic_schema_change_detects_row_or_load_parity_d06_d07(tmp_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import ParitySnapshot, evaluate_parity
 

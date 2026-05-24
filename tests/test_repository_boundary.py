@@ -346,6 +346,14 @@ def test_repository_exposes_refresh_methods() -> None:
     assert expected <= set(dir(SQLiteRepository))
 
 
+def test_repository_boundary_fixtures_do_not_use_live_paths(tmp_path: Path) -> None:
+    fixture = tmp_path / "repo.db"
+    _create_fixture_db(fixture)
+    resolved = fixture.resolve()
+    assert "/data/strava.db" not in str(resolved)
+    assert "/opt/docker/mcp-strava" not in str(resolved)
+
+
 def _create_migrated_fixture(db_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import run_migrations
 

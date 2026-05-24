@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_strava.adapters.sqlite.migrations import run_migrations
+from mcp_strava.adapters.sqlite.migrations import MIGRATIONS, run_migrations
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 
 
@@ -282,3 +282,102 @@ def test_replace_stream_rows_and_channel_metadata_records_unavailable_channel_st
         ).fetchone()
     assert status_row is not None
     assert status_row[0] == "unavailable"
+
+
+def _create_v3_mixed_gps_fixture(db_path: Path) -> None:
+    _create_v2_fixture(db_path)
+    run_migrations(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA user_version=3")
+        conn.execute(
+            """
+            INSERT INTO streams (
+                activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                lat, lng, grade, gap_speed, gap_distance, is_moving, latlng, values_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (10, 1, 148, 3.2, 508.0, 84, None, None, 1.0, 3.1, 5.0, 1, "[43.2, 76.9]", '{"x":1}'),
+        )
+        conn.execute(
+            """
+            INSERT INTO streams (
+                activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                lat, lng, grade, gap_speed, gap_distance, is_moving, latlng, values_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (10, 2, 149, 3.3, 509.0, 85, 43.25, 76.95, 1.1, 3.2, 10.0, 1, "[43.2, 76.9]", '{"x":2}'),
+        )
+        conn.execute(
+            """
+            INSERT INTO streams (
+                activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                lat, lng, grade, gap_speed, gap_distance, is_moving, latlng, values_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (10, 3, 150, 3.4, 510.0, 86, 43.2, None, 1.2, 3.3, 15.0, 1, "[43.2, 76.9]", '{"x":3}'),
+        )
+        conn.execute(
+            """
+            INSERT INTO streams (
+                activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                lat, lng, grade, gap_speed, gap_distance, is_moving, latlng, values_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (10, 4, 151, 3.5, 511.0, 87, None, None, 1.3, 3.4, 20.0, 1, "{malformed", '{"x":4}'),
+        )
+        conn.execute(
+            """
+            INSERT INTO streams (
+                activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                lat, lng, grade, gap_speed, gap_distance, is_moving, latlng, values_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (10, 5, None, None, None, None, None, None, None, None, None, 0, None, '{"x":5}'),
+        )
+        conn.commit()
+
+
+def test_migration_v4_contract_present_and_idempotent(tmp_path: Path) -> None:
+    fixture = tmp_path / "v3.db"
+    _create_v3_mixed_gps_fixture(fixture)
+    assert 4 in MIGRATIONS
+
+    first = run_migrations(fixture)
+    second = run_migrations(fixture)
+    assert first.user_version == 4
+    assert second.user_version == 4
+
+    with sqlite3.connect(fixture) as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(streams)").fetchall()]
+        assert "latlng" not in columns
+        assert "lat" in columns and "lng" in columns and "values_json" in columns
+        rows = conn.execute(
+            "SELECT time_offset, lat, lng, values_json FROM streams WHERE activity_id=10 ORDER BY time_offset"
+        ).fetchall()
+
+    by_t = {r[0]: r for r in rows}
+    assert by_t[1][1] == pytest.approx(43.2)
+    assert by_t[1][2] == pytest.approx(76.9)
+    assert by_t[2][1] == pytest.approx(43.25)
+    assert by_t[2][2] == pytest.approx(76.95)
+    assert by_t[3][1] == pytest.approx(43.2)
+    assert by_t[3][2] == pytest.approx(76.9)
+    assert by_t[5][1] is None and by_t[5][2] is None
+
+
+def test_migration_v4_surfaces_conflict_and_malformed_counts(tmp_path: Path) -> None:
+    fixture = tmp_path / "v3.db"
+    _create_v3_mixed_gps_fixture(fixture)
+
+    run_migrations(fixture)
+
+    with sqlite3.connect(fixture) as conn:
+        conflict_count = conn.execute(
+            "SELECT COUNT(*) FROM streams WHERE activity_id=10 AND time_offset=2 AND lat=43.25 AND lng=76.95"
+        ).fetchone()[0]
+        malformed_count = conn.execute(
+            "SELECT COUNT(*) FROM streams WHERE activity_id=10 AND time_offset=4 AND lat IS NULL AND lng IS NULL"
+        ).fetchone()[0]
+    assert conflict_count == 1
+    assert malformed_count == 1

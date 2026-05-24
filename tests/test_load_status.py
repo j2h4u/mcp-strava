@@ -172,3 +172,11 @@ def test_effective_trimp_series_keeps_training_numeric_parity(tmp_path: Path) ->
     plan_effective = calc_weekly_plan(effective_series, today_str)
     plan_legacy = calc_weekly_plan(legacy_observed, today_str)
     assert [d.trimp for d in plan_effective.completed_days] == [d.trimp for d in plan_legacy.completed_days]
+
+
+def test_load_status_fixture_uses_temp_db_only(tmp_path: Path) -> None:
+    fixture = tmp_path / "load.db"
+    _create_fixture_db(fixture)
+    resolved = fixture.resolve()
+    assert "/data/strava.db" not in str(resolved)
+    assert "/opt/docker/mcp-strava" not in str(resolved)
