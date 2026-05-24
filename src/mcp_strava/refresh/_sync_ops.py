@@ -5,12 +5,39 @@ from __future__ import annotations
 import json
 from calendar import monthrange
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from mcp_strava.refresh.checkpoints import Stage
-from mcp_strava.types import parse_strava_activity, parse_strava_streams
+from mcp_strava.types import parse_strava_activity, parse_strava_stream_channels
 
 
-STREAM_KEYS = "time,heartrate,velocity_smooth,altitude,cadence,latlng,grade_smooth,grade_adjusted_speed,grade_adjusted_distance,moving"
+STREAM_KEYS = (
+    "time",
+    "distance",
+    "heartrate",
+    "velocity_smooth",
+    "altitude",
+    "cadence",
+    "latlng",
+    "grade_smooth",
+    "grade_adjusted_speed",
+    "grade_adjusted_distance",
+    "moving",
+    "watts",
+    "temp",
+)
+STREAM_KEYS_QUERY = ",".join(STREAM_KEYS)
+STREAM_CHANNEL_TO_COLUMN = {
+    "time": "time_offset",
+    "heartrate": "heartrate",
+    "velocity_smooth": "velocity",
+    "altitude": "altitude",
+    "cadence": "cadence",
+    "grade_smooth": "grade",
+    "grade_adjusted_speed": "gap_speed",
+    "grade_adjusted_distance": "gap_distance",
+    "moving": "is_moving",
+}
 
 
 def _is_iso_day(value: str) -> bool:
@@ -39,40 +66,120 @@ def _safe_quick_sync_start_day(latest_raw: object | None) -> str:
     return (date(year, month, day) - timedelta(days=7)).isoformat()
 
 
-def _stream_payload(data: dict) -> list[dict]:
-    streams = parse_strava_streams(data)
-    n = len(streams.time.data)
-    rows = []
-    for idx in range(n):
-        rows.append(
+def _channel_value(channels: dict[str, Any], channel_key: str, idx: int) -> Any:
+    channel = channels.get(channel_key)
+    if channel is None or idx >= len(channel.data):
+        return None
+    return channel.data[idx]
+
+
+def _stream_payload(data: dict, fetched_at: str | None = None) -> tuple[list[dict], list[dict]]:
+    channels = parse_strava_stream_channels(data)
+    time_channel = channels.get("time")
+    if time_channel is None:
+        return [], []
+
+    requested_keys = list(STREAM_KEYS)
+    rows: list[dict] = []
+    metadata: list[dict] = []
+
+    for key in requested_keys:
+        channel = channels.get(key)
+        if channel is None:
+            metadata.append(
+                {
+                    "channel_key": key,
+                    "original_size": None,
+                    "resolution": None,
+                    "series_type": None,
+                    "fetched_at": fetched_at,
+                    "batch_id": None,
+                    "status": "unavailable",
+                    "error": None,
+                }
+            )
+            continue
+        metadata.append(
             {
-                "time_offset": streams.time.data[idx],
-                "heartrate": streams.heartrate.data[idx] if streams.heartrate and idx < len(streams.heartrate.data) else None,
-                "velocity": streams.velocity_smooth.data[idx] if streams.velocity_smooth and idx < len(streams.velocity_smooth.data) else None,
-                "altitude": streams.altitude.data[idx] if streams.altitude and idx < len(streams.altitude.data) else None,
-                "cadence": streams.cadence.data[idx] if streams.cadence and idx < len(streams.cadence.data) else None,
-                "latlng": json.dumps(streams.latlng.data[idx]) if streams.latlng and idx < len(streams.latlng.data) else None,
-                "grade": streams.grade_smooth.data[idx] if streams.grade_smooth and idx < len(streams.grade_smooth.data) else None,
-                "gap_speed": streams.grade_adjusted_speed.data[idx] if streams.grade_adjusted_speed and idx < len(streams.grade_adjusted_speed.data) else None,
-                "gap_distance": streams.grade_adjusted_distance.data[idx] if streams.grade_adjusted_distance and idx < len(streams.grade_adjusted_distance.data) else None,
-                "is_moving": streams.moving.data[idx] if streams.moving and idx < len(streams.moving.data) else None,
+                "channel_key": key,
+                "original_size": channel.original_size,
+                "resolution": channel.resolution,
+                "series_type": channel.series_type,
+                "fetched_at": fetched_at,
+                "batch_id": None,
+                "status": "available",
+                "error": None,
             }
         )
-    return rows
+
+    for key, channel in channels.items():
+        if key in STREAM_KEYS:
+            continue
+        metadata.append(
+            {
+                "channel_key": key,
+                "original_size": channel.original_size,
+                "resolution": channel.resolution,
+                "series_type": channel.series_type,
+                "fetched_at": fetched_at,
+                "batch_id": None,
+                "status": "available",
+                "error": None,
+            }
+        )
+
+    for idx, time_offset in enumerate(time_channel.data):
+        extra_values: dict[str, Any] = {}
+        row = {
+            "time_offset": time_offset,
+            "heartrate": _channel_value(channels, "heartrate", idx),
+            "velocity": _channel_value(channels, "velocity_smooth", idx),
+            "altitude": _channel_value(channels, "altitude", idx),
+            "cadence": _channel_value(channels, "cadence", idx),
+            "grade": _channel_value(channels, "grade_smooth", idx),
+            "gap_speed": _channel_value(channels, "grade_adjusted_speed", idx),
+            "gap_distance": _channel_value(channels, "grade_adjusted_distance", idx),
+            "is_moving": _channel_value(channels, "moving", idx),
+        }
+        latlng = _channel_value(channels, "latlng", idx)
+        if isinstance(latlng, list) and len(latlng) >= 2:
+            row["lat"] = latlng[0]
+            row["lng"] = latlng[1]
+            row["latlng"] = json.dumps(latlng)
+        else:
+            row["lat"] = None
+            row["lng"] = None
+            row["latlng"] = None
+
+        for channel_key, channel in channels.items():
+            if idx >= len(channel.data):
+                continue
+            if channel_key == "latlng":
+                continue
+            if channel_key in STREAM_CHANNEL_TO_COLUMN:
+                continue
+            extra_values[channel_key] = channel.data[idx]
+        row["values_json"] = json.dumps(extra_values, ensure_ascii=True) if extra_values else None
+        rows.append(row)
+
+    return rows, metadata
 
 
-def _insert_streams(repo, act_id: int, data: dict) -> int:
-    rows = _stream_payload(data)
+def _insert_streams(repo, act_id: int, data: dict, fetched_at: str | None = None) -> int:
+    rows, metadata = _stream_payload(data, fetched_at=fetched_at)
     if not rows:
         return 0
-    return repo.insert_stream_rows_chunked(act_id, rows, chunk_size=5000)
+    inserted = repo.insert_stream_rows_chunked(act_id, rows, chunk_size=5000)
+    for item in metadata:
+        repo.upsert_stream_channel_metadata(activity_id=act_id, **item)
+    return inserted
 
 
-def _replace_streams(repo, act_id: int, data: dict) -> int:
-    rows = _stream_payload(data)
+def _replace_streams(repo, act_id: int, data: dict, fetched_at: str | None = None) -> int:
+    rows, metadata = _stream_payload(data, fetched_at=fetched_at)
     if not rows:
         return 0
-    return repo.replace_stream_rows_chunked(act_id, rows, chunk_size=5000)
+    return repo.replace_stream_rows_and_channel_metadata(act_id, rows=rows, metadata=metadata, chunk_size=5000)
 
 
 def sync_summaries(repo, transport, now_iso: str) -> tuple[int, int]:
@@ -119,9 +226,9 @@ def sync_streams(
     fetched = 0
     for activity in repo.activities_missing_streams(since):
         repo.set_checkpoint(checkpoint_stage.value, str(activity.id))
-        response = transport.fetch(f"/activities/{activity.id}/streams?keys={STREAM_KEYS}&key_by_type=true")
+        response = transport.fetch(f"/activities/{activity.id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
         if isinstance(response.data, dict):
-            _insert_streams(repo, activity.id, response.data)
+            _insert_streams(repo, activity.id, response.data, fetched_at=datetime.utcnow().isoformat())
             fetched += 1
     return fetched
 

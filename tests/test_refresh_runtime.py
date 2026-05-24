@@ -1,4 +1,5 @@
 import ast
+import json
 import sqlite3
 import urllib.request
 from collections import defaultdict
@@ -250,7 +251,9 @@ def test_run_once_after_stream_failure_resumes_without_summary_page_walk_per_D09
     assert failed_state.checkpoint_stage == Stage.STREAMS.value
     assert resumed.status == "ok"
     assert resumed_transport.calls_by_path["/athlete/activities?per_page=100&page=1"] == 0
-    assert resumed_transport.calls_by_path["/activities/500/streams?keys=time,heartrate,velocity_smooth,altitude,cadence,latlng,grade_smooth,grade_adjusted_speed,grade_adjusted_distance,moving&key_by_type=true"] == 1
+    stream_call = next(path for path in resumed_transport.calls_by_path if path.startswith("/activities/500/streams"))
+    assert "distance" in stream_call and "watts" in stream_call and "temp" in stream_call
+    assert resumed_transport.calls_by_path[stream_call] == 1
 
 
 def test_run_backfill_skips_summaries_and_kudos_per_D16(tmp_path):

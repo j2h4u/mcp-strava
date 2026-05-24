@@ -225,6 +225,24 @@ def parse_strava_streams(raw: dict) -> StravaStreams:
     )
 
 
+def parse_strava_stream_channels(raw: dict[str, object]) -> dict[str, StravaStreamChannel]:
+    """Parse raw keyed stream response and preserve every returned channel."""
+    channels: dict[str, StravaStreamChannel] = {}
+    for key, value in raw.items():
+        if not isinstance(value, dict):
+            continue
+        data = value.get("data")
+        if not isinstance(data, list):
+            continue
+        channels[key] = StravaStreamChannel(
+            data=data,
+            original_size=value.get("original_size"),
+            resolution=value.get("resolution"),
+            series_type=value.get("series_type"),
+        )
+    return channels
+
+
 def parse_strava_athlete(raw: dict) -> StravaAthlete:
     """Parse raw Strava athlete response into typed dataclass."""
     shoes = []
