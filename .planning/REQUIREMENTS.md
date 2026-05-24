@@ -82,7 +82,7 @@ Requirements for the Full-Fidelity Strava Mirror milestone. This milestone chang
 
 ### Stream Ingestion
 
-- [ ] **STREAM-01**: Refresh runtime requests the complete known Strava stream key set plus configured extra keys and records unsupported or unavailable keys without failing the whole activity
+- [x] **STREAM-01**: Refresh runtime requests the complete known Strava stream key set plus configured extra keys and records unsupported or unavailable keys without failing the whole activity
 - [x] **STREAM-02**: Repository stores every stream channel returned by Strava, including unknown or future channel keys and channel metadata such as `original_size`, `resolution`, and `series_type`
 - [x] **STREAM-03**: Analytics projections keep existing scalar columns for current metrics and retain all per-point extra channel values in structured JSON
 
