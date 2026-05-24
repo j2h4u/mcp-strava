@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
-status: milestone_complete
-last_updated: 2026-05-24T08:33:51.596Z
+status: planning
+last_updated: 2026-05-24T10:18:00.000Z
 last_activity: 2026-05-24
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 6
   total_plans: 25
   completed_plans: 25
-  percent: 100
-stopped_at: Milestone complete (Phase 06 was final phase)
+  percent: 86
+stopped_at: Phase 7 added for materialized metrics read model
 ---
 
 # Project State
@@ -21,13 +21,13 @@ stopped_at: Milestone complete (Phase 06 was final phase)
 See: .planning/PROJECT.md (updated 2026-05-22)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Milestone complete
+**Current focus:** Phase 7 materialized metrics read model
 
 ## Current Position
 
-Phase: 06
+Phase: 07
 Plan: Not started
-Status: Milestone complete
+Status: Planning
 Last activity: 2026-05-24
 
 ## Performance Metrics
@@ -117,8 +117,8 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 6 must preserve existing stream rows and GPS points while adding lossless stream-channel retention.
-- Backfill must be resumable and rate-limit-aware; no full Strava resync without explicit operator approval.
+- Phase 7 must keep raw Strava mirror as source of truth while materializing derived facts for MCP latency.
+- Derived facts require source revision/hash, metric version, dirty queue, and transactional invalidation.
 
 ## Deferred Items
 
@@ -139,3 +139,4 @@ Resume file: None
 | Quick Task | Date | Summary |
 |------------|------|---------|
 | 260522-ra3 set default Strava mirror refresh cadence to one hour | 2026-05-22 | `.planning/quick/260522-ra3-set-default-strava-mirror-refresh-cadenc/260522-ra3-SUMMARY.md` |
+| 260524-kiy add persistent MCP test client and tool-call logging | 2026-05-24 | `.planning/quick/260524-kiy-add-persistent-mcp-test-client-tool-call/260524-kiy-SUMMARY.md` |

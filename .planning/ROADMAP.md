@@ -2,7 +2,7 @@
 
 ## Overview
 
-This roadmap refactors the current CLI-first codebase into a layered service architecture while preserving the existing `data/strava.db` mirror. The first milestone established package/settings, repository, Strava adapter, application/CLI, MCP, and Docker boundaries. The v1.1 milestone adds a full-fidelity mirror layer so Strava stream data is retained in lossless normalized SQLite structures before analytics projections are derived.
+This roadmap refactors the current CLI-first codebase into a layered service architecture while preserving the existing `data/strava.db` mirror. The first milestone established package/settings, repository, Strava adapter, application/CLI, MCP, and Docker boundaries. The v1.1 milestone adds a full-fidelity mirror layer so Strava stream data is retained in lossless normalized SQLite structures before analytics projections are derived. The next milestone materializes derived metrics in SQLite read-model tables so MCP tools read prepared facts instead of recomputing expensive stream-derived metrics on request.
 
 ## Phases
 
@@ -18,6 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Application Services & CLI Refit** - Move user-facing analytics/reporting workflows into application services and route CLI through them. (completed 2026-05-21)
 - [x] **Phase 5: MCP HTTP Surface & Docker Hardening** - Expose read-only MCP tools and finalize local-safe container/runtime boundaries. (completed 2026-05-22)
 - [x] **Phase 6: Full-Fidelity Strava Mirror** - Preserve Strava stream data in lossless normalized SQLite structures, generalize stream ingestion, unify GPS storage, and backfill missing stream channels safely. (completed 2026-05-24)
+- [ ] **Phase 7: Materialized Metrics Read Model** - Persist derived activity, daily load, model, and rolling-window facts beside the Strava mirror so MCP tools aggregate prepared facts under sub-500ms latency targets.
 
 ## Phase Details
 
@@ -116,10 +117,29 @@ Decimal phases appear between their surrounding integers in numeric order.
   - Keep SQLite as the primary mirror; DuckDB is deferred as a possible future analytics/read-model layer.
   - Prefer lossless normalized stream storage plus derived projections over lossy replacement of the existing `streams` table.
 
+### Phase 7: Materialized Metrics Read Model
+**Goal**: Derived training metrics are persisted as versioned SQLite read-model facts and recomputed only when source mirror data or metric algorithms change.
+**Depends on**: Phase 6
+**Requirements**: READMODEL-01, READMODEL-02, READMODEL-03, READMODEL-04, PERF-01, TEST-06
+**Success Criteria** (what must be TRUE):
+  1. Activity-level derived metrics such as TRIMP, HR zones, HR recovery, vertical speed, cardiac cost, cardiac drift, HRR, Z5 seconds, and anomaly counts are stored with source provenance and metric-version metadata.
+  2. Source mirror writes mark affected activities/days dirty through a durable invalidation contract using `source_hash`, `source_revision`, `metric_version`, and transaction-safe dirty queue semantics.
+  3. Refresh runtime materializes activity facts, daily load facts, training model daily state, and rolling period facts after source sync/backfill without exposing recompute/admin controls through MCP.
+  4. MCP tools read materialized facts and never scan raw stream rows or recompute Jenks/cardio stream metrics during request handling.
+  5. Any single MCP tool completes under a 500 ms p95 target on the current local mirror, with tests and live smoke measuring tool latency.
+**Plans**: TBD
+
+**Cross-cutting constraints:**
+  - Raw Strava mirror remains the source of truth; materialized facts are replaceable derived read models.
+  - Migration must back up and parity-check existing DB before adding read-model tables or backfilling facts.
+  - Materialized facts must be idempotently recomputable after algorithm-version changes.
+  - Missing/stale facts must surface as completeness metadata, not request-time stream recomputation in MCP.
+  - `just test` remains a fast Docker MCP transport smoke; full performance E2E is a separate explicit gate until read-model work lands.
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -129,3 +149,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 4. Application Services & CLI Refit | 4/4 | Complete    | 2026-05-21 |
 | 5. MCP HTTP Surface & Docker Hardening | 6/6 | Complete    | 2026-05-22 |
 | 6. Full-Fidelity Strava Mirror | 4/4 | Complete    | 2026-05-24 |
+| 7. Materialized Metrics Read Model | 0/0 | Planned | |

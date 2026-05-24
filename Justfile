@@ -1,7 +1,7 @@
 set shell := ["bash", "-uc"]
 
 compose := "docker compose -f deploy/docker-compose.yml"
-smoke := "python -m mcp_strava.deploy.smoke --expect-tool get_fitness_state --expect-tool list_workouts --expect-tool get_workout_detail --expect-tool compare_periods --expect-tool project_fitness_state --forbid-tool sync --forbid-tool backfill --forbid-tool sql --forbid-tool get_data_status --call get_fitness_state"
+smoke := "python -m mcp_strava.devtools.mcp_client.cli smoke-basic --compact --url http://127.0.0.1:8080/mcp"
 
 default:
     @just --list
@@ -9,10 +9,19 @@ default:
 test:
     {{compose}} build
     {{compose}} up -d --force-recreate --remove-orphans --wait --wait-timeout 90
-    {{compose}} exec -T mcp-strava {{smoke}} --url http://127.0.0.1:8080/mcp
+    {{compose}} exec -T mcp-strava {{smoke}}
 
 gateway-smoke:
-    {{compose}} exec -T mcp-strava {{smoke}} --url http://mcp-gateway:8811/mcp
+    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli smoke-basic --compact --url http://mcp-gateway:8811/mcp
+
+mcp-smoke-full timeout="5":
+    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli smoke-live --timeout {{timeout}} --compact --url http://127.0.0.1:8080/mcp
+
+mcp-list-tools:
+    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli list-tools --url http://127.0.0.1:8080/mcp
+
+mcp-call tool arguments="{}":
+    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli call-tool --name {{tool}} --arguments '{{arguments}}' --url http://127.0.0.1:8080/mcp
 
 alias tests := test
 alias smoke := test

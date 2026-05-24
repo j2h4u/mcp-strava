@@ -22,7 +22,9 @@ def test_dockerfile_source_contract() -> None:
         pytest.skip("Dockerfile added in Task 3")
     text = _read_text(dockerfile)
     assert "FROM python:3.13-slim" in text
-    assert "USER 10001:10001" in text
+    assert "groupadd --gid 1000 mcp" in text
+    assert "useradd --uid 1000 --gid 1000" in text
+    assert "USER 1000:1000" in text
     assert "MCP_STRAVA_RUNTIME_PROFILE=container" in text
     assert "MCP_STRAVA_HTTP_HOST=0.0.0.0" in text
     assert "MCP_STRAVA_ALLOW_CONTAINER_BIND=1" in text

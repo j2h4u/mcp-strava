@@ -1,14 +1,12 @@
-"""MCP SDK-backed smoke checks for backend and gateway URLs."""
+"""Compatibility wrapper for the reusable MCP test client."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 import sys
-from typing import Any
 
-from mcp import ClientSession
-from mcp.client.streamable_http import streamable_http_client
+from mcp_strava.devtools.mcp_client.client import HttpMcpClient, McpClientError, run_basic_smoke
 
 
 async def _run_smoke(
@@ -18,32 +16,19 @@ async def _run_smoke(
     forbid_tools: list[str],
     call_name: str | None,
 ) -> int:
-    async with streamable_http_client(url) as (read_stream, write_stream, _):
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
-            tools_result = await session.list_tools()
-            tool_names = {tool.name for tool in tools_result.tools}
-
-            missing = [name for name in expect_tools if name not in tool_names]
-            if missing:
-                print(f"missing tools: {', '.join(missing)}", file=sys.stderr)
-                return 1
-
-            unexpected = [name for name in forbid_tools if name in tool_names]
-            if unexpected:
-                print(f"forbidden tools present: {', '.join(unexpected)}", file=sys.stderr)
-                return 1
-
-            if call_name == "get_fitness_state":
-                result = await session.call_tool("get_fitness_state", {})
-                if result.isError:
-                    print("get_fitness_state returned error", file=sys.stderr)
-                    return 1
-                structured_content = getattr(result, "structuredContent", None)
-                if not isinstance(structured_content, dict):
-                    print("get_fitness_state returned no structured payload", file=sys.stderr)
-                    return 1
-
+    del call_name
+    try:
+        async with HttpMcpClient(url) as client:
+            result = await run_basic_smoke(client)
+    except McpClientError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    tool_names = set(result["tools"])
+    missing = [name for name in expect_tools if name not in tool_names]
+    unexpected = [name for name in forbid_tools if name in tool_names]
+    if missing or unexpected:
+        print(f"tool surface mismatch: missing={missing}, forbidden={unexpected}", file=sys.stderr)
+        return 1
     return 0
 
 

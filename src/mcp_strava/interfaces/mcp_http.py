@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import sys
+import time
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -77,6 +80,44 @@ def _envelope_payload(envelope: ServiceEnvelope) -> dict[str, Any]:
     }
 
 
+def _data_shape(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return {"type": "dict", "keys": sorted(value.keys())[:30]}
+    if isinstance(value, list):
+        first = value[0] if value else None
+        first_keys = sorted(first.keys())[:30] if isinstance(first, dict) else None
+        return {"type": "list", "count": len(value), "first_keys": first_keys}
+    return {"type": type(value).__name__}
+
+
+def _emit_log(event: str, **fields: Any) -> None:
+    print(json.dumps({"event": event, **fields}, ensure_ascii=False, sort_keys=True), file=sys.stderr, flush=True)
+
+
+def _run_logged_tool(name: str, operation) -> dict[str, Any]:
+    started = time.perf_counter()
+    _emit_log("mcp_tool_call_started", tool=name)
+    try:
+        payload = _envelope_payload(operation())
+    except Exception as exc:
+        _emit_log(
+            "mcp_tool_call_failed",
+            tool=name,
+            duration_ms=round((time.perf_counter() - started) * 1000, 3),
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        raise
+    _emit_log(
+        "mcp_tool_call_finished",
+        tool=name,
+        duration_ms=round((time.perf_counter() - started) * 1000, 3),
+        warnings_count=len(payload.get("warnings") or []),
+        data_shape=_data_shape(payload.get("data")),
+    )
+    return payload
+
+
 def validate_http_settings(settings: Settings) -> None:
     profile = settings.runtime_profile.strip().lower()
     host = settings.http.host.strip().lower()
@@ -127,7 +168,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         structured_output=True,
     )
     def get_fitness_state() -> dict[str, Any]:
-        return _envelope_payload(get_fitness_state_service(signal_first_use=False))
+        return _run_logged_tool("get_fitness_state", lambda: get_fitness_state_service(signal_first_use=False))
 
     @server.tool(
         name="list_workouts",
@@ -141,14 +182,15 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         end_date: str | None = None,
         sport: str | None = None,
     ) -> dict[str, Any]:
-        return _envelope_payload(
-            list_workouts_service(
+        return _run_logged_tool(
+            "list_workouts",
+            lambda: list_workouts_service(
                 limit=limit,
                 start_date=start_date,
                 end_date=end_date,
                 sport=sport,
                 signal_first_use=False,
-            )
+            ),
         )
 
     @server.tool(
@@ -158,7 +200,10 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         structured_output=True,
     )
     def get_workout_detail(workout_id: int) -> dict[str, Any]:
-        return _envelope_payload(get_workout_detail_service(workout_id, signal_first_use=False))
+        return _run_logged_tool(
+            "get_workout_detail",
+            lambda: get_workout_detail_service(workout_id, signal_first_use=False),
+        )
 
     @server.tool(
         name="compare_periods",
@@ -173,15 +218,16 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         period_b_end: str,
         sport: str | None = None,
     ) -> dict[str, Any]:
-        return _envelope_payload(
-            compare_periods_service(
+        return _run_logged_tool(
+            "compare_periods",
+            lambda: compare_periods_service(
                 period_a_start=period_a_start,
                 period_a_end=period_a_end,
                 period_b_start=period_b_start,
                 period_b_end=period_b_end,
                 sport=sport,
                 signal_first_use=False,
-            )
+            ),
         )
 
     @server.tool(
@@ -195,13 +241,14 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         scenarios: list[str],
         custom_daily_trimp: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        return _envelope_payload(
-            project_fitness_state_service(
+        return _run_logged_tool(
+            "project_fitness_state",
+            lambda: project_fitness_state_service(
                 target_date=target_date,
                 scenarios=scenarios,
                 custom_daily_trimp=custom_daily_trimp,
                 signal_first_use=False,
-            )
+            ),
         )
 
     return server

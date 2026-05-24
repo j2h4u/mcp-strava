@@ -434,7 +434,11 @@ def test_missing_target_files_fail_before_writes(tmp_path: Path) -> None:
 
 
 def test_smoke_client_uses_sdk_and_not_raw_jsonrpc() -> None:
-    smoke_path = Path("src/mcp_strava/deploy/smoke.py")
-    text = smoke_path.read_text(encoding="utf-8")
+    client_path = Path("src/mcp_strava/devtools/mcp_client/client.py")
+    wrapper_path = Path("src/mcp_strava/deploy/smoke.py")
+    text = client_path.read_text(encoding="utf-8")
+    wrapper_text = wrapper_path.read_text(encoding="utf-8")
     assert "mcp.client.streamable_http" in text
     assert "jsonrpc" not in text.lower()
+    assert "run_basic_smoke" in wrapper_text
+    assert "run_live_smoke" in text
