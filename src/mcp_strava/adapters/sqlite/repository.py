@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 from typing import Iterable
@@ -18,6 +20,53 @@ from mcp_strava.types import (
     RepositoryDailyLoadStatus,
     RepositorySyncLogEntry,
 )
+
+CURRENT_METRIC_VERSION = 1
+NON_SEMANTIC_SOURCE_KEYS = frozenset(
+    {
+        "synced_at",
+        "fetched_at",
+        "timestamp",
+        "updated_at",
+        "modified_at",
+        "batch_id",
+    }
+)
+
+
+def _loads_json_if_possible(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped or stripped[0] not in "[{":
+        return value
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return value
+
+
+def _canonical_semantic_value(value: object) -> object:
+    value = _loads_json_if_possible(value)
+    if isinstance(value, dict):
+        return {
+            str(key): _canonical_semantic_value(item)
+            for key, item in sorted(value.items(), key=lambda kv: str(kv[0]))
+            if str(key).lower() not in NON_SEMANTIC_SOURCE_KEYS
+        }
+    if isinstance(value, list):
+        return [_canonical_semantic_value(item) for item in value]
+    return value
+
+
+def _semantic_json_hash(value: object) -> str:
+    payload = json.dumps(
+        _canonical_semantic_value(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 @dataclass
@@ -44,6 +93,240 @@ class SQLiteRepository:
 
     def close(self) -> None:
         self.conn.close()
+
+    # Read-model invalidation
+    def _read_model_enabled(self) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='activity_source_state'"
+        ).fetchone()
+        return row is not None
+
+    def _now_iso(self) -> str:
+        return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+
+    def _activity_day_for_source_state(self, activity_id: int) -> str | None:
+        row = self.conn.execute("SELECT date FROM activities WHERE id = ?", (activity_id,)).fetchone()
+        if row is None or row["date"] is None:
+            return None
+        return str(row["date"])[:10]
+
+    def _read_activity_source_components(self, activity_id: int) -> dict[str, object] | None:
+        activity = self.conn.execute(
+            """
+            SELECT id, date, name, sport_type, distance, moving_time, elapsed_time,
+                   total_elevation_gain, summary_json, detail_json
+            FROM activities
+            WHERE id = ?
+            """,
+            (activity_id,),
+        ).fetchone()
+        if activity is None:
+            return None
+
+        activity_map = dict(activity)
+        summary_hash = _semantic_json_hash(activity_map.get("summary_json"))
+        detail_hash = _semantic_json_hash(activity_map.get("detail_json"))
+
+        stream_columns = [row[1] for row in self.conn.execute("PRAGMA table_info(streams)").fetchall()]
+        streams: list[dict[str, object]] = []
+        if stream_columns:
+            quoted_cols = ", ".join(stream_columns)
+            rows = self.conn.execute(
+                f"SELECT {quoted_cols} FROM streams WHERE activity_id = ? ORDER BY time_offset",
+                (activity_id,),
+            ).fetchall()
+            for row in rows:
+                item = dict(row)
+                if "values_json" in item:
+                    item["values_json"] = _canonical_semantic_value(item["values_json"])
+                streams.append(item)
+        streams_hash = _semantic_json_hash(streams)
+
+        channels: list[dict[str, object]] = []
+        has_channels = self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stream_channels'"
+        ).fetchone()
+        if has_channels is not None:
+            rows = self.conn.execute(
+                """
+                SELECT channel_key, original_size, resolution, series_type, status, error
+                FROM stream_channels
+                WHERE activity_id = ?
+                ORDER BY channel_key
+                """,
+                (activity_id,),
+            ).fetchall()
+            channels = [dict(row) for row in rows]
+        channels_hash = _semantic_json_hash(channels)
+
+        source_payload = {
+            "activity": {
+                key: _canonical_semantic_value(value)
+                for key, value in activity_map.items()
+                if key not in {"summary_json", "detail_json"}
+            },
+            "summary_hash": summary_hash,
+            "detail_hash": detail_hash,
+            "streams_hash": streams_hash,
+            "channels_hash": channels_hash,
+        }
+        return {
+            "activity_day": str(activity["date"])[:10],
+            "summary_hash": summary_hash,
+            "detail_hash": detail_hash,
+            "streams_hash": streams_hash,
+            "channels_hash": channels_hash,
+            "source_hash": _semantic_json_hash(source_payload),
+        }
+
+    def update_activity_source_state_and_enqueue_dirty(
+        self,
+        activity_id: int,
+        *,
+        reason: str = "source_changed",
+        metric_version: int = CURRENT_METRIC_VERSION,
+        queued_at: str | None = None,
+    ) -> bool:
+        if not self._read_model_enabled():
+            return False
+        components = self._read_activity_source_components(activity_id)
+        if components is None:
+            return False
+
+        existing = self.conn.execute(
+            """
+            SELECT source_hash, source_revision
+            FROM activity_source_state
+            WHERE activity_id = ?
+            """,
+            (activity_id,),
+        ).fetchone()
+        if existing is not None and existing["source_hash"] == components["source_hash"]:
+            return False
+
+        source_revision = 1 if existing is None else int(existing["source_revision"]) + 1
+        changed_at = queued_at or self._now_iso()
+        self.conn.execute(
+            """
+            INSERT INTO activity_source_state (
+                activity_id, activity_day, summary_hash, detail_hash, streams_hash,
+                channels_hash, source_hash, source_revision, changed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(activity_id) DO UPDATE SET
+                activity_day=excluded.activity_day,
+                summary_hash=excluded.summary_hash,
+                detail_hash=excluded.detail_hash,
+                streams_hash=excluded.streams_hash,
+                channels_hash=excluded.channels_hash,
+                source_hash=excluded.source_hash,
+                source_revision=excluded.source_revision,
+                changed_at=excluded.changed_at
+            """,
+            (
+                activity_id,
+                components["activity_day"],
+                components["summary_hash"],
+                components["detail_hash"],
+                components["streams_hash"],
+                components["channels_hash"],
+                components["source_hash"],
+                source_revision,
+                changed_at,
+            ),
+        )
+        self.enqueue_metric_dirty_activity(
+            activity_id=activity_id,
+            activity_day=str(components["activity_day"]),
+            metric_version=metric_version,
+            source_revision=source_revision,
+            reason=reason,
+            queued_at=changed_at,
+        )
+        return True
+
+    def enqueue_metric_dirty_activity(
+        self,
+        *,
+        activity_id: int,
+        activity_day: str,
+        metric_version: int,
+        source_revision: int,
+        reason: str,
+        queued_at: str,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO metric_dirty_activities (
+                activity_id, activity_day, metric_version, source_revision,
+                reason, queued_at, attempt_count, last_error
+            ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL)
+            ON CONFLICT(activity_id, activity_day, metric_version) DO UPDATE SET
+                source_revision=excluded.source_revision,
+                reason=excluded.reason,
+                queued_at=excluded.queued_at,
+                attempt_count=0,
+                last_error=NULL
+            """,
+            (activity_id, activity_day, metric_version, source_revision, reason, queued_at),
+        )
+
+    def dirty_activity_rows(self, metric_version: int | None = None) -> list[object]:
+        if metric_version is None:
+            return self.conn.execute(
+                """
+                SELECT *
+                FROM metric_dirty_activities
+                ORDER BY activity_day, activity_id, metric_version
+                """
+            ).fetchall()
+        return self.conn.execute(
+            """
+            SELECT *
+            FROM metric_dirty_activities
+            WHERE metric_version = ?
+            ORDER BY activity_day, activity_id
+            """,
+            (metric_version,),
+        ).fetchall()
+
+    def mark_dirty_activity_attempt_failed(
+        self,
+        activity_id: int,
+        activity_day: str,
+        metric_version: int,
+        last_error: str,
+    ) -> None:
+        self.conn.execute(
+            """
+            UPDATE metric_dirty_activities
+            SET attempt_count = attempt_count + 1, last_error = ?
+            WHERE activity_id = ? AND activity_day = ? AND metric_version = ?
+            """,
+            (last_error, activity_id, activity_day, metric_version),
+        )
+        self.conn.commit()
+
+    def enqueue_metric_version_recompute(self, metric_version: int, reason: str, queued_at: str) -> int:
+        if not self._read_model_enabled():
+            return 0
+        rows = self.conn.execute(
+            """
+            SELECT activity_id, activity_day, source_revision
+            FROM activity_source_state
+            ORDER BY activity_day, activity_id
+            """
+        ).fetchall()
+        for row in rows:
+            self.enqueue_metric_dirty_activity(
+                activity_id=int(row["activity_id"]),
+                activity_day=row["activity_day"],
+                metric_version=metric_version,
+                source_revision=int(row["source_revision"]),
+                reason=reason,
+                queued_at=queued_at,
+            )
+        self.conn.commit()
+        return len(rows)
 
     # Activities
     def recent_activities(self, limit: int = 15) -> list[RepositoryActivityRow]:
@@ -175,43 +458,55 @@ class SQLiteRepository:
         summary_json: str,
         synced_at: str,
     ) -> None:
-        self.conn.execute(
-            """
-            INSERT INTO activities (
-                id, date, name, sport_type, distance, moving_time,
-                elapsed_time, total_elevation_gain, summary_json, synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                date=excluded.date,
-                name=excluded.name,
-                sport_type=excluded.sport_type,
-                distance=excluded.distance,
-                moving_time=excluded.moving_time,
-                elapsed_time=excluded.elapsed_time,
-                total_elevation_gain=excluded.total_elevation_gain,
-                summary_json=excluded.summary_json,
-                synced_at=excluded.synced_at
-            """,
-            (
-                activity_id,
-                date,
-                name,
-                sport_type,
-                distance,
-                moving_time,
-                elapsed_time,
-                total_elevation_gain,
-                summary_json,
-                synced_at,
-            ),
-        )
+        self.conn.execute("BEGIN")
+        try:
+            self.conn.execute(
+                """
+                INSERT INTO activities (
+                    id, date, name, sport_type, distance, moving_time,
+                    elapsed_time, total_elevation_gain, summary_json, synced_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    date=excluded.date,
+                    name=excluded.name,
+                    sport_type=excluded.sport_type,
+                    distance=excluded.distance,
+                    moving_time=excluded.moving_time,
+                    elapsed_time=excluded.elapsed_time,
+                    total_elevation_gain=excluded.total_elevation_gain,
+                    summary_json=excluded.summary_json,
+                    synced_at=excluded.synced_at
+                """,
+                (
+                    activity_id,
+                    date,
+                    name,
+                    sport_type,
+                    distance,
+                    moving_time,
+                    elapsed_time,
+                    total_elevation_gain,
+                    summary_json,
+                    synced_at,
+                ),
+            )
+            self.update_activity_source_state_and_enqueue_dirty(activity_id)
+        except Exception:
+            self.conn.rollback()
+            raise
         self.conn.commit()
 
     def update_activity_detail(self, activity_id: int, detail_json: str) -> None:
-        self.conn.execute(
-            "UPDATE activities SET detail_json = ? WHERE id = ?",
-            (detail_json, activity_id),
-        )
+        self.conn.execute("BEGIN")
+        try:
+            self.conn.execute(
+                "UPDATE activities SET detail_json = ? WHERE id = ?",
+                (detail_json, activity_id),
+            )
+            self.update_activity_source_state_and_enqueue_dirty(activity_id)
+        except Exception:
+            self.conn.rollback()
+            raise
         self.conn.commit()
 
     # Streams and load
@@ -601,64 +896,70 @@ class SQLiteRepository:
 
         has_values_json = "values_json" in self._stream_column_set()
 
-        for start in range(0, total, chunk_size):
-            chunk = payload[start : start + chunk_size]
-            if has_values_json:
-                bound = [
-                    (
-                        activity_id,
-                        row["time_offset"],
-                        row.get("heartrate"),
-                        row.get("velocity"),
-                        row.get("altitude"),
-                        row.get("cadence"),
-                        row.get("lat"),
-                        row.get("lng"),
-                        row.get("grade"),
-                        row.get("gap_speed"),
-                        row.get("gap_distance"),
-                        row.get("is_moving"),
-                        row.get("values_json"),
+        self.conn.execute("BEGIN")
+        try:
+            for start in range(0, total, chunk_size):
+                chunk = payload[start : start + chunk_size]
+                if has_values_json:
+                    bound = [
+                        (
+                            activity_id,
+                            row["time_offset"],
+                            row.get("heartrate"),
+                            row.get("velocity"),
+                            row.get("altitude"),
+                            row.get("cadence"),
+                            row.get("lat"),
+                            row.get("lng"),
+                            row.get("grade"),
+                            row.get("gap_speed"),
+                            row.get("gap_distance"),
+                            row.get("is_moving"),
+                            row.get("values_json"),
+                        )
+                        for row in chunk
+                    ]
+                    self.conn.executemany(
+                        """
+                        INSERT OR REPLACE INTO streams
+                        (activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                         lat, lng, grade, gap_speed, gap_distance, is_moving, values_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        bound,
                     )
-                    for row in chunk
-                ]
-                self.conn.executemany(
-                    """
-                    INSERT OR REPLACE INTO streams
-                    (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-                     lat, lng, grade, gap_speed, gap_distance, is_moving, values_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    bound,
-                )
-            else:
-                bound = [
-                    (
-                        activity_id,
-                        row["time_offset"],
-                        row.get("heartrate"),
-                        row.get("velocity"),
-                        row.get("altitude"),
-                        row.get("cadence"),
-                        row.get("lat"),
-                        row.get("lng"),
-                        row.get("grade"),
-                        row.get("gap_speed"),
-                        row.get("gap_distance"),
-                        row.get("is_moving"),
+                else:
+                    bound = [
+                        (
+                            activity_id,
+                            row["time_offset"],
+                            row.get("heartrate"),
+                            row.get("velocity"),
+                            row.get("altitude"),
+                            row.get("cadence"),
+                            row.get("lat"),
+                            row.get("lng"),
+                            row.get("grade"),
+                            row.get("gap_speed"),
+                            row.get("gap_distance"),
+                            row.get("is_moving"),
+                        )
+                        for row in chunk
+                    ]
+                    self.conn.executemany(
+                        """
+                        INSERT OR REPLACE INTO streams
+                        (activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                         lat, lng, grade, gap_speed, gap_distance, is_moving)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        bound,
                     )
-                    for row in chunk
-                ]
-                self.conn.executemany(
-                    """
-                    INSERT OR REPLACE INTO streams
-                    (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-                     lat, lng, grade, gap_speed, gap_distance, is_moving)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    bound,
-                )
-            self.conn.commit()
+            self.update_activity_source_state_and_enqueue_dirty(activity_id)
+        except Exception:
+            self.conn.rollback()
+            raise
+        self.conn.commit()
 
         return total
 
@@ -735,6 +1036,7 @@ class SQLiteRepository:
                         """,
                         bound,
                     )
+            self.update_activity_source_state_and_enqueue_dirty(activity_id)
         except Exception:
             self.conn.rollback()
             raise
@@ -742,7 +1044,13 @@ class SQLiteRepository:
         return total
 
     def delete_stream_rows_for_activity(self, activity_id: int) -> None:
-        self.conn.execute("DELETE FROM streams WHERE activity_id = ?", (activity_id,))
+        self.conn.execute("BEGIN")
+        try:
+            self.conn.execute("DELETE FROM streams WHERE activity_id = ?", (activity_id,))
+            self.update_activity_source_state_and_enqueue_dirty(activity_id)
+        except Exception:
+            self.conn.rollback()
+            raise
         self.conn.commit()
 
     def upsert_stream_channel_metadata(
@@ -758,33 +1066,42 @@ class SQLiteRepository:
         error: str | None,
         commit: bool = True,
     ) -> None:
-        self.conn.execute(
-            """
-            INSERT INTO stream_channels (
-                activity_id, channel_key, original_size, resolution, series_type,
-                fetched_at, batch_id, status, error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(activity_id, channel_key) DO UPDATE SET
-                original_size=excluded.original_size,
-                resolution=excluded.resolution,
-                series_type=excluded.series_type,
-                fetched_at=excluded.fetched_at,
-                batch_id=excluded.batch_id,
-                status=excluded.status,
-                error=excluded.error
-            """,
-            (
-                activity_id,
-                channel_key,
-                original_size,
-                resolution,
-                series_type,
-                fetched_at,
-                batch_id,
-                status,
-                error,
-            ),
-        )
+        if commit:
+            self.conn.execute("BEGIN")
+        try:
+            self.conn.execute(
+                """
+                INSERT INTO stream_channels (
+                    activity_id, channel_key, original_size, resolution, series_type,
+                    fetched_at, batch_id, status, error
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(activity_id, channel_key) DO UPDATE SET
+                    original_size=excluded.original_size,
+                    resolution=excluded.resolution,
+                    series_type=excluded.series_type,
+                    fetched_at=excluded.fetched_at,
+                    batch_id=excluded.batch_id,
+                    status=excluded.status,
+                    error=excluded.error
+                """,
+                (
+                    activity_id,
+                    channel_key,
+                    original_size,
+                    resolution,
+                    series_type,
+                    fetched_at,
+                    batch_id,
+                    status,
+                    error,
+                ),
+            )
+            if commit:
+                self.update_activity_source_state_and_enqueue_dirty(activity_id)
+        except Exception:
+            if commit:
+                self.conn.rollback()
+            raise
         if commit:
             self.conn.commit()
 
@@ -873,6 +1190,7 @@ class SQLiteRepository:
                     error=item.get("error"),
                     commit=False,
                 )
+            self.update_activity_source_state_and_enqueue_dirty(activity_id)
         except Exception:
             self.conn.rollback()
             raise
@@ -887,63 +1205,69 @@ class SQLiteRepository:
         missing_channel_keys: Iterable[str],
     ) -> int:
         payload = list(rows)
-        for row in payload:
-            if "time_offset" not in row:
-                continue
-            existing = self.conn.execute(
-                "SELECT values_json FROM streams WHERE activity_id=? AND time_offset=?",
-                (activity_id, row["time_offset"]),
-            ).fetchone()
-            if existing is None:
-                continue
-            existing_map = json.loads(existing[0]) if existing and existing[0] else {}
-            values_map = existing_map | (row.get("values") or {})
-            self.conn.execute(
-                "UPDATE streams SET values_json=? WHERE activity_id=? AND time_offset=?",
-                (json.dumps(values_map, ensure_ascii=True), activity_id, row["time_offset"]),
-            )
-        for channel_key in missing_channel_keys:
-            self.conn.execute(
-                """
-                INSERT INTO stream_channels (activity_id, channel_key, status)
-                VALUES (?, ?, ?)
-                ON CONFLICT(activity_id, channel_key) DO UPDATE SET status=excluded.status
-                """,
-                (activity_id, channel_key, "unavailable"),
-            )
-        for item in metadata:
-            status = item.get("status", "available")
-            self.conn.execute(
-                """
-                INSERT INTO stream_channels (
-                    activity_id, channel_key, original_size, resolution, series_type,
-                    fetched_at, batch_id, status, error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(activity_id, channel_key) DO UPDATE SET
-                    original_size=excluded.original_size,
-                    resolution=excluded.resolution,
-                    series_type=excluded.series_type,
-                    fetched_at=excluded.fetched_at,
-                    batch_id=excluded.batch_id,
-                    status=CASE
-                        WHEN stream_channels.status='available' AND excluded.status!='available'
-                        THEN stream_channels.status
-                        ELSE excluded.status
-                    END,
-                    error=excluded.error
-                """,
-                (
-                    activity_id,
-                    item["channel_key"],
-                    item.get("original_size"),
-                    item.get("resolution"),
-                    item.get("series_type"),
-                    item.get("fetched_at"),
-                    item.get("batch_id"),
-                    status,
-                    item.get("error"),
-                ),
-            )
+        self.conn.execute("BEGIN")
+        try:
+            for row in payload:
+                if "time_offset" not in row:
+                    continue
+                existing = self.conn.execute(
+                    "SELECT values_json FROM streams WHERE activity_id=? AND time_offset=?",
+                    (activity_id, row["time_offset"]),
+                ).fetchone()
+                if existing is None:
+                    continue
+                existing_map = json.loads(existing[0]) if existing and existing[0] else {}
+                values_map = existing_map | (row.get("values") or {})
+                self.conn.execute(
+                    "UPDATE streams SET values_json=? WHERE activity_id=? AND time_offset=?",
+                    (json.dumps(values_map, ensure_ascii=True), activity_id, row["time_offset"]),
+                )
+            for channel_key in missing_channel_keys:
+                self.conn.execute(
+                    """
+                    INSERT INTO stream_channels (activity_id, channel_key, status)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(activity_id, channel_key) DO UPDATE SET status=excluded.status
+                    """,
+                    (activity_id, channel_key, "unavailable"),
+                )
+            for item in metadata:
+                status = item.get("status", "available")
+                self.conn.execute(
+                    """
+                    INSERT INTO stream_channels (
+                        activity_id, channel_key, original_size, resolution, series_type,
+                        fetched_at, batch_id, status, error
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(activity_id, channel_key) DO UPDATE SET
+                        original_size=excluded.original_size,
+                        resolution=excluded.resolution,
+                        series_type=excluded.series_type,
+                        fetched_at=excluded.fetched_at,
+                        batch_id=excluded.batch_id,
+                        status=CASE
+                            WHEN stream_channels.status='available' AND excluded.status!='available'
+                            THEN stream_channels.status
+                            ELSE excluded.status
+                        END,
+                        error=excluded.error
+                    """,
+                    (
+                        activity_id,
+                        item["channel_key"],
+                        item.get("original_size"),
+                        item.get("resolution"),
+                        item.get("series_type"),
+                        item.get("fetched_at"),
+                        item.get("batch_id"),
+                        status,
+                        item.get("error"),
+                    ),
+                )
+            self.update_activity_source_state_and_enqueue_dirty(activity_id)
+        except Exception:
+            self.conn.rollback()
+            raise
         self.conn.commit()
         return len(payload)
 
