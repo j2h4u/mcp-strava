@@ -122,7 +122,7 @@ def test_validate_runtime_db_reports_v5_read_model_readiness_without_requiring_c
     assert report["read_model"]["schema_ready"] is True
     assert report["read_model"]["missing_tables"] == []
     assert report["read_model"]["facts_current"] is False
-    assert report["read_model"]["dirty_count"] == 0
+    assert report["read_model"]["dirty_count"] == 42
 
 
 def test_validate_runtime_db_fails_when_v5_read_model_tables_are_missing(tmp_path: Path) -> None:

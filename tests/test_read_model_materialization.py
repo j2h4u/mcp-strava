@@ -239,6 +239,25 @@ def test_read_model_v5_migration_queues_existing_activities_for_initial_material
     assert missing_source_hashes == 0
 
 
+def test_initial_migration_queue_materializes_existing_fixture_activities(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.migrations import run_migrations
+    from mcp_strava.adapters.sqlite.read_model_materializer import materialize_read_model
+
+    fixture = tmp_path / "fixture.db"
+    _create_fixture_db(fixture)
+    run_migrations(fixture)
+
+    with SQLiteRepository.from_path(fixture) as repo:
+        activity_count = repo.conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
+        result = materialize_read_model(repo, metric_version=1, now="2026-02-12T12:00:00")
+        fact_count = repo.conn.execute("SELECT COUNT(*) FROM activity_metric_facts").fetchone()[0]
+        dirty_count = repo.conn.execute("SELECT COUNT(*) FROM metric_dirty_activities").fetchone()[0]
+
+    assert result["status"] == "ok"
+    assert fact_count == activity_count
+    assert dirty_count == 0
+
+
 def test_read_model_v5_migration_is_idempotent_and_preserves_source_rows(tmp_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import run_migrations
 
@@ -271,7 +290,9 @@ def test_schema_inventory_reports_read_model_row_counts(tmp_path: Path) -> None:
     report = run_preflight(fixture)
 
     assert report.user_version == 5
-    for table in READ_MODEL_TABLES:
+    assert report.row_counts["activity_source_state"] == report.row_counts["activities"]
+    assert report.row_counts["metric_dirty_activities"] == report.row_counts["activities"]
+    for table in READ_MODEL_TABLES - {"activity_source_state", "metric_dirty_activities"}:
         assert report.row_counts[table] == 0
 
 
@@ -281,6 +302,10 @@ def _migrated_repo(tmp_path: Path) -> tuple[Path, SQLiteRepository]:
     fixture = tmp_path / "read-model.db"
     _create_fixture_db(fixture)
     run_migrations(fixture)
+    with sqlite3.connect(fixture) as conn:
+        conn.execute("DELETE FROM metric_dirty_activities")
+        conn.execute("DELETE FROM activity_source_state")
+        conn.commit()
     return fixture, SQLiteRepository.from_path(fixture)
 
 

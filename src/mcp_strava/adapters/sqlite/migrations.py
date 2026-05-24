@@ -1,6 +1,7 @@
 """Explicit migration gate: preflight -> backup -> migrate -> post-check -> parity."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 import sqlite3
 import json
@@ -553,8 +554,41 @@ def create_read_model_inventory_v5(conn: sqlite3.Connection) -> None:
             ON activities(sport_type, date, id);
         """
     )
+    _seed_initial_read_model_dirty_queue(conn)
     set_user_version(conn, 5)
     conn.execute("PRAGMA optimize")
+
+
+def _seed_initial_read_model_dirty_queue(conn: sqlite3.Connection) -> int:
+    """Queue existing mirror rows once so first v5 refresh materializes facts."""
+    from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION, SQLiteRepository
+
+    conn.row_factory = sqlite3.Row
+    repo = SQLiteRepository.from_connection(conn)
+    rows = conn.execute(
+        """
+        SELECT id
+        FROM activities a
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM activity_source_state s
+            WHERE s.activity_id = a.id
+        )
+        ORDER BY date, id
+        """
+    ).fetchall()
+    queued = 0
+    now_iso = datetime.now().isoformat(timespec="seconds")
+    for row in rows:
+        changed = repo.update_activity_source_state_and_enqueue_dirty(
+            int(row["id"]),
+            reason="initial_read_model_backfill",
+            metric_version=CURRENT_METRIC_VERSION,
+            queued_at=now_iso,
+        )
+        if changed:
+            queued += 1
+    return queued
 
 
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
