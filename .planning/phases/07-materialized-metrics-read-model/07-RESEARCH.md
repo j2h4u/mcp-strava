@@ -302,12 +302,13 @@ finally:
 |---|-------|---------|---------------|
 | A1 | No new third-party package is required for Phase 7 implementation | Standard Stack / Package Legitimacy Audit | Low; planner might miss needed dependency task if later design changes |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should fact-table partitioning by scope use separate tables or one table with `scope_type/scope_id`?**
+1. **RESOLVED: Fact-table partitioning by scope should start with one table per fact grain and explicit scope keys.**
    - What we know: locked decisions permit naming/layout discretion but require indexed hot paths.
-   - What's unclear: best shape for query simplicity vs index fanout on current mirror size.
-   - Recommendation: benchmark both with `EXPLAIN QUERY PLAN` + warm p95 smoke before locking schema.
+   - Decision: use the table grains locked in `07-CONTEXT.md`: `daily_load_facts`, `training_model_daily`, and `rolling_period_facts` each carry explicit scope columns such as `scope`, `sport_type`, and `metric_version` instead of splitting into separate per-scope tables by default.
+   - Planning implication: add composite indexes for the chosen scope keys and require `EXPLAIN QUERY PLAN` plus warm p95 checks to prove the unified scope-key shape stays under the MCP latency target.
+   - Escape hatch: planner/executor may split a fact grain only if query-plan or p95 evidence shows the unified scope-key table cannot satisfy Phase 7 performance requirements.
 
 ## Environment Availability
 
