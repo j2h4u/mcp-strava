@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-24T11:38:10.971Z"
-last_activity: 2026-05-24 -- Completed 07-03 read-model materializer
+last_updated: "2026-05-24T12:56:58.701Z"
+last_activity: 2026-05-24 -- Completed 07-04 refresh/backfill materialization wiring
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 31
-  completed_plans: 28
-  percent: 90
+  completed_plans: 29
+  percent: 94
 ---
 
 # Project State
@@ -25,15 +25,15 @@ See: .planning/PROJECT.md (updated 2026-05-22)
 ## Current Position
 
 Phase: 07
-Plan: 07-04
+Plan: 07-05
 Status: Ready to execute next plan
-Last activity: 2026-05-24 -- Completed 07-03 read-model materializer
+Last activity: 2026-05-24 -- Completed 07-04 refresh/backfill materialization wiring
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 26
+- Total plans completed: 29
 - Average duration: 0 min
 - Total execution time: 0.0 hours
 
@@ -47,7 +47,7 @@ Last activity: 2026-05-24 -- Completed 07-03 read-model materializer
 | 04 | 4 | - | - |
 | 05 | 6 | - | - |
 | 06 | 4 | - | - |
-| 07 | 3 | 62min | 21min |
+| 07 | 4 | 140min | 35min |
 
 **Recent Trend:**
 
@@ -72,6 +72,7 @@ Last activity: 2026-05-24 -- Completed 07-03 read-model materializer
 | Phase 07 P07-01 | 44min | 2 tasks | 7 files |
 | Phase 07 P07-02 | 10min | 2 tasks | 2 files |
 | Phase 07 P07-03 | 8min | 2 tasks | 3 files |
+| Phase 07 P07-04 | 78min | 4 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -119,6 +120,9 @@ Recent decisions affecting current work:
 - [Phase 07]: Non-semantic timestamp and batch fields are excluded from source hashes.
 - [Phase 07]: Materializer runs below MCP and writes metric-versioned SQLite facts from repository dirty rows.
 - [Phase 07]: Dirty rows clear only in the same successful transaction as facts and run audit.
+- [Phase 07]: Refresh, legacy backfill, and stream-channel backfill now call the same read-model materialization stage below MCP.
+- [Phase 07]: Read-model materialization lease renewal must not commit an already-active materializer transaction.
+- [Phase 07]: Read-model materialization remains local admin/runtime only; MCP blocks materialize/recompute/dirty/status/admin tool names.
 
 ### Pending Todos
 
@@ -139,8 +143,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-24T11:38:10.959Z
-Stopped at: Completed 07-03-PLAN.md
+Last session: 2026-05-24T12:56:58.701Z
+Stopped at: Completed 07-04-PLAN.md
 Resume file: None
 
 ## Quick Tasks Completed
