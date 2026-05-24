@@ -39,6 +39,7 @@ OLD_COMMAND_KEYS = {
 
 ADMIN_COMMANDS = {
     "mirror-refresh",
+    "mirror-coverage",
     "token-refresh",
     "backfill",
     "sql",
@@ -210,11 +211,28 @@ def test_admin_commands_are_namespaced_and_distinct(monkeypatch: pytest.MonkeyPa
 
     assert set(cli.ADMIN_COMMANDS) == ADMIN_COMMANDS
     assert "mirror-refresh" in cli.ADMIN_COMMANDS
+    assert "mirror-coverage" in cli.ADMIN_COMMANDS
     assert "token-refresh" in cli.ADMIN_COMMANDS
     assert "sync" not in cli.COMMANDS
     assert "refresh" not in cli.COMMANDS
     assert "admin" in cli.COMMANDS
     assert ADMIN_COMMANDS.isdisjoint(PRODUCT_SERVICES)
+
+
+def test_admin_mirror_coverage_json_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    import mcp_strava.cli as cli
+    from tests.test_full_fidelity_mirror import _create_v2_fixture
+
+    fixture = tmp_path / "coverage.db"
+    _create_v2_fixture(fixture)
+
+    monkeypatch.setattr(sys, "argv", ["mcp_strava", "admin", "mirror-coverage", "--db", str(fixture), "--json"])
+    cli.main()
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["status"] == "ok"
+    for key in ("activities_with_streams", "stream_points", "gps_points", "channels", "backfill_needed"):
+        assert key in payload
 
 
 def test_cli_docs_replacement_mapping_accounts_for_old_commands() -> None:

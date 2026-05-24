@@ -17,6 +17,7 @@ def test_imports():
     from mcp_strava.training import calc_banister, calc_weekly_plan, forward_simulate, ewma, trend
     from mcp_strava.analytics import weekly_digest
     from mcp_strava.application.freshness import get_freshness_service
+    from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
     import mcp_strava.interfaces.mcp_http as mcp_http
     import mcp_strava.deploy.smoke as deploy_smoke
     import mcp_strava.application.metric_registry as metric_registry
@@ -45,6 +46,7 @@ def test_imports():
     assert get_recent_workouts_service is not None
     assert get_workout_analytics_service is not None
     assert get_freshness_service is not None
+    assert get_mirror_coverage_service is not None
     assert metric_registry is not None
     assert mcp_http is not None
     assert deploy_smoke is not None

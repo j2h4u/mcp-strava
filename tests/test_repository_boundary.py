@@ -259,6 +259,19 @@ def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_pat
         assert repo.read_sync_log(limit=5)
 
 
+def test_repository_has_stream_channel_coverage_methods(tmp_path: Path) -> None:
+    fixture = tmp_path / "repo.db"
+    _create_fixture_db(fixture)
+
+    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+
+    with SQLiteRepository.from_path(fixture) as repo:
+        assert hasattr(repo, "upsert_stream_channel_metadata")
+        assert hasattr(repo, "replace_stream_rows_and_channel_metadata")
+        assert hasattr(repo, "merge_stream_channel_values")
+        assert hasattr(repo, "stream_channel_coverage")
+
+
 def test_repository_exposes_refresh_methods() -> None:
     from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 
