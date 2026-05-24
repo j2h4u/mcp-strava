@@ -40,14 +40,14 @@ Preserve the local Strava mirror and keep trusted training analytics working whi
 - [x] CLI has product commands over application services and namespaced local admin/debug workflows with documented replacement mapping — validated in Phase 4
 - [x] HTTP MCP server exposes five read-only metric tools with freshness/completeness metadata, forbidden admin/sync/raw/sql surface tests, and no coaching interpretation — validated in Phase 5
 - [x] Docker runtime and gateway integration tooling provide non-root container startup, fail-closed DB preflight, dry-run gateway registration, rollback, and explicit operator confirmation for live gateway mutation — validated in Phase 5
+- [x] Strava stream data is preserved in lossless normalized SQLite structures before analytics projections are derived — validated in Phase 6
+- [x] Stream ingestion stores all returned channels, unknown channel values, and channel metadata without a fixed analytics-only allowlist — validated in Phase 6
+- [x] Mixed GPS stream storage is migrated into canonical `lat`/`lng` columns with backup, preflight, post-check, row-count parity, GPS parity, and analytics parity — validated in Phase 6
+- [x] Local admin tooling reports stream/channel/GPS coverage and supports resumable, rate-limit-aware stream-channel backfill without exposing those controls through MCP — validated in Phase 6
 
 ### Active
 
 - [ ] Separate core/domain training logic from SQLite, Strava HTTP calls, CLI formatting, and MCP transport concerns
-- [ ] Preserve Strava stream data in lossless normalized form before deriving analytics projections
-- [ ] Store stream channels and channel metadata without a fixed analytics allowlist
-- [ ] Unify existing GPS stream storage formats without deleting or refetching data
-- [ ] Provide coverage reporting for stream channel, channel metadata, and GPS completeness
 
 ### Out of Scope
 
@@ -119,3 +119,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 *Last updated: 2026-05-22 for v1.1 Full-Fidelity Strava Mirror*
+*Completion updated: 2026-05-24 after Phase 6 verification*
