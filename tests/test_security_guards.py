@@ -424,6 +424,29 @@ def test_metric_services_do_not_query_raw_streams() -> None:
     assert " streams " not in source
 
 
+def test_mcp_request_modules_do_not_reference_raw_stream_table_sql() -> None:
+    request_modules = [
+        "src/mcp_strava/application/metric_services.py",
+        "src/mcp_strava/application/metric_registry.py",
+        "src/mcp_strava/interfaces/mcp_http.py",
+    ]
+    forbidden_fragments = (
+        "from streams",
+        "join streams",
+        "pragma table_info(streams)",
+        "from stream_channels",
+        "join stream_channels",
+    )
+    violations: list[str] = []
+    for rel_path in request_modules:
+        lowered = _source_text(rel_path).lower()
+        for fragment in forbidden_fragments:
+            if fragment in lowered:
+                violations.append(f"{rel_path}: contains {fragment!r}")
+
+    assert violations == []
+
+
 def test_mcp_http_interface_does_not_import_admin_sync_or_strava_adapter() -> None:
     rel_path = "src/mcp_strava/interfaces/mcp_http.py"
     violations = _import_violations(

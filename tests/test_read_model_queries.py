@@ -402,3 +402,97 @@ def test_read_model_queries_fail_soft_when_schema_missing(tmp_path: Path) -> Non
 
     assert status["status"] == "unavailable"
     assert status["stale_reason"] == "read_model_schema_missing"
+
+
+def _query_plan_details(conn: sqlite3.Connection, sql: str, params: tuple[object, ...]) -> list[str]:
+    rows = conn.execute(f"EXPLAIN QUERY PLAN {sql}", params).fetchall()
+    return [str(row["detail"]) for row in rows]
+
+
+def test_hot_read_model_query_plans_use_fact_indexes_and_never_scan_streams(tmp_path: Path) -> None:
+    repo = _repo_with_facts(tmp_path / "query-plan.db")
+    with repo:
+        plan_groups = {
+            "activity_metric_facts": _query_plan_details(
+                repo.conn,
+                """
+                SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json
+                FROM activity_metric_facts f
+                LEFT JOIN activities a ON a.id = f.activity_id
+                WHERE f.activity_day >= ?
+                  AND f.activity_day < ?
+                  AND f.sport_type = ?
+                  AND f.metric_version = ?
+                ORDER BY f.activity_day DESC, f.activity_id DESC
+                LIMIT ?
+                """,
+                ("2026-05-01", "2026-06-01", "Run", 1, 20),
+            ),
+            "daily_load_facts": _query_plan_details(
+                repo.conn,
+                """
+                SELECT *
+                FROM daily_load_facts
+                WHERE day >= ?
+                  AND day < ?
+                  AND scope = ?
+                  AND sport_type = ?
+                  AND metric_version = ?
+                ORDER BY day ASC
+                """,
+                ("2026-05-01", "2026-06-01", "all", "all", 1),
+            ),
+            "training_model_daily": _query_plan_details(
+                repo.conn,
+                """
+                SELECT *
+                FROM training_model_daily
+                WHERE metric_version = ?
+                  AND scope = ?
+                  AND sport_type = ?
+                  AND day <= ?
+                ORDER BY day DESC
+                LIMIT 1
+                """,
+                (1, "all", "all", "2026-05-24"),
+            ),
+            "rolling_period_facts": _query_plan_details(
+                repo.conn,
+                """
+                SELECT *
+                FROM rolling_period_facts
+                WHERE as_of_day = ?
+                  AND window_days = ?
+                  AND scope = ?
+                  AND sport_type = ?
+                  AND metric_version = ?
+                ORDER BY metric_version DESC
+                LIMIT 1
+                """,
+                ("2026-05-21", 14, "all", "all", 1),
+            ),
+        }
+
+    details = [detail for group in plan_groups.values() for detail in group]
+    assert not any("SCAN streams" in detail for detail in details)
+    assert all(any("USING" in detail and table in detail for detail in group) for table, group in plan_groups.items())
+
+
+def test_hot_read_model_repository_queries_do_not_use_substr_date_filters() -> None:
+    source = Path("src/mcp_strava/adapters/sqlite/repository.py").read_text(encoding="utf-8")
+    hot_methods = [
+        "fetch_latest_training_model_day",
+        "fetch_activity_metric_facts",
+        "fetch_activity_metric_fact",
+        "fetch_daily_load_facts",
+        "fetch_rolling_period_facts",
+    ]
+    violations: list[str] = []
+    for method in hot_methods:
+        start = source.index(f"    def {method}")
+        next_method = source.find("\n    def ", start + 1)
+        segment = source[start:] if next_method == -1 else source[start:next_method]
+        if "SUBSTR(" in segment.upper():
+            violations.append(method)
+
+    assert violations == []

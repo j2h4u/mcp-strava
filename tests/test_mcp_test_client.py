@@ -7,7 +7,17 @@ from pathlib import Path
 import pytest
 
 from mcp_strava.devtools.mcp_client.cli import main
-from mcp_strava.devtools.mcp_client.client import McpClientError, StdioMcpClient, execute_script_steps
+from mcp_strava.devtools.mcp_client.client import EXPECTED_TOOL_NAMES, McpClientError, StdioMcpClient, execute_script_steps
+
+
+class FakeWarmScriptClient:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def call_tool(self, name: str, arguments: dict | None = None) -> dict:
+        del arguments
+        self.calls.append(name)
+        return {"isError": False, "structuredContent": {"data": {"tool": name}, "warnings": []}}
 
 
 def _fake_server_command() -> list[str]:
@@ -71,6 +81,35 @@ def test_mcp_test_client_script_assertion_failure() -> None:
 
     with pytest.raises(McpClientError, match="forbidden tools"):
         asyncio.run(run())
+
+
+def test_mcp_test_client_script_can_measure_repeated_warm_samples_for_all_product_tools() -> None:
+    calls = [{"name": name, "arguments": {}} for name in sorted(EXPECTED_TOOL_NAMES)]
+    steps = [
+        {
+            "action": "measure_warm_tool_latency",
+            "calls": calls,
+            "warmup": 1,
+            "samples": 2,
+            "p95_ms": 500,
+            "expect": {
+                "latency_status": "ok",
+                "tool_names_include": sorted(EXPECTED_TOOL_NAMES),
+            },
+        }
+    ]
+
+    async def run() -> tuple[list[dict], list[str]]:
+        client = FakeWarmScriptClient()
+        results = await execute_script_steps(client, steps)
+        return results, client.calls
+
+    results, tool_calls = asyncio.run(run())
+
+    assert results[0]["action"] == "measure_warm_tool_latency"
+    assert set(results[0]["result"]["tools"]) == EXPECTED_TOOL_NAMES
+    for name in sorted(EXPECTED_TOOL_NAMES):
+        assert tool_calls.count(name) == 3
 
 
 def test_mcp_test_client_cli_call_tool(capsys) -> None:
