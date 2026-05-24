@@ -328,6 +328,81 @@ class SQLiteRepository:
         self.conn.commit()
         return len(rows)
 
+    def dirty_activity_rows_for_materialization(
+        self,
+        metric_version: int,
+        limit: int | None = None,
+    ) -> list[object]:
+        sql = """
+            SELECT d.*, s.source_hash
+            FROM metric_dirty_activities d
+            JOIN activity_source_state s ON s.activity_id = d.activity_id
+            WHERE d.metric_version = ?
+            ORDER BY d.activity_day, d.activity_id
+        """
+        params: list[object] = [metric_version]
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        return self.conn.execute(sql, params).fetchall()
+
+    def clear_dirty_activity_rows(self, rows: Iterable[object]) -> int:
+        count = 0
+        for row in rows:
+            cur = self.conn.execute(
+                """
+                DELETE FROM metric_dirty_activities
+                WHERE activity_id = ? AND activity_day = ? AND metric_version = ?
+                """,
+                (row["activity_id"], row["activity_day"], row["metric_version"]),
+            )
+            count += cur.rowcount
+        return count
+
+    def source_state_for_activity(self, activity_id: int) -> object | None:
+        return self.conn.execute(
+            "SELECT * FROM activity_source_state WHERE activity_id = ?",
+            (activity_id,),
+        ).fetchone()
+
+    def _upsert_fact(self, table: str, values: dict[str, object], conflict_columns: tuple[str, ...]) -> None:
+        columns = tuple(values.keys())
+        placeholders = ", ".join("?" for _ in columns)
+        update_columns = [col for col in columns if col not in conflict_columns]
+        assignments = ", ".join(f"{col}=excluded.{col}" for col in update_columns)
+        conflict = ", ".join(conflict_columns)
+        sql = f"""
+            INSERT INTO {table} ({", ".join(columns)})
+            VALUES ({placeholders})
+            ON CONFLICT({conflict}) DO UPDATE SET {assignments}
+        """
+        self.conn.execute(sql, tuple(values[col] for col in columns))
+
+    def upsert_activity_metric_fact(self, values: dict[str, object]) -> None:
+        self._upsert_fact("activity_metric_facts", values, ("activity_id", "metric_version"))
+
+    def upsert_daily_load_fact(self, values: dict[str, object]) -> None:
+        self._upsert_fact("daily_load_facts", values, ("day", "scope", "sport_type", "metric_version"))
+
+    def upsert_training_model_daily_fact(self, values: dict[str, object]) -> None:
+        self._upsert_fact("training_model_daily", values, ("day", "scope", "sport_type", "metric_version"))
+
+    def upsert_rolling_period_fact(self, values: dict[str, object]) -> None:
+        self._upsert_fact(
+            "rolling_period_facts",
+            values,
+            ("as_of_day", "window_days", "scope", "sport_type", "metric_version"),
+        )
+
+    def record_read_model_refresh_run(self, values: dict[str, object]) -> int:
+        columns = tuple(values.keys())
+        placeholders = ", ".join("?" for _ in columns)
+        cur = self.conn.execute(
+            f"INSERT INTO read_model_refresh_runs ({', '.join(columns)}) VALUES ({placeholders})",
+            tuple(values[col] for col in columns),
+        )
+        return int(cur.lastrowid)
+
     # Activities
     def recent_activities(self, limit: int = 15) -> list[RepositoryActivityRow]:
         rows = self.conn.execute(

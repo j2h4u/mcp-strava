@@ -493,3 +493,161 @@ def test_failed_dirty_enqueue_rolls_back_source_mutation_and_state(tmp_path: Pat
     assert activity is None
     assert state is None
     assert dirty == []
+
+
+def _seed_dirty_activity_with_streams(repo: SQLiteRepository, *, activity_id: int = 920, day: str = "2026-05-21") -> None:
+    repo.upsert_activity_summary(
+        activity_id=activity_id,
+        date=f"{day}T06:00:00Z",
+        name=f"Materialized {activity_id}",
+        sport_type="Run",
+        distance=6000.0,
+        moving_time=1800,
+        elapsed_time=1900,
+        total_elevation_gain=120.0,
+        summary_json=(
+            '{"id":%d,"name":"Materialized","sport_type":"Run","start_date_local":"%sT06:00:00Z",'
+            '"distance":6000,"moving_time":1800,"elapsed_time":1900,"total_elevation_gain":120,'
+            '"average_heartrate":145,"max_heartrate":172,"has_heartrate":true}'
+        )
+        % (activity_id, day),
+        synced_at=f"{day}T07:00:00Z",
+    )
+    repo.update_activity_detail(activity_id, '{"id": %d, "resource_state": 3}' % activity_id)
+    rows = []
+    for idx in range(180):
+        rows.append(
+            {
+                "time_offset": idx * 10,
+                "heartrate": 138 + (idx % 35),
+                "velocity": 3.0 + ((idx % 4) * 0.02),
+                "altitude": 500.0 + idx * 0.2,
+                "cadence": 84,
+                "lat": 43.2 + idx * 0.00001,
+                "lng": 76.9 + idx * 0.00001,
+                "grade": 1.0,
+                "gap_speed": 3.1,
+                "gap_distance": idx * 30.0,
+                "is_moving": 1,
+                "values_json": '{"distance": %.1f}' % (idx * 30.0),
+            }
+        )
+    repo.replace_stream_rows_and_channel_metadata(
+        activity_id,
+        rows=rows,
+        metadata=[
+            {
+                "channel_key": "heartrate",
+                "original_size": len(rows),
+                "resolution": "high",
+                "series_type": "distance",
+                "fetched_at": f"{day}T07:30:00Z",
+                "batch_id": "materializer-test",
+                "status": "available",
+                "error": None,
+            }
+        ],
+    )
+
+
+def test_materializer_writes_all_fact_tiers_and_clears_dirty_rows(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.read_model_materializer import materialize_read_model
+
+    _fixture, repo = _migrated_repo(tmp_path)
+    with repo:
+        _seed_dirty_activity_with_streams(repo)
+        result = materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+
+        activity_fact = repo.conn.execute("SELECT * FROM activity_metric_facts WHERE activity_id = 920").fetchone()
+        daily_fact = repo.conn.execute("SELECT * FROM daily_load_facts WHERE day = '2026-05-21'").fetchone()
+        model_fact = repo.conn.execute("SELECT * FROM training_model_daily WHERE day = '2026-05-24'").fetchone()
+        rolling_windows = repo.conn.execute(
+            "SELECT window_days FROM rolling_period_facts WHERE as_of_day = '2026-05-24' ORDER BY window_days"
+        ).fetchall()
+        run = repo.conn.execute("SELECT * FROM read_model_refresh_runs ORDER BY id DESC LIMIT 1").fetchone()
+        dirty = _dirty_rows(repo, 920)
+
+    assert result["status"] == "ok"
+    assert activity_fact is not None
+    assert activity_fact["source_hash"]
+    assert activity_fact["source_revision"] >= 1
+    assert activity_fact["metric_version"] == 1
+    assert activity_fact["computed_at"] == "2026-05-24T12:00:00"
+    assert activity_fact["completeness_status"] == "complete"
+    assert activity_fact["missing_reasons_json"] == "[]"
+    assert activity_fact["trimp"] > 0
+    assert activity_fact["stream_sample_count"] == 180
+    assert activity_fact["heartrate_sample_count"] == 180
+    assert activity_fact["distance_m"] == 6000.0
+    assert activity_fact["moving_time_s"] == 1800
+    assert daily_fact is not None
+    assert daily_fact["activity_count"] == 1
+    assert daily_fact["observed_trimp"] > 0
+    assert model_fact is not None
+    assert model_fact["fitness"] is not None
+    assert [row["window_days"] for row in rolling_windows] == [7, 14, 28, 90]
+    assert run is not None and run["status"] == "ok"
+    assert dirty == []
+
+
+def test_materializer_is_idempotent_for_same_dirty_set(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.read_model_materializer import materialize_read_model
+
+    _fixture, repo = _migrated_repo(tmp_path)
+    with repo:
+        _seed_dirty_activity_with_streams(repo)
+        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        repo.enqueue_metric_version_recompute(1, "retry_same_version", "2026-05-24T12:01:00")
+        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:02:00")
+
+        activity_count = repo.conn.execute("SELECT COUNT(*) FROM activity_metric_facts").fetchone()[0]
+        daily_count = repo.conn.execute("SELECT COUNT(*) FROM daily_load_facts").fetchone()[0]
+        model_count = repo.conn.execute("SELECT COUNT(*) FROM training_model_daily").fetchone()[0]
+        rolling_count = repo.conn.execute("SELECT COUNT(*) FROM rolling_period_facts").fetchone()[0]
+
+    assert activity_count == 1
+    assert daily_count == 4
+    assert model_count == 4
+    assert rolling_count == 4
+
+
+def test_materializer_writes_new_metric_versions_without_deleting_old_facts(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.read_model_materializer import materialize_read_model
+
+    _fixture, repo = _migrated_repo(tmp_path)
+    with repo:
+        _seed_dirty_activity_with_streams(repo)
+        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        repo.enqueue_metric_version_recompute(2, "metric_version_changed", "2026-05-24T12:05:00")
+        materialize_read_model(repo, metric_version=2, now="2026-05-24T12:06:00")
+
+        versions = repo.conn.execute(
+            "SELECT metric_version FROM activity_metric_facts WHERE activity_id = 920 ORDER BY metric_version"
+        ).fetchall()
+
+    assert [row["metric_version"] for row in versions] == [1, 2]
+
+
+def test_materializer_failure_keeps_dirty_rows_and_does_not_mark_success(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.read_model_materializer import materialize_read_model
+
+    _fixture, repo = _migrated_repo(tmp_path)
+
+    class FailingDailyFactRepo(SQLiteRepository):
+        def upsert_daily_load_fact(self, *args, **kwargs):
+            raise RuntimeError("daily fact failed")
+
+    with repo:
+        _seed_dirty_activity_with_streams(repo)
+        failing_repo = FailingDailyFactRepo(repo.conn)
+        with pytest.raises(RuntimeError, match="daily fact failed"):
+            materialize_read_model(failing_repo, metric_version=1, now="2026-05-24T12:00:00")
+
+        assert _dirty_rows(repo, 920)
+        success_count = repo.conn.execute(
+            "SELECT COUNT(*) FROM read_model_refresh_runs WHERE status = 'ok'"
+        ).fetchone()[0]
+        activity_fact_count = repo.conn.execute("SELECT COUNT(*) FROM activity_metric_facts").fetchone()[0]
+
+    assert success_count == 0
+    assert activity_fact_count == 0
