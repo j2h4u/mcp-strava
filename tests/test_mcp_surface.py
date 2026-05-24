@@ -29,6 +29,12 @@ FORBIDDEN_TOOL_NAMES = {
     "freshness",
     "sync",
     "backfill",
+    "read-model-materialize",
+    "materialize",
+    "recompute",
+    "dirty-queue",
+    "dirty",
+    "read-model-status",
     "sql",
     "raw",
     "token",
@@ -78,6 +84,12 @@ def test_mcp_tool_allowlist_is_exact() -> None:
 
     assert mcp_http.MCP_TOOL_NAMES == EXPECTED_TOOL_NAMES
     assert FORBIDDEN_TOOL_NAMES.isdisjoint(set(mcp_http.MCP_TOOL_NAMES))
+
+
+def test_mcp_forbidden_names_include_read_model_operational_controls() -> None:
+    from mcp_strava.interfaces import mcp_http
+
+    assert FORBIDDEN_TOOL_NAMES <= mcp_http.FORBIDDEN_TOOL_NAMES
 
 
 def test_validate_http_settings_and_transport_security() -> None:

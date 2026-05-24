@@ -256,6 +256,97 @@ def test_run_once_after_stream_failure_resumes_without_summary_page_walk_per_D09
     assert resumed_transport.calls_by_path[stream_call] == 1
 
 
+def test_read_model_materialization_checkpoint_stage_participates_in_routing() -> None:
+    from mcp_strava.refresh.checkpoints import NEXT_STAGE_BACKFILL, NEXT_STAGE_DAILY, Stage, is_active_backfill_stage
+
+    assert Stage.READ_MODEL_MATERIALIZE.value == "read_model_materialize"
+    assert NEXT_STAGE_DAILY[Stage.SCHEMA_VALIDATE] == Stage.READ_MODEL_MATERIALIZE
+    assert NEXT_STAGE_DAILY[Stage.READ_MODEL_MATERIALIZE] == Stage.KUDOS
+    assert NEXT_STAGE_BACKFILL[Stage.DETAILS_BACKFILL] == Stage.READ_MODEL_MATERIALIZE_BACKFILL
+    assert NEXT_STAGE_BACKFILL[Stage.READ_MODEL_MATERIALIZE_BACKFILL] == Stage.COMPLETE_BACKFILL
+    assert not is_active_backfill_stage(Stage.READ_MODEL_MATERIALIZE)
+    assert is_active_backfill_stage(Stage.READ_MODEL_MATERIALIZE_BACKFILL)
+
+
+def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch, tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, run_once
+    from mcp_strava.refresh import _sync_ops
+
+    clock = FakeClock()
+    order: list[str] = []
+
+    monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *_args, **_kwargs: order.append("summaries") or (0, 0))
+    monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams") or 0)
+    monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
+    monkeypatch.setattr(_sync_ops, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
+    monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
+
+    def fake_materialize(repo, metric_version, now_iso, renew_lease):
+        del repo
+        assert metric_version == 1
+        assert now_iso == clock.iso()
+        assert callable(renew_lease)
+        order.append("read_model_materialize")
+        return {"status": "ok", "activities_materialized": 0}
+
+    monkeypatch.setattr(_sync_ops, "materialize_read_model_stage", fake_materialize, raising=False)
+
+    with _repo(tmp_path) as repo:
+        result = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock), force=True)
+
+    assert result.status == "ok"
+    assert order == ["summaries", "streams", "details", "schema_validate", "read_model_materialize", "kudos"]
+
+
+def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch, tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, Stage, run_once
+    from mcp_strava.refresh import _sync_ops
+
+    clock = FakeClock()
+    order: list[str] = []
+
+    monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *_args, **_kwargs: order.append("summaries") or (0, 0))
+    monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams") or 0)
+    monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
+    monkeypatch.setattr(_sync_ops, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
+    monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
+    monkeypatch.setattr(
+        _sync_ops,
+        "materialize_read_model_stage",
+        lambda *_args, **_kwargs: order.append("read_model_materialize") or {"status": "ok"},
+        raising=False,
+    )
+
+    with _repo(tmp_path) as repo:
+        repo.set_checkpoint(Stage.READ_MODEL_MATERIALIZE.value, None)
+        result = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock), force=True)
+
+    assert result.status == "ok"
+    assert order == ["read_model_materialize", "kudos"]
+
+
+def test_materialization_lost_lease_fails_closed(monkeypatch, tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, run_once
+    from mcp_strava.refresh import _sync_ops
+
+    monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *_args, **_kwargs: (0, 0))
+    monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(_sync_ops, "schema_validate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: 0)
+
+    def fake_materialize(repo, metric_version, now_iso, renew_lease):
+        del repo, metric_version, now_iso
+        renew_lease()
+
+    monkeypatch.setattr(_sync_ops, "materialize_read_model_stage", fake_materialize, raising=False)
+
+    with _repo(tmp_path) as repo:
+        repo.renew_refresh_lease = lambda *_args, **_kwargs: False  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError, match="refresh lease lost during read-model materialization"):
+            run_once(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper(), force=True)
+
+
 def test_run_backfill_skips_summaries_and_kudos_per_D16(tmp_path):
     from mcp_strava.refresh import RefreshPolicy, Stage, run_backfill
 
@@ -282,6 +373,27 @@ def test_run_backfill_skips_summaries_and_kudos_per_D16(tmp_path):
     assert not any(path.startswith("/athlete/activities") for path in transport.calls_by_path)
     assert not any("kudos" in path for path in transport.calls_by_path)
     assert "refresh-backfill"
+
+
+def test_run_backfill_materializes_after_source_changing_work(monkeypatch, tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, run_backfill
+    from mcp_strava.refresh import _sync_ops
+
+    order: list[str] = []
+    monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams_backfill") or 1)
+    monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: order.append("details_backfill") or 1)
+    monkeypatch.setattr(
+        _sync_ops,
+        "materialize_read_model_stage",
+        lambda *_args, **_kwargs: order.append("read_model_materialize") or {"status": "ok"},
+        raising=False,
+    )
+
+    with _repo(tmp_path) as repo:
+        result = run_backfill(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper(), since="2026-05-20")
+
+    assert result.status == "ok"
+    assert order == ["streams_backfill", "details_backfill", "read_model_materialize"]
 
 
 def test_run_backfill_failure_preserves_backfill_checkpoint_per_D16(tmp_path):
@@ -313,6 +425,56 @@ def test_run_backfill_failure_preserves_backfill_checkpoint_per_D16(tmp_path):
 
     assert result.status == "failed"
     assert state.checkpoint_stage == Stage.STREAMS_BACKFILL.value
+
+
+def test_stream_channel_backfill_materializes_after_source_changing_work(monkeypatch, tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, run_backfill_stream_channels
+    from mcp_strava.refresh import _sync_ops
+
+    order: list[str] = []
+    monkeypatch.setattr(
+        _sync_ops,
+        "estimate_stream_channel_backfill",
+        lambda *_args, **_kwargs: {
+            "activities_considered": 1,
+            "activities_to_backfill": 1,
+            "missing_channels": {"watts": 1},
+            "metadata_missing": 1,
+            "estimated_api_calls": 1,
+            "candidates": [{"activity_id": 500, "missing_channels": ["watts"], "metadata_missing": True}],
+        },
+    )
+    monkeypatch.setattr(
+        _sync_ops,
+        "sync_stream_channels_backfill",
+        lambda *_args, **_kwargs: order.append("stream_channels_backfill")
+        or {
+            "activities_considered": 1,
+            "activities_to_backfill": 1,
+            "missing_channels": {"watts": 1},
+            "metadata_missing": 1,
+            "estimated_api_calls": 1,
+            "completed": 1,
+        },
+    )
+    monkeypatch.setattr(
+        _sync_ops,
+        "materialize_read_model_stage",
+        lambda *_args, **_kwargs: order.append("read_model_materialize") or {"status": "ok"},
+        raising=False,
+    )
+
+    with _repo(tmp_path) as repo:
+        result = run_backfill_stream_channels(
+            repo,
+            FakeStravaTransport(),
+            RefreshPolicy(),
+            FakeClock(),
+            FakeSleeper(),
+        )
+
+    assert result["status"] == "ok"
+    assert order == ["stream_channels_backfill", "read_model_materialize"]
 
 
 def test_run_once_after_complete_backfill_starts_daily_refresh_per_D16(tmp_path):

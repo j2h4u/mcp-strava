@@ -87,6 +87,38 @@ def test_preflight_main_valid_db_passes(tmp_path: Path) -> None:
     assert rc == 0
 
 
+def test_validate_runtime_db_reports_v5_read_model_readiness_without_requiring_current_facts(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.migrations import run_migrations
+    from mcp_strava.deploy.preflight import validate_runtime_db
+
+    db_path = tmp_path / "read-model-ready.db"
+    _create_fixture_db(db_path)
+    run_migrations(db_path)
+
+    report = validate_runtime_db(db_path)
+
+    assert report["user_version"] == 5
+    assert report["read_model"]["schema_ready"] is True
+    assert report["read_model"]["missing_tables"] == []
+    assert report["read_model"]["facts_current"] is False
+    assert report["read_model"]["dirty_count"] == 0
+
+
+def test_validate_runtime_db_fails_when_v5_read_model_tables_are_missing(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.migrations import run_migrations
+    from mcp_strava.deploy.preflight import validate_runtime_db
+
+    db_path = tmp_path / "read-model-broken.db"
+    _create_fixture_db(db_path)
+    run_migrations(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DROP TABLE activity_metric_facts")
+        conn.commit()
+
+    with pytest.raises(RuntimeError, match="activity_metric_facts"):
+        validate_runtime_db(db_path)
+
+
 def test_preflight_quick_mode_passes_valid_db(tmp_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import run_migrations
     from mcp_strava.deploy.preflight import main as preflight_main
