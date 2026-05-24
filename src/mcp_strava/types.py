@@ -107,6 +107,21 @@ class StravaStreams:
 
 
 @dataclass
+class StreamChannelMetadata:
+    """Repository contract for persisted stream-channel metadata."""
+
+    activity_id: int
+    channel_key: str
+    original_size: Optional[int] = None
+    resolution: Optional[str] = None
+    series_type: Optional[str] = None
+    fetched_at: Optional[str] = None
+    batch_id: Optional[str] = None
+    status: str = "available"
+    error: Optional[str] = None
+
+
+@dataclass
 class StravaShoe:
     """One shoe from GET /athlete response."""
     id: int

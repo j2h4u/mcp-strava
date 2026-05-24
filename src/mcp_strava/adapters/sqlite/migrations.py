@@ -145,9 +145,37 @@ def create_refresh_tables_and_seed_state(conn: sqlite3.Connection) -> None:
     set_user_version(conn, 2)
 
 
+def create_lossless_stream_inventory_v3(conn: sqlite3.Connection) -> None:
+    stream_columns = {row[1] for row in conn.execute("PRAGMA table_info(streams)").fetchall()}
+    if "values_json" not in stream_columns:
+        conn.execute("ALTER TABLE streams ADD COLUMN values_json TEXT")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stream_channels (
+            activity_id INTEGER NOT NULL,
+            channel_key TEXT NOT NULL,
+            original_size INTEGER,
+            resolution TEXT,
+            series_type TEXT,
+            fetched_at TEXT,
+            batch_id TEXT,
+            status TEXT NOT NULL,
+            error TEXT,
+            PRIMARY KEY (activity_id, channel_key)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_stream_channels_activity ON stream_channels(activity_id)"
+    )
+    set_user_version(conn, 3)
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _baseline_migration_v1,
     2: create_refresh_tables_and_seed_state,
+    3: create_lossless_stream_inventory_v3,
 }
 
 

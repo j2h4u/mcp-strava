@@ -5,91 +5,144 @@ from pathlib import Path
 import sqlite3
 
 
-REQUIRED_TABLES: tuple[str, ...] = (
-    "activities",
-    "streams",
-    "athlete_zones",
-    "sync_log",
-    "kudos",
-    "refresh_state",
-    "refresh_requests",
-)
+BASE_TABLES_V1: tuple[str, ...] = ("activities", "streams", "athlete_zones", "sync_log", "kudos")
+REFRESH_TABLES_V2: tuple[str, ...] = ("refresh_state", "refresh_requests")
 
-REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
-    "activities": (
-        "id",
-        "date",
-        "name",
-        "sport_type",
-        "distance",
-        "moving_time",
-        "elapsed_time",
-        "total_elevation_gain",
-        "summary_json",
-        "detail_json",
-        "synced_at",
-    ),
-    "streams": (
-        "activity_id",
-        "time_offset",
-        "heartrate",
-        "velocity",
-        "altitude",
-        "cadence",
-        "lat",
-        "lng",
-        "grade",
-        "gap_speed",
-        "gap_distance",
-        "is_moving",
-        "latlng",
-    ),
-    "athlete_zones": ("id", "fetched_at", "zones_json"),
-    "sync_log": (
-        "id",
-        "timestamp",
-        "status",
-        "activities_seen",
-        "activities_new",
-        "streams_fetched",
-        "details_fetched",
-        "api_calls",
-        "error",
-        "kudos_fetched",
-    ),
-    "kudos": ("activity_id", "firstname", "lastname", "fetched_at"),
-    "refresh_state": (
-        "id",
-        "last_success_at",
-        "last_attempt_at",
-        "last_status",
-        "last_error_code",
-        "lease_owner",
-        "lease_expires_at",
-        "backoff_until",
-        "checkpoint_stage",
-        "checkpoint_cursor",
-    ),
-    "refresh_requests": ("id", "reason", "requested_for_day", "requested_at", "consumed_at"),
+REQUIRED_TABLES_BY_VERSION: dict[int, tuple[str, ...]] = {
+    1: BASE_TABLES_V1,
+    2: BASE_TABLES_V1 + REFRESH_TABLES_V2,
+    3: BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",),
+    # Reserved for 06-03 canonical GPS cleanup; latlng removal is intentional here.
+    4: BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",),
 }
 
-BASE_REQUIRED_TABLES: tuple[str, ...] = (
-    "activities",
-    "streams",
-    "athlete_zones",
-    "sync_log",
-    "kudos",
-)
-
-REFRESH_REQUIRED_TABLES: tuple[str, ...] = ("refresh_state", "refresh_requests")
-
-REQUIRED_INDEXES: dict[str, dict[str, object]] = {
-    "idx_streams_act": {"table": "streams", "columns": ("activity_id",), "partial": False},
-    "idx_refresh_requests_dedupe": {
-        "table": "refresh_requests",
-        "columns": ("reason", "requested_for_day"),
-        "partial": True,
+REQUIRED_COLUMNS_BY_VERSION: dict[int, dict[str, tuple[str, ...]]] = {
+    1: {
+        "activities": (
+            "id",
+            "date",
+            "name",
+            "sport_type",
+            "distance",
+            "moving_time",
+            "elapsed_time",
+            "total_elevation_gain",
+            "summary_json",
+            "detail_json",
+            "synced_at",
+        ),
+        "streams": (
+            "activity_id",
+            "time_offset",
+            "heartrate",
+            "velocity",
+            "altitude",
+            "cadence",
+            "lat",
+            "lng",
+            "grade",
+            "gap_speed",
+            "gap_distance",
+            "is_moving",
+            "latlng",
+        ),
+        "athlete_zones": ("id", "fetched_at", "zones_json"),
+        "sync_log": (
+            "id",
+            "timestamp",
+            "status",
+            "activities_seen",
+            "activities_new",
+            "streams_fetched",
+            "details_fetched",
+            "api_calls",
+            "error",
+            "kudos_fetched",
+        ),
+        "kudos": ("activity_id", "firstname", "lastname", "fetched_at"),
     },
+    2: {
+        "refresh_state": (
+            "id",
+            "last_success_at",
+            "last_attempt_at",
+            "last_status",
+            "last_error_code",
+            "lease_owner",
+            "lease_expires_at",
+            "backoff_until",
+            "checkpoint_stage",
+            "checkpoint_cursor",
+        ),
+        "refresh_requests": ("id", "reason", "requested_for_day", "requested_at", "consumed_at"),
+    },
+    3: {
+        "streams": (
+            "activity_id",
+            "time_offset",
+            "heartrate",
+            "velocity",
+            "altitude",
+            "cadence",
+            "lat",
+            "lng",
+            "grade",
+            "gap_speed",
+            "gap_distance",
+            "is_moving",
+            "latlng",
+            "values_json",
+        ),
+        "stream_channels": (
+            "activity_id",
+            "channel_key",
+            "original_size",
+            "resolution",
+            "series_type",
+            "fetched_at",
+            "batch_id",
+            "status",
+            "error",
+        ),
+    },
+    4: {
+        "streams": (
+            "activity_id",
+            "time_offset",
+            "heartrate",
+            "velocity",
+            "altitude",
+            "cadence",
+            "lat",
+            "lng",
+            "grade",
+            "gap_speed",
+            "gap_distance",
+            "is_moving",
+            "values_json",
+        ),
+    },
+}
+
+REQUIRED_INDEXES_BY_VERSION: dict[int, dict[str, dict[str, object]]] = {
+    1: {
+        "idx_streams_act": {"table": "streams", "columns": ("activity_id",), "partial": False},
+    },
+    2: {
+        "idx_refresh_requests_dedupe": {
+            "table": "refresh_requests",
+            "columns": ("reason", "requested_for_day"),
+            "partial": True,
+        },
+    },
+    3: {
+        "idx_stream_channels_activity": {
+            "table": "stream_channels",
+            "columns": ("activity_id",),
+            "partial": False,
+        }
+    },
+    4: {},
 }
 
 
@@ -102,10 +155,7 @@ class PreflightReport:
 
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-        (table,),
-    ).fetchone()
+    row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
     return row is not None
 
 
@@ -137,9 +187,36 @@ def integrity_check(conn: sqlite3.Connection) -> str:
     return str(row[0]) if row else "unknown"
 
 
+def _effective_inventory_version(version: int) -> int:
+    if version <= 1:
+        return 1
+    if version in REQUIRED_TABLES_BY_VERSION:
+        return version
+    return max(REQUIRED_TABLES_BY_VERSION)
+
+
+def _required_columns_for_version(version: int) -> dict[str, tuple[str, ...]]:
+    required: dict[str, tuple[str, ...]] = {}
+    effective = _effective_inventory_version(version)
+    for v in sorted(REQUIRED_COLUMNS_BY_VERSION):
+        if v <= effective:
+            required.update(REQUIRED_COLUMNS_BY_VERSION[v])
+    return required
+
+
+def _required_indexes_for_version(version: int) -> dict[str, dict[str, object]]:
+    required: dict[str, dict[str, object]] = {}
+    effective = _effective_inventory_version(version)
+    for v in sorted(REQUIRED_INDEXES_BY_VERSION):
+        if v <= effective:
+            required.update(REQUIRED_INDEXES_BY_VERSION[v])
+    return required
+
+
 def row_counts(conn: sqlite3.Connection) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for table in REQUIRED_TABLES:
+    table_names = set(BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",))
+    for table in sorted(table_names):
         if _table_exists(conn, table):
             counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
     return counts
@@ -147,25 +224,24 @@ def row_counts(conn: sqlite3.Connection) -> dict[str, int]:
 
 def validate_required_inventory(conn: sqlite3.Connection) -> None:
     version = read_user_version(conn)
-    tables_to_check = list(BASE_REQUIRED_TABLES)
-    if version >= 2 or any(_table_exists(conn, table) for table in REFRESH_REQUIRED_TABLES):
-        tables_to_check.extend(REFRESH_REQUIRED_TABLES)
+    effective = _effective_inventory_version(version)
+    required_tables = REQUIRED_TABLES_BY_VERSION[effective]
 
-    for table in tables_to_check:
+    for table in required_tables:
         if not _table_exists(conn, table):
             raise RuntimeError(f"Missing required table: {table}")
 
-    for table in tables_to_check:
-        required = REQUIRED_COLUMNS[table]
+    required_columns = _required_columns_for_version(version)
+    for table in required_tables:
+        required = required_columns.get(table, ())
         actual = _columns_for_table(conn, table)
         missing = [col for col in required if col not in actual]
         if missing:
             raise RuntimeError(f"Missing required columns in {table}: {', '.join(missing)}")
 
-    for idx, spec in REQUIRED_INDEXES.items():
+    required_indexes = _required_indexes_for_version(version)
+    for idx, spec in required_indexes.items():
         table = str(spec["table"])
-        if table not in tables_to_check:
-            continue
         rows = _index_rows(conn, table)
         matching = [row for row in rows if row[1] == idx]
         if not matching:

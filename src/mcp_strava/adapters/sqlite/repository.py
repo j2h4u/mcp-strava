@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Iterable
 
@@ -215,10 +216,14 @@ class SQLiteRepository:
 
     # Streams and load
     def activity_stream_rows(self, activity_id: int) -> list[tuple]:
+        stream_columns = {
+            row[1] for row in self.conn.execute("PRAGMA table_info(streams)").fetchall()
+        }
+        values_expr = "values_json" if "values_json" in stream_columns else "NULL AS values_json"
         return self.conn.execute(
-            """
+            f"""
             SELECT activity_id, time_offset, heartrate, velocity, altitude,
-                   cadence, latlng, grade, gap_speed, gap_distance, is_moving
+                   cadence, lat, lng, latlng, grade, gap_speed, gap_distance, is_moving, {values_expr}
             FROM streams
             WHERE activity_id = ?
             ORDER BY time_offset ASC
@@ -593,33 +598,70 @@ class SQLiteRepository:
         if total == 0:
             return 0
 
+        stream_columns = {
+            row[1] for row in self.conn.execute("PRAGMA table_info(streams)").fetchall()
+        }
+        has_values_json = "values_json" in stream_columns
+
         for start in range(0, total, chunk_size):
             chunk = payload[start : start + chunk_size]
-            bound = [
-                (
-                    activity_id,
-                    row["time_offset"],
-                    row.get("heartrate"),
-                    row.get("velocity"),
-                    row.get("altitude"),
-                    row.get("cadence"),
-                    row.get("latlng"),
-                    row.get("grade"),
-                    row.get("gap_speed"),
-                    row.get("gap_distance"),
-                    row.get("is_moving"),
+            if has_values_json:
+                bound = [
+                    (
+                        activity_id,
+                        row["time_offset"],
+                        row.get("heartrate"),
+                        row.get("velocity"),
+                        row.get("altitude"),
+                        row.get("cadence"),
+                        row.get("lat"),
+                        row.get("lng"),
+                        row.get("latlng"),
+                        row.get("grade"),
+                        row.get("gap_speed"),
+                        row.get("gap_distance"),
+                        row.get("is_moving"),
+                        row.get("values_json"),
+                    )
+                    for row in chunk
+                ]
+                self.conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO streams
+                    (activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                     lat, lng, latlng, grade, gap_speed, gap_distance, is_moving, values_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    bound,
                 )
-                for row in chunk
-            ]
-            self.conn.executemany(
-                """
-                INSERT OR REPLACE INTO streams
-                (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-                 latlng, grade, gap_speed, gap_distance, is_moving)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                bound,
-            )
+            else:
+                bound = [
+                    (
+                        activity_id,
+                        row["time_offset"],
+                        row.get("heartrate"),
+                        row.get("velocity"),
+                        row.get("altitude"),
+                        row.get("cadence"),
+                        row.get("lat"),
+                        row.get("lng"),
+                        row.get("latlng"),
+                        row.get("grade"),
+                        row.get("gap_speed"),
+                        row.get("gap_distance"),
+                        row.get("is_moving"),
+                    )
+                    for row in chunk
+                ]
+                self.conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO streams
+                    (activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                     lat, lng, latlng, grade, gap_speed, gap_distance, is_moving)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    bound,
+                )
             self.conn.commit()
 
         return total
@@ -635,9 +677,139 @@ class SQLiteRepository:
         if total == 0:
             return 0
 
+        stream_columns = {
+            row[1] for row in self.conn.execute("PRAGMA table_info(streams)").fetchall()
+        }
+        has_values_json = "values_json" in stream_columns
+
         self.conn.execute("BEGIN")
         try:
             self.conn.execute("DELETE FROM streams WHERE activity_id = ?", (activity_id,))
+            for start in range(0, total, chunk_size):
+                chunk = payload[start : start + chunk_size]
+                if has_values_json:
+                    bound = [
+                        (
+                            activity_id,
+                            row["time_offset"],
+                            row.get("heartrate"),
+                            row.get("velocity"),
+                            row.get("altitude"),
+                            row.get("cadence"),
+                            row.get("lat"),
+                            row.get("lng"),
+                            row.get("latlng"),
+                            row.get("grade"),
+                            row.get("gap_speed"),
+                            row.get("gap_distance"),
+                            row.get("is_moving"),
+                            row.get("values_json"),
+                        )
+                        for row in chunk
+                    ]
+                    self.conn.executemany(
+                        """
+                        INSERT OR REPLACE INTO streams
+                        (activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                         lat, lng, latlng, grade, gap_speed, gap_distance, is_moving, values_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        bound,
+                    )
+                else:
+                    bound = [
+                        (
+                            activity_id,
+                            row["time_offset"],
+                            row.get("heartrate"),
+                            row.get("velocity"),
+                            row.get("altitude"),
+                            row.get("cadence"),
+                            row.get("lat"),
+                            row.get("lng"),
+                            row.get("latlng"),
+                            row.get("grade"),
+                            row.get("gap_speed"),
+                            row.get("gap_distance"),
+                            row.get("is_moving"),
+                        )
+                        for row in chunk
+                    ]
+                    self.conn.executemany(
+                        """
+                        INSERT OR REPLACE INTO streams
+                        (activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                         lat, lng, latlng, grade, gap_speed, gap_distance, is_moving)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        bound,
+                    )
+        except Exception:
+            self.conn.rollback()
+            raise
+        self.conn.commit()
+        return total
+
+    def delete_stream_rows_for_activity(self, activity_id: int) -> None:
+        self.conn.execute("DELETE FROM streams WHERE activity_id = ?", (activity_id,))
+        self.conn.commit()
+
+    def upsert_stream_channel_metadata(
+        self,
+        activity_id: int,
+        channel_key: str,
+        original_size: int | None,
+        resolution: str | None,
+        series_type: str | None,
+        fetched_at: str | None,
+        batch_id: str | None,
+        status: str,
+        error: str | None,
+        commit: bool = True,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO stream_channels (
+                activity_id, channel_key, original_size, resolution, series_type,
+                fetched_at, batch_id, status, error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(activity_id, channel_key) DO UPDATE SET
+                original_size=excluded.original_size,
+                resolution=excluded.resolution,
+                series_type=excluded.series_type,
+                fetched_at=excluded.fetched_at,
+                batch_id=excluded.batch_id,
+                status=excluded.status,
+                error=excluded.error
+            """,
+            (
+                activity_id,
+                channel_key,
+                original_size,
+                resolution,
+                series_type,
+                fetched_at,
+                batch_id,
+                status,
+                error,
+            ),
+        )
+        if commit:
+            self.conn.commit()
+
+    def replace_stream_rows_and_channel_metadata(
+        self,
+        activity_id: int,
+        rows: Iterable[dict],
+        metadata: Iterable[dict],
+        chunk_size: int = 5000,
+    ) -> int:
+        payload = list(rows)
+        total = len(payload)
+        self.conn.execute("BEGIN")
+        try:
+            self.conn.execute("DELETE FROM streams WHERE activity_id = ?", (activity_id,))
+            self.conn.execute("DELETE FROM stream_channels WHERE activity_id = ?", (activity_id,))
             for start in range(0, total, chunk_size):
                 chunk = payload[start : start + chunk_size]
                 bound = [
@@ -648,11 +820,14 @@ class SQLiteRepository:
                         row.get("velocity"),
                         row.get("altitude"),
                         row.get("cadence"),
+                        row.get("lat"),
+                        row.get("lng"),
                         row.get("latlng"),
                         row.get("grade"),
                         row.get("gap_speed"),
                         row.get("gap_distance"),
                         row.get("is_moving"),
+                        row.get("values_json"),
                     )
                     for row in chunk
                 ]
@@ -660,10 +835,23 @@ class SQLiteRepository:
                     """
                     INSERT OR REPLACE INTO streams
                     (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-                     latlng, grade, gap_speed, gap_distance, is_moving)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     lat, lng, latlng, grade, gap_speed, gap_distance, is_moving, values_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     bound,
+                )
+            for item in metadata:
+                self.upsert_stream_channel_metadata(
+                    activity_id=activity_id,
+                    channel_key=item["channel_key"],
+                    original_size=item.get("original_size"),
+                    resolution=item.get("resolution"),
+                    series_type=item.get("series_type"),
+                    fetched_at=item.get("fetched_at"),
+                    batch_id=item.get("batch_id"),
+                    status=item.get("status", "available"),
+                    error=item.get("error"),
+                    commit=False,
                 )
         except Exception:
             self.conn.rollback()
@@ -671,9 +859,97 @@ class SQLiteRepository:
         self.conn.commit()
         return total
 
-    def delete_stream_rows_for_activity(self, activity_id: int) -> None:
-        self.conn.execute("DELETE FROM streams WHERE activity_id = ?", (activity_id,))
+    def merge_stream_channel_values(
+        self,
+        activity_id: int,
+        rows: Iterable[dict],
+        metadata: Iterable[dict],
+        missing_channel_keys: Iterable[str],
+    ) -> int:
+        payload = list(rows)
+        for row in payload:
+            if "time_offset" not in row:
+                continue
+            existing = self.conn.execute(
+                "SELECT values_json FROM streams WHERE activity_id=? AND time_offset=?",
+                (activity_id, row["time_offset"]),
+            ).fetchone()
+            existing_map = json.loads(existing[0]) if existing and existing[0] else {}
+            values_map = existing_map | (row.get("values") or {})
+            self.conn.execute(
+                "UPDATE streams SET values_json=? WHERE activity_id=? AND time_offset=?",
+                (json.dumps(values_map, ensure_ascii=True), activity_id, row["time_offset"]),
+            )
+        for channel_key in missing_channel_keys:
+            self.conn.execute(
+                """
+                INSERT INTO stream_channels (activity_id, channel_key, status)
+                VALUES (?, ?, ?)
+                ON CONFLICT(activity_id, channel_key) DO UPDATE SET status=excluded.status
+                """,
+                (activity_id, channel_key, "unavailable"),
+            )
+        for item in metadata:
+            self.conn.execute(
+                """
+                INSERT INTO stream_channels (
+                    activity_id, channel_key, original_size, resolution, series_type,
+                    fetched_at, batch_id, status, error
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(activity_id, channel_key) DO UPDATE SET
+                    original_size=excluded.original_size,
+                    resolution=excluded.resolution,
+                    series_type=excluded.series_type,
+                    fetched_at=excluded.fetched_at,
+                    batch_id=excluded.batch_id,
+                    status=excluded.status,
+                    error=excluded.error
+                """,
+                (
+                    activity_id,
+                    item["channel_key"],
+                    item.get("original_size"),
+                    item.get("resolution"),
+                    item.get("series_type"),
+                    item.get("fetched_at"),
+                    item.get("batch_id"),
+                    item.get("status", "available"),
+                    item.get("error"),
+                ),
+            )
         self.conn.commit()
+        return len(payload)
+
+    def stream_channel_coverage(self) -> dict[str, int]:
+        exists = self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stream_channels'"
+        ).fetchone()
+        if exists is None:
+            return {
+                "channels": 0,
+                "activities_with_channel_metadata": 0,
+                "available_channels": 0,
+                "unavailable_channels": 0,
+                "error_channels": 0,
+            }
+        row = self.conn.execute(
+            """
+            SELECT
+                COUNT(*) AS channels,
+                COUNT(DISTINCT activity_id) AS activities_with_channel_metadata,
+                SUM(CASE WHEN status='available' THEN 1 ELSE 0 END) AS available_channels,
+                SUM(CASE WHEN status='unavailable' THEN 1 ELSE 0 END) AS unavailable_channels,
+                SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS error_channels
+            FROM stream_channels
+            """
+        ).fetchone()
+        return {
+            "channels": int(row["channels"] or 0),
+            "activities_with_channel_metadata": int(row["activities_with_channel_metadata"] or 0),
+            "available_channels": int(row["available_channels"] or 0),
+            "unavailable_channels": int(row["unavailable_channels"] or 0),
+            "error_channels": int(row["error_channels"] or 0),
+        }
 
     # Zones
     def latest_athlete_zones(self) -> str | None:
