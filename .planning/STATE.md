@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-24T11:10:53.909Z"
-last_activity: 2026-05-24 -- Phase 07 planning complete
+last_updated: "2026-05-24T11:21:55.432Z"
+last_activity: 2026-05-24 -- Completed 07-01 read-model schema foundation
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 31
-  completed_plans: 25
-  percent: 81
+  completed_plans: 26
+  percent: 84
 ---
 
 # Project State
@@ -25,15 +25,15 @@ See: .planning/PROJECT.md (updated 2026-05-22)
 ## Current Position
 
 Phase: 07
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-24 -- Phase 07 planning complete
+Plan: 07-02
+Status: Ready to execute next plan
+Last activity: 2026-05-24 -- Completed 07-01 read-model schema foundation
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 25
+- Total plans completed: 26
 - Average duration: 0 min
 - Total execution time: 0.0 hours
 
@@ -47,6 +47,7 @@ Last activity: 2026-05-24 -- Phase 07 planning complete
 | 04 | 4 | - | - |
 | 05 | 6 | - | - |
 | 06 | 4 | - | - |
+| 07 | 1 | 44min | 44min |
 
 **Recent Trend:**
 
@@ -68,6 +69,7 @@ Last activity: 2026-05-24 -- Phase 07 planning complete
 | Phase 06 P02 | 35min | 3 tasks | 5 files |
 | Phase 06 P03 | 74min | 3 tasks | 8 files |
 | Phase 06 P04 | 6 min | 4 tasks | 12 files |
+| Phase 07 P07-01 | 44min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -109,6 +111,8 @@ Recent decisions affecting current work:
 - [Phase 06]: Stream-channel backfill runs only for activities with existing stream rows and streams endpoint only.
 - [Phase 06]: Daily refresh and legacy backfill reject stream-channel backfill checkpoints explicitly.
 - [Phase 06]: Runtime preflight accepts v3 intermediate and enforces v4 as final no-latlng schema.
+- [Phase 07]: Runtime schema target is now user_version=5 for read-model tables.
+- [Phase 07]: Pre-Phase-7 backups use a pinned filename class and are excluded from ordinary retention pruning.
 
 ### Pending Todos
 
@@ -129,9 +133,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-24T10:38:05.896Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-materialized-metrics-read-model/07-CONTEXT.md
+Last session: 2026-05-24T11:21:55.420Z
+Stopped at: Completed 07-01-PLAN.md
+Resume file: None
 
 ## Quick Tasks Completed
 
