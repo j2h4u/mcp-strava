@@ -475,7 +475,16 @@ def test_hot_read_model_query_plans_use_fact_indexes_and_never_scan_streams(tmp_
 
     details = [detail for group in plan_groups.values() for detail in group]
     assert not any("SCAN streams" in detail for detail in details)
-    assert all(any("USING" in detail and table in detail for detail in group) for table, group in plan_groups.items())
+    expected_index_fragments = {
+        "activity_metric_facts": "SEARCH f USING INDEX idx_activity_metric_day_sport_version",
+        "daily_load_facts": "SEARCH daily_load_facts USING INDEX idx_daily_load_day_scope_sport_version",
+        "training_model_daily": "SEARCH training_model_daily USING INDEX idx_training_model_day_scope_sport_version",
+        "rolling_period_facts": "SEARCH rolling_period_facts USING INDEX sqlite_autoindex_rolling_period_facts_1",
+    }
+    assert all(
+        any(expected_fragment in detail for detail in plan_groups[table])
+        for table, expected_fragment in expected_index_fragments.items()
+    )
 
 
 def test_hot_read_model_repository_queries_do_not_use_substr_date_filters() -> None:

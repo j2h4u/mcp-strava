@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import math
+import time
 from contextlib import AsyncExitStack
 from datetime import date, timedelta
 from pathlib import Path
@@ -10,6 +12,9 @@ from mcp import ClientSession, StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
 DEFAULT_TIMEOUT_SECONDS = 5.0
+DEFAULT_LATENCY_WARMUP = 2
+DEFAULT_LATENCY_SAMPLES = 20
+DEFAULT_LATENCY_P95_MS = 500.0
 
 EXPECTED_TOOL_NAMES = {
     "get_fitness_state",
@@ -18,6 +23,14 @@ EXPECTED_TOOL_NAMES = {
     "compare_periods",
     "project_fitness_state",
 }
+
+LATENCY_TOOL_ORDER = [
+    "get_fitness_state",
+    "list_workouts",
+    "get_workout_detail",
+    "compare_periods",
+    "project_fitness_state",
+]
 
 
 class McpClientError(RuntimeError):
@@ -212,6 +225,19 @@ async def execute_script_steps(client: StdioMcpClient | HttpMcpClient, steps: li
             results.append({"step": index, "action": action, "name": name, "result": result})
             continue
 
+        if action == "measure_warm_tool_latency":
+            result = await measure_warm_tool_latency(
+                client,
+                calls=_normalize_latency_calls(step.get("calls")),
+                warmup=_optional_int(step.get("warmup"), default=DEFAULT_LATENCY_WARMUP, field="warmup"),
+                samples=_optional_int(step.get("samples"), default=DEFAULT_LATENCY_SAMPLES, field="samples"),
+                p95_ms=_optional_float(step.get("p95_ms"), default=DEFAULT_LATENCY_P95_MS, field="p95_ms"),
+                startup_ms=_optional_float(step.get("startup_ms"), default=0.0, field="startup_ms"),
+            )
+            _assert_step_expectations(index=index, action=action, result=result, expect=step.get("expect"))
+            results.append({"step": index, "action": action, "result": result})
+            continue
+
         raise ValueError(f"unsupported script action at step {index}: {action!r}")
     return results
 
@@ -241,6 +267,131 @@ async def run_basic_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, A
             "list_workouts": len(workouts.get("structuredContent", {}).get("warnings") or []),
         },
     }
+
+
+def default_warm_latency_calls(*, workout_id: int, today: str | date | None = None) -> list[dict[str, Any]]:
+    if workout_id <= 0:
+        raise ValueError("workout_id must be positive")
+    if today is None:
+        today_date = date.today()
+    elif isinstance(today, date):
+        today_date = today
+    else:
+        today_date = date.fromisoformat(today)
+
+    return [
+        {"name": "get_fitness_state", "arguments": {}},
+        {"name": "list_workouts", "arguments": {"limit": 10}},
+        {"name": "get_workout_detail", "arguments": {"workout_id": workout_id}},
+        {
+            "name": "compare_periods",
+            "arguments": {
+                "period_a_start": (today_date - timedelta(days=13)).isoformat(),
+                "period_a_end": (today_date - timedelta(days=7)).isoformat(),
+                "period_b_start": (today_date - timedelta(days=6)).isoformat(),
+                "period_b_end": today_date.isoformat(),
+            },
+        },
+        {
+            "name": "project_fitness_state",
+            "arguments": {
+                "target_date": (today_date + timedelta(days=7)).isoformat(),
+                "scenarios": ["rest", "maintain"],
+            },
+        },
+    ]
+
+
+async def resolve_default_warm_latency_calls(
+    client: StdioMcpClient | HttpMcpClient,
+    *,
+    today: str | date | None = None,
+) -> list[dict[str, Any]]:
+    workouts = _require_success("list_workouts", await client.call_tool("list_workouts", {"limit": 1}))
+    return default_warm_latency_calls(workout_id=_extract_first_workout_id(workouts), today=today)
+
+
+async def run_warm_latency_gate(
+    client: StdioMcpClient | HttpMcpClient,
+    *,
+    calls: list[dict[str, Any]] | None = None,
+    warmup: int = DEFAULT_LATENCY_WARMUP,
+    samples: int = DEFAULT_LATENCY_SAMPLES,
+    p95_ms: float = DEFAULT_LATENCY_P95_MS,
+    startup_ms: float = 0.0,
+    raise_on_failure: bool = True,
+) -> dict[str, Any]:
+    selected_calls = calls if calls is not None else await resolve_default_warm_latency_calls(client)
+    return await measure_warm_tool_latency(
+        client,
+        calls=selected_calls,
+        warmup=warmup,
+        samples=samples,
+        p95_ms=p95_ms,
+        startup_ms=startup_ms,
+        raise_on_failure=raise_on_failure,
+    )
+
+
+async def measure_warm_tool_latency(
+    client: StdioMcpClient | HttpMcpClient,
+    *,
+    calls: list[dict[str, Any]],
+    warmup: int = DEFAULT_LATENCY_WARMUP,
+    samples: int = DEFAULT_LATENCY_SAMPLES,
+    p95_ms: float = DEFAULT_LATENCY_P95_MS,
+    startup_ms: float = 0.0,
+    raise_on_failure: bool = True,
+) -> dict[str, Any]:
+    normalized_calls = _normalize_latency_calls(calls)
+    if warmup < 0:
+        raise ValueError("warmup must be zero or positive")
+    if samples <= 0:
+        raise ValueError("samples must be positive")
+    if p95_ms <= 0:
+        raise ValueError("p95_ms must be positive")
+    if startup_ms < 0:
+        raise ValueError("startup_ms must be zero or positive")
+
+    tool_results: dict[str, dict[str, Any]] = {}
+    exceeded: list[str] = []
+    for call in normalized_calls:
+        name = str(call["name"])
+        arguments = dict(call["arguments"])
+        for _ in range(warmup):
+            _require_success(name, await client.call_tool(name, arguments))
+
+        timings: list[float] = []
+        for _ in range(samples):
+            started_at = time.perf_counter()
+            _require_success(name, await client.call_tool(name, arguments))
+            timings.append((time.perf_counter() - started_at) * 1000)
+
+        p50_value = _percentile(timings, 50)
+        p95_value = _percentile(timings, 95)
+        max_value = max(timings)
+        status = "ok" if p95_value <= p95_ms else "exceeded"
+        if status != "ok":
+            exceeded.append(name)
+        tool_results[name] = {
+            "status": status,
+            "samples": samples,
+            "warmup": warmup,
+            "p50_ms": round(p50_value, 3),
+            "p95_ms": round(p95_value, 3),
+            "max_ms": round(max_value, 3),
+            "threshold_ms": p95_ms,
+        }
+
+    result = {
+        "status": "ok" if not exceeded else "failed",
+        "mode": "warm_latency",
+        "startup_ms": round(startup_ms, 3),
+        "tools": tool_results,
+    }
+    if exceeded and raise_on_failure:
+        raise McpClientError(f"p95 threshold exceeded for tools: {', '.join(exceeded)}")
+    return result
 
 
 async def run_live_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, Any]:
@@ -343,6 +494,8 @@ def _assert_step_expectations(*, index: int, action: str, result: Any, expect: A
         _assert_list_tools_expectations(index=index, result=result, expect=expect)
     elif action == "call_tool":
         _assert_call_tool_expectations(index=index, result=result, expect=expect)
+    elif action == "measure_warm_tool_latency":
+        _assert_latency_expectations(index=index, result=result, expect=expect)
 
 
 def _assert_list_tools_expectations(*, index: int, result: Any, expect: dict[str, Any]) -> None:
@@ -379,6 +532,67 @@ def _assert_call_tool_expectations(*, index: int, result: Any, expect: dict[str,
             raise McpClientError(
                 f"script step {index} expected isError={expected_is_error!r}, got {actual_is_error!r}"
             )
+
+
+def _assert_latency_expectations(*, index: int, result: Any, expect: dict[str, Any]) -> None:
+    if not isinstance(result, dict):
+        raise McpClientError(f"script step {index} latency result is not an object")
+    expected_status = expect.get("latency_status")
+    if expected_status is not None and result.get("status") != expected_status:
+        raise McpClientError(
+            f"script step {index} expected latency_status={expected_status!r}, got {result.get('status')!r}"
+        )
+    include = expect.get("tool_names_include")
+    if include is not None:
+        if not isinstance(include, list) or not all(isinstance(item, str) for item in include):
+            raise ValueError(f"script step {index} field 'expect.tool_names_include' must be a list of strings")
+        tools = result.get("tools")
+        if not isinstance(tools, dict):
+            raise McpClientError(f"script step {index} latency result has no tools object")
+        missing = [name for name in include if name not in tools]
+        if missing:
+            raise McpClientError(f"script step {index} is missing latency tools: {missing}")
+
+
+def _normalize_latency_calls(raw_calls: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_calls, list) or not raw_calls:
+        raise ValueError("latency calls must be a non-empty list")
+    normalized: list[dict[str, Any]] = []
+    for index, call in enumerate(raw_calls, start=1):
+        if not isinstance(call, dict):
+            raise ValueError(f"latency call {index} must be an object")
+        name = call.get("name")
+        arguments = call.get("arguments", {})
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"latency call {index} is missing string field 'name'")
+        if not isinstance(arguments, dict):
+            raise ValueError(f"latency call {index} field 'arguments' must be an object")
+        normalized.append({"name": name, "arguments": arguments})
+    return normalized
+
+
+def _optional_int(value: Any, *, default: int, field: str) -> int:
+    if value is None:
+        return default
+    if not isinstance(value, int):
+        raise ValueError(f"{field} must be an integer")
+    return value
+
+
+def _optional_float(value: Any, *, default: float, field: str) -> float:
+    if value is None:
+        return default
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"{field} must be a number")
+    return float(value)
+
+
+def _percentile(values: list[float], percentile: int) -> float:
+    if not values:
+        raise ValueError("values must not be empty")
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, math.ceil((percentile / 100) * len(ordered)) - 1))
+    return ordered[index]
 
 
 def _lookup_path(payload: Any, path: str) -> Any:
