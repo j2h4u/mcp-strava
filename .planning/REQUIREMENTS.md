@@ -96,9 +96,21 @@ Requirements for the Full-Fidelity Strava Mirror milestone. This milestone chang
 - [x] **COVERAGE-01**: Operator can inspect stream channel, channel metadata, and GPS coverage by activity/date/sport without exposing secrets or unnecessary raw personal details
 - [x] **BACKFILL-01**: Operator can run resumable, rate-limit-aware stream-channel backfill only for activities missing channel values or metadata while preserving existing normalized rows
 
+### Read Model
+
+- [x] **READMODEL-01**: Activity-level derived metrics are persisted with source provenance and metric-version metadata
+- [x] **READMODEL-02**: Source mirror writes mark affected activities and days dirty through durable source hash, source revision, metric version, and transaction-safe dirty queue semantics
+- [x] **READMODEL-03**: Refresh and backfill runtime materializes activity facts, daily load facts, training model daily state, and rolling period facts below the MCP boundary
+- [x] **READMODEL-04**: MCP tools read materialized facts and never scan raw stream rows or recompute stream-heavy metrics during request handling
+
+### Performance
+
+- [x] **PERF-01**: Each MCP product tool completes under the 500 ms warm p95 target on the current local mirror, with startup measured separately
+
 ### Testing
 
 - [x] **TEST-05**: Tests prove lossless normalized stream retention, all-channel ingestion, mixed GPS migration, and coverage reporting against temp or copied databases without live Strava API calls
+- [x] **TEST-06**: Tests and live Docker smoke cover read-model materialization, query shape, MCP boundary guards, and warm p95 performance
 
 ## v2 Requirements
 
@@ -183,15 +195,30 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COVERAGE-01 | Phase 6 | Complete |
 | BACKFILL-01 | Phase 6 | Complete |
 | TEST-05 | Phase 6 | Complete |
+| READMODEL-01 | Phase 7 | Complete |
+| READMODEL-02 | Phase 7 | Complete |
+| READMODEL-03 | Phase 7 | Complete |
+| READMODEL-04 | Phase 7 | Complete |
+| PERF-01 | Phase 7 | Complete |
+| TEST-06 | Phase 7 | Complete |
+| ANALYTICS-01 | Future | Deferred |
+| ANALYTICS-02 | Future | Deferred |
+| ANALYTICS-03 | Future | Deferred |
+| ANALYTICS-04 | Future | Deferred |
+| ANALYTICS-05 | Future | Deferred |
+| OPS-01 | Future | Deferred |
+| OPS-02 | Future | Deferred |
 
 **Coverage:**
 - v1 requirements: 34 total
 - Mapped to phases: 34
 - Unmapped: 0
-- v1.1 requirements: 10 total
-- Mapped to phases: 10
+- v1.1 requirements: 16 total
+- Mapped to phases: 16
 - Unmapped: 0
+- v2 requirements: 7 total
+- Deferred: 7
 
 ---
 *Requirements defined: 2026-05-20*
-*Last updated: 2026-05-24 for v1.1 Full-Fidelity Strava Mirror completion*
+*Last updated: 2026-05-24 for Phase 7 read-model verification*
