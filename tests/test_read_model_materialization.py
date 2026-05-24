@@ -207,6 +207,38 @@ def test_read_model_v5_migration_creates_required_tables_columns_and_indexes(tmp
         assert REQUIRED_INDEXES <= _index_names(conn)
 
 
+def test_read_model_v5_migration_queues_existing_activities_for_initial_materialization(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.migrations import run_migrations
+    from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION
+
+    fixture = tmp_path / "fixture.db"
+    _create_fixture_db(fixture)
+
+    run_migrations(fixture)
+
+    with sqlite3.connect(fixture) as conn:
+        activity_count = conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
+        source_count = conn.execute("SELECT COUNT(*) FROM activity_source_state").fetchone()[0]
+        dirty_count = conn.execute("SELECT COUNT(*) FROM metric_dirty_activities").fetchone()[0]
+        metric_versions = {
+            row[0]
+            for row in conn.execute("SELECT DISTINCT metric_version FROM metric_dirty_activities").fetchall()
+        }
+        reasons = {
+            row[0]
+            for row in conn.execute("SELECT DISTINCT reason FROM metric_dirty_activities").fetchall()
+        }
+        missing_source_hashes = conn.execute(
+            "SELECT COUNT(*) FROM activity_source_state WHERE source_hash IS NULL OR source_hash = ''"
+        ).fetchone()[0]
+
+    assert source_count == activity_count
+    assert dirty_count == activity_count
+    assert metric_versions == {CURRENT_METRIC_VERSION}
+    assert reasons == {"initial_read_model_backfill"}
+    assert missing_source_hashes == 0
+
+
 def test_read_model_v5_migration_is_idempotent_and_preserves_source_rows(tmp_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import run_migrations
 
