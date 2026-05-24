@@ -20,6 +20,28 @@ REQUIRED_RUNTIME_TABLES: tuple[str, ...] = (
 )
 
 
+def _stream_columns(conn) -> set[str]:
+    return {row[1] for row in conn.execute("PRAGMA table_info(streams)").fetchall()}
+
+
+def _validate_phase6_versioned_stream_inventory(conn) -> None:
+    user_version = int(conn.execute("PRAGMA user_version").fetchone()[0] or 0)
+    columns = _stream_columns(conn)
+    if user_version >= 4:
+        if "latlng" in columns:
+            raise RuntimeError("Phase 6 v4 runtime schema must not include streams.latlng")
+        if "values_json" not in columns:
+            raise RuntimeError("Phase 6 v4 runtime schema missing streams.values_json")
+        return
+    if user_version == 3:
+        if "latlng" not in columns:
+            raise RuntimeError("Phase 6 v3 intermediate schema must include streams.latlng before v4 migration")
+        if "values_json" not in columns:
+            raise RuntimeError("Phase 6 v3 intermediate schema missing streams.values_json")
+        return
+    raise RuntimeError(f"Unsupported runtime schema version for Phase 6: user_version={user_version}")
+
+
 def validate_runtime_db(path: Path, *, quick: bool = False) -> None:
     """Validate runtime DB structure.
 
@@ -36,6 +58,7 @@ def validate_runtime_db(path: Path, *, quick: bool = False) -> None:
             return
 
         validate_required_inventory(conn)
+        _validate_phase6_versioned_stream_inventory(conn)
         integrity = str(conn.execute("PRAGMA integrity_check").fetchone()[0])
         if integrity.lower() != "ok":
             raise RuntimeError(f"SQLite integrity check failed: {integrity}")

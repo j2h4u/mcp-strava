@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
 
 import pytest
 
@@ -27,9 +28,8 @@ def test_dockerfile_source_contract() -> None:
     assert "MCP_STRAVA_ALLOW_CONTAINER_BIND=1" in text
     assert "EXPOSE 8080" in text
     assert 'ENTRYPOINT ["python", "-m", "mcp_strava.deploy.entrypoint"]' in text
-    assert "mcp_strava.deploy.preflight" in text
-    assert "/data/strava.db" in text
-    assert "--quick" in text
+    assert "mcp_strava.deploy.healthcheck" in text
+    assert "/runtime/data/strava.db" in text
 
 
 def test_compose_source_contract() -> None:
@@ -41,9 +41,9 @@ def test_compose_source_contract() -> None:
     assert "container_name: mcp-strava" in text
     assert "ports:" not in text
     assert 'expose: ["8080"]' in text or "expose:\n      - \"8080\"" in text
-    assert "/opt/docker/mcp-strava/data:/data" in text
-    assert "MCP_STRAVA_DB_PATH" in text and "/data/strava.db" in text
-    assert "/opt/docker/mcp-strava/.env" in text
+    assert "/opt/docker/mcp-strava:/runtime" in text
+    assert "MCP_STRAVA_DB_PATH" in text and "/runtime/data/strava.db" in text
+    assert "MCP_STRAVA_TOKEN_PATH" in text and "/runtime/.env" in text
     assert "mcp-backends" in text
 
 
@@ -94,6 +94,37 @@ def test_preflight_quick_mode_passes_valid_db(tmp_path: Path) -> None:
     run_migrations(db_path)
     rc = preflight_main(["--db", str(db_path), "--quick", "--quiet"])
     assert rc == 0
+
+
+def test_phase6_preflight_accepts_v3_intermediate_and_v4_final(tmp_path: Path) -> None:
+    from mcp_strava.adapters.sqlite.migrations import create_lossless_stream_inventory_v3, run_migrations
+    from mcp_strava.deploy.preflight import main as preflight_main
+    from tests.test_full_fidelity_mirror import _create_v2_fixture
+
+    v3_path = tmp_path / "v3.db"
+    _create_v2_fixture(v3_path)
+    with sqlite3.connect(v3_path) as conn:
+        create_lossless_stream_inventory_v3(conn)
+        conn.execute("PRAGMA user_version=3")
+        conn.commit()
+    assert preflight_main(["--db", str(v3_path), "--quiet"]) == 0
+
+    v4_path = tmp_path / "v4.db"
+    _create_v2_fixture(v4_path)
+    run_migrations(v4_path)
+    assert preflight_main(["--db", str(v4_path), "--quiet"]) == 0
+
+
+def test_runtime_path_references_stay_in_deploy_surface() -> None:
+    root = _repo_root()
+    offenders: list[str] = []
+    for py_file in (root / "src" / "mcp_strava").rglob("*.py"):
+        rel = py_file.relative_to(root).as_posix()
+        if rel.startswith("src/mcp_strava/deploy/"):
+            continue
+        if "/opt/docker/mcp-strava" in _read_text(py_file):
+            offenders.append(rel)
+    assert offenders == []
 
 
 def test_entrypoint_runs_preflight_before_exec(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
