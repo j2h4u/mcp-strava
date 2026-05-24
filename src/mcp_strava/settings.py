@@ -24,6 +24,7 @@ class FreshnessSettings:
 @dataclass(frozen=True)
 class RefreshSettings:
     interval_seconds: int
+    stream_backfill_batch_size: int
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,7 @@ _KEYS = {
     'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS',
     'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS',
     'MCP_STRAVA_REFRESH_INTERVAL_SECONDS',
+    'MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE',
     'MCP_STRAVA_PROJECT_ROOT',
 }
 
@@ -85,6 +87,7 @@ def _validate_ranges(
     warn_age_hours: int,
     max_age_hours: int,
     refresh_interval_seconds: int,
+    stream_backfill_batch_size: int,
 ) -> None:
     if http_port < 1 or http_port > 65535:
         raise ValueError('Invalid integer for MCP_STRAVA_HTTP_PORT: out of range')
@@ -99,6 +102,8 @@ def _validate_ranges(
         )
     if refresh_interval_seconds < 60:
         raise ValueError('Invalid integer for MCP_STRAVA_REFRESH_INTERVAL_SECONDS: out of range')
+    if stream_backfill_batch_size < 1:
+        raise ValueError('Invalid integer for MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE: out of range')
 
 
 def _parse_bool(raw: str) -> bool:
@@ -182,8 +187,18 @@ def load_settings(
         resolve('MCP_STRAVA_REFRESH_INTERVAL_SECONDS', '3600'),
         'MCP_STRAVA_REFRESH_INTERVAL_SECONDS',
     )
+    stream_backfill_batch_size = _parse_int(
+        resolve('MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE', '50'),
+        'MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE',
+    )
 
-    _validate_ranges(http_port, warn_age_hours, max_age_hours, refresh_interval_seconds)
+    _validate_ranges(
+        http_port,
+        warn_age_hours,
+        max_age_hours,
+        refresh_interval_seconds,
+        stream_backfill_batch_size,
+    )
 
     return Settings(
         database_path=database_path,
@@ -202,6 +217,7 @@ def load_settings(
         ),
         refresh=RefreshSettings(
             interval_seconds=refresh_interval_seconds,
+            stream_backfill_batch_size=stream_backfill_batch_size,
         ),
     )
 

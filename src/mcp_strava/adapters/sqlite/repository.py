@@ -990,7 +990,13 @@ class SQLiteRepository:
                     metadata_missing = True
                     missing_channels.append(channel)
                     continue
-                if meta["status"] in {"missing", "unavailable", "error"}:
+                status = meta["status"]
+                if status in {"missing", "error"}:
+                    missing_channels.append(channel)
+                    continue
+                if status == "unavailable":
+                    continue
+                if status != "available":
                     missing_channels.append(channel)
                     continue
                 if channel in {"distance", "watts", "temp"}:
@@ -1190,6 +1196,18 @@ class SQLiteRepository:
             (owner,),
         )
         self.conn.commit()
+
+    def renew_refresh_lease(self, owner: str, expires_at: str) -> bool:
+        cur = self.conn.execute(
+            """
+            UPDATE refresh_state
+            SET lease_expires_at = ?
+            WHERE id = 1 AND lease_owner = ?
+            """,
+            (expires_at, owner),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
 
     def set_checkpoint(self, stage: str, cursor: str | None) -> None:
         self.conn.execute(

@@ -18,6 +18,7 @@ _DAILY_STAGE_ORDER = (
     Stage.SCHEMA_VALIDATE,
     Stage.KUDOS,
 )
+_STREAM_CHANNEL_BACKFILL_MIN_LEASE_SECONDS = 30 * 60
 
 
 @dataclass(frozen=True)
@@ -169,9 +170,16 @@ def run_backfill_stream_channels(
     owner: str = "refresh-backfill-stream-channels",
 ) -> dict | RefreshSkipped:
     now_iso = _now_iso(clock)
-    expires_at = _plus_seconds_iso(clock, policy.lease_duration_seconds)
+    lease_seconds = max(policy.lease_duration_seconds, _STREAM_CHANNEL_BACKFILL_MIN_LEASE_SECONDS)
+    expires_at = _plus_seconds_iso(clock, lease_seconds)
     if not repo.acquire_refresh_lease(owner, expires_at, now_iso):
         return RefreshSkipped("refresh_in_progress")
+
+    def renew_lease() -> None:
+        renewed = repo.renew_refresh_lease(owner, _plus_seconds_iso(clock, lease_seconds))
+        if not renewed:
+            raise RuntimeError("refresh lease lost during stream-channel backfill")
+
     try:
         state = repo.get_refresh_state()
         if state.backoff_until and state.backoff_until > now_iso:
@@ -188,16 +196,31 @@ def run_backfill_stream_channels(
                 "metadata_missing": estimate["metadata_missing"],
                 "estimated_api_calls": estimate["estimated_api_calls"],
             }
+        if estimate["activities_to_backfill"] == 0:
+            repo.set_checkpoint(Stage.COMPLETE.value, None)
+            return {
+                "status": "ok",
+                "mode": "backfill_stream_channels",
+                "checkpoint_stage": Stage.COMPLETE.value,
+                "activities_considered": 0,
+                "activities_to_backfill": 0,
+                "missing_channels": {},
+                "metadata_missing": 0,
+                "estimated_api_calls": 0,
+                "completed": 0,
+            }
         repo.record_refresh_attempt(now_iso)
         repo.set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, state.checkpoint_cursor)
+        renew_lease()
         result = _sync_ops.sync_stream_channels_backfill(
             repo,
             transport,
             since=since,
             limit=limit,
             checkpoint_stage=Stage.STREAM_CHANNELS_BACKFILL,
+            on_progress=renew_lease,
         )
-        repo.set_checkpoint(Stage.COMPLETE_STREAM_CHANNELS_BACKFILL.value, None)
+        repo.set_checkpoint(Stage.COMPLETE.value, None)
         return {
             "status": "ok",
             "mode": "backfill_stream_channels",
@@ -207,6 +230,7 @@ def run_backfill_stream_channels(
             "missing_channels": result["missing_channels"],
             "metadata_missing": result["metadata_missing"],
             "estimated_api_calls": result["estimated_api_calls"],
+            "completed": result["completed"],
         }
     except StravaUnavailable as exc:
         _handle_failure(repo, clock, policy, exc.reason, "backfill_stream_channels")

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from calendar import monthrange
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.types import parse_strava_activity, parse_strava_stream_channels
@@ -283,11 +283,14 @@ def sync_stream_channels_backfill(
     since: str | None = None,
     limit: int | None = None,
     checkpoint_stage: Stage = Stage.STREAM_CHANNELS_BACKFILL,
+    on_progress: Callable[[], None] | None = None,
 ) -> dict:
     estimate = estimate_stream_channel_backfill(repo, since=since, limit=limit)
     completed = 0
     for item in estimate["candidates"]:
         activity_id = int(item["activity_id"])
+        if on_progress is not None:
+            on_progress()
         repo.set_checkpoint(checkpoint_stage.value, str(activity_id))
         response = transport.fetch(f"/activities/{activity_id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
         if not isinstance(response.data, dict):
@@ -311,6 +314,8 @@ def sync_stream_channels_backfill(
             missing_channel_keys=[k for k in missing if not any(m.get("channel_key") == k for m in filtered_metadata)],
         )
         completed += 1
+        if on_progress is not None:
+            on_progress()
     estimate["completed"] = completed
     return estimate
 

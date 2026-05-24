@@ -37,12 +37,30 @@ def _refresh_blocked_reason(state, now_iso: str) -> str | None:
 
 
 def _regular_refresh_due(state, now_iso: str, policy: RefreshPolicy) -> bool:
+    if state.checkpoint_stage == Stage.STREAM_CHANNELS_BACKFILL.value:
+        return False
     if state.checkpoint_stage is not None and state.checkpoint_stage != Stage.COMPLETE.value:
         return True
     return refresh_interval_elapsed(
         state.last_success_at,
         now_iso,
         policy.regular_refresh_interval_seconds,
+    )
+
+
+def _stream_channel_backfill_due(state) -> bool:
+    return state.checkpoint_stage == Stage.STREAM_CHANNELS_BACKFILL.value
+
+
+def _run_stream_channel_backfill(repo, transport, refresh_policy, clock, sleeper):
+    return refresh_runtime.run_backfill_stream_channels(
+        repo,
+        transport,
+        refresh_policy,
+        clock,
+        sleeper,
+        limit=refresh_policy.stream_backfill_batch_size,
+        owner="refresh-worker-stream-backfill",
     )
 
 
@@ -64,8 +82,9 @@ def run_pending_once(*, emit_idle: bool = True) -> int:
                 _emit("refresh_skipped", reason=blocked_reason)
             return 0
         refresh_due = _regular_refresh_due(state, now_iso, refresh_policy)
+        stream_backfill_due = _stream_channel_backfill_due(state)
 
-    if pending_count == 0 and not refresh_due:
+    if pending_count == 0 and not refresh_due and not stream_backfill_due:
         if emit_idle:
             _emit("refresh_idle")
         return 0
@@ -80,36 +99,56 @@ def run_pending_once(*, emit_idle: bool = True) -> int:
     with DbConn() as conn:
         repo = SQLiteRepository.from_connection(conn)
         pending_count = len(repo.pending_refresh_requests())
-        if pending_count == 0 and not refresh_due:
+        state = repo.get_refresh_state()
+        stream_backfill_due = _stream_channel_backfill_due(state)
+        if pending_count == 0 and not refresh_due and not stream_backfill_due:
             if emit_idle:
                 _emit("refresh_idle")
             return 0
 
-        result = refresh_runtime.run_once(
-            repo,
-            transport,
-            refresh_policy,
-            clock,
-            sleeper,
-            owner="refresh-worker",
-            force=False,
-            mode="periodic",
-        )
+        if pending_count > 0 or refresh_due:
+            result = refresh_runtime.run_once(
+                repo,
+                transport,
+                refresh_policy,
+                clock,
+                sleeper,
+                owner="refresh-worker",
+                force=False,
+                mode="periodic",
+            )
 
-        if isinstance(result, RefreshSkipped):
-            if result.reason == "already_complete":
+            if isinstance(result, RefreshSkipped):
+                if result.reason == "already_complete":
+                    consumed = repo.mark_refresh_requests_consumed(_now_iso())
+                    _emit("refresh_request_consumed", result="already_complete", consumed=consumed)
+                else:
+                    _emit("refresh_skipped", reason=result.reason)
+                    return 0
+            elif result.status == "ok":
                 consumed = repo.mark_refresh_requests_consumed(_now_iso())
-                _emit("refresh_request_consumed", result="already_complete", consumed=consumed)
-                return 0
-            _emit("refresh_skipped", reason=result.reason)
-            return 0
+                _emit("refresh_ok", consumed=consumed, checkpoint_stage=result.checkpoint_stage)
+            else:
+                _emit("refresh_failed", reason=result.reason or "unknown", checkpoint_stage=result.checkpoint_stage)
+                return 1
 
-        if result.status == "ok":
-            consumed = repo.mark_refresh_requests_consumed(_now_iso())
-            _emit("refresh_ok", consumed=consumed, checkpoint_stage=result.checkpoint_stage)
+        backfill_result = _run_stream_channel_backfill(repo, transport, refresh_policy, clock, sleeper)
+        if isinstance(backfill_result, RefreshSkipped):
+            _emit("stream_backfill_skipped", reason=backfill_result.reason)
             return 0
-
-        _emit("refresh_failed", reason=result.reason or "unknown", checkpoint_stage=result.checkpoint_stage)
+        if backfill_result["status"] == "ok":
+            _emit(
+                "stream_backfill_ok",
+                completed=backfill_result.get("completed", 0),
+                activities_to_backfill=backfill_result["activities_to_backfill"],
+                checkpoint_stage=backfill_result["checkpoint_stage"],
+            )
+            return 0
+        _emit(
+            "stream_backfill_failed",
+            reason=backfill_result.get("reason", "unknown"),
+            checkpoint_stage=backfill_result.get("checkpoint_stage"),
+        )
         return 1
 
 

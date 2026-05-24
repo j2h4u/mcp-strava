@@ -378,10 +378,11 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
     from mcp_strava.refresh import worker
 
     calls = []
+    backfill_calls = []
     settings = SimpleNamespace(
         database_path=tmp_path / "refresh.db",
         freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
-        refresh=SimpleNamespace(interval_seconds=3600),
+        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=50),
     )
     state = SimpleNamespace(
         lease_owner=None,
@@ -412,6 +413,15 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
         calls.append((owner, force, mode))
         return SimpleNamespace(status="ok", checkpoint_stage=Stage.COMPLETE.value)
 
+    def fake_stream_backfill(repo, transport, refresh_policy, clock, sleeper):
+        backfill_calls.append(refresh_policy.stream_backfill_batch_size)
+        return {
+            "status": "ok",
+            "checkpoint_stage": Stage.COMPLETE.value,
+            "activities_to_backfill": 0,
+            "completed": 0,
+        }
+
     monkeypatch.setattr(worker, "get_settings", lambda: settings)
     monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
     monkeypatch.setattr(
@@ -424,12 +434,76 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
     monkeypatch.setattr(
         worker,
         "build_refresh_collaborators",
-        lambda _settings: (_settings, object(), object(), object(), object()),
+        lambda _settings: (_settings, object(), object(), object(), worker.RefreshPolicy.from_settings(settings)),
     )
     monkeypatch.setattr(worker.refresh_runtime, "run_once", fake_run_once)
+    monkeypatch.setattr(worker, "_run_stream_channel_backfill", fake_stream_backfill)
 
     assert worker.run_pending_once(emit_idle=False) == 0
     assert calls == [("refresh-worker", False, "periodic")]
+    assert backfill_calls == [50]
+
+
+def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypatch, tmp_path):
+    from mcp_strava.refresh import Stage
+    from mcp_strava.refresh import worker
+
+    backfill_calls = []
+    settings = SimpleNamespace(
+        database_path=tmp_path / "refresh.db",
+        freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
+        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=25),
+    )
+    state = SimpleNamespace(
+        lease_owner=None,
+        lease_expires_at=None,
+        backoff_until=None,
+        checkpoint_stage=Stage.STREAM_CHANNELS_BACKFILL.value,
+        last_success_at="2026-05-21T11:30:00",
+    )
+
+    class FakeDbConn:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeRepo:
+        def get_refresh_state(self):
+            return state
+
+        def pending_refresh_requests(self):
+            return []
+
+    def fake_stream_backfill(repo, transport, refresh_policy, clock, sleeper):
+        backfill_calls.append(refresh_policy.stream_backfill_batch_size)
+        return {
+            "status": "ok",
+            "checkpoint_stage": Stage.COMPLETE_STREAM_CHANNELS_BACKFILL.value,
+            "activities_to_backfill": 25,
+            "completed": 25,
+        }
+
+    monkeypatch.setattr(worker, "get_settings", lambda: settings)
+    monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
+    monkeypatch.setattr(
+        worker,
+        "run_preflight",
+        lambda _path: SimpleNamespace(row_counts={"refresh_state": 1, "refresh_requests": 0}),
+    )
+    monkeypatch.setattr(worker, "DbConn", FakeDbConn)
+    monkeypatch.setattr(worker.SQLiteRepository, "from_connection", lambda _conn: FakeRepo())
+    monkeypatch.setattr(
+        worker,
+        "build_refresh_collaborators",
+        lambda _settings: (_settings, object(), object(), object(), worker.RefreshPolicy.from_settings(settings)),
+    )
+    monkeypatch.setattr(worker.refresh_runtime, "run_once", lambda *_args, **_kwargs: pytest.fail("regular refresh must not run"))
+    monkeypatch.setattr(worker, "_run_stream_channel_backfill", fake_stream_backfill)
+
+    assert worker.run_pending_once(emit_idle=False) == 0
+    assert backfill_calls == [25]
 
 
 def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
@@ -439,7 +513,7 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
     settings = SimpleNamespace(
         database_path=tmp_path / "refresh.db",
         freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
-        refresh=SimpleNamespace(interval_seconds=3600),
+        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=50),
     )
     state = SimpleNamespace(
         lease_owner=None,
@@ -616,6 +690,51 @@ def test_sync_streams_records_missing_requested_channels_without_failure(tmp_pat
     assert missing > 0
 
 
+def test_unavailable_stream_channels_do_not_create_repeat_backfill_work(tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, run_backfill_stream_channels
+    from mcp_strava.refresh._sync_ops import sync_streams
+
+    class PartialStreamsTransport(FakeStravaTransport):
+        def fetch(self, path: str) -> StravaResponse:
+            self.calls_by_path[path] += 1
+            if path.startswith("/activities/500/streams"):
+                return StravaResponse(
+                    data={
+                        "time": {"data": [0], "original_size": 1, "resolution": "high", "series_type": "distance"},
+                        "heartrate": {"data": [142], "original_size": 1, "resolution": "high", "series_type": "distance"},
+                    },
+                    rate_info=StravaRateInfo(),
+                    status=200,
+                )
+            return super().fetch(path)
+
+    with _repo(tmp_path) as repo:
+        repo.upsert_activity_summary(
+            activity_id=500,
+            date="2026-05-21T06:00:00Z",
+            name="Unavailable Channels",
+            sport_type="Run",
+            distance=1000,
+            moving_time=600,
+            elapsed_time=620,
+            total_elevation_gain=10,
+            summary_json="{}",
+            synced_at="2026-05-21T07:00:00Z",
+        )
+        assert sync_streams(repo, PartialStreamsTransport(), since="2026-05-20") == 1
+        result = run_backfill_stream_channels(
+            repo,
+            FakeStravaTransport(),
+            RefreshPolicy(),
+            FakeClock(),
+            FakeSleeper(),
+            dry_run=True,
+        )
+
+    assert result["activities_to_backfill"] == 0
+    assert result["estimated_api_calls"] == 0
+
+
 def test_stream_channel_backfill_dry_run_reports_remaining_work_without_transport_calls(tmp_path):
     from mcp_strava.refresh import RefreshPolicy, run_backfill_stream_channels
 
@@ -753,6 +872,81 @@ def test_stream_channel_backfill_uses_only_streams_endpoint(tmp_path):
     assert any(path.startswith("/activities/500/streams") for path in transport.calls_by_path)
     assert not any(path.startswith("/athlete/activities") for path in transport.calls_by_path)
     assert not any(path.endswith("/kudos?per_page=100") for path in transport.calls_by_path)
+
+
+def test_stream_channel_backfill_renews_long_lease_during_progress(tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, run_backfill_stream_channels
+
+    clock = FakeClock()
+
+    class WaitingStreamsTransport(FakeStravaTransport):
+        def fetch(self, path: str) -> StravaResponse:
+            self.calls_by_path[path] += 1
+            clock.advance(901)
+            return StravaResponse(
+                data={
+                    "time": {"data": [0]},
+                    "distance": {"data": [0.0]},
+                    "watts": {"data": [220]},
+                },
+                rate_info=StravaRateInfo(),
+                status=200,
+            )
+
+    with _repo(tmp_path) as repo:
+        repo.upsert_activity_summary(
+            activity_id=500,
+            date="2026-05-21T06:00:00Z",
+            name="Lease Renewal",
+            sport_type="Run",
+            distance=1000,
+            moving_time=600,
+            elapsed_time=620,
+            total_elevation_gain=10,
+            summary_json="{}",
+            synced_at="2026-05-21T07:00:00Z",
+        )
+        repo.insert_stream_rows_chunked(
+            500,
+            [
+                {
+                    "time_offset": 0,
+                    "heartrate": 140,
+                    "velocity": 3.0,
+                    "altitude": 501.0,
+                    "cadence": 84,
+                    "lat": 43.21,
+                    "lng": 76.91,
+                    "grade": 1.1,
+                    "gap_speed": 3.05,
+                    "gap_distance": 0.0,
+                    "is_moving": 1,
+                    "values_json": json.dumps({"distance": 0.0}),
+                }
+            ],
+        )
+        renewals: list[str] = []
+        original_renew = repo.renew_refresh_lease
+
+        def record_renewal(owner: str, expires_at: str) -> bool:
+            renewals.append(expires_at)
+            return original_renew(owner, expires_at)
+
+        repo.renew_refresh_lease = record_renewal  # type: ignore[method-assign]
+        result = run_backfill_stream_channels(
+            repo,
+            WaitingStreamsTransport(),
+            RefreshPolicy(lease_duration_seconds=10),
+            clock,
+            FakeSleeper(clock),
+        )
+
+    assert result["status"] == "ok"
+    assert len(renewals) >= 2
+    first = datetime.fromisoformat(renewals[0])
+    last = datetime.fromisoformat(renewals[-1])
+    assert (first - datetime.fromtimestamp(1_716_206_400.0, tz=timezone.utc).replace(tzinfo=None)).total_seconds() == 1800
+    assert (last - first).total_seconds() >= 901
 
 
 def test_stream_channel_backfill_rate_limit_keeps_checkpoint_and_rows(tmp_path):
