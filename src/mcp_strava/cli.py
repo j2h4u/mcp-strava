@@ -36,6 +36,7 @@ from mcp_strava.sync import (
 from mcp_strava.trends import compute_trends
 from mcp_strava.settings import get_settings
 
+backfill_stream_channels = refresh_runtime.run_backfill_stream_channels
 
 # ═══════════════════════════════════════════════════════════════
 #  CLI Commands
@@ -494,6 +495,69 @@ def cmd_mirror_coverage(args):
         print(f"- {key}: {payload.get(key)}")
 
 
+def cmd_backfill_streams(args):
+    json_output = _pop_json_flag(args)
+    dry_run = False
+    since = None
+    limit = None
+    db_path: str | None = None
+
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token == "--dry-run":
+            dry_run = True
+            index += 1
+            continue
+        if token == "--since":
+            if index + 1 >= len(args):
+                _usage_error("Usage: python -m mcp_strava admin backfill-streams [--dry-run] [--since YYYY-MM-DD] [--limit N] [--db <path>] [--json]")
+            since = args[index + 1]
+            index += 2
+            continue
+        if token == "--limit":
+            if index + 1 >= len(args) or not args[index + 1].isdigit():
+                _usage_error("Usage: --limit N")
+            limit = int(args[index + 1])
+            index += 2
+            continue
+        if token == "--db":
+            if index + 1 >= len(args):
+                _usage_error("Usage: --db <path>")
+            db_path = args[index + 1]
+            index += 2
+            continue
+        _usage_error("Usage: python -m mcp_strava admin backfill-streams [--dry-run] [--since YYYY-MM-DD] [--limit N] [--db <path>] [--json]")
+
+    settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
+    if db_path is None:
+        conn_context = DbConn()
+    else:
+        conn_context = SQLiteRepository.from_path(Path(db_path))
+    with conn_context as conn:
+        repo = SQLiteRepository.from_connection(conn) if db_path is None else conn
+        result = backfill_stream_channels(
+            repo,
+            transport,
+            refresh_policy,
+            clock,
+            sleeper,
+            since=since,
+            limit=limit,
+            dry_run=dry_run,
+        )
+    if isinstance(result, RefreshSkipped):
+        payload = {"status": "skipped", "reason": result.reason, "mode": "backfill_stream_channels"}
+    else:
+        payload = result
+    if json_output:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        print("Backfill Streams")
+        for key, value in payload.items():
+            print(f"- {key}: {value}")
+
+
 def _pop_json_flag(args):
     if "--json" not in args:
         return False
@@ -661,7 +725,9 @@ def cmd_admin(args):
     if not args or args[0] in {"--help", "-h"}:
         print(
             "Usage: python -m mcp_strava admin <command> [args]\n"
-            f"Admin commands: {', '.join(ADMIN_COMMANDS)}",
+            f"Admin commands: {', '.join(ADMIN_COMMANDS)}\n"
+            "backfill: legacy full streams/details backfill\n"
+            "backfill-streams: phase-6 stream channel/metadata backfill",
             file=sys.stderr,
         )
         raise SystemExit(1)
@@ -685,6 +751,7 @@ ADMIN_COMMANDS = {
     "mirror-coverage": cmd_mirror_coverage,
     "token-refresh": cmd_refresh,
     "backfill": cmd_backfill,
+    "backfill-streams": cmd_backfill_streams,
     "sql": cmd_sql,
     "raw": cmd_strava_raw,
     "log": cmd_log,

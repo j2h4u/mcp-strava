@@ -46,6 +46,11 @@ FORBIDDEN_TOOL_NAMES = {
     "db_check",
     "db_migrate",
     "mirror_refresh",
+    "mirror-coverage",
+    "backfill-streams",
+    "stream_backfill",
+    "coverage",
+    "status",
 }
 
 _SAFE_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}

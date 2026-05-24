@@ -236,8 +236,9 @@ def test_admin_mirror_coverage_json_output(tmp_path: Path, monkeypatch: pytest.M
         assert key in payload
 
 
-def test_admin_backfill_streams_dry_run_json_fields(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_admin_backfill_streams_dry_run_json_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     import mcp_strava.cli as cli
+    from tests.test_full_fidelity_mirror import _create_v2_fixture
 
     def fake_backfill(*_args, **kwargs):
         return {
@@ -252,10 +253,12 @@ def test_admin_backfill_streams_dry_run_json_fields(monkeypatch: pytest.MonkeyPa
         }
 
     monkeypatch.setattr(cli, "backfill_stream_channels", fake_backfill, raising=False)
+    fixture = tmp_path / "coverage.db"
+    _create_v2_fixture(fixture)
     monkeypatch.setattr(
         sys,
         "argv",
-        ["mcp_strava", "admin", "backfill-streams", "--dry-run", "--json"],
+        ["mcp_strava", "admin", "backfill-streams", "--db", str(fixture), "--dry-run", "--json"],
     )
     cli.main()
     payload = json.loads(capsys.readouterr().out)

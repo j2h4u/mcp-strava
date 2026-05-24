@@ -40,6 +40,11 @@ FORBIDDEN_TOOL_NAMES = {
     "db_check",
     "db_migrate",
     "mirror_refresh",
+    "mirror-coverage",
+    "backfill-streams",
+    "stream_backfill",
+    "coverage",
+    "status",
 }
 
 
