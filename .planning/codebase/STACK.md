@@ -9,7 +9,7 @@ last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
 ## Languages
 
 **Primary:**
-- Python 3.13+ - Runtime code in `src/mcp_strava/*.py`, deployment helpers in `deploy/*.py`, and package metadata in `pyproject.toml`.
+- Python 3.14+ - Runtime code in `src/mcp_strava/*.py`, deployment helpers in `deploy/*.py`, and package metadata in `pyproject.toml`.
 
 **Secondary:**
 - YAML - Docker Compose and gateway catalog mutation in `deploy/docker-compose.yml` and `deploy/gateway_register.py`.
@@ -18,7 +18,7 @@ last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
 ## Runtime
 
 **Environment:**
-- CPython 3.13 - The project declares `requires-python = ">=3.13"` in `pyproject.toml`, and the container image uses `python:3.13-slim` in `deploy/Dockerfile`.
+- CPython 3.14 - The project declares `requires-python = ">=3.14"` in `pyproject.toml`, and the container image uses `python:3.14-slim` in `deploy/Dockerfile`.
 - Local package install - The container build installs the project from `/app` with `pip install --no-cache-dir /app`.
 
 **Package Manager:**
@@ -63,7 +63,7 @@ last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
 ## Platform Requirements
 
 **Development:**
-- Python 3.13+ with write access to the repo checkout, local `.env`, and `data/`.
+- Python 3.14+ with write access to the repo checkout, local `.env`, and `data/`.
 - Network access to `https://www.strava.com` for token refresh and API fetches.
 - Local SQLite mirror state under `data/strava.db` or the path selected by `MCP_STRAVA_DB_PATH`.
 

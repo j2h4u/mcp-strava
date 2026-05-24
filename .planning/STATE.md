@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: complete
-last_updated: "2026-05-24T21:58:36+05:00"
-last_activity: 2026-05-24 -- Completed quick task 260524-u5f live Phase 7 DB cutover
+last_updated: "2026-05-24T22:26:53+05:00"
+last_activity: 2026-05-24 -- Completed quick task 260524-v31 Python 3.14 runtime baseline
 progress:
   total_phases: 7
   completed_phases: 7
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-22)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Phase 7 complete; live read-model migration/materialization accepted
+**Current focus:** Phase 7 complete; live read-model migration/materialization accepted; Docker runtime baseline moved to Python 3.14
 
 ## Current Position
 
 Phase: 07
 Plan: 07-06
 Status: Complete
-Last activity: 2026-05-24 -- Completed quick task 260524-u5f live Phase 7 DB cutover
+Last activity: 2026-05-24 -- Completed quick task 260524-v31 Python 3.14 runtime baseline
 
 ## Performance Metrics
 
@@ -125,6 +125,7 @@ Recent decisions affecting current work:
 - [Phase 07]: Refresh, legacy backfill, and stream-channel backfill now call the same read-model materialization stage below MCP.
 - [Phase 07]: Read-model materialization lease renewal must not commit an already-active materializer transaction.
 - [Phase 07]: Read-model materialization remains runtime-owned automation only; MCP enforces the exact five product tools rather than a redundant forbidden-name list.
+- [Quick 260524-v31]: Docker/runtime Python baseline is Python 3.14.
 
 ### Pending Todos
 
@@ -145,8 +146,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-24T21:58:36+05:00
-Stopped at: Completed quick task 260524-u5f live Phase 7 DB cutover
+Last session: 2026-05-24T22:26:53+05:00
+Stopped at: Completed quick task 260524-v31 Python 3.14 runtime baseline
 Resume file: None
 
 ## Quick Tasks Completed
@@ -157,3 +158,4 @@ Resume file: None
 | 260524-kiy add persistent MCP test client and tool-call logging | 2026-05-24 | `.planning/quick/260524-kiy-add-persistent-mcp-test-client-tool-call/260524-kiy-SUMMARY.md` |
 | 260524-p6j remove read-model materialization admin surface | 2026-05-24 | `.planning/quick/260524-p6j-remove-read-model-materialization-admin-/260524-p6j-SUMMARY.md` |
 | 260524-u5f live Phase 7 DB cutover | 2026-05-24 | `.planning/quick/260524-u5f-live-phase-7-db-cutover-backup-opt-docke/SUMMARY.md` |
+| 260524-v31 bump Docker/runtime Python baseline to 3.14 | 2026-05-24 | `.planning/quick/260524-v31-bump-docker-runtime-python-baseline-to-3/260524-v31-SUMMARY.md` |

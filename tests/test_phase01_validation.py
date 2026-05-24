@@ -16,7 +16,7 @@ def test_found01_pyproject_package_contract() -> None:
         data = tomllib.load(fh)
 
     assert data['project']['name'] == 'mcp-strava'
-    assert data['project']['requires-python'] == '>=3.13'
+    assert data['project']['requires-python'] == '>=3.14'
     assert data['tool']['setuptools']['package-dir'] == {'': 'src'}
     assert data['tool']['setuptools']['packages']['find']['where'] == ['src']
     assert 'scripts' not in data['project']

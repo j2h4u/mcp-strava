@@ -24,10 +24,10 @@ The long-term shape is a Docker-packaged local MCP server connected to the user'
 ## Technology Stack
 
 ## Languages
-- Python 3.13.5 - All runtime code in `scripts/strava_lib/*.py`, the CLI in `scripts/cli.py`, and smoke tests in `tests/test_smoke.py`.
+- Python 3.14+ - Runtime code in `src/mcp_strava/*.py`, deployment helpers in `deploy/*.py`, and package metadata in `pyproject.toml`.
 - Bash - `Justfile` task runner syntax and shell execution.
 ## Runtime
-- CPython 3.13.5 in this workspace.
+- CPython 3.14 in the Docker runtime.
 - Standard-library-only runtime; imports under `scripts/` and `tests/` are `sqlite3`, `urllib.request`, `json`, `dataclasses`, `typing`, and other stdlib modules.
 - Not detected.
 - No `requirements.txt`, `pyproject.toml`, `poetry.lock`, `Pipfile`, or other Python lockfile is present.
@@ -53,7 +53,7 @@ The long-term shape is a Docker-packaged local MCP server connected to the user'
 - `scripts/run_tests.py` is the verification harness.
 - `.gitignore` excludes `.env` and `data/*.db*`.
 ## Platform Requirements
-- Python 3.13.x with access to the repo checkout.
+- Python 3.14+ with access to the repo checkout.
 - Writable `data/` directory for SQLite files.
 - Network access to `https://www.strava.com` for token refresh and API calls.
 - No separate deployment target is detected.
