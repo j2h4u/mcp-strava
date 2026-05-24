@@ -1597,6 +1597,7 @@ class SQLiteRepository:
         self.conn.commit()
 
     def renew_refresh_lease(self, owner: str, expires_at: str) -> bool:
+        was_in_transaction = self.conn.in_transaction
         cur = self.conn.execute(
             """
             UPDATE refresh_state
@@ -1605,7 +1606,8 @@ class SQLiteRepository:
             """,
             (expires_at, owner),
         )
-        self.conn.commit()
+        if not was_in_transaction:
+            self.conn.commit()
         return cur.rowcount > 0
 
     def set_checkpoint(self, stage: str, cursor: str | None) -> None:

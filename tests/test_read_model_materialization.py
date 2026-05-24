@@ -640,8 +640,18 @@ def test_materializer_failure_keeps_dirty_rows_and_does_not_mark_success(tmp_pat
     with repo:
         _seed_dirty_activity_with_streams(repo)
         failing_repo = FailingDailyFactRepo(repo.conn)
+        assert failing_repo.acquire_refresh_lease("materializer-test", "2026-05-24T12:15:00", "2026-05-24T12:00:00")
+
+        def renew_lease() -> None:
+            assert failing_repo.renew_refresh_lease("materializer-test", "2026-05-24T12:20:00")
+
         with pytest.raises(RuntimeError, match="daily fact failed"):
-            materialize_read_model(failing_repo, metric_version=1, now="2026-05-24T12:00:00")
+            materialize_read_model(
+                failing_repo,
+                metric_version=1,
+                now="2026-05-24T12:00:00",
+                renew_lease=renew_lease,
+            )
 
         assert _dirty_rows(repo, 920)
         success_count = repo.conn.execute(
