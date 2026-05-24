@@ -9,8 +9,7 @@ requires:
 provides:
   - read-model materialization stage in daily refresh and backfill flows
   - lease-aware materialization wrapper below MCP
-  - local admin read-model materialization command
-  - MCP forbidden-name guard for recompute/materialization controls
+  - exact five-tool MCP allowlist preservation
 affects: [phase-07-05, phase-07-06, refresh-runtime, docker-runtime, mcp-surface]
 tech-stack:
   added: []
@@ -45,7 +44,7 @@ completed: 2026-05-24
 
 # Phase 7 Plan 4: Runtime Materialization Wiring Summary
 
-**Refresh and backfill now materialize read-model facts below the MCP surface, with local admin controls only**
+**Refresh and backfill now materialize read-model facts below the MCP surface**
 
 ## Performance
 
@@ -57,19 +56,18 @@ completed: 2026-05-24
 
 ## Accomplishments
 
-- Added RED coverage for refresh-stage ordering, backfill materialization, lease-loss fail-closed behavior, admin CLI output, Docker v5 readiness, and MCP forbidden operational names.
+- Added RED coverage for refresh-stage ordering, backfill materialization, lease-loss fail-closed behavior, Docker v5 readiness, and MCP allowlist behavior.
 - Added `Stage.READ_MODEL_MATERIALIZE` and `Stage.READ_MODEL_MATERIALIZE_BACKFILL`, then wired materialization after schema validation and before kudos in daily refresh.
 - Wired legacy backfill and stream-channel backfill through the same `_sync_ops.materialize_read_model_stage(...)` helper.
-- Added `python -m mcp_strava admin read-model-materialize` with `--db`, `--json`, `--dry-run`, `--limit`, and `--metric-version`.
 - Extended runtime DB preflight to return read-model readiness metadata while still allowing startup when facts are not current.
-- Preserved the MCP boundary by keeping the product allowlist unchanged and blocking materialize/recompute/dirty/status/admin names.
+- Preserved the MCP boundary by keeping the product allowlist unchanged.
 - Fixed a transaction safety issue so lease renewal during materialization does not commit partial fact writes.
 
 ## Task Commits
 
 1. **Task 1: Add failing runtime/admin/MCP/preflight tests** - `6434afb` (`test`)
 2. **Task 2: Implement refresh/backfill materialization stages** - `8e31f38` (`feat`)
-3. **Task 3: Add admin command and MCP forbidden names** - `28496c9` (`feat`)
+3. **Task 3: Add admin command and MCP forbidden names** - `28496c9` (`feat`) *(superseded by quick task 260524-p6j)*
 4. **Fix: Preserve materializer transaction on lease renewal** - `8b67883` (`fix`)
 
 ## Verification
@@ -86,8 +84,6 @@ completed: 2026-05-24
 - `src/mcp_strava/refresh/runtime.py` - materialization calls in daily refresh, backfill, and stream-channel backfill.
 - `src/mcp_strava/refresh/_sync_ops.py` - shared materialization stage helper.
 - `src/mcp_strava/deploy/preflight.py` - v5 read-model readiness metadata for runtime preflight.
-- `src/mcp_strava/cli.py` - local admin `read-model-materialize` command.
-- `src/mcp_strava/interfaces/mcp_http.py` - forbidden operational names for read-model/recompute controls.
 - `src/mcp_strava/adapters/sqlite/repository.py` - transaction-aware lease renewal behavior.
 - Tests covering runtime, CLI, Docker preflight, MCP boundary, and materializer transaction safety.
 
@@ -95,7 +91,7 @@ completed: 2026-05-24
 
 - Stream-channel backfill keeps its existing source-work checkpoint until materialization completes; if materialization fails, rerunning stream-channel backfill is idempotent and safely retries materialization.
 - Docker startup preflight treats missing/current facts as readiness metadata, not a startup blocker and not a recompute trigger.
-- Admin output reports counts/status/run id only; it does not expose raw streams, arbitrary SQL, or token material.
+- Post-plan Kaizen review removed the manual read-model materialization CLI and redundant MCP forbidden-name list; automation and exact MCP allowlist are the maintained contract.
 
 ## Deviations from Plan
 
@@ -131,7 +127,6 @@ Ready for Plan 07-05: cut MCP services over to materialized fact-only read queri
 | Flag | File | Description |
 |------|------|-------------|
 | threat_flag: materialization-lease | src/mcp_strava/refresh/runtime.py | Long materialization renews the refresh lease and fails closed if lease ownership is lost. |
-| threat_flag: admin-read-model | src/mcp_strava/cli.py | Local admin can materialize facts; this must remain outside MCP. |
-| threat_flag: mcp-boundary | src/mcp_strava/interfaces/mcp_http.py | MCP forbidden-name set blocks operational read-model/recompute controls. |
+| threat_flag: mcp-boundary | src/mcp_strava/interfaces/mcp_http.py | MCP tool set must remain exactly the five product tools. |
 
 ## Self-Check: PASSED

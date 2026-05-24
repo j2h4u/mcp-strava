@@ -18,18 +18,6 @@ EXPECTED_TOOL_NAMES = {
     "compare_periods",
     "project_fitness_state",
 }
-FORBIDDEN_TOOL_NAMES = {
-    "sync",
-    "backfill",
-    "sql",
-    "raw",
-    "admin",
-    "status",
-    "get_data_status",
-    "mirror_refresh",
-    "mirror-coverage",
-    "backfill-streams",
-}
 
 
 class McpClientError(RuntimeError):
@@ -232,9 +220,9 @@ async def verify_tool_surface(client: StdioMcpClient | HttpMcpClient) -> list[st
     tools = await client.list_tools()
     tool_names = {tool.get("name") for tool in tools if isinstance(tool, dict)}
     missing = sorted(EXPECTED_TOOL_NAMES - tool_names)
-    forbidden = sorted(FORBIDDEN_TOOL_NAMES & tool_names)
-    if missing or forbidden:
-        raise McpClientError(f"unexpected MCP tool surface: missing={missing}, forbidden={forbidden}")
+    unexpected = sorted(tool_names - EXPECTED_TOOL_NAMES)
+    if missing or unexpected:
+        raise McpClientError(f"unexpected MCP tool surface: missing={missing}, unexpected={unexpected}")
     return sorted(tool_names)
 
 

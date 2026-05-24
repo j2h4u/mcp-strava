@@ -53,7 +53,7 @@ python3 deploy/gateway_register.py \
   --compose /opt/docker/mcp-gateway/compose.yaml \
   --service strava \
   --url http://mcp-strava:8080/mcp \
-  --smoke-cmd "docker compose -f deploy/docker-compose.yml exec -T mcp-strava python -m mcp_strava.deploy.smoke --url http://mcp-gateway:8811/mcp --expect-tool get_fitness_state --forbid-tool sync --forbid-tool sql"
+  --smoke-cmd "docker compose -f deploy/docker-compose.yml exec -T mcp-strava python -m mcp_strava.deploy.smoke --url http://mcp-gateway:8811/mcp --expect-tool get_fitness_state"
 ```
 
 ## Live Apply (Operator-Approved Only)
@@ -70,7 +70,7 @@ python3 deploy/gateway_register.py \
   --compose /opt/docker/mcp-gateway/compose.yaml \
   --service strava \
   --url http://mcp-strava:8080/mcp \
-  --smoke-cmd "docker compose -f deploy/docker-compose.yml exec -T mcp-strava python -m mcp_strava.deploy.smoke --url http://mcp-gateway:8811/mcp --expect-tool get_fitness_state --forbid-tool sync --forbid-tool sql"
+  --smoke-cmd "docker compose -f deploy/docker-compose.yml exec -T mcp-strava python -m mcp_strava.deploy.smoke --url http://mcp-gateway:8811/mcp --expect-tool get_fitness_state"
 ```
 
 Without `--apply --confirm-live-gateway`, the helper must not mutate live files.

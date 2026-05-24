@@ -20,39 +20,6 @@ EXPECTED_TOOL_NAMES = (
     "project_fitness_state",
 )
 
-FORBIDDEN_TOOL_NAMES = {
-    "get_data_status",
-    "daily_report",
-    "weekly_summary",
-    "recent_workouts",
-    "workout_analytics",
-    "freshness",
-    "sync",
-    "backfill",
-    "read-model-materialize",
-    "materialize",
-    "recompute",
-    "dirty-queue",
-    "dirty",
-    "read-model-status",
-    "sql",
-    "raw",
-    "token",
-    "token_refresh",
-    "admin",
-    "log",
-    "sync_log",
-    "db_preflight",
-    "db_check",
-    "db_migrate",
-    "mirror_refresh",
-    "mirror-coverage",
-    "backfill-streams",
-    "stream_backfill",
-    "coverage",
-    "status",
-}
-
 
 def _envelope(data: dict, *, unavailable: bool = False) -> ServiceEnvelope:
     return ServiceEnvelope(
@@ -83,13 +50,6 @@ def test_mcp_tool_allowlist_is_exact() -> None:
     from mcp_strava.interfaces import mcp_http
 
     assert mcp_http.MCP_TOOL_NAMES == EXPECTED_TOOL_NAMES
-    assert FORBIDDEN_TOOL_NAMES.isdisjoint(set(mcp_http.MCP_TOOL_NAMES))
-
-
-def test_mcp_forbidden_names_include_read_model_operational_controls() -> None:
-    from mcp_strava.interfaces import mcp_http
-
-    assert FORBIDDEN_TOOL_NAMES <= mcp_http.FORBIDDEN_TOOL_NAMES
 
 
 def test_validate_http_settings_and_transport_security() -> None:
@@ -190,7 +150,6 @@ def test_mcp_tools_have_annotations_and_structured_output(monkeypatch) -> None:
     server = mcp_http.build_mcp_server()
     tools = asyncio.run(server.list_tools())
     assert tuple(tool.name for tool in tools) == EXPECTED_TOOL_NAMES
-    assert FORBIDDEN_TOOL_NAMES.isdisjoint({tool.name for tool in tools})
     for tool in tools:
         annotations = tool.annotations
         assert annotations.readOnlyHint is True

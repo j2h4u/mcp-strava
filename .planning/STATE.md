@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-24T12:56:58.701Z"
-last_activity: 2026-05-24 -- Completed 07-04 refresh/backfill materialization wiring
+last_updated: "2026-05-24T18:13:54+05:00"
+last_activity: 2026-05-24 -- Completed quick task 260524-p6j removing manual materialization/admin surface
 progress:
   total_phases: 7
   completed_phases: 6
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-22)
 Phase: 07
 Plan: 07-05
 Status: Ready to execute next plan
-Last activity: 2026-05-24 -- Completed 07-04 refresh/backfill materialization wiring
+Last activity: 2026-05-24 -- Completed quick task 260524-p6j removing manual materialization/admin surface
 
 ## Performance Metrics
 
@@ -122,7 +122,7 @@ Recent decisions affecting current work:
 - [Phase 07]: Dirty rows clear only in the same successful transaction as facts and run audit.
 - [Phase 07]: Refresh, legacy backfill, and stream-channel backfill now call the same read-model materialization stage below MCP.
 - [Phase 07]: Read-model materialization lease renewal must not commit an already-active materializer transaction.
-- [Phase 07]: Read-model materialization remains local admin/runtime only; MCP blocks materialize/recompute/dirty/status/admin tool names.
+- [Phase 07]: Read-model materialization remains runtime-owned automation only; MCP enforces the exact five product tools rather than a redundant forbidden-name list.
 
 ### Pending Todos
 
@@ -153,3 +153,4 @@ Resume file: None
 |------------|------|---------|
 | 260522-ra3 set default Strava mirror refresh cadence to one hour | 2026-05-22 | `.planning/quick/260522-ra3-set-default-strava-mirror-refresh-cadenc/260522-ra3-SUMMARY.md` |
 | 260524-kiy add persistent MCP test client and tool-call logging | 2026-05-24 | `.planning/quick/260524-kiy-add-persistent-mcp-test-client-tool-call/260524-kiy-SUMMARY.md` |
+| 260524-p6j remove read-model materialization admin surface | 2026-05-24 | `.planning/quick/260524-p6j-remove-read-model-materialization-admin-/260524-p6j-SUMMARY.md` |

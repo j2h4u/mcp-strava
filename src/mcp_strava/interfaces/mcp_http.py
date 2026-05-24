@@ -29,39 +29,6 @@ MCP_TOOL_NAMES = (
     "project_fitness_state",
 )
 
-FORBIDDEN_TOOL_NAMES = {
-    "get_data_status",
-    "daily_report",
-    "weekly_summary",
-    "recent_workouts",
-    "workout_analytics",
-    "freshness",
-    "sync",
-    "backfill",
-    "read-model-materialize",
-    "materialize",
-    "recompute",
-    "dirty-queue",
-    "dirty",
-    "read-model-status",
-    "sql",
-    "raw",
-    "token",
-    "token_refresh",
-    "admin",
-    "log",
-    "sync_log",
-    "db_preflight",
-    "db_check",
-    "db_migrate",
-    "mirror_refresh",
-    "mirror-coverage",
-    "backfill-streams",
-    "stream_backfill",
-    "coverage",
-    "status",
-}
-
 _SAFE_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _WILDCARD_HOSTS = {"0.0.0.0", "::"}
 _UNSAFE_TRANSPORT_VALUES = {"*", "0.0.0.0", "::"}
