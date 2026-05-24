@@ -863,6 +863,18 @@ class CompletenessMetadata:
     coverage: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class ReadModelMetadata:
+    """Materialized read-model freshness and provenance state."""
+
+    status: str
+    last_materialized_at: str | None
+    dirty_count: int
+    oldest_dirty_day: str | None
+    metric_versions_present: list[int] = field(default_factory=list)
+    stale_reason: str | None = None
+
+
 @dataclass
 class ServiceEnvelope:
     """Shared product service response envelope."""

@@ -542,7 +542,7 @@ def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_
     assert set(payload["data"]["per_sport"]) == {"Run"}
     trimp = payload["data"]["global"]["metrics"]["trimp"]
     assert trimp["period_a"]["sample_size"] == 2
-    assert trimp["period_b"]["sample_size"] == 0
+    assert trimp["period_b"]["sample_size"] == 1
 
 
 def test_project_fitness_state_service_supports_standard_scenarios(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

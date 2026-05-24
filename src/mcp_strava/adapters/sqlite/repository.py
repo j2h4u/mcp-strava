@@ -14,6 +14,7 @@ from mcp_strava.constants import Config, TRAINING_SPORTS
 from mcp_strava.types import (
     ALLOWED_REASON_CODES,
     DailyLoadPoint,
+    ReadModelMetadata,
     RefreshRequestRow,
     RefreshStateRow,
     RepositoryActivityRow,
@@ -402,6 +403,242 @@ class SQLiteRepository:
             tuple(values[col] for col in columns),
         )
         return int(cur.lastrowid)
+
+    # Read-model fact queries
+    def _read_model_metadata_versions(self, metric_version: int | None = None) -> list[int]:
+        params: list[object] = []
+        where = ""
+        if metric_version is not None:
+            where = "WHERE metric_version = ?"
+            params.append(metric_version)
+        versions: set[int] = set()
+        for table in (
+            "activity_metric_facts",
+            "daily_load_facts",
+            "training_model_daily",
+            "rolling_period_facts",
+        ):
+            rows = self.conn.execute(
+                f"SELECT DISTINCT metric_version FROM {table} {where}",
+                params,
+            ).fetchall()
+            versions.update(int(row["metric_version"]) for row in rows if row["metric_version"] is not None)
+        return sorted(versions)
+
+    def read_model_status(self, metric_version: int | None = None) -> dict[str, object]:
+        if not self._read_model_enabled():
+            return {
+                "status": "unavailable",
+                "last_materialized_at": None,
+                "dirty_count": 0,
+                "oldest_dirty_day": None,
+                "metric_versions_present": [],
+                "stale_reason": "read_model_schema_missing",
+            }
+
+        params: list[object] = []
+        metric_sql = ""
+        if metric_version is not None:
+            metric_sql = " AND metric_version = ?"
+            params.append(metric_version)
+
+        dirty = self.conn.execute(
+            """
+            SELECT COUNT(*) AS dirty_count, MIN(activity_day) AS oldest_dirty_day
+            FROM metric_dirty_activities
+            WHERE 1=1
+            """
+            + metric_sql,
+            params,
+        ).fetchone()
+        run = self.conn.execute(
+            """
+            SELECT MAX(finished_at) AS last_materialized_at
+            FROM read_model_refresh_runs
+            WHERE status = 'ok'
+            """
+            + metric_sql,
+            params,
+        ).fetchone()
+        last_fact = self.conn.execute(
+            """
+            SELECT MAX(computed_at) AS last_materialized_at FROM (
+                SELECT computed_at, metric_version FROM activity_metric_facts
+                UNION ALL
+                SELECT computed_at, metric_version FROM daily_load_facts
+                UNION ALL
+                SELECT computed_at, metric_version FROM training_model_daily
+                UNION ALL
+                SELECT computed_at, metric_version FROM rolling_period_facts
+            )
+            WHERE 1=1
+            """
+            + metric_sql,
+            params,
+        ).fetchone()
+
+        dirty_count = int(dirty["dirty_count"] or 0) if dirty else 0
+        last_materialized_at = None
+        if run and run["last_materialized_at"]:
+            last_materialized_at = str(run["last_materialized_at"])
+        elif last_fact and last_fact["last_materialized_at"]:
+            last_materialized_at = str(last_fact["last_materialized_at"])
+        versions = self._read_model_metadata_versions(metric_version)
+
+        status = "current"
+        stale_reason = None
+        if not versions and last_materialized_at is None:
+            status = "unavailable"
+            stale_reason = "no_materialized_facts"
+        elif dirty_count > 0:
+            status = "stale"
+            stale_reason = "dirty_queue_not_empty"
+
+        metadata = ReadModelMetadata(
+            status=status,
+            last_materialized_at=last_materialized_at,
+            dirty_count=dirty_count,
+            oldest_dirty_day=str(dirty["oldest_dirty_day"]) if dirty and dirty["oldest_dirty_day"] else None,
+            metric_versions_present=versions,
+            stale_reason=stale_reason,
+        )
+        return {
+            "status": metadata.status,
+            "last_materialized_at": metadata.last_materialized_at,
+            "dirty_count": metadata.dirty_count,
+            "oldest_dirty_day": metadata.oldest_dirty_day,
+            "metric_versions_present": metadata.metric_versions_present,
+            "stale_reason": metadata.stale_reason,
+        }
+
+    def fetch_latest_training_model_day(
+        self,
+        metric_version: int,
+        *,
+        as_of_day: str | None = None,
+        scope: str = "all",
+        sport: str | None = None,
+    ) -> object | None:
+        sport_type = sport or "all"
+        where = [
+            "metric_version = ?",
+            "scope = ?",
+            "sport_type = ?",
+        ]
+        params: list[object] = [metric_version, scope, sport_type]
+        if as_of_day is not None:
+            where.append("day <= ?")
+            params.append(as_of_day)
+        return self.conn.execute(
+            f"""
+            SELECT *
+            FROM training_model_daily
+            WHERE {" AND ".join(where)}
+            ORDER BY day DESC
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+
+    def fetch_activity_metric_facts(
+        self,
+        start_day: str,
+        end_day: str,
+        *,
+        sport: str | None = None,
+        metric_version: int | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> list[object]:
+        where = ["f.activity_day >= ?", "f.activity_day < ?"]
+        params: list[object] = [start_day, end_day]
+        if sport is not None:
+            where.append("f.sport_type = ?")
+            params.append(sport)
+        if metric_version is not None:
+            where.append("f.metric_version = ?")
+            params.append(metric_version)
+        if cursor is not None:
+            where.append("(f.activity_day < ? OR (f.activity_day = ? AND f.activity_id < ?))")
+            params.extend([cursor, cursor, cursor])
+        sql = f"""
+            SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json
+            FROM activity_metric_facts f
+            LEFT JOIN activities a ON a.id = f.activity_id
+            WHERE {" AND ".join(where)}
+            ORDER BY f.activity_day DESC, f.activity_id DESC
+        """
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        return self.conn.execute(sql, params).fetchall()
+
+    def fetch_activity_metric_fact(self, activity_id: int, metric_version: int | None = None) -> object | None:
+        where = ["f.activity_id = ?"]
+        params: list[object] = [activity_id]
+        if metric_version is not None:
+            where.append("f.metric_version = ?")
+            params.append(metric_version)
+        return self.conn.execute(
+            f"""
+            SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json
+            FROM activity_metric_facts f
+            LEFT JOIN activities a ON a.id = f.activity_id
+            WHERE {" AND ".join(where)}
+            ORDER BY f.metric_version DESC
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+
+    def fetch_daily_load_facts(
+        self,
+        start_day: str,
+        end_day: str,
+        *,
+        scope: str,
+        sport: str | None = None,
+        metric_version: int | None = None,
+    ) -> list[object]:
+        where = ["day >= ?", "day < ?", "scope = ?", "sport_type = ?"]
+        params: list[object] = [start_day, end_day, scope, sport or "all"]
+        if metric_version is not None:
+            where.append("metric_version = ?")
+            params.append(metric_version)
+        return self.conn.execute(
+            f"""
+            SELECT *
+            FROM daily_load_facts
+            WHERE {" AND ".join(where)}
+            ORDER BY day ASC
+            """,
+            params,
+        ).fetchall()
+
+    def fetch_rolling_period_facts(
+        self,
+        as_of_day: str,
+        window_days: int,
+        *,
+        scope: str,
+        sport: str | None = None,
+        metric_version: int | None = None,
+    ) -> object | None:
+        where = ["as_of_day = ?", "window_days = ?", "scope = ?", "sport_type = ?"]
+        params: list[object] = [as_of_day, window_days, scope, sport or "all"]
+        if metric_version is not None:
+            where.append("metric_version = ?")
+            params.append(metric_version)
+        return self.conn.execute(
+            f"""
+            SELECT *
+            FROM rolling_period_facts
+            WHERE {" AND ".join(where)}
+            ORDER BY metric_version DESC
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
 
     # Activities
     def recent_activities(self, limit: int = 15) -> list[RepositoryActivityRow]:
