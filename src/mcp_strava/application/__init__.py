@@ -1,6 +1,7 @@
 """Product application services for local mirror analytics."""
 
 from mcp_strava.application.freshness import build_freshness_metadata, get_freshness_service
+from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
 from mcp_strava.application.metric_services import (
     SAFETY_WARNING_CODES,
     compare_periods_service,
@@ -35,6 +36,7 @@ __all__ = [
     "get_daily_report_service",
     "get_fitness_state_service",
     "get_freshness_service",
+    "get_mirror_coverage_service",
     "get_recent_workouts_service",
     "get_workout_detail_service",
     "get_weekly_summary_service",

@@ -11,6 +11,7 @@ from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.application import (
     get_daily_report_service,
     get_freshness_service,
+    get_mirror_coverage_service,
     get_recent_workouts_service,
     get_weekly_summary_service,
     get_workout_analytics_service,
@@ -466,6 +467,33 @@ def cmd_db_migrate(args):
     )
 
 
+def cmd_mirror_coverage(args):
+    json_output = _pop_json_flag(args)
+    db_path: str | None = None
+    if "--db" in args:
+        idx = args.index("--db")
+        if idx + 1 >= len(args):
+            _usage_error("Usage: python -m mcp_strava admin mirror-coverage [--db <path>] [--json]")
+        db_path = args[idx + 1]
+        del args[idx : idx + 2]
+    if args:
+        _usage_error("Usage: python -m mcp_strava admin mirror-coverage [--db <path>] [--json]")
+
+    if db_path is None:
+        payload = get_mirror_coverage_service()
+    else:
+        with SQLiteRepository.from_path(Path(db_path)) as repo:
+            payload = get_mirror_coverage_service(connection=repo.conn)
+
+    if json_output:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+
+    print("Mirror Coverage")
+    for key in ("status", "activities_total", "activities_with_streams", "stream_points", "gps_points", "channels", "backfill_needed"):
+        print(f"- {key}: {payload.get(key)}")
+
+
 def _pop_json_flag(args):
     if "--json" not in args:
         return False
@@ -654,6 +682,7 @@ def cmd_admin(args):
 
 ADMIN_COMMANDS = {
     "mirror-refresh": cmd_db_refresh,
+    "mirror-coverage": cmd_mirror_coverage,
     "token-refresh": cmd_refresh,
     "backfill": cmd_backfill,
     "sql": cmd_sql,
