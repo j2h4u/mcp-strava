@@ -386,3 +386,19 @@ def test_fact_queries_cover_model_daily_load_rolling_and_detail(tmp_path: Path) 
     assert [row["day"] for row in daily] == ["2026-05-19", "2026-05-20", "2026-05-21"]
     assert rolling is not None
     assert rolling["window_days"] == 14
+
+
+def test_read_model_queries_fail_soft_when_schema_missing(tmp_path: Path) -> None:
+    conn = sqlite3.connect(tmp_path / "v4.db")
+    conn.row_factory = sqlite3.Row
+    repo = SQLiteRepository.from_connection(conn)
+    with repo:
+        status = repo.read_model_status(metric_version=1)
+        assert repo.fetch_activity_metric_facts("2026-05-01", "2026-05-02", metric_version=1) == []
+        assert repo.fetch_activity_metric_fact(1, metric_version=1) is None
+        assert repo.fetch_latest_training_model_day(metric_version=1) is None
+        assert repo.fetch_daily_load_facts("2026-05-01", "2026-05-02", scope="all", metric_version=1) == []
+        assert repo.fetch_rolling_period_facts("2026-05-01", 7, scope="all", metric_version=1) is None
+
+    assert status["status"] == "unavailable"
+    assert status["stale_reason"] == "read_model_schema_missing"

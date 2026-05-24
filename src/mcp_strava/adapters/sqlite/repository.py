@@ -406,6 +406,8 @@ class SQLiteRepository:
 
     # Read-model fact queries
     def _read_model_metadata_versions(self, metric_version: int | None = None) -> list[int]:
+        if not self._read_model_enabled():
+            return []
         params: list[object] = []
         where = ""
         if metric_version is not None:
@@ -519,6 +521,8 @@ class SQLiteRepository:
         scope: str = "all",
         sport: str | None = None,
     ) -> object | None:
+        if not self._read_model_enabled():
+            return None
         sport_type = sport or "all"
         where = [
             "metric_version = ?",
@@ -550,6 +554,8 @@ class SQLiteRepository:
         limit: int | None = None,
         cursor: str | None = None,
     ) -> list[object]:
+        if not self._read_model_enabled():
+            return []
         where = ["f.activity_day >= ?", "f.activity_day < ?"]
         params: list[object] = [start_day, end_day]
         if sport is not None:
@@ -574,6 +580,8 @@ class SQLiteRepository:
         return self.conn.execute(sql, params).fetchall()
 
     def fetch_activity_metric_fact(self, activity_id: int, metric_version: int | None = None) -> object | None:
+        if not self._read_model_enabled():
+            return None
         where = ["f.activity_id = ?"]
         params: list[object] = [activity_id]
         if metric_version is not None:
@@ -600,6 +608,8 @@ class SQLiteRepository:
         sport: str | None = None,
         metric_version: int | None = None,
     ) -> list[object]:
+        if not self._read_model_enabled():
+            return []
         where = ["day >= ?", "day < ?", "scope = ?", "sport_type = ?"]
         params: list[object] = [start_day, end_day, scope, sport or "all"]
         if metric_version is not None:
@@ -624,6 +634,8 @@ class SQLiteRepository:
         sport: str | None = None,
         metric_version: int | None = None,
     ) -> object | None:
+        if not self._read_model_enabled():
+            return None
         where = ["as_of_day = ?", "window_days = ?", "scope = ?", "sport_type = ?"]
         params: list[object] = [as_of_day, window_days, scope, sport or "all"]
         if metric_version is not None:
