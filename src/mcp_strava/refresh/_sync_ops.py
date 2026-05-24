@@ -145,11 +145,9 @@ def _stream_payload(data: dict, fetched_at: str | None = None) -> tuple[list[dic
         if isinstance(latlng, list) and len(latlng) >= 2:
             row["lat"] = latlng[0]
             row["lng"] = latlng[1]
-            row["latlng"] = json.dumps(latlng)
         else:
             row["lat"] = None
             row["lng"] = None
-            row["latlng"] = None
 
         for channel_key, channel in channels.items():
             if idx >= len(channel.data):

@@ -140,6 +140,25 @@ def _guard_load_paths_do_not_use_raw_activity_stream_sql() -> list[str]:
     return violations
 
 
+def _guard_runtime_does_not_require_streams_latlng_column() -> list[str]:
+    repo_root = Path(__file__).resolve().parents[1]
+    files = [
+        repo_root / "src" / "mcp_strava" / "adapters" / "sqlite" / "repository.py",
+        repo_root / "src" / "mcp_strava" / "refresh" / "_sync_ops.py",
+        repo_root / "src" / "mcp_strava" / "metrics.py",
+    ]
+    violations: list[str] = []
+    for py_file in files:
+        rel = py_file.relative_to(repo_root).as_posix()
+        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                lower = node.value.lower()
+                if "streams" in lower and "latlng" in lower:
+                    violations.append(f"{rel}:{node.lineno}")
+    return violations
+
+
 def test_repository_connection_reports_wal_and_busy_timeout(tmp_path: Path) -> None:
     fixture = tmp_path / "repo.db"
     _create_fixture_db(fixture)
@@ -352,6 +371,10 @@ def test_repository_boundary_fixtures_do_not_use_live_paths(tmp_path: Path) -> N
     resolved = fixture.resolve()
     assert "/data/strava.db" not in str(resolved)
     assert "/opt/docker/mcp-strava" not in str(resolved)
+
+
+def test_runtime_code_does_not_require_streams_latlng_column() -> None:
+    assert _guard_runtime_does_not_require_streams_latlng_column() == []
 
 
 def _create_migrated_fixture(db_path: Path) -> None:

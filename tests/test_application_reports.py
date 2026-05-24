@@ -125,8 +125,8 @@ def _insert_activity_with_streams(path: Path) -> sqlite3.Connection:
             """
             INSERT INTO streams (
                 activity_id, time_offset, heartrate, velocity, altitude,
-                cadence, lat, lng, grade, gap_speed, gap_distance, is_moving, latlng
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                cadence, lat, lng, grade, gap_speed, gap_distance, is_moving
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 701,
@@ -141,7 +141,6 @@ def _insert_activity_with_streams(path: Path) -> sqlite3.Connection:
                 3.0,
                 float(second),
                 1,
-                "[43.2,76.9]",
             ),
         )
     conn.execute(

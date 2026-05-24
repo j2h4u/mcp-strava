@@ -220,12 +220,11 @@ class SQLiteRepository:
 
     def activity_stream_rows(self, activity_id: int) -> list[tuple]:
         stream_columns = self._stream_column_set()
-        latlng_expr = "latlng" if "latlng" in stream_columns else "NULL AS latlng"
         values_expr = "values_json" if "values_json" in stream_columns else "NULL AS values_json"
         return self.conn.execute(
             f"""
             SELECT activity_id, time_offset, heartrate, velocity, altitude,
-                   cadence, lat, lng, {latlng_expr}, grade, gap_speed, gap_distance, is_moving, {values_expr}
+                   cadence, lat, lng, grade, gap_speed, gap_distance, is_moving, {values_expr}
             FROM streams
             WHERE activity_id = ?
             ORDER BY time_offset ASC
@@ -600,42 +599,11 @@ class SQLiteRepository:
         if total == 0:
             return 0
 
-        stream_columns = self._stream_column_set()
-        has_latlng = "latlng" in stream_columns
-        has_values_json = "values_json" in stream_columns
+        has_values_json = "values_json" in self._stream_column_set()
 
         for start in range(0, total, chunk_size):
             chunk = payload[start : start + chunk_size]
-            if has_values_json and has_latlng:
-                bound = [
-                    (
-                        activity_id,
-                        row["time_offset"],
-                        row.get("heartrate"),
-                        row.get("velocity"),
-                        row.get("altitude"),
-                        row.get("cadence"),
-                        row.get("lat"),
-                        row.get("lng"),
-                        row.get("latlng"),
-                        row.get("grade"),
-                        row.get("gap_speed"),
-                        row.get("gap_distance"),
-                        row.get("is_moving"),
-                        row.get("values_json"),
-                    )
-                    for row in chunk
-                ]
-                self.conn.executemany(
-                    """
-                    INSERT OR REPLACE INTO streams
-                    (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-                     lat, lng, latlng, grade, gap_speed, gap_distance, is_moving, values_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    bound,
-                )
-            elif has_values_json and not has_latlng:
+            if has_values_json:
                 bound = [
                     (
                         activity_id,
@@ -674,7 +642,6 @@ class SQLiteRepository:
                         row.get("cadence"),
                         row.get("lat"),
                         row.get("lng"),
-                        row.get("latlng") if has_latlng else None,
                         row.get("grade"),
                         row.get("gap_speed"),
                         row.get("gap_distance"),
@@ -682,27 +649,15 @@ class SQLiteRepository:
                     )
                     for row in chunk
                 ]
-                if has_latlng:
-                    self.conn.executemany(
-                        """
-                        INSERT OR REPLACE INTO streams
-                        (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-                         lat, lng, latlng, grade, gap_speed, gap_distance, is_moving)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        bound,
-                    )
-                else:
-                    bound_no_latlng = [b[:8] + b[9:] for b in bound]
-                    self.conn.executemany(
-                        """
-                        INSERT OR REPLACE INTO streams
-                        (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-                         lat, lng, grade, gap_speed, gap_distance, is_moving)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        bound_no_latlng,
-                    )
+                self.conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO streams
+                    (activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                     lat, lng, grade, gap_speed, gap_distance, is_moving)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    bound,
+                )
             self.conn.commit()
 
         return total
@@ -718,45 +673,14 @@ class SQLiteRepository:
         if total == 0:
             return 0
 
-        stream_columns = self._stream_column_set()
-        has_latlng = "latlng" in stream_columns
-        has_values_json = "values_json" in stream_columns
+        has_values_json = "values_json" in self._stream_column_set()
 
         self.conn.execute("BEGIN")
         try:
             self.conn.execute("DELETE FROM streams WHERE activity_id = ?", (activity_id,))
             for start in range(0, total, chunk_size):
                 chunk = payload[start : start + chunk_size]
-                if has_values_json and has_latlng:
-                    bound = [
-                        (
-                            activity_id,
-                            row["time_offset"],
-                            row.get("heartrate"),
-                            row.get("velocity"),
-                            row.get("altitude"),
-                            row.get("cadence"),
-                            row.get("lat"),
-                            row.get("lng"),
-                            row.get("latlng"),
-                            row.get("grade"),
-                            row.get("gap_speed"),
-                            row.get("gap_distance"),
-                            row.get("is_moving"),
-                            row.get("values_json"),
-                        )
-                        for row in chunk
-                    ]
-                    self.conn.executemany(
-                        """
-                        INSERT OR REPLACE INTO streams
-                        (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-                         lat, lng, latlng, grade, gap_speed, gap_distance, is_moving, values_json)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        bound,
-                    )
-                elif has_values_json and not has_latlng:
+                if has_values_json:
                     bound = [
                         (
                             activity_id,
@@ -795,7 +719,6 @@ class SQLiteRepository:
                             row.get("cadence"),
                             row.get("lat"),
                             row.get("lng"),
-                            row.get("latlng") if has_latlng else None,
                             row.get("grade"),
                             row.get("gap_speed"),
                             row.get("gap_distance"),
@@ -803,27 +726,15 @@ class SQLiteRepository:
                         )
                         for row in chunk
                     ]
-                    if has_latlng:
-                        self.conn.executemany(
-                            """
-                            INSERT OR REPLACE INTO streams
-                            (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-                             lat, lng, latlng, grade, gap_speed, gap_distance, is_moving)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            bound,
-                        )
-                    else:
-                        bound_no_latlng = [b[:8] + b[9:] for b in bound]
-                        self.conn.executemany(
-                            """
-                            INSERT OR REPLACE INTO streams
-                            (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-                             lat, lng, grade, gap_speed, gap_distance, is_moving)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            bound_no_latlng,
-                        )
+                    self.conn.executemany(
+                        """
+                        INSERT OR REPLACE INTO streams
+                        (activity_id, time_offset, heartrate, velocity, altitude, cadence,
+                         lat, lng, grade, gap_speed, gap_distance, is_moving)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        bound,
+                    )
         except Exception:
             self.conn.rollback()
             raise
@@ -886,15 +797,14 @@ class SQLiteRepository:
     ) -> int:
         payload = list(rows)
         total = len(payload)
-        stream_columns = self._stream_column_set()
-        has_latlng = "latlng" in stream_columns
+        has_values_json = "values_json" in self._stream_column_set()
         self.conn.execute("BEGIN")
         try:
             self.conn.execute("DELETE FROM streams WHERE activity_id = ?", (activity_id,))
             self.conn.execute("DELETE FROM stream_channels WHERE activity_id = ?", (activity_id,))
             for start in range(0, total, chunk_size):
                 chunk = payload[start : start + chunk_size]
-                if has_latlng:
+                if has_values_json:
                     bound = [
                         (
                             activity_id,
@@ -905,7 +815,6 @@ class SQLiteRepository:
                             row.get("cadence"),
                             row.get("lat"),
                             row.get("lng"),
-                            row.get("latlng"),
                             row.get("grade"),
                             row.get("gap_speed"),
                             row.get("gap_distance"),
@@ -918,8 +827,8 @@ class SQLiteRepository:
                         """
                         INSERT OR REPLACE INTO streams
                         (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-                         lat, lng, latlng, grade, gap_speed, gap_distance, is_moving, values_json)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         lat, lng, grade, gap_speed, gap_distance, is_moving, values_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         bound,
                     )
