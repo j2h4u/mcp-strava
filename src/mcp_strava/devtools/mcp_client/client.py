@@ -270,8 +270,8 @@ async def run_basic_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, A
 
 
 def default_warm_latency_calls(*, workout_id: int, today: str | date | None = None) -> list[dict[str, Any]]:
-    if workout_id <= 0:
-        raise ValueError("workout_id must be positive")
+    if workout_id < 0:
+        raise ValueError("workout_id must be zero or positive")
     if today is None:
         today_date = date.today()
     elif isinstance(today, date):
@@ -308,7 +308,11 @@ async def resolve_default_warm_latency_calls(
     today: str | date | None = None,
 ) -> list[dict[str, Any]]:
     workouts = _require_success("list_workouts", await client.call_tool("list_workouts", {"limit": 1}))
-    return default_warm_latency_calls(workout_id=_extract_first_workout_id(workouts), today=today)
+    try:
+        workout_id = _extract_first_workout_id(workouts)
+    except McpClientError:
+        workout_id = 0
+    return default_warm_latency_calls(workout_id=workout_id, today=today)
 
 
 async def run_warm_latency_gate(

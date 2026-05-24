@@ -59,6 +59,27 @@ def test_dockerignore_contract() -> None:
     assert ".planning/config.json" in text
 
 
+def test_phase7_deployment_runbook_documents_read_model_performance_gate() -> None:
+    text = _read_text(_repo_root() / "docs" / "deployment.md")
+    lowered = text.lower()
+
+    assert "pinned pre-phase-7 backup" in lowered
+    assert "user_version=5" in text
+    assert "admin db-migrate --apply" in text
+    assert "admin mirror-refresh --force" in text
+    assert "just test" in text
+    assert "just mcp-read-model-perf" in text
+    assert "500 ms p95" in lowered
+    for tool_name in (
+        "get_fitness_state",
+        "list_workouts",
+        "get_workout_detail",
+        "compare_periods",
+        "project_fitness_state",
+    ):
+        assert tool_name in text
+
+
 def test_preflight_main_missing_db_fails(tmp_path: Path) -> None:
     from mcp_strava.deploy.preflight import main as preflight_main
 

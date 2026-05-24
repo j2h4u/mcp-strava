@@ -9,6 +9,7 @@ from mcp_strava.devtools.mcp_client.client import (
     EXPECTED_TOOL_NAMES,
     McpClientError,
     measure_warm_tool_latency,
+    run_warm_latency_gate,
 )
 
 
@@ -94,3 +95,21 @@ def test_default_latency_gate_call_set_covers_all_product_tools() -> None:
     assert {call["name"] for call in calls} == EXPECTED_TOOL_NAMES
     assert all(isinstance(call.get("arguments"), dict) for call in calls)
     assert next(call for call in calls if call["name"] == "get_workout_detail")["arguments"] == {"workout_id": 701}
+
+
+def test_warm_latency_gate_uses_missing_workout_fallback_when_list_is_empty() -> None:
+    class EmptyWorkoutClient(FakeLatencyClient):
+        async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+            self.calls.append((name, arguments or {}))
+            data: object = [] if name == "list_workouts" else {"tool": name}
+            return {"isError": False, "structuredContent": {"data": data, "warnings": []}}
+
+    async def run() -> tuple[dict[str, Any], list[tuple[str, dict[str, Any]]]]:
+        client = EmptyWorkoutClient()
+        result = await run_warm_latency_gate(client, warmup=0, samples=1, p95_ms=500)
+        return result, client.calls
+
+    result, calls = asyncio.run(run())
+
+    assert result["status"] == "ok"
+    assert ("get_workout_detail", {"workout_id": 0}) in calls

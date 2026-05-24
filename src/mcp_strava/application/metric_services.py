@@ -91,6 +91,21 @@ ROLLING_FACTS = {
     "load_trend_pct": (28, "effective_trimp", 1.0),
 }
 
+COMPARE_PERIODS_HANDLERS = {
+    **{metric_id: "activity_metric_facts" for metric_id in ACTIVITY_SCALAR_FACTS},
+    "time_in_hr_zones_min": "activity_metric_facts",
+    "cardiac_drift_severity": "activity_metric_facts",
+    **{metric_id: "training_model_daily" for metric_id in MODEL_FACTS if metric_id != "form_zone"},
+}
+
+COMPARE_PERIODS_SKIP_REASONS = {
+    metric_id: "not_materialized_for_period_comparison"
+    for metric_id, definition in METRIC_REGISTRY.items()
+    if definition.comparison_mode != "none"
+    and "compare_periods" in definition.exposed_in
+    and metric_id not in COMPARE_PERIODS_HANDLERS
+}
+
 
 def _project_fitness_state_metrics(model, rolling: dict[int, object]) -> dict[str, object]:
     data: dict[str, object] = {}

@@ -43,6 +43,70 @@ python3 -m mcp_strava.deploy.smoke \
   --expect-tool get_fitness_state
 ```
 
+## Phase 7 Read-Model Validation
+
+Before accepting the materialized read-model runtime, validate against the live Docker state or a copied live database. Keep the pinned pre-Phase-7 backup until migration, materialization, parity, Docker smoke, and the p95 gate have all passed.
+
+1. Confirm the live database backup exists and is pinned outside ordinary cleanup:
+
+```bash
+ls -lh /opt/docker/mcp-strava/data/backups/
+```
+
+2. Run preflight against the live database without printing secrets:
+
+```bash
+MCP_STRAVA_DB_PATH=/opt/docker/mcp-strava/data/strava.db \
+MCP_STRAVA_TOKEN_PATH=/opt/docker/mcp-strava/.env \
+python -m mcp_strava admin db-preflight --json
+```
+
+3. Migrate the live database to `user_version=5`:
+
+```bash
+MCP_STRAVA_DB_PATH=/opt/docker/mcp-strava/data/strava.db \
+MCP_STRAVA_TOKEN_PATH=/opt/docker/mcp-strava/.env \
+python -m mcp_strava admin db-migrate --apply
+```
+
+4. Run the runtime-owned refresh/materialization path. There is no MCP or manual read-model recompute tool; read-model facts are materialized below the refresh runtime:
+
+```bash
+MCP_STRAVA_DB_PATH=/opt/docker/mcp-strava/data/strava.db \
+MCP_STRAVA_TOKEN_PATH=/opt/docker/mcp-strava/.env \
+python -m mcp_strava admin mirror-refresh --force
+```
+
+5. Run post-check/parity and confirm read-model facts exist:
+
+```bash
+MCP_STRAVA_DB_PATH=/opt/docker/mcp-strava/data/strava.db \
+python -m mcp_strava admin db-check --json
+
+sqlite3 /opt/docker/mcp-strava/data/strava.db \
+  "SELECT 'activity_metric_facts', COUNT(*) FROM activity_metric_facts
+   UNION ALL SELECT 'daily_load_facts', COUNT(*) FROM daily_load_facts
+   UNION ALL SELECT 'training_model_daily', COUNT(*) FROM training_model_daily
+   UNION ALL SELECT 'rolling_period_facts', COUNT(*) FROM rolling_period_facts;"
+```
+
+6. Start the Docker MCP runtime and run transport smoke:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d --force-recreate --wait
+just test
+```
+
+7. Run the explicit warm p95 gate. This measures tool calls after startup and fails if any MCP tool exceeds the 500 ms p95 target:
+
+```bash
+just mcp-read-model-perf
+```
+
+The p95 gate covers all product MCP tools: `get_fitness_state`, `list_workouts`, `get_workout_detail`, `compare_periods`, and `project_fitness_state`.
+
+Do not remove the pinned pre-Phase-7 backup until the commands above pass and the key MCP outputs still match the expected live mirror shape.
+
 ## Gateway Registration Dry-Run (Default)
 
 Dry-run only. No writes, no restart.
