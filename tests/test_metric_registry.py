@@ -6,6 +6,7 @@ from mcp_strava.application.metric_registry import (
     EXCLUDED_INTERPRETATIONS,
     MCP_TOOL_IDS,
     METRIC_REGISTRY,
+    metric_catalog_payload,
     metrics_for_tool,
 )
 from mcp_strava.application import metric_services
@@ -117,6 +118,7 @@ def test_registry_entries_have_required_metadata():
         assert metric.requirements
         assert metric.missing_reasons
         assert metric.exposed_in
+        assert metric.calculation
 
 
 def test_registry_entry_enums_and_tool_allowlist():
@@ -151,10 +153,29 @@ def test_unknown_tool_id_is_rejected():
         metrics_for_tool("get_data_status")
 
 
+def test_registry_entries_describe_calculation_contract():
+    banned_placeholders = {"todo", "tbd", "n/a", "unknown"}
+    for metric in METRIC_REGISTRY.values():
+        calculation = metric.calculation.strip()
+        assert len(calculation) >= 24, f"{metric.metric_id} calculation is too terse"
+        assert calculation.lower() not in banned_placeholders
+        assert metric.metric_id != calculation, f"{metric.metric_id} repeats its id instead of explaining calculation"
+
+
+def test_metric_catalog_payload_exposes_calculation_contracts():
+    payload = metric_catalog_payload()
+    catalog_metrics = {metric["metric_id"]: metric for metric in payload["metrics"]}
+    for metric_id, definition in METRIC_REGISTRY.items():
+        assert catalog_metrics[metric_id]["calculation"] == definition.calculation
+
+
 def test_docs_metrics_md_stays_in_sync_with_registry():
     docs_text = Path("docs/metrics.md").read_text(encoding="utf-8")
     for metric_id in METRIC_REGISTRY:
         assert metric_id in docs_text, f"docs/metrics.md missing metric id: {metric_id}"
+        assert METRIC_REGISTRY[metric_id].calculation in docs_text, (
+            f"docs/metrics.md missing calculation for metric id: {metric_id}"
+        )
     for key in EXCLUDED_INTERPRETATIONS:
         assert key in docs_text, f"docs/metrics.md missing exclusion key: {key}"
 

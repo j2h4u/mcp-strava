@@ -902,6 +902,7 @@ class MetricDefinition:
     requirements: list[str]
     missing_reasons: list[str]
     exposed_in: list[str]
+    calculation: str
     description: str = ""
 
 
