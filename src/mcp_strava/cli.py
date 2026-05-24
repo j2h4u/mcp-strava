@@ -21,14 +21,20 @@ from mcp_strava.db import (
     DbConn, refresh_token,
     api_request, get_daily_trimp_history
 )
-from mcp_strava.refresh import RefreshSkipped
+from mcp_strava.refresh import RefreshPolicy, RefreshSkipped
 from mcp_strava.training import calc_banister, calc_weekly_plan, forward_simulate
 from mcp_strava.analytics import weekly_digest
 from mcp_strava.report import daily_report
 from mcp_strava.types import (
     parse_strava_activity, parse_strava_athlete, dc_to_dict
 )
-from mcp_strava.refresh.bootstrap import build_refresh_collaborators, ensure_refresh_schema, record_refresh_misconfigured
+from mcp_strava.refresh.bootstrap import (
+    RealClock,
+    RealSleeper,
+    build_refresh_collaborators,
+    ensure_refresh_schema,
+    record_refresh_misconfigured,
+)
 from mcp_strava.sync import (
     backfill_activities,
     sync_activities,
@@ -37,6 +43,11 @@ from mcp_strava.trends import compute_trends
 from mcp_strava.settings import get_settings
 
 backfill_stream_channels = refresh_runtime.run_backfill_stream_channels
+
+
+class _DryRunStravaTransport:
+    def fetch(self, path: str):
+        raise RuntimeError(f"Dry-run stream backfill must not call Strava API: {path}")
 
 # ═══════════════════════════════════════════════════════════════
 #  CLI Commands
@@ -529,7 +540,13 @@ def cmd_backfill_streams(args):
             continue
         _usage_error("Usage: python -m mcp_strava admin backfill-streams [--dry-run] [--since YYYY-MM-DD] [--limit N] [--db <path>] [--json]")
 
-    settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
+    if dry_run:
+        clock = RealClock()
+        sleeper = RealSleeper()
+        transport = _DryRunStravaTransport()
+        refresh_policy = RefreshPolicy()
+    else:
+        _settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
     if db_path is None:
         conn_context = DbConn()
     else:

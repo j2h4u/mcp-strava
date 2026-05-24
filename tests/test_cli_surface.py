@@ -222,10 +222,12 @@ def test_admin_commands_are_namespaced_and_distinct(monkeypatch: pytest.MonkeyPa
 
 def test_admin_mirror_coverage_json_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     import mcp_strava.cli as cli
+    from mcp_strava.adapters.sqlite.migrations import run_migrations
     from tests.test_full_fidelity_mirror import _create_v2_fixture
 
     fixture = tmp_path / "coverage.db"
     _create_v2_fixture(fixture)
+    run_migrations(fixture)
 
     monkeypatch.setattr(sys, "argv", ["mcp_strava", "admin", "mirror-coverage", "--db", str(fixture), "--json"])
     cli.main()
@@ -241,6 +243,7 @@ def test_admin_backfill_streams_dry_run_json_fields(tmp_path: Path, monkeypatch:
     from tests.test_full_fidelity_mirror import _create_v2_fixture
 
     def fake_backfill(*_args, **kwargs):
+        assert kwargs["dry_run"] is True
         return {
             "status": "ok",
             "mode": "backfill_stream_channels",
@@ -252,7 +255,11 @@ def test_admin_backfill_streams_dry_run_json_fields(tmp_path: Path, monkeypatch:
             "checkpoint_stage": "stream_channels_backfill",
         }
 
+    def fail_build_refresh_collaborators():
+        raise AssertionError("dry-run must not require Strava credentials")
+
     monkeypatch.setattr(cli, "backfill_stream_channels", fake_backfill, raising=False)
+    monkeypatch.setattr(cli, "build_refresh_collaborators", fail_build_refresh_collaborators, raising=False)
     fixture = tmp_path / "coverage.db"
     _create_v2_fixture(fixture)
     monkeypatch.setattr(
