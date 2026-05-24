@@ -53,6 +53,23 @@ def get_mirror_coverage_service(*, connection=None) -> dict:
             )
         else:
             missing_extra_values = stream_points
+        stream_channel_backfill = repo.activities_missing_stream_channels(
+            requested_channels=(
+                "time",
+                "distance",
+                "heartrate",
+                "velocity_smooth",
+                "altitude",
+                "cadence",
+                "latlng",
+                "grade_smooth",
+                "grade_adjusted_speed",
+                "grade_adjusted_distance",
+                "moving",
+                "watts",
+                "temp",
+            )
+        )
 
     status_counts = {
         "available": channel_stats["available_channels"],
@@ -73,5 +90,6 @@ def get_mirror_coverage_service(*, connection=None) -> dict:
         "channel_status_counts": status_counts,
         "activities_missing_channel_metadata": missing_metadata,
         "activities_missing_extra_values": missing_extra_values,
+        "activities_with_missing_stream_channels": len(stream_channel_backfill),
         "backfill_needed": backfill_needed,
     }

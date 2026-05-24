@@ -894,6 +894,8 @@ class SQLiteRepository:
                 "SELECT values_json FROM streams WHERE activity_id=? AND time_offset=?",
                 (activity_id, row["time_offset"]),
             ).fetchone()
+            if existing is None:
+                continue
             existing_map = json.loads(existing[0]) if existing and existing[0] else {}
             values_map = existing_map | (row.get("values") or {})
             self.conn.execute(
@@ -910,6 +912,7 @@ class SQLiteRepository:
                 (activity_id, channel_key, "unavailable"),
             )
         for item in metadata:
+            status = item.get("status", "available")
             self.conn.execute(
                 """
                 INSERT INTO stream_channels (
@@ -922,7 +925,11 @@ class SQLiteRepository:
                     series_type=excluded.series_type,
                     fetched_at=excluded.fetched_at,
                     batch_id=excluded.batch_id,
-                    status=excluded.status,
+                    status=CASE
+                        WHEN stream_channels.status='available' AND excluded.status!='available'
+                        THEN stream_channels.status
+                        ELSE excluded.status
+                    END,
                     error=excluded.error
                 """,
                 (
@@ -933,12 +940,76 @@ class SQLiteRepository:
                     item.get("series_type"),
                     item.get("fetched_at"),
                     item.get("batch_id"),
-                    item.get("status", "available"),
+                    status,
                     item.get("error"),
                 ),
             )
         self.conn.commit()
         return len(payload)
+
+    def activities_missing_stream_channels(
+        self,
+        *,
+        since: str | None = None,
+        limit: int | None = None,
+        requested_channels: Iterable[str],
+    ) -> list[dict]:
+        channel_list = list(requested_channels)
+        rows = self.conn.execute(
+            """
+            SELECT a.id, a.date
+            FROM activities a
+            WHERE EXISTS (SELECT 1 FROM streams s WHERE s.activity_id = a.id)
+              AND (? IS NULL OR SUBSTR(a.date, 1, 10) >= ?)
+            ORDER BY a.date DESC
+            """,
+            (since, since),
+        ).fetchall()
+        results: list[dict] = []
+        for row in rows:
+            if limit is not None and len(results) >= limit:
+                break
+            activity_id = int(row["id"])
+            missing_channels: list[str] = []
+            metadata_missing = False
+            for channel in channel_list:
+                meta = self.conn.execute(
+                    """
+                    SELECT status FROM stream_channels
+                    WHERE activity_id=? AND channel_key=?
+                    """,
+                    (activity_id, channel),
+                ).fetchone()
+                if meta is None:
+                    metadata_missing = True
+                    missing_channels.append(channel)
+                    continue
+                if meta["status"] in {"missing", "unavailable", "error"}:
+                    missing_channels.append(channel)
+                    continue
+                if channel in {"distance", "watts", "temp"}:
+                    has_value = self.conn.execute(
+                        """
+                        SELECT 1
+                        FROM streams
+                        WHERE activity_id=?
+                          AND values_json IS NOT NULL
+                          AND json_extract(values_json, '$.' || ?) IS NOT NULL
+                        LIMIT 1
+                        """,
+                        (activity_id, channel),
+                    ).fetchone()
+                    if has_value is None:
+                        missing_channels.append(channel)
+            if missing_channels or metadata_missing:
+                results.append(
+                    {
+                        "activity_id": activity_id,
+                        "missing_channels": sorted(set(missing_channels)),
+                        "metadata_missing": metadata_missing,
+                    }
+                )
+        return results
 
     def stream_channel_coverage(self) -> dict[str, int]:
         exists = self.conn.execute(

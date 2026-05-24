@@ -248,6 +248,73 @@ def schema_validate(repo) -> None:
     return None
 
 
+def estimate_stream_channel_backfill(
+    repo,
+    *,
+    since: str | None = None,
+    limit: int | None = None,
+) -> dict:
+    candidates = repo.activities_missing_stream_channels(
+        since=since,
+        limit=limit,
+        requested_channels=STREAM_KEYS,
+    )
+    missing_channels: dict[str, int] = {}
+    metadata_missing = 0
+    for item in candidates:
+        if item.get("metadata_missing"):
+            metadata_missing += 1
+        for channel in item.get("missing_channels", []):
+            missing_channels[channel] = missing_channels.get(channel, 0) + 1
+    return {
+        "activities_considered": len(candidates),
+        "activities_to_backfill": len(candidates),
+        "missing_channels": missing_channels,
+        "metadata_missing": metadata_missing,
+        "estimated_api_calls": len(candidates),
+        "candidates": candidates,
+    }
+
+
+def sync_stream_channels_backfill(
+    repo,
+    transport,
+    *,
+    since: str | None = None,
+    limit: int | None = None,
+    checkpoint_stage: Stage = Stage.STREAM_CHANNELS_BACKFILL,
+) -> dict:
+    estimate = estimate_stream_channel_backfill(repo, since=since, limit=limit)
+    completed = 0
+    for item in estimate["candidates"]:
+        activity_id = int(item["activity_id"])
+        repo.set_checkpoint(checkpoint_stage.value, str(activity_id))
+        response = transport.fetch(f"/activities/{activity_id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
+        if not isinstance(response.data, dict):
+            continue
+        rows, metadata = _stream_payload(response.data, fetched_at=datetime.now(UTC).replace(tzinfo=None).isoformat())
+        if not rows:
+            continue
+        missing = set(item.get("missing_channels", []))
+        merge_rows: list[dict[str, Any]] = []
+        for row in rows:
+            values_json = row.get("values_json")
+            row_values = json.loads(values_json) if values_json else {}
+            filtered = {k: v for k, v in row_values.items() if k in missing}
+            if filtered:
+                merge_rows.append({"time_offset": row["time_offset"], "values": filtered})
+        filtered_metadata = [m for m in metadata if m.get("channel_key") in missing]
+        repo.merge_stream_channel_values(
+            activity_id=activity_id,
+            rows=merge_rows,
+            metadata=filtered_metadata,
+            missing_channel_keys=[k for k in missing if not any(m.get("channel_key") == k for m in filtered_metadata)],
+        )
+        completed += 1
+    estimate["completed"] = completed
+    return estimate
+
+
 def _sync_kudos(repo, transport, now_iso: str, window_days: int | None = None) -> int:
     query = """
         SELECT a.id, a.name FROM activities a

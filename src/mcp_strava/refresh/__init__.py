@@ -3,7 +3,7 @@
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.refresh.freshness import enqueue_refresh_request_if_stale, evaluate_freshness
 from mcp_strava.refresh.policy import RefreshPolicy
-from mcp_strava.refresh.runtime import RefreshResult, RefreshSkipped, run_backfill, run_once
+from mcp_strava.refresh.runtime import RefreshResult, RefreshSkipped, run_backfill, run_backfill_stream_channels, run_once
 
 __all__ = [
     "RefreshPolicy",
@@ -13,5 +13,6 @@ __all__ = [
     "enqueue_refresh_request_if_stale",
     "evaluate_freshness",
     "run_backfill",
+    "run_backfill_stream_channels",
     "run_once",
 ]

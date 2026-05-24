@@ -15,6 +15,8 @@ class Stage(StrEnum):
     STREAMS_BACKFILL = "streams_backfill"
     DETAILS_BACKFILL = "details_backfill"
     COMPLETE_BACKFILL = "complete_backfill"
+    STREAM_CHANNELS_BACKFILL = "stream_channels_backfill"
+    COMPLETE_STREAM_CHANNELS_BACKFILL = "complete_stream_channels_backfill"
 
 
 NEXT_STAGE_DAILY: dict[Stage, Stage] = {
@@ -34,10 +36,25 @@ NEXT_STAGE_BACKFILL: dict[Stage, Stage] = {
 def is_backfill_stage(stage: str | Stage | None) -> bool:
     if stage is None:
         return False
-    return str(stage) in {Stage.STREAMS_BACKFILL.value, Stage.DETAILS_BACKFILL.value, Stage.COMPLETE_BACKFILL.value}
+    return str(stage) in {
+        Stage.STREAMS_BACKFILL.value,
+        Stage.DETAILS_BACKFILL.value,
+        Stage.COMPLETE_BACKFILL.value,
+        Stage.STREAM_CHANNELS_BACKFILL.value,
+        Stage.COMPLETE_STREAM_CHANNELS_BACKFILL.value,
+    }
 
 
 def is_active_backfill_stage(stage: str | Stage | None) -> bool:
     if stage is None:
         return False
-    return str(stage) in {Stage.STREAMS_BACKFILL.value, Stage.DETAILS_BACKFILL.value}
+    return str(stage) in {Stage.STREAMS_BACKFILL.value, Stage.DETAILS_BACKFILL.value, Stage.STREAM_CHANNELS_BACKFILL.value}
+
+
+def is_stream_channel_backfill_stage(stage: str | Stage | None) -> bool:
+    if stage is None:
+        return False
+    return str(stage) in {
+        Stage.STREAM_CHANNELS_BACKFILL.value,
+        Stage.COMPLETE_STREAM_CHANNELS_BACKFILL.value,
+    }
