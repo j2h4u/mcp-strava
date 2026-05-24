@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Application Services & CLI Refit** - Move user-facing analytics/reporting workflows into application services and route CLI through them. (completed 2026-05-21)
 - [x] **Phase 5: MCP HTTP Surface & Docker Hardening** - Expose read-only MCP tools and finalize local-safe container/runtime boundaries. (completed 2026-05-22)
 - [x] **Phase 6: Full-Fidelity Strava Mirror** - Preserve Strava stream data in lossless normalized SQLite structures, generalize stream ingestion, unify GPS storage, and backfill missing stream channels safely. (completed 2026-05-24)
-- [ ] **Phase 7: Materialized Metrics Read Model** - Persist derived activity, daily load, model, and rolling-window facts beside the Strava mirror so MCP tools aggregate prepared facts under sub-500ms latency targets.
+- [x] **Phase 7: Materialized Metrics Read Model** - Persist derived activity, daily load, model, and rolling-window facts beside the Strava mirror so MCP tools aggregate prepared facts under sub-500ms latency targets. (completed 2026-05-24)
 
 ## Phase Details
 
@@ -133,7 +133,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   - Materialized facts must be idempotently recomputable after algorithm-version changes.
   - Missing/stale facts must surface as completeness metadata, not request-time stream recomputation in MCP.
   - `just test` remains a fast Docker MCP transport smoke; full performance E2E is a separate explicit gate until read-model work lands.
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans complete
 Plans:
   - [x] `07-01-PLAN.md` — SQLite v5 read-model schema, indexes, migration safety, and pinned pre-Phase-7 backup
   - [x] `07-02-PLAN.md` — Atomic source-state hashing and dirty queue invalidation for source writes
@@ -155,4 +155,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 4. Application Services & CLI Refit | 4/4 | Complete    | 2026-05-21 |
 | 5. MCP HTTP Surface & Docker Hardening | 6/6 | Complete    | 2026-05-22 |
 | 6. Full-Fidelity Strava Mirror | 4/4 | Complete    | 2026-05-24 |
-| 7. Materialized Metrics Read Model | 5/6 | In Progress|  |
+| 7. Materialized Metrics Read Model | 6/6 | Complete   | 2026-05-24 |
