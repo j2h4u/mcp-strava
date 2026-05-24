@@ -127,8 +127,6 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Refresh runtime materializes activity facts, daily load facts, training model daily state, and rolling period facts after source sync/backfill without exposing recompute/admin controls through MCP.
   4. MCP tools read materialized facts and never scan raw stream rows or recompute Jenks/cardio stream metrics during request handling.
   5. Any single MCP tool completes under a 500 ms p95 target on the current local mirror, with tests and live smoke measuring tool latency.
-**Plans**: TBD
-
 **Cross-cutting constraints:**
   - Raw Strava mirror remains the source of truth; materialized facts are replaceable derived read models.
   - Migration must back up and parity-check existing DB before adding read-model tables or backfilling facts.
