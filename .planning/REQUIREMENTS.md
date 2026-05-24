@@ -88,8 +88,8 @@ Requirements for the Full-Fidelity Strava Mirror milestone. This milestone chang
 
 ### GPS Migration
 
-- [ ] **GPS-01**: Operator can migrate existing split `lat`/`lng` and JSON `latlng` stream rows into one canonical GPS representation without live Strava calls
-- [ ] **GPS-02**: Migration creates a backup, runs preflight/post-checks, and verifies stream row counts, GPS point counts, and key analytics parity
+- [x] **GPS-01**: Operator can migrate existing split `lat`/`lng` and JSON `latlng` stream rows into one canonical GPS representation without live Strava calls
+- [x] **GPS-02**: Migration creates a backup, runs preflight/post-checks, and verifies stream row counts, GPS point counts, and key analytics parity
 
 ### Coverage and Backfill
 

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-24T07:45:42.271Z"
+last_updated: "2026-05-24T07:59:24.639Z"
 last_activity: 2026-05-24
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 25
-  completed_plans: 23
+  completed_plans: 24
   percent: 83
 ---
 
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-22)
 ## Current Position
 
 Phase: 06 (full-fidelity-strava-mirror) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-05-24
 
@@ -66,6 +66,7 @@ Last activity: 2026-05-24
 | Phase 05 P06 | completed in-session | 4 tasks | 6 files |
 | Phase 06 P01 | 3300 | 3 tasks | 10 files |
 | Phase 06 P02 | 35min | 3 tasks | 5 files |
+| Phase 06 P03 | 74min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,8 @@ Recent decisions affecting current work:
 - [Phase 06]: mirror-coverage is admin-only — Operational coverage controls must not cross into product/MCP boundaries.
 - [Phase 06]: Use time as canonical point index for all-channel projection and tolerate uneven channel lengths. — Keeps refresh ingest resilient to sparse/uneven channels without dropping activity-level ingestion.
 - [Phase 06]: Persist requested-but-absent channels as unavailable metadata rather than failing stream ingestion. — Preserves observability and supports planned backfill/merge flows without destructive replacement behavior.
+- [Phase 06]: Phase 06-03 canonical runtime stream schema is v4 with lat/lng plus values_json and no streams.latlng
+- [Phase 06]: Migration reports malformed/conflict counts from pre-migration scan while preserving scalar GPS precedence
 
 ### Pending Todos
 
@@ -122,7 +125,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-24T07:45:14.574Z
+Last session: 2026-05-24T07:58:45.473Z
 Stopped at: Completed 06-01-PLAN.md
 Resume file: None
 
