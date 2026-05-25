@@ -4,9 +4,9 @@ SOURCE | ID | Feature / Requirement | Plan | Status | Notes
 --- | --- | --- | --- | --- | ---
 GOAL | ROADMAP | DuckDB primary mirror plus aggregate analytics surface | 08-02, 08-03, 08-04, 08-06, 08-07, 08-08 | COVERED | Migration, primary runtime, aggregate queries, MCP surface, and Docker validation are planned.
 REQ | P8-SC-01 | Back up, migrate, and parity-check SQLite mirror into DuckDB | 08-02, 08-08 | COVERED | Includes pinned backup, lease gate, casts, parity, rollback, and final live evidence.
-REQ | P8-SC-02 | Runtime repository, refresh, migration, preflight, healthcheck, Docker, and CLI use DuckDB primary | 08-03, 08-04, 08-08 | COVERED | Includes repository cutover and single-owner runtime topology.
+REQ | P8-SC-02 | Runtime repository, refresh, migration, preflight, healthcheck, Docker, and CLI use DuckDB primary | 08-03, 08-04, 08-08 | COVERED | Includes repository cutover, DuckDB read-model materializer/refit, canonical `/runtime/data/strava.duckdb`, and single-owner runtime topology.
 REQ | P8-SC-03 | DuckDB bucketed aggregate queries | 08-05, 08-06, 08-07, 08-08 | COVERED | Registry semantics, query builders, service, MCP smoke/perf.
-REQ | P8-SC-04 | `compare_periods` uses aggregate layer | 08-05, 08-07, 08-08 | COVERED | Comparison delegates to aggregate layer twice with `bucket=all_time`.
+REQ | P8-SC-04 | `compare_periods` uses aggregate layer | 08-05, 08-07, 08-08 | COVERED | Comparison delegates to aggregate layer twice with bounded `bucket=all_time` requests.
 REQ | P8-SC-05 | Python 3.14 and Docker DuckDB runtime | 08-01, 08-08 | COVERED | Dependency gate and Docker import smoke.
 RESEARCH | R-01 | Human package-legitimacy checkpoint before installing `duckdb` | 08-01 | COVERED | Blocking checkpoint before package metadata edits.
 RESEARCH | R-02 | DuckDB single read-write owner topology | 08-04, 08-08 | COVERED | Healthcheck/smoke through owner/HTTP path.
@@ -14,11 +14,12 @@ RESEARCH | R-03 | Migration-only SQLite import with controlled casts | 08-02 | C
 RESEARCH | R-04 | Views/query builders before physical aggregate tables | 08-06 | COVERED | Physical period aggregate tables are not planned.
 RESEARCH | R-05 | 100 ms p95 Docker acceptance gate | 08-08 | COVERED | Six-tool p95 gate.
 RESEARCH | R-06 | Security controls for raw SQL/admin leakage, data loss, concurrency, dependency, and secrets | 08-01 through 08-08 | COVERED | Threat models included in every plan.
+RESEARCH | R-07 | Current read-model materializer is SQLite-specific and must be refit for DuckDB runtime writes | 08-03, 08-04 | COVERED | 08-03 creates/refits DuckDB materializer; 08-04 refresh owner calls it below MCP.
 CONTEXT | D-01 | Fast one-shot cutover | 08-02 | COVERED | Migration-only, no dual-primary.
 CONTEXT | D-02 | Backup, parity, Docker/MCP smoke, p95 before acceptance | 08-02, 08-08 | COVERED | Final validation checkpoint.
 CONTEXT | D-03 | Stop/quiesce writers and prove no active lease | 08-02, 08-04, 08-08 | COVERED | Lease blocks cutover.
 CONTEXT | D-04 | Runtime paths use DuckDB primary | 08-03, 08-04 | COVERED | Repository and deploy refit.
-CONTEXT | D-05 | Keep pinned SQLite backup | 08-02, 08-08 | COVERED | Backup retention through first accepted refresh pass.
+CONTEXT | D-05 | Keep pinned SQLite backup | 08-02, 08-08 | COVERED | Backup retention through `backup.py` pre-Phase-8 pinning and first accepted refresh pass.
 CONTEXT | D-06 | Rollback via pinned SQLite and previous runtime, no full resync | 08-02, 08-08 | COVERED | Runbook and checkpoint.
 CONTEXT | D-07 | DuckDB primary, no permanent bridge/dual-primary | 08-02, 08-03 | COVERED | Guards and runtime cutover.
 CONTEXT | D-08 | Preserve physical source and fact tables | 08-02, 08-03 | COVERED | DuckDB schema and repository.
@@ -37,7 +38,7 @@ CONTEXT | D-20 | No gear aggregation/filtering | 08-05, 08-06, 08-07 | COVERED |
 CONTEXT | D-21 | No raw/admin/sync/debug/storage MCP surface | 08-07, 08-08 | COVERED | Allowlist and forbidden schema tests.
 CONTEXT | D-22 | Factual aggregate responses | 08-06, 08-07 | COVERED | No coaching language.
 CONTEXT | D-23 | `compare_periods` over aggregate layer | 08-07 | COVERED | Delegation tests.
-CONTEXT | D-24 | Two `bucket=all_time` calls for comparison | 08-07 | COVERED | Spy/fake tests.
+CONTEXT | D-24 | Two bounded `bucket=all_time` calls for comparison | 08-06, 08-07 | COVERED | Spy/fake tests assert period start and exclusive end bounds.
 CONTEXT | D-25 | Remove separate row-scan comparison path | 08-07 | COVERED | Rewrite task.
 CONTEXT | D-26 | Supported buckets | 08-06 | COVERED | day/week/month/year/all_time tests.
 CONTEXT | D-27 | Monday week buckets | 08-06 | COVERED | `time_bucket` tests.
@@ -62,3 +63,15 @@ CONTEXT | D-45 | Use expert/research lenses for hard technical choices | 08-01 |
 CONTEXT | D-46 | Ask only product/business questions not answerable from context | 08-01 | COVERED | No new questions in plans beyond required package/live verification.
 
 Deferred CONTEXT ideas are excluded: gear/equipment aggregation, physical period aggregate tables without benchmark evidence, permanent raw archive/Parquet/lakehouse/CDC/multi-user storage, and training-model redesign/coaching interpretation.
+
+## Review Feedback Coverage
+
+REVIEW | ID | Concern | Plan | Status | Notes
+--- | --- | --- | --- | --- | ---
+OpenCode | H-1 | DuckDB read-model materializer/refit must write derived facts after cutover | 08-03, 08-04 | COVERED | 08-03 adds DuckDB materializer/refit and tests; 08-04 routes refresh materialization through owner process.
+OpenCode | H-2 | Pin one canonical DuckDB runtime DB path | 08-02, 08-03, 08-04, 08-08 | COVERED | Canonical live/container path is `/runtime/data/strava.duckdb`.
+Claude | M1 | Pre-Phase-8 pinned backup retention needs `backup.py` scope | 08-02 | COVERED | `src/mcp_strava/adapters/sqlite/backup.py` is in plan scope with retention tests.
+Claude | M2 | `compare_periods` registry test must be refit when handler maps are removed | 08-07 | COVERED | `tests/test_metric_registry.py` is in plan scope with aggregate-layer coverage assertion.
+Claude | M3 | `all_time` end-bound semantics are underspecified | 08-06, 08-07 | COVERED | `all_time` honors explicit exclusive end bounds; comparison tests cover bounded calls.
+Claude | L2 | Justfile perf command uses positional args, not named args | 08-08, 08-VALIDATION | COVERED | Plans and validation use `just mcp-read-model-perf 20 2 100` or no-arg default.
+OpenCode | M-1 | Rollback needs previous Docker image tag | 08-08 | COVERED | Runbook/checkpoint tag pre-cutover image as `mcp-strava:pre-phase-8`.

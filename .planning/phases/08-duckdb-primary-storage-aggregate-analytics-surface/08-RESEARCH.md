@@ -322,7 +322,7 @@ This structure follows the existing adapter/application/interface split and repl
 |----------|-------------|-----------------|
 | Stored data | Live DB: `/opt/docker/mcp-strava/data/strava.db`, 537,722,880 bytes, SQLite `user_version=7`, `quick_check=ok`, 600 activities, 2,669,762 streams, 7,800 stream channels, 124 kudos, 600 activity facts, 516 daily load facts, 516 model facts, 8 rolling facts, 0 dirty rows. [VERIFIED: runtime probe] | Stop service, confirm no active lease, create pinned pre-Phase-8 SQLite backup, migrate from stable copy/backup, parity-check all source/fact counts and coverage, then switch runtime to DuckDB. |
 | Stored data | Repo `data/strava.db` is absent; the canonical live DB is under `/opt/docker/mcp-strava`. [VERIFIED: runtime probe] | Do not assume repo-local DB exists; tests should use temp fixtures or a copied live DB. |
-| Live service config | Docker container `mcp-strava` is healthy, uses image `deploy-mcp-strava`, env `MCP_STRAVA_DB_PATH=/runtime/data/strava.db`, and bind-mounts `/opt/docker/mcp-strava` to `/runtime`. [VERIFIED: Docker inspect] | Change runtime DB path to a DuckDB file such as `/runtime/data/strava.duckdb` and rebuild/recreate container. [ASSUMED: exact filename] |
+| Live service config | Docker container `mcp-strava` is healthy, uses image `deploy-mcp-strava`, env `MCP_STRAVA_DB_PATH=/runtime/data/strava.db`, and bind-mounts `/opt/docker/mcp-strava` to `/runtime`. [VERIFIED: Docker inspect] | Change runtime DB path to canonical `/runtime/data/strava.duckdb` and rebuild/recreate container. [PLANNED: exact filename resolved by review replanning] |
 | Live service config | `/opt/docker/mcp-strava/live.env` contains `MCP_STRAVA_DB_PATH=/opt/docker/mcp-strava/data/strava.db`; `/opt/docker/mcp-strava/.env` contains Strava token keys. [VERIFIED: sanitized runtime probe] | Update DB path in live env; keep Strava token key names unchanged. |
 | Live service config | Gateway config references Strava by HTTP URL only: `/opt/docker/mcp-gateway/catalog.yaml` has `strava` at `http://mcp-strava:8080/mcp`, and gateway compose includes `--servers=...,strava`. [VERIFIED: runtime grep] | No DB migration needed in gateway config; only MCP tool-list smoke must pass after surface changes. |
 | OS-registered state | Docker compose labels point to `/home/j2h4u/repos/j2h4u/mcp-strava/deploy/docker-compose.yml`; container is on `mcp-backends`. [VERIFIED: Docker inspect] | Recreate compose service after config/image changes; preserve network name and service URL. |
@@ -497,7 +497,7 @@ Use `DATE` columns and half-open intervals for all normal buckets. [VERIFIED: 08
 5. Preserve text JSON columns as `VARCHAR` first, with optional JSON validity reports; converting to DuckDB `JSON` should be a separate explicit decision because the existing schema stores JSON strings. [VERIFIED: `src/mcp_strava/adapters/sqlite/schema.py`] [ASSUMED]
 6. Convert canonical activity/fact days to `DATE`; reject required date cast failures and report nullable optional failures separately. [VERIFIED: 08-CONTEXT.md] [CITED: https://duckdb.org/docs/current/sql/data_types/date]
 7. Parity-check table counts, stream point counts, GPS point coverage, channel metadata status counts, kudos counts, refresh state, dirty queue count, metric version sets, fact counts, min/max dates, and key MCP output parity. [VERIFIED: `.planning/ROADMAP.md`] [VERIFIED: 08-CONTEXT.md]
-8. Switch runtime DB path to DuckDB, rebuild/recreate Docker, run MCP smoke, run `just mcp-read-model-perf samples=20 warmup=2 p95_ms=100`, and keep the SQLite backup pinned until the first accepted post-cutover refresh pass. [VERIFIED: Justfile] [VERIFIED: 08-CONTEXT.md]
+8. Switch runtime DB path to DuckDB, rebuild/recreate Docker, run MCP smoke, run `just mcp-read-model-perf 20 2 100` or the no-arg default 100 ms p95 gate, and keep the SQLite backup pinned until the first accepted post-cutover refresh pass. [VERIFIED: Justfile] [VERIFIED: 08-CONTEXT.md]
 
 ## State of the Art
 
@@ -519,7 +519,7 @@ Use `DATE` columns and half-open intervals for all normal buckets. [VERIFIED: 08
 |---|-------|---------|---------------|
 | A1 | `duckdb` is recommended but marked [ASSUMED] because slopcheck was unavailable. | Standard Stack, Package Legitimacy Audit | Planner must add human verification before install. |
 | A2 | Single-process owner can be implemented via in-process refresh thread or DB actor. | Architecture Patterns | Planner may need a different implementation if FastMCP lifecycle makes a thread/actor awkward. |
-| A3 | Keep `MCP_STRAVA_DB_PATH` and change only its value to `.duckdb`. | Runtime State Inventory | A rename would require broader env/docs/test edits. |
+| A3 | Keep `MCP_STRAVA_DB_PATH` and change the live/container value to `/runtime/data/strava.duckdb`. | Runtime State Inventory | A rename would require broader env/docs/test edits. |
 | A4 | Preserve JSON as `VARCHAR` first rather than DuckDB `JSON`. | Migration Plan | If JSON type is required, migration must add validity/error handling. |
 | A5 | Exact file/module names for `adapters/duckdb` and `aggregate_services.py` are recommendations. | Recommended Project Structure | Planner may choose different names if boundaries stay intact. |
 
@@ -574,7 +574,7 @@ Use `DATE` columns and half-open intervals for all normal buckets. [VERIFIED: 08
 | Quick run command | `uv run pytest tests/test_duckdb_storage.py tests/test_training_aggregates.py tests/test_mcp_surface.py tests/test_mcp_latency_gate.py -q` after Wave 0 creates files. [ASSUMED] |
 | Full suite command | `uv run pytest -q` plus Docker smoke/perf gates. [VERIFIED: pytest collect] |
 | Docker smoke command | `just test`. [VERIFIED: Justfile] |
-| 100 ms p95 command | `just mcp-read-model-perf samples=20 warmup=2 p95_ms=100`. [VERIFIED: Justfile] |
+| 100 ms p95 command | `just mcp-read-model-perf 20 2 100` or the no-arg default. [VERIFIED: Justfile] |
 
 ### Phase Requirements -> Test Map
 
@@ -593,7 +593,7 @@ Use `DATE` columns and half-open intervals for all normal buckets. [VERIFIED: 08
 
 - **Per task commit:** targeted `uv run pytest ... -q` for touched subsystem. [ASSUMED]
 - **Per wave merge:** `uv run pytest -q`. [VERIFIED: pytest collect]
-- **Phase gate:** `just test`, `just mcp-smoke-full`, and `just mcp-read-model-perf samples=20 warmup=2 p95_ms=100` green against Docker runtime. [VERIFIED: Justfile]
+- **Phase gate:** `just test`, `just mcp-smoke-full`, and `just mcp-read-model-perf 20 2 100` green against Docker runtime. [VERIFIED: Justfile]
 
 ### Wave 0 Gaps
 

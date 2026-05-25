@@ -163,12 +163,12 @@ Plans:
 Plans:
   - [ ] `08-01-PLAN.md` — DuckDB package legitimacy gate and dependency baseline
   - [ ] `08-02-PLAN.md` — One-shot SQLite-to-DuckDB migration, pinned backup, parity, and admin cutover command
-  - [ ] `08-03-PLAN.md` — DuckDB primary repository and runtime connection cutover
-  - [ ] `08-04-PLAN.md` — Single-owner DuckDB runtime topology, healthcheck, refresh, and Docker path refit
+  - [ ] `08-03-PLAN.md` — DuckDB primary repository, read-model materializer, and runtime connection cutover
+  - [ ] `08-04-PLAN.md` — Single-owner DuckDB runtime topology, healthcheck, refresh, and `/runtime/data/strava.duckdb` Docker path refit
   - [ ] `08-05-PLAN.md` — Metric registry aggregate semantics, bundles, denominators, and docs
   - [ ] `08-06-PLAN.md` — DuckDB aggregate views/query builders and aggregate application service
   - [ ] `08-07-PLAN.md` — `get_training_aggregates` MCP tool and `compare_periods` aggregate-layer rewrite
-  - [ ] `08-08-PLAN.md` — Docker-first smoke, MCP smoke, 100 ms p95, live cutover, and rollback validation
+  - [ ] `08-08-PLAN.md` — Docker-first smoke, MCP smoke, 100 ms p95, live cutover, rollback image tag, and rollback validation
 
 ## Progress
 
