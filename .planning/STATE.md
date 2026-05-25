@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-25T16:32:28.583Z"
+last_updated: "2026-05-25T16:51:05.824Z"
 last_activity: 2026-05-25
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 39
-  completed_plans: 32
-  percent: 82
+  completed_plans: 33
+  percent: 85
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-24)
 ## Current Position
 
 Phase: 08 (duckdb-primary-storage-aggregate-analytics-surface) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-05-25
 
@@ -76,6 +76,7 @@ Last activity: 2026-05-25
 | Phase 07 P07-05 | 45min | 2 tasks | 7 files |
 | Phase 07 P07-06 | 62min | 3 tasks | 10 files |
 | Phase 08 P08-01 | 7min | 2 tasks | 3 files |
+| Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-02 | 12 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -128,6 +129,9 @@ Recent decisions affecting current work:
 - [Phase 07]: Read-model materialization remains runtime-owned automation only; MCP enforces the exact five product tools rather than a redundant forbidden-name list.
 - [Phase 07]: Phase 7 self-UAT passed against Docker MCP with live v5 read-model facts and sub-500ms p95 for all product tools.
 - [Quick 260524-v31]: Docker/runtime Python baseline is Python 3.14.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Use admin duckdb-cutover as the local admin storage migration command. — Keeps migration local-admin only and gives later plans a stable command name.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Create the final DuckDB runtime file only after backup, lease, cast, and parity gates pass. — Protects local data and avoids failed cutovers mutating the canonical target path.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Allow direct SQLite access outside the SQLite adapter only in the migration-only DuckDB cutover module. — Preserves direct-SQLite guard coverage while allowing stopped-source backup and parity migration reads.
 
 ### Roadmap Evolution
 
@@ -151,9 +155,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-25T16:32:28.571Z
-Stopped at: Completed 08-01-PLAN.md
-Resume file: .planning/phases/08-duckdb-primary-storage-aggregate-analytics-surface/08-02-PLAN.md
+Last session: 2026-05-25T16:50:37.390Z
+Stopped at: Completed 08-02-PLAN.md
+Resume file: None
 
 ## Quick Tasks Completed
 
