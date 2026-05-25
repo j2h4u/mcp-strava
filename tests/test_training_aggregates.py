@@ -663,3 +663,102 @@ def test_validation_accepts_exact_rolling_window_allowlist() -> None:
                 window_days=window_days,
             )
         )
+
+
+def _walk_no_forbidden_product_terms(obj) -> None:
+    forbidden = {
+        "sql",
+        "query_plan",
+        "table",
+        "raw_streams",
+        "token",
+        "kudos_names",
+        "gear",
+        "sync_log",
+        "recommendation",
+        "should",
+        "ready",
+        "rest",
+        "train",
+    }
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            lowered = str(key).lower()
+            assert lowered not in forbidden
+            _walk_no_forbidden_product_terms(value)
+    elif isinstance(obj, list):
+        for value in obj:
+            _walk_no_forbidden_product_terms(value)
+    elif isinstance(obj, str):
+        lowered = obj.lower()
+        assert not any(term in lowered for term in forbidden)
+
+
+def test_aggregate_service_returns_factual_envelope_rows_with_freshness(tmp_path: Path) -> None:
+    from datetime import datetime
+
+    from mcp_strava.application.aggregate_services import (
+        AggregateServiceRequest,
+        get_training_aggregates_service,
+    )
+
+    db_path = _aggregate_fixture(tmp_path / "service.duckdb")
+    conn = open_fixture_db(db_path)
+    envelope = get_training_aggregates_service(
+        AggregateServiceRequest(
+            metric_ids=("distance_km", "avg_trimp_per_day", "fitness", "form_zone", "kudos_count"),
+            bucket="all_time",
+            start_day="2026-05-05",
+            end_day_exclusive="2026-06-01",
+            scope="global",
+        ),
+        now=datetime(2026, 6, 2, 8, 0, 0),
+        signal_first_use=False,
+        connection=conn,
+    )
+    payload = dc_to_dict(envelope)
+    conn.close()
+
+    assert set(payload) == {"data", "freshness", "completeness", "warnings", "rationale"}
+    assert payload["completeness"]["coverage"]["read_model"]["status"] == "current"
+    assert payload["data"]["request"]["bucket"] == "all_time"
+    assert payload["data"]["request"]["scope"] == "global"
+    assert len(payload["data"]["rows"]) == 5
+    for row in payload["data"]["rows"]:
+        assert D42_ROW_KEYS <= set(row)
+        assert isinstance(row["mirror_freshness"], dict)
+        assert isinstance(row["read_model_freshness"], dict)
+        assert row["read_model_freshness"]["status"] == "current"
+    _walk_no_forbidden_product_terms(payload)
+
+
+def test_aggregate_service_validates_product_parameters_before_query_execution() -> None:
+    from mcp_strava.application.aggregate_services import (
+        AggregateServiceRequest,
+        get_training_aggregates_service,
+    )
+
+    class ExplodingConnection:
+        def execute(self, *_args, **_kwargs):  # pragma: no cover - fails if validation regresses
+            raise AssertionError("query execution should not happen for invalid product parameters")
+
+    invalid_requests = [
+        AggregateServiceRequest(metric_ids=("trimp",), bucket="hour", start_day="2026-05-01", end_day_exclusive="2026-06-01"),
+        AggregateServiceRequest(metric_ids=("missing_metric",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01"),
+        AggregateServiceRequest(metric_ids=(), bundle_id="gear_efficiency", bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01"),
+        AggregateServiceRequest(metric_ids=("trimp",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01", scope="gear"),
+        AggregateServiceRequest(metric_ids=("avg_hr",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01", scope="per_sport", sport_filter="Unicycle"),
+        AggregateServiceRequest(metric_ids=("volume_7d",), bucket="all_time", start_day=None, end_day_exclusive="2026-05-22", as_of_day="2026-05-21", window_days=13),
+    ]
+    for request in invalid_requests:
+        with pytest.raises(ValueError):
+            get_training_aggregates_service(request, connection=ExplodingConnection())
+
+    with pytest.raises(TypeError):
+        AggregateServiceRequest(
+            metric_ids=("trimp",),
+            bucket="day",
+            start_day="2026-05-01",
+            end_day_exclusive="2026-06-01",
+            gear_id="shoe-1",
+        )
