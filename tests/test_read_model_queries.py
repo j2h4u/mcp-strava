@@ -526,3 +526,37 @@ def test_hot_read_model_repository_queries_do_not_use_substr_date_filters() -> N
             violations.append(method)
 
     assert violations == []
+
+
+def test_duckdb_aggregate_query_layer_uses_views_not_raw_streams_or_period_tables() -> None:
+    from mcp_strava.adapters.duckdb.aggregate_queries import AggregateRequest
+
+    query_source = Path("src/mcp_strava/adapters/duckdb/aggregate_queries.py").read_text(encoding="utf-8")
+    schema_source = Path("src/mcp_strava/adapters/duckdb/schema.py").read_text(encoding="utf-8")
+    lowered_query = query_source.lower()
+    lowered_schema = schema_source.lower()
+
+    for forbidden in (
+        "from streams",
+        "join streams",
+        "from stream_channels",
+        "join stream_channels",
+        "raw_sql",
+        "query_plan",
+    ):
+        assert forbidden not in lowered_query
+
+    assert "time_bucket" in lowered_query
+    assert "weighted_avg" in lowered_query
+    assert "quantile_cont" in lowered_query
+    assert "v_activity_aggregate_facts" in query_source
+    assert "v_daily_aggregate_facts" in query_source
+    assert "v_training_model_state_facts" in query_source
+    assert "v_metric_version_status" in query_source
+    assert "create table period" not in lowered_schema
+    assert "period_aggregate" not in lowered_schema
+
+    request_fields = set(AggregateRequest.__dataclass_fields__)
+    assert {"sql", "raw_sql", "table", "table_name", "column", "column_name", "query_plan", "gear_id"}.isdisjoint(
+        request_fields
+    )
