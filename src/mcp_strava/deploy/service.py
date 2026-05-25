@@ -1,4 +1,4 @@
-"""Container supervisor for MCP HTTP and mirror refresh processes."""
+"""Container service process for MCP HTTP and mirror refresh scheduling."""
 
 from __future__ import annotations
 
@@ -7,9 +7,13 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from mcp_strava.interfaces import mcp_http
+from mcp_strava.refresh import worker as refresh_worker
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
@@ -47,7 +51,14 @@ def _state_path() -> Path:
     return Path(raw_path) if raw_path else _DEFAULT_STATE_PATH
 
 
+def _duckdb_runtime_mode() -> bool:
+    db_path = os.environ.get("MCP_STRAVA_DB_PATH", "")
+    return Path(db_path).suffix.lower() == ".duckdb"
+
+
 def _child_specs() -> list[ChildSpec]:
+    if _duckdb_runtime_mode():
+        return []
     specs: list[ChildSpec] = []
     if _refresh_worker_enabled():
         specs.append(
@@ -78,9 +89,15 @@ def _write_state(children: list[ChildProcess]) -> None:
     state_path = _state_path()
     state_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
+        "owner": {
+            "pid": os.getpid(),
+            "db_mode": "duckdb-primary" if _duckdb_runtime_mode() else "sqlite-compat",
+            "refresh_scheduler": "in-process" if _duckdb_runtime_mode() and _refresh_worker_enabled() else "disabled",
+        },
         "children": {
             child.name: {"pid": child.process.pid}
             for child in children
+            if child.name != "refresh"
         }
     }
     tmp_path = state_path.with_name(f".{state_path.name}.tmp")
@@ -108,8 +125,34 @@ def _remove_state() -> None:
         path.unlink()
 
 
+def _run_duckdb_owner_service() -> int:
+    stop_event = threading.Event()
+    refresh_thread: threading.Thread | None = None
+    if _refresh_worker_enabled():
+        refresh_thread = threading.Thread(
+            target=refresh_worker.run_forever,
+            kwargs={"stop_event": stop_event, "emit_start": True},
+            name="mcp-strava-refresh",
+            daemon=True,
+        )
+        refresh_thread.start()
+        _emit("service_refresh_scheduler_started", mode="in-process")
+
+    _write_state([])
+    try:
+        return mcp_http.main([])
+    finally:
+        stop_event.set()
+        if refresh_thread is not None:
+            refresh_thread.join(timeout=5)
+        _remove_state()
+
+
 def main(argv: list[str] | None = None) -> int:
     del argv
+    if _duckdb_runtime_mode():
+        return _run_duckdb_owner_service()
+
     stop_requested = False
 
     def _request_stop(signum, frame) -> None:

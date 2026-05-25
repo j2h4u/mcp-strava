@@ -214,6 +214,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    settings = get_settings()
+    if settings.database_path.suffix.lower() == ".duckdb" and settings.runtime_profile in {"container", "docker", "live"}:
+        print(
+            "standalone refresh worker is disabled for live DuckDB runtime; "
+            "use the mcp-strava owner process",
+            file=sys.stderr,
+        )
+        return 1
+
     if args.once:
         return run_pending_once()
 

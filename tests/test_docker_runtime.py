@@ -112,6 +112,18 @@ def test_preflight_main_empty_file_fails(tmp_path: Path) -> None:
     assert rc != 0
 
 
+def test_duckdb_preflight_missing_or_corrupt_file_fails_closed(tmp_path: Path) -> None:
+    from mcp_strava.deploy.preflight import main as preflight_main
+
+    missing = tmp_path / "missing.duckdb"
+    assert preflight_main(["--db", str(missing), "--quiet"]) != 0
+    assert not missing.exists()
+
+    corrupt = tmp_path / "corrupt.duckdb"
+    corrupt.write_text("not a duckdb file", encoding="utf-8")
+    assert preflight_main(["--db", str(corrupt), "--quiet"]) != 0
+
+
 def test_preflight_main_valid_db_passes(tmp_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import run_migrations
     from mcp_strava.deploy.preflight import main as preflight_main

@@ -1,4 +1,4 @@
-"""Container health check for the supervised mcp-strava service."""
+"""Container health check for the mcp-strava owner service."""
 
 from __future__ import annotations
 
@@ -7,9 +7,6 @@ import os
 import sys
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
-
-from mcp_strava.deploy.preflight import validate_runtime_db
-from mcp_strava.deploy.service import _refresh_worker_enabled
 
 
 def _state_path() -> Path:
@@ -21,20 +18,23 @@ def _pid_alive(pid: int) -> bool:
     return Path(f"/proc/{pid}").exists()
 
 
-def _validate_children() -> None:
+def _validate_owner_and_children() -> None:
     path = _state_path()
     if not path.exists():
         raise RuntimeError("supervisor state file is missing")
     payload = json.loads(path.read_text(encoding="utf-8"))
+    owner = payload.get("owner")
+    if not isinstance(owner, dict) or not isinstance(owner.get("pid"), int):
+        raise RuntimeError("supervisor owner process is missing")
+    if owner.get("db_mode") != "duckdb-primary":
+        raise RuntimeError("supervisor owner process is not in DuckDB primary mode")
+    if not _pid_alive(owner["pid"]):
+        raise RuntimeError("supervisor owner process is not running")
+
     children = payload.get("children")
     if not isinstance(children, dict):
         raise RuntimeError("supervisor state file is malformed")
-
-    required = ["mcp-http"]
-    if _refresh_worker_enabled():
-        required.append("refresh")
-    for name in required:
-        child = children.get(name)
+    for name, child in children.items():
         if not isinstance(child, dict) or not isinstance(child.get("pid"), int):
             raise RuntimeError(f"supervisor child is missing: {name}")
         if not _pid_alive(child["pid"]):
@@ -57,8 +57,7 @@ def _validate_http() -> None:
 
 def main() -> int:
     try:
-        validate_runtime_db(Path(os.environ["MCP_STRAVA_DB_PATH"]), quick=True)
-        _validate_children()
+        _validate_owner_and_children()
         _validate_http()
     except Exception as exc:
         print(f"healthcheck failed: {exc}", file=sys.stderr)

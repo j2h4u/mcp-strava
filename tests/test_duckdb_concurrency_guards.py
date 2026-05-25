@@ -46,6 +46,7 @@ def test_service_state_records_single_owner_process(tmp_path: Path, monkeypatch:
 
     state_path = tmp_path / "supervisor.json"
     monkeypatch.setenv("MCP_STRAVA_SUPERVISOR_STATE_PATH", str(state_path))
+    monkeypatch.setenv("MCP_STRAVA_DB_PATH", "/runtime/data/strava.duckdb")
     process = SimpleNamespace(pid=os.getpid())
 
     service._write_state([service.ChildProcess(name="mcp-http", process=process)])

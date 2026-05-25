@@ -15,6 +15,8 @@ from mcp_strava.deploy.preflight import validate_runtime_db
 def _needs_migration(db_path: Path) -> bool:
     if not db_path.exists():
         return False
+    if db_path.suffix.lower() == ".duckdb":
+        return False
     latest_version = latest_migration_version()
     with SQLiteRepository.from_path(db_path, expected_mirror=True) as repo:
         current_version = read_user_version(repo.conn)
