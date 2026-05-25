@@ -65,7 +65,7 @@ def test_phase7_deployment_runbook_documents_read_model_performance_gate() -> No
     lowered = text.lower()
 
     assert "pinned pre-phase-7 backup" in lowered
-    assert "user_version=6" in text
+    assert "user_version=7" in text
     assert "admin db-migrate --apply" in text
     assert "admin mirror-refresh --force" in text
     assert "just test" in text
@@ -119,7 +119,7 @@ def test_validate_runtime_db_reports_v6_read_model_readiness_without_requiring_c
 
     report = validate_runtime_db(db_path)
 
-    assert report["user_version"] == 6
+    assert report["user_version"] == 7
     assert report["read_model"]["schema_ready"] is True
     assert report["read_model"]["missing_tables"] == []
     assert report["read_model"]["facts_current"] is False

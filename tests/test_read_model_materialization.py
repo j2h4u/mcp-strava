@@ -209,8 +209,8 @@ def test_read_model_v6_migration_creates_required_tables_columns_and_indexes(tmp
     report = run_migrations(fixture)
 
     with sqlite3.connect(fixture) as conn:
-        assert report.user_version == 6
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert report.user_version == 7
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 7
         assert READ_MODEL_TABLES <= _table_names(conn)
         for table, required in REQUIRED_COLUMNS.items():
             assert required <= _column_names(conn, table), table
@@ -290,10 +290,10 @@ def test_read_model_v6_migration_is_idempotent_and_preserves_source_rows(tmp_pat
 
     with sqlite3.connect(fixture) as conn:
         after = _row_counts(conn, SOURCE_TABLES)
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 7
 
-    assert first.user_version == 6
-    assert second.user_version == 6
+    assert first.user_version == 7
+    assert second.user_version == 7
     assert after == before
 
 
@@ -306,7 +306,7 @@ def test_schema_inventory_reports_read_model_row_counts(tmp_path: Path) -> None:
 
     report = run_preflight(fixture)
 
-    assert report.user_version == 6
+    assert report.user_version == 7
     assert report.row_counts["activity_source_state"] == report.row_counts["activities"]
     assert report.row_counts["metric_dirty_activities"] == report.row_counts["activities"]
     for table in READ_MODEL_TABLES - {"activity_source_state", "metric_dirty_activities"}:

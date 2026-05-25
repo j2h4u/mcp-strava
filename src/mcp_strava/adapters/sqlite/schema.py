@@ -17,6 +17,7 @@ READ_MODEL_TABLES_V5: tuple[str, ...] = (
     "read_model_refresh_runs",
 )
 READ_MODEL_TABLES_V6: tuple[str, ...] = READ_MODEL_TABLES_V5
+MIGRATION_LOG_TABLES_V7: tuple[str, ...] = ("schema_migration_log",)
 
 REQUIRED_TABLES_BY_VERSION: dict[int, tuple[str, ...]] = {
     1: BASE_TABLES_V1,
@@ -26,6 +27,7 @@ REQUIRED_TABLES_BY_VERSION: dict[int, tuple[str, ...]] = {
     4: BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",),
     5: BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",) + READ_MODEL_TABLES_V5,
     6: BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",) + READ_MODEL_TABLES_V6,
+    7: BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",) + READ_MODEL_TABLES_V6 + MIGRATION_LOG_TABLES_V7,
 }
 
 REQUIRED_COLUMNS_BY_VERSION: dict[int, dict[str, tuple[str, ...]]] = {
@@ -381,6 +383,14 @@ REQUIRED_COLUMNS_BY_VERSION: dict[int, dict[str, tuple[str, ...]]] = {
             "median_cardiac_drift_pct",
         ),
     },
+    7: {
+        "schema_migration_log": (
+            "version",
+            "name",
+            "applied_at",
+            "checksum",
+        ),
+    },
 }
 
 REQUIRED_INDEXES_BY_VERSION: dict[int, dict[str, dict[str, object]]] = {
@@ -521,7 +531,7 @@ def _required_indexes_for_version(version: int) -> dict[str, dict[str, object]]:
 
 def row_counts(conn: sqlite3.Connection) -> dict[str, int]:
     counts: dict[str, int] = {}
-    table_names = set(BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",) + READ_MODEL_TABLES_V6)
+    table_names = set(BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",) + READ_MODEL_TABLES_V6 + MIGRATION_LOG_TABLES_V7)
     for table in sorted(table_names):
         if _table_exists(conn, table):
             counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])

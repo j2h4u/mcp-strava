@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
+import importlib
+import importlib.resources
 from pathlib import Path
 import sqlite3
 import json
@@ -19,6 +22,7 @@ from mcp_strava.adapters.sqlite.schema import (
 )
 
 LAST_MIGRATION_POSTCHECK: dict[str, int] = {}
+MIGRATION_MODULE_PACKAGE = "mcp_strava.adapters.sqlite.migration_versions"
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,14 @@ class GpsMigrationSnapshot:
     gps_scalar_latlng_conflict_count: int
     gps_malformed_latlng_count: int
     values_json_non_null_count: int
+
+
+@dataclass(frozen=True)
+class MigrationSpec:
+    version: int
+    name: str
+    apply: Callable[[sqlite3.Connection], None]
+    checksum: str
 
 
 def _num_close(a: float, b: float, tolerance: float) -> bool:
@@ -825,6 +837,92 @@ MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
 }
 
 
+def _legacy_migration_specs() -> list[MigrationSpec]:
+    return [
+        MigrationSpec(
+            version=version,
+            name=apply.__name__,
+            apply=apply,
+            checksum="legacy-inline",
+        )
+        for version, apply in sorted(MIGRATIONS.items())
+    ]
+
+
+def _migration_module_version(module_name: str) -> int | None:
+    if not module_name.startswith("v") or "_" not in module_name:
+        return None
+    raw = module_name[1:].split("_", 1)[0]
+    if not raw.isdigit():
+        return None
+    return int(raw)
+
+
+def _versioned_migration_specs() -> list[MigrationSpec]:
+    package_files = importlib.resources.files(MIGRATION_MODULE_PACKAGE)
+    specs: list[MigrationSpec] = []
+    for resource in sorted(package_files.iterdir(), key=lambda item: item.name):
+        if not resource.name.endswith(".py") or resource.name == "__init__.py":
+            continue
+        module_name = resource.name.removesuffix(".py")
+        expected_version = _migration_module_version(module_name)
+        if expected_version is None:
+            continue
+        module = importlib.import_module(f"{MIGRATION_MODULE_PACKAGE}.{module_name}")
+        version = int(getattr(module, "VERSION"))
+        if version != expected_version:
+            raise RuntimeError(f"Migration {module_name} declares VERSION={version}, expected {expected_version}")
+        apply = getattr(module, "apply")
+        if not callable(apply):
+            raise RuntimeError(f"Migration {module_name} has no callable apply(conn)")
+        checksum = hashlib.sha256(resource.read_bytes()).hexdigest()
+        specs.append(
+            MigrationSpec(
+                version=version,
+                name=str(getattr(module, "NAME", module_name)),
+                apply=apply,
+                checksum=checksum,
+            )
+        )
+    return specs
+
+
+def migration_specs() -> list[MigrationSpec]:
+    specs = _legacy_migration_specs() + _versioned_migration_specs()
+    versions = [spec.version for spec in specs]
+    duplicates = sorted({version for version in versions if versions.count(version) > 1})
+    if duplicates:
+        raise RuntimeError(f"Duplicate migration versions: {duplicates}")
+    return sorted(specs, key=lambda spec: spec.version)
+
+
+def latest_migration_version() -> int:
+    return max(spec.version for spec in migration_specs())
+
+
+def _schema_migration_log_exists(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migration_log'"
+    ).fetchone()
+    return row is not None
+
+
+def _record_migration(conn: sqlite3.Connection, spec: MigrationSpec) -> None:
+    if not _schema_migration_log_exists(conn):
+        return
+    conn.execute(
+        """
+        INSERT INTO schema_migration_log (version, name, applied_at, checksum)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(version) DO UPDATE SET
+            name = excluded.name,
+            applied_at = excluded.applied_at,
+            checksum = excluded.checksum
+        """,
+        (spec.version, spec.name, datetime.now().isoformat(timespec="seconds"), spec.checksum),
+    )
+
+
 def run_migrations(db_path: str | Path) -> PreflightReport:
     path = Path(db_path)
     before = run_preflight(path)
@@ -838,13 +936,18 @@ def run_migrations(db_path: str | Path) -> PreflightReport:
     conn = sqlite3.connect(str(path), check_same_thread=False)
     try:
         current = read_user_version(conn)
-        for target_version in sorted(MIGRATIONS):
-            if current < target_version:
-                if target_version == 5 and pinned_phase_7_backup is None:
+        for spec in migration_specs():
+            if current < spec.version:
+                if spec.version == 5 and pinned_phase_7_backup is None:
                     pinned_phase_7_backup = create_pre_phase_7_backup(path)
                     backup_path = pinned_phase_7_backup
-                MIGRATIONS[target_version](conn)
-                current = target_version
+                spec.apply(conn)
+                current = read_user_version(conn)
+                if current != spec.version:
+                    raise RuntimeError(
+                        f"Migration {spec.version} did not set user_version correctly: {current}"
+                    )
+                _record_migration(conn, spec)
         conn.commit()
     finally:
         conn.close()
