@@ -11,7 +11,7 @@ import pytest
 
 from mcp_strava.adapters.sqlite.migrations import run_migrations
 from mcp_strava.application.metric_registry import METRIC_REGISTRY
-from mcp_strava.types import ServiceEnvelope, dc_to_dict
+from mcp_strava.types import FreshnessMetadata, ServiceEnvelope, dc_to_dict
 from tests.test_read_model_queries import READ_MODEL_METADATA_KEYS, _repo_with_facts
 
 FORBIDDEN_KEYS = {
@@ -260,6 +260,17 @@ def _assert_read_model_metadata(payload: dict) -> None:
     assert READ_MODEL_METADATA_KEYS <= set(metadata)
     assert metadata["last_materialized_at"] == "2026-05-21T06:20:00"
     assert metadata["metric_versions_present"] == [1]
+
+
+def _read_model_current() -> dict[str, object]:
+    return {
+        "status": "current",
+        "last_materialized_at": "2026-05-21T06:20:00",
+        "dirty_count": 0,
+        "oldest_dirty_day": None,
+        "metric_versions_present": [1],
+        "stale_reason": None,
+    }
 
 
 def _block_legacy_recompute(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -525,6 +536,131 @@ def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_p
     serialized = json.dumps(payload).lower()
     for forbidden in ("heart_improved", "vessels_improved", "ready", "should", "recommendation"):
         assert forbidden not in serialized
+
+
+def test_compare_periods_service_delegates_to_bounded_all_time_aggregates(monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcp_strava.application.metric_services as metric_services
+
+    calls: list[object] = []
+
+    class FakeRepo:
+        def read_model_status(self, *_args, **_kwargs) -> dict[str, object]:
+            return _read_model_current()
+
+        def get_refresh_state(self):
+            return None
+
+        def latest_activity_timestamp(self):
+            return None
+
+        def fetch_activity_metric_facts(self, *_args, **_kwargs) -> list:
+            return []
+
+        def fetch_latest_training_model_day(self, *_args, **_kwargs):
+            return None
+
+        def fetch_rolling_period_facts(self, *_args, **_kwargs):
+            return None
+
+    def fake_aggregate_service(request, **kwargs):
+        calls.append(request)
+        value = 100.0 if len(calls) == 1 else 70.0
+        missing = [] if len(calls) == 1 else ["missing_hr"]
+        return ServiceEnvelope(
+            data={
+                "request": {
+                    "bucket": request.bucket,
+                    "start_day": request.start_day,
+                    "end_day_exclusive": request.end_day_exclusive,
+                    "scope": request.scope,
+                },
+                "metrics": ["trimp"],
+                "rows": [
+                    {
+                        "bucket_start": request.start_day,
+                        "bucket_end": request.end_day_exclusive,
+                        "bucket_width": "all_time",
+                        "metric_id": "trimp",
+                        "unit": "trimp",
+                        "calculation": "Prepared aggregate TRIMP fact sum.",
+                        "aggregation_mode": "sum",
+                        "denominator": "trimp",
+                        "value": value,
+                        "quantiles": None,
+                        "distribution": None,
+                        "sample_size": 3 if len(calls) == 1 else 2,
+                        "activity_count": 3 if len(calls) == 1 else 2,
+                        "null_count": 0,
+                        "excluded_count": 0,
+                        "completeness_status": "complete" if len(calls) == 1 else "partial",
+                        "missing_reasons": missing,
+                        "metric_version_status": "single",
+                        "materialized_at": "2026-05-21T06:20:00",
+                        "mirror_freshness": {},
+                        "read_model_freshness": _read_model_current(),
+                        "scope": "global",
+                        "sport_type": None,
+                    }
+                ],
+            },
+            freshness=FreshnessMetadata(
+                freshness_state="fresh",
+                checked_at="2026-05-21T09:00:00",
+                last_successful_refresh_at="2026-05-21T06:00:00",
+                refresh_age_seconds=10800,
+                last_activity_at="2026-05-21T06:20:00",
+                last_activity_age_seconds=9600,
+            ),
+            completeness=CompletenessMetadata(
+                status="complete",
+                missing=missing,
+                coverage={"read_model": _read_model_current(), "row_count": 1},
+            ),
+            warnings=[],
+            rationale=[ServiceRationale(code="aggregate_layer", message="Prepared aggregate rows.")],
+        )
+
+    monkeypatch.setattr(metric_services, "repository_from_connection", lambda _conn: FakeRepo())
+    monkeypatch.setattr(
+        metric_services,
+        "build_freshness_metadata",
+        lambda *_args, **_kwargs: FreshnessMetadata(
+            freshness_state="fresh",
+            checked_at="2026-05-21T09:00:00",
+            last_successful_refresh_at="2026-05-21T06:00:00",
+            refresh_age_seconds=10800,
+            last_activity_at="2026-05-21T06:20:00",
+            last_activity_age_seconds=9600,
+        ),
+    )
+    monkeypatch.setattr(metric_services, "get_training_aggregates_service", fake_aggregate_service, raising=False)
+
+    envelope = metric_services.compare_periods_service(
+        period_a_start="2026-05-01",
+        period_a_end="2026-05-08",
+        period_b_start="2026-05-08",
+        period_b_end="2026-05-15",
+        sport=None,
+        now=datetime.fromisoformat("2026-05-21T09:00:00"),
+        signal_first_use=False,
+        connection=object(),
+    )
+    payload = dc_to_dict(envelope)
+
+    assert len(calls) == 2
+    assert [(call.bucket, call.start_day, call.end_day_exclusive) for call in calls] == [
+        ("all_time", "2026-05-01", "2026-05-08"),
+        ("all_time", "2026-05-08", "2026-05-15"),
+    ]
+    metric = payload["data"]["global"]["metrics"]["trimp"]
+    assert metric["period_a"]["value"] == 100.0
+    assert metric["period_b"]["value"] == 70.0
+    assert metric["delta"] == 30.0
+    assert metric["delta_pct"] == pytest.approx(42.86)
+    assert metric["trend_direction"] == "up"
+    assert metric["sample_size"] == {"period_a": 3, "period_b": 2}
+    assert "missing_hr" in metric["missing_reasons"]
+    assert metric["metric_version_status"] == "single"
 
 
 def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

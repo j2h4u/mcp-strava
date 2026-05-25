@@ -19,6 +19,7 @@ EXPECTED_TOOL_NAMES = (
     "get_workout_detail",
     "compare_periods",
     "project_fitness_state",
+    "get_training_aggregates",
 )
 
 EXPECTED_PROMPT_NAMES = (
@@ -63,6 +64,12 @@ def _envelope(data: dict, *, unavailable: bool = False) -> ServiceEnvelope:
     )
 
 
+def _schema_property_names(schema: dict) -> set[str]:
+    properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+    assert isinstance(properties, dict)
+    return set(properties)
+
+
 def test_mcp_tool_allowlist_is_exact() -> None:
     from mcp_strava.interfaces import mcp_http
 
@@ -71,6 +78,52 @@ def test_mcp_tool_allowlist_is_exact() -> None:
     assert "sync" in mcp_http.MCP_INSTRUCTIONS
     assert "raw SQL" in mcp_http.MCP_INSTRUCTIONS
     assert "medical diagnoses" in mcp_http.MCP_INSTRUCTIONS
+
+
+def test_get_training_aggregates_schema_is_product_only() -> None:
+    from mcp_strava.interfaces import mcp_http
+
+    server = mcp_http.build_mcp_server()
+    tools = asyncio.run(server.list_tools())
+    aggregate_tool = next(tool for tool in tools if tool.name == "get_training_aggregates")
+    properties = _schema_property_names(aggregate_tool.inputSchema)
+
+    expected_properties = {
+        "start_date",
+        "end_date",
+        "bucket",
+        "metric_ids",
+        "metric_bundle",
+        "scope",
+        "sports",
+        "include_empty_buckets",
+        "as_of_day",
+        "window_days",
+    }
+    assert properties <= expected_properties
+    assert {"start_date", "end_date", "bucket", "scope"}.issubset(properties)
+    assert {"metric_ids", "metric_bundle"} & properties
+
+    forbidden_fragments = {
+        "sql",
+        "table",
+        "query",
+        "plan",
+        "migration",
+        "sync",
+        "backfill",
+        "recompute",
+        "dirty",
+        "queue",
+        "token",
+        "raw",
+        "debug",
+        "admin",
+        "gear",
+    }
+    for name in properties:
+        lowered = name.lower()
+        assert not any(fragment in lowered for fragment in forbidden_fragments), name
 
 
 def test_mcp_prompts_are_content_backed_and_do_not_expand_tool_surface() -> None:
@@ -186,6 +239,12 @@ def test_mcp_tools_have_annotations_and_structured_output(monkeypatch) -> None:
         "project_fitness_state_service",
         lambda **_: _envelope({"projection": []}),
     )
+    monkeypatch.setattr(
+        mcp_http,
+        "get_training_aggregates_service",
+        lambda *_args, **_kwargs: _envelope({"rows": []}),
+        raising=False,
+    )
 
     server = mcp_http.build_mcp_server()
     tools = asyncio.run(server.list_tools())
@@ -204,6 +263,16 @@ def test_mcp_tools_have_annotations_and_structured_output(monkeypatch) -> None:
         ("get_workout_detail", {"workout_id": 10}),
         ("compare_periods", {"period_a_start": "2026-05-01", "period_a_end": "2026-05-07", "period_b_start": "2026-04-24", "period_b_end": "2026-04-30"}),
         ("project_fitness_state", {"target_date": "2026-05-30", "scenarios": ["rest"]}),
+        (
+            "get_training_aggregates",
+            {
+                "start_date": "2026-05-01",
+                "end_date": "2026-06-01",
+                "bucket": "week",
+                "metric_bundle": "weekly_digest",
+                "scope": "global",
+            },
+        ),
     ):
         content, payload = asyncio.run(server.call_tool(tool_name, arguments))
         assert payload is not None
@@ -224,6 +293,12 @@ def test_mcp_payload_rounds_floats_at_surface(monkeypatch) -> None:
     monkeypatch.setattr(mcp_http, "get_workout_detail_service", lambda workout_id, **_: _envelope({}))
     monkeypatch.setattr(mcp_http, "compare_periods_service", lambda **_: _envelope({}))
     monkeypatch.setattr(mcp_http, "project_fitness_state_service", lambda **_: _envelope({}))
+    monkeypatch.setattr(
+        mcp_http,
+        "get_training_aggregates_service",
+        lambda *_args, **_kwargs: _envelope({"rows": []}),
+        raising=False,
+    )
 
     server = mcp_http.build_mcp_server()
     _, payload = asyncio.run(server.call_tool("get_fitness_state", {}))
@@ -259,6 +334,12 @@ def test_get_workout_detail_missing_id_is_unavailable(monkeypatch) -> None:
         mcp_http,
         "project_fitness_state_service",
         lambda **_: _envelope({"projection": []}),
+    )
+    monkeypatch.setattr(
+        mcp_http,
+        "get_training_aggregates_service",
+        lambda *_args, **_kwargs: _envelope({"rows": []}),
+        raising=False,
     )
 
     server = mcp_http.build_mcp_server()

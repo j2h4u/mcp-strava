@@ -7,7 +7,13 @@ from pathlib import Path
 import pytest
 
 from mcp_strava.devtools.mcp_client.cli import main
-from mcp_strava.devtools.mcp_client.client import EXPECTED_TOOL_NAMES, McpClientError, StdioMcpClient, execute_script_steps
+from mcp_strava.devtools.mcp_client.client import (
+    EXPECTED_TOOL_NAMES,
+    McpClientError,
+    StdioMcpClient,
+    default_warm_latency_calls,
+    execute_script_steps,
+)
 
 
 class FakeWarmScriptClient:
@@ -110,6 +116,21 @@ def test_mcp_test_client_script_can_measure_repeated_warm_samples_for_all_produc
     assert set(results[0]["result"]["tools"]) == EXPECTED_TOOL_NAMES
     for name in sorted(EXPECTED_TOOL_NAMES):
         assert tool_calls.count(name) == 3
+
+
+def test_default_warm_latency_calls_include_training_aggregates() -> None:
+    calls = default_warm_latency_calls(workout_id=701, today="2026-05-24")
+
+    aggregate_call = next(call for call in calls if call["name"] == "get_training_aggregates")
+
+    assert {call["name"] for call in calls} == EXPECTED_TOOL_NAMES | {"get_training_aggregates"}
+    assert aggregate_call["arguments"] == {
+        "start_date": "2026-04-26",
+        "end_date": "2026-05-24",
+        "bucket": "week",
+        "metric_bundle": "weekly_digest",
+        "scope": "global",
+    }
 
 
 def test_mcp_test_client_cli_call_tool(capsys) -> None:
