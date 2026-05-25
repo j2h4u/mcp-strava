@@ -707,6 +707,43 @@ class DuckDBRepository:
             params,
         )
 
+    def fetch_rolling_period_facts_by_windows(
+        self,
+        as_of_day: str,
+        window_days: tuple[int, ...],
+        *,
+        scope: str,
+        sport: str | None = None,
+        metric_version: int | None = None,
+    ) -> dict[int, dict[str, object]]:
+        if not self._read_model_enabled() or not window_days:
+            return {}
+        window_placeholders = ", ".join("?" for _ in window_days)
+        where = [
+            "as_of_day = CAST(? AS DATE)",
+            f"window_days IN ({window_placeholders})",
+            "scope = ?",
+            "sport_type = ?",
+        ]
+        params: list[object] = [as_of_day, *window_days, scope, sport or "all"]
+        if metric_version is not None:
+            where.append("metric_version = ?")
+            params.append(metric_version)
+        rows = self._fetchall(
+            f"""
+            SELECT *
+            FROM rolling_period_facts
+            WHERE {" AND ".join(where)}
+            ORDER BY window_days ASC, metric_version DESC
+            """,
+            params,
+        )
+        by_window: dict[int, dict[str, object]] = {}
+        for row in rows:
+            window = int(row["window_days"])
+            by_window.setdefault(window, row)
+        return by_window
+
     # Activities
     def recent_activities(self, limit: int = 15) -> list[RepositoryActivityRow]:
         rows = self._fetchall(

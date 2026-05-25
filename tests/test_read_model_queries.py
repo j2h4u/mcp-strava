@@ -399,6 +399,12 @@ def test_fact_queries_cover_model_daily_load_rolling_and_detail(tmp_path: Path) 
         detail = repo.fetch_activity_metric_fact(701, metric_version=1)
         daily = repo.fetch_daily_load_facts("2026-05-19", "2026-05-22", scope="all", metric_version=1)
         rolling = repo.fetch_rolling_period_facts("2026-05-21", 14, scope="all", metric_version=1)
+        rolling_by_window = repo.fetch_rolling_period_facts_by_windows(
+            "2026-05-21",
+            (7, 14, 28, 90),
+            scope="all",
+            metric_version=1,
+        )
 
     assert latest_model is not None
     assert latest_model["day"] == "2026-05-21"
@@ -407,6 +413,8 @@ def test_fact_queries_cover_model_daily_load_rolling_and_detail(tmp_path: Path) 
     assert [row["day"] for row in daily] == ["2026-05-19", "2026-05-20", "2026-05-21"]
     assert rolling is not None
     assert rolling["window_days"] == 14
+    assert sorted(rolling_by_window) == [7, 14, 28, 90]
+    assert rolling_by_window[14]["window_days"] == 14
 
 
 def test_read_model_queries_fail_soft_when_schema_missing(tmp_path: Path) -> None:
@@ -420,6 +428,7 @@ def test_read_model_queries_fail_soft_when_schema_missing(tmp_path: Path) -> Non
         assert repo.fetch_latest_training_model_day(metric_version=1) is None
         assert repo.fetch_daily_load_facts("2026-05-01", "2026-05-02", scope="all", metric_version=1) == []
         assert repo.fetch_rolling_period_facts("2026-05-01", 7, scope="all", metric_version=1) is None
+        assert repo.fetch_rolling_period_facts_by_windows("2026-05-01", (7, 14), scope="all", metric_version=1) == {}
 
     assert status["status"] == "unavailable"
     assert status["stale_reason"] == "read_model_schema_missing"

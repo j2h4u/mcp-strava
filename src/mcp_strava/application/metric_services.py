@@ -289,6 +289,15 @@ def _latest_as_of_day(checked_at: datetime) -> str:
 
 
 def _rolling_by_window(repo, as_of_day: str) -> dict[int, object]:
+    windows = (7, 14, 28, 90)
+    batch_fetch = getattr(repo, "fetch_rolling_period_facts_by_windows", None)
+    if batch_fetch is not None:
+        return batch_fetch(
+            as_of_day,
+            windows,
+            scope="all",
+            metric_version=CURRENT_METRIC_VERSION,
+        )
     return {
         window: repo.fetch_rolling_period_facts(
             as_of_day,
@@ -296,7 +305,7 @@ def _rolling_by_window(repo, as_of_day: str) -> dict[int, object]:
             scope="all",
             metric_version=CURRENT_METRIC_VERSION,
         )
-        for window in (7, 14, 28, 90)
+        for window in windows
     }
 
 

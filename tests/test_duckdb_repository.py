@@ -240,4 +240,7 @@ def test_duckdb_repository_fact_upserts_queries_and_dirty_clear(tmp_path: Path) 
         assert len(repo.fetch_daily_load_facts("2026-05-21", "2026-05-22", scope="all")) == 1
         assert repo.fetch_latest_training_model_day(1, as_of_day="2026-05-21")["fitness"] == 10.0
         assert repo.fetch_rolling_period_facts("2026-05-21", 7, scope="all")["active_days"] == 1
+        rolling_by_window = repo.fetch_rolling_period_facts_by_windows("2026-05-21", (7, 14), scope="all")
+        assert sorted(rolling_by_window) == [7]
+        assert rolling_by_window[7]["active_days"] == 1
         assert repo.read_model_status(metric_version=1)["status"] == "current"
