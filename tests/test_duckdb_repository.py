@@ -69,6 +69,61 @@ def test_duckdb_repository_has_no_generic_sql_surface() -> None:
     assert forbidden.isdisjoint(DuckDBRepository.__dict__)
 
 
+def test_duckdb_repository_serializes_transactions_and_reads(monkeypatch) -> None:
+    from mcp_strava.adapters.duckdb import repository
+
+    events: list[str] = []
+
+    class FakeLock:
+        def acquire(self) -> None:
+            events.append("lock_acquire")
+
+        def release(self) -> None:
+            events.append("lock_release")
+
+        def __enter__(self) -> "FakeLock":
+            self.acquire()
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            del exc_type, exc, tb
+            self.release()
+
+    class FakeResult:
+        description = [("value",)]
+
+        def fetchone(self):
+            return (1,)
+
+    class FakeConn:
+        def execute(self, sql: str, params=None):
+            del params
+            events.append(f"execute:{sql}")
+            return FakeResult()
+
+        def commit(self) -> None:
+            events.append("commit")
+
+    monkeypatch.setattr(repository, "duckdb_process_lock", lambda: FakeLock())
+
+    repo = repository.DuckDBRepository(conn=FakeConn())
+    repo.begin()
+    assert repo._fetchone("SELECT 1") == {"value": 1}
+    repo.commit()
+    assert repo._fetchone("SELECT 1") == {"value": 1}
+
+    assert events == [
+        "lock_acquire",
+        "execute:BEGIN",
+        "execute:SELECT 1",
+        "commit",
+        "lock_release",
+        "lock_acquire",
+        "execute:SELECT 1",
+        "lock_release",
+    ]
+
+
 def test_duckdb_repository_refresh_source_dirty_and_status_roundtrip(tmp_path: Path) -> None:
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 

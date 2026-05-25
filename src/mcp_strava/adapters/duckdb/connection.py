@@ -1,8 +1,15 @@
 """DuckDB connection policy with fail-closed expected DB open."""
 
 from pathlib import Path
+from threading import RLock
 
 import duckdb
+
+_DUCKDB_PROCESS_LOCK = RLock()
+
+
+def duckdb_process_lock() -> RLock:
+    return _DUCKDB_PROCESS_LOCK
 
 
 def open_expected_mirror_db(path: str | Path, read_only: bool = False):

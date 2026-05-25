@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Iterable
 
-from mcp_strava.adapters.duckdb.connection import open_expected_mirror_db, open_fixture_db
+from mcp_strava.adapters.duckdb.connection import duckdb_process_lock, open_expected_mirror_db, open_fixture_db
 from mcp_strava.constants import Config, TRAINING_SPORTS
 from mcp_strava.types import (
     ALLOWED_REASON_CODES,
@@ -82,6 +82,7 @@ class DuckDBRepository:
 
     conn: object
     _transaction_depth: int = field(default=0, init=False, repr=False)
+    _transaction_lock_held: bool = field(default=False, init=False, repr=False)
 
     @classmethod
     def from_path(cls, db_path: str | Path, expected_mirror: bool = False) -> "DuckDBRepository":
@@ -103,56 +104,106 @@ class DuckDBRepository:
         self.conn.close()
 
     def begin(self) -> None:
-        self.conn.execute("BEGIN")
-        self._transaction_depth += 1
+        acquired = False
+        if self._transaction_depth == 0:
+            duckdb_process_lock().acquire()
+            self._transaction_lock_held = True
+            acquired = True
+        try:
+            self.conn.execute("BEGIN")
+            self._transaction_depth += 1
+        except Exception:
+            if acquired:
+                self._transaction_lock_held = False
+                duckdb_process_lock().release()
+            raise
 
     def commit(self) -> None:
-        self.conn.commit()
-        if self._transaction_depth > 0:
-            self._transaction_depth -= 1
+        should_release = self._transaction_depth <= 1 and self._transaction_lock_held
+        try:
+            self.conn.commit()
+        finally:
+            if self._transaction_depth > 0:
+                self._transaction_depth -= 1
+            if should_release:
+                self._transaction_lock_held = False
+                duckdb_process_lock().release()
 
     def rollback(self) -> None:
-        self.conn.rollback()
-        self._transaction_depth = 0
+        should_release = self._transaction_lock_held
+        try:
+            self.conn.rollback()
+        finally:
+            self._transaction_depth = 0
+            if should_release:
+                self._transaction_lock_held = False
+                duckdb_process_lock().release()
 
     def _commit_if_standalone(self) -> None:
         if self._transaction_depth == 0:
-            self.conn.commit()
+            with duckdb_process_lock():
+                self.conn.commit()
+
+    def _execute(self, sql: str, params: Iterable[object] | None = None):
+        if self._transaction_depth > 0:
+            return self.conn.execute(sql, list(params or []))
+        with duckdb_process_lock():
+            return self.conn.execute(sql, list(params or []))
+
+    def _executemany(self, sql: str, params: Iterable[Iterable[object]]):
+        if self._transaction_depth > 0:
+            return self.conn.executemany(sql, params)
+        with duckdb_process_lock():
+            return self.conn.executemany(sql, params)
 
     def _fetchone(self, sql: str, params: Iterable[object] | None = None) -> dict[str, object] | None:
-        result = self.conn.execute(sql, list(params or []))
-        row = result.fetchone()
+        if self._transaction_depth > 0:
+            result = self.conn.execute(sql, list(params or []))
+            row = result.fetchone()
+        else:
+            with duckdb_process_lock():
+                result = self.conn.execute(sql, list(params or []))
+                row = result.fetchone()
         if row is None:
             return None
         columns = [item[0] for item in result.description]
         return {column: _normalize_cell(value) for column, value in zip(columns, row, strict=False)}
 
     def _fetchall(self, sql: str, params: Iterable[object] | None = None) -> list[dict[str, object]]:
-        result = self.conn.execute(sql, list(params or []))
+        if self._transaction_depth > 0:
+            result = self.conn.execute(sql, list(params or []))
+            rows = result.fetchall()
+        else:
+            with duckdb_process_lock():
+                result = self.conn.execute(sql, list(params or []))
+                rows = result.fetchall()
         columns = [item[0] for item in result.description]
-        return [
-            {column: _normalize_cell(value) for column, value in zip(columns, row, strict=False)}
-            for row in result.fetchall()
-        ]
+        return [{column: _normalize_cell(value) for column, value in zip(columns, row, strict=False)} for row in rows]
 
     def _scalar(self, sql: str, params: Iterable[object] | None = None) -> object | None:
-        row = self.conn.execute(sql, list(params or [])).fetchone()
+        if self._transaction_depth > 0:
+            row = self.conn.execute(sql, list(params or [])).fetchone()
+        else:
+            with duckdb_process_lock():
+                row = self.conn.execute(sql, list(params or [])).fetchone()
         return row[0] if row is not None else None
 
     def _table_columns(self, table: str) -> set[str]:
-        rows = self.conn.execute(f"PRAGMA table_info('{table}')").fetchall()
+        with duckdb_process_lock():
+            rows = self.conn.execute(f"PRAGMA table_info('{table}')").fetchall()
         return {str(row[1]) for row in rows}
 
     def _table_exists(self, table: str) -> bool:
-        row = self.conn.execute(
-            """
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_name = ?
-            LIMIT 1
-            """,
-            [table],
-        ).fetchone()
+        with duckdb_process_lock():
+            row = self.conn.execute(
+                """
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_name = ?
+                LIMIT 1
+                """,
+                [table],
+            ).fetchone()
         return row is not None
 
     def _next_id(self, table: str) -> int:
@@ -254,7 +305,7 @@ class DuckDBRepository:
 
         source_revision = 1 if existing is None else int(existing["source_revision"]) + 1
         changed_at = queued_at or self._now_iso()
-        self.conn.execute(
+        self._execute(
             """
             INSERT INTO activity_source_state (
                 activity_id, activity_day, summary_hash, detail_hash, streams_hash,
@@ -302,7 +353,7 @@ class DuckDBRepository:
         reason: str,
         queued_at: str,
     ) -> None:
-        self.conn.execute(
+        self._execute(
             """
             INSERT INTO metric_dirty_activities (
                 activity_id, activity_day, metric_version, source_revision,
@@ -346,7 +397,7 @@ class DuckDBRepository:
         metric_version: int,
         last_error: str,
     ) -> None:
-        self.conn.execute(
+        self._execute(
             """
             UPDATE metric_dirty_activities
             SET attempt_count = attempt_count + 1, last_error = ?
@@ -410,7 +461,7 @@ class DuckDBRepository:
                 """,
                 [activity_id, activity_day, metric_version],
             )
-            self.conn.execute(
+            self._execute(
                 """
                 DELETE FROM metric_dirty_activities
                 WHERE activity_id = ? AND activity_day = CAST(? AS DATE) AND metric_version = ?
@@ -438,7 +489,7 @@ class DuckDBRepository:
             VALUES ({placeholders})
             ON CONFLICT({conflict}) DO UPDATE SET {assignments}
         """
-        self.conn.execute(sql, [values[col] for col in columns])
+        self._execute(sql, [values[col] for col in columns])
 
     def upsert_activity_metric_fact(self, values: dict[str, object]) -> None:
         self._upsert_fact("activity_metric_facts", values, ("activity_id", "metric_version"))
@@ -461,7 +512,7 @@ class DuckDBRepository:
         payload.setdefault("id", self._next_id("read_model_refresh_runs"))
         columns = tuple(payload.keys())
         placeholders = ", ".join("?" for _ in columns)
-        self.conn.execute(
+        self._execute(
             f"INSERT INTO read_model_refresh_runs ({', '.join(columns)}) VALUES ({placeholders})",
             [payload[col] for col in columns],
         )
@@ -872,7 +923,7 @@ class DuckDBRepository:
     ) -> None:
         self.begin()
         try:
-            self.conn.execute(
+            self._execute(
                 """
                 INSERT INTO activities (
                     id, activity_day, date, name, sport_type, distance, moving_time,
@@ -913,7 +964,7 @@ class DuckDBRepository:
     def update_activity_detail(self, activity_id: int, detail_json: str) -> None:
         self.begin()
         try:
-            self.conn.execute("UPDATE activities SET detail_json = ? WHERE id = ?", [detail_json, activity_id])
+            self._execute("UPDATE activities SET detail_json = ? WHERE id = ?", [detail_json, activity_id])
             self.update_activity_source_state_and_enqueue_dirty(activity_id)
         except Exception:
             self.rollback()
@@ -1310,7 +1361,7 @@ class DuckDBRepository:
             return 0
         self.begin()
         try:
-            self.conn.execute("DELETE FROM streams WHERE activity_id = ?", [activity_id])
+            self._execute("DELETE FROM streams WHERE activity_id = ?", [activity_id])
             self._insert_stream_rows(activity_id, payload, chunk_size)
             self.update_activity_source_state_and_enqueue_dirty(activity_id)
         except Exception:
@@ -1340,7 +1391,7 @@ class DuckDBRepository:
                 )
                 for row in chunk
             ]
-            self.conn.executemany(
+            self._executemany(
                 """
                 INSERT INTO streams
                 (activity_id, time_offset, heartrate, velocity, altitude, cadence,
@@ -1365,7 +1416,7 @@ class DuckDBRepository:
     def delete_stream_rows_for_activity(self, activity_id: int) -> None:
         self.begin()
         try:
-            self.conn.execute("DELETE FROM streams WHERE activity_id = ?", [activity_id])
+            self._execute("DELETE FROM streams WHERE activity_id = ?", [activity_id])
             self.update_activity_source_state_and_enqueue_dirty(activity_id)
         except Exception:
             self.rollback()
@@ -1388,7 +1439,7 @@ class DuckDBRepository:
         if commit:
             self.begin()
         try:
-            self.conn.execute(
+            self._execute(
                 """
                 INSERT INTO stream_channels (
                     activity_id, channel_key, original_size, resolution, series_type,
@@ -1434,8 +1485,8 @@ class DuckDBRepository:
         payload = list(rows)
         self.begin()
         try:
-            self.conn.execute("DELETE FROM streams WHERE activity_id = ?", [activity_id])
-            self.conn.execute("DELETE FROM stream_channels WHERE activity_id = ?", [activity_id])
+            self._execute("DELETE FROM streams WHERE activity_id = ?", [activity_id])
+            self._execute("DELETE FROM stream_channels WHERE activity_id = ?", [activity_id])
             self._insert_stream_rows(activity_id, payload, chunk_size)
             for item in metadata:
                 self.upsert_stream_channel_metadata(
@@ -1478,12 +1529,12 @@ class DuckDBRepository:
                     continue
                 existing_map = json.loads(str(existing["values_json"])) if existing.get("values_json") else {}
                 values_map = existing_map | (row.get("values") or {})
-                self.conn.execute(
+                self._execute(
                     "UPDATE streams SET values_json=? WHERE activity_id=? AND time_offset=?",
                     [json.dumps(values_map, ensure_ascii=True), activity_id, row["time_offset"]],
                 )
             for channel_key in missing_channel_keys:
-                self.conn.execute(
+                self._execute(
                     """
                     INSERT INTO stream_channels (activity_id, channel_key, fetched_at, status)
                     VALUES (?, ?, ?, ?)
@@ -1605,7 +1656,7 @@ class DuckDBRepository:
         return str(row["zones_json"]) if row else None
 
     def insert_athlete_zones(self, fetched_at: str, zones_json: str) -> None:
-        self.conn.execute(
+        self._execute(
             "INSERT INTO athlete_zones (id, fetched_at, zones_json) VALUES (?, ?, ?)",
             [self._next_id("athlete_zones"), fetched_at, zones_json],
         )
@@ -1635,7 +1686,7 @@ class DuckDBRepository:
         )
 
     def upsert_kudos(self, activity_id: int, firstname: str, lastname: str, fetched_at: str) -> None:
-        self.conn.execute(
+        self._execute(
             """
             INSERT INTO kudos (activity_id, firstname, lastname, fetched_at)
             VALUES (?, ?, ?, ?)
@@ -1660,7 +1711,7 @@ class DuckDBRepository:
         error: str | None,
         kudos_fetched: int | None,
     ) -> None:
-        self.conn.execute(
+        self._execute(
             """
             INSERT INTO sync_log (
                 id, timestamp, status, activities_seen, activities_new,
@@ -1712,7 +1763,7 @@ class DuckDBRepository:
     def get_refresh_state(self) -> RefreshStateRow:
         row = self._fetchone("SELECT * FROM refresh_state WHERE id = 1")
         if row is None:
-            self.conn.execute("INSERT INTO refresh_state (id) VALUES (1)")
+            self._execute("INSERT INTO refresh_state (id) VALUES (1)")
             self._commit_if_standalone()
             row = self._fetchone("SELECT * FROM refresh_state WHERE id = 1")
         return RefreshStateRow(
@@ -1744,7 +1795,7 @@ class DuckDBRepository:
             and str(existing["lease_expires_at"]) >= now
         ):
             return False
-        self.conn.execute(
+        self._execute(
             """
             UPDATE refresh_state
             SET lease_owner = ?, lease_expires_at = ?
@@ -1756,7 +1807,7 @@ class DuckDBRepository:
         return True
 
     def release_refresh_lease(self, owner: str) -> None:
-        self.conn.execute(
+        self._execute(
             """
             UPDATE refresh_state
             SET lease_owner = NULL, lease_expires_at = NULL
@@ -1770,7 +1821,7 @@ class DuckDBRepository:
         existing = self._fetchone("SELECT lease_owner FROM refresh_state WHERE id = 1")
         if existing is None or existing["lease_owner"] != owner:
             return False
-        self.conn.execute(
+        self._execute(
             """
             UPDATE refresh_state
             SET lease_expires_at = ?
@@ -1783,7 +1834,7 @@ class DuckDBRepository:
 
     def set_checkpoint(self, stage: str, cursor: str | None) -> None:
         self.get_refresh_state()
-        self.conn.execute(
+        self._execute(
             """
             UPDATE refresh_state
             SET checkpoint_stage = ?, checkpoint_cursor = ?
@@ -1795,12 +1846,12 @@ class DuckDBRepository:
 
     def record_refresh_attempt(self, at: str) -> None:
         self.get_refresh_state()
-        self.conn.execute("UPDATE refresh_state SET last_attempt_at = ? WHERE id = 1", [at])
+        self._execute("UPDATE refresh_state SET last_attempt_at = ? WHERE id = 1", [at])
         self._commit_if_standalone()
 
     def record_refresh_success(self, at: str) -> None:
         self.get_refresh_state()
-        self.conn.execute(
+        self._execute(
             """
             UPDATE refresh_state
             SET last_success_at = ?, last_attempt_at = ?, last_status = 'ok',
@@ -1815,7 +1866,7 @@ class DuckDBRepository:
         if reason_code not in ALLOWED_REASON_CODES:
             raise ValueError(f"Unknown refresh failure reason: {reason_code}")
         self.get_refresh_state()
-        self.conn.execute(
+        self._execute(
             """
             UPDATE refresh_state
             SET last_attempt_at = ?, last_status = 'failed',
@@ -1839,7 +1890,7 @@ class DuckDBRepository:
         )
         if existing is not None:
             return False
-        self.conn.execute(
+        self._execute(
             """
             INSERT INTO refresh_requests (id, reason, requested_for_day, requested_at)
             VALUES (?, ?, ?, ?)
@@ -1871,7 +1922,7 @@ class DuckDBRepository:
 
     def mark_refresh_requests_consumed(self, consumed_at: str) -> int:
         pending = self.pending_refresh_requests()
-        self.conn.execute(
+        self._execute(
             "UPDATE refresh_requests SET consumed_at = ? WHERE consumed_at IS NULL",
             [consumed_at],
         )
