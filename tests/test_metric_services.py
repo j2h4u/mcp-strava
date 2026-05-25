@@ -363,6 +363,7 @@ def test_list_workouts_service_respects_filters_and_returns_compact_rows(tmp_pat
         "trimp",
         "avg_hr",
         "max_hr",
+        "kudos_count",
         "completeness",
     }
     for row in payload["data"]:
@@ -411,9 +412,13 @@ def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reaso
         "cardiac_drift_significant",
         "cardiac_drift_quality",
         "hrr_pct",
+        "kudos_count",
+        "kudos_names",
     }
     assert required_detail_keys.issubset(set(full_payload["data"]))
     _assert_metric_ids_exist(required_detail_keys)
+    assert full_payload["data"]["kudos_count"] == 2
+    assert full_payload["data"]["kudos_names"] == ["Ada Lovelace", "Grace Hopper"]
 
     assert partial_payload["completeness"]["status"] == "partial"
     assert set(partial_payload["completeness"]["missing"]) & {"missing_hr", "missing_streams", "metric_unavailable"}

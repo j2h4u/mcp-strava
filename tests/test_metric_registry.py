@@ -18,6 +18,8 @@ REQUIRED_METRIC_IDS = {
     "activity_date",
     "sport_type",
     "activity_name",
+    "kudos_count",
+    "kudos_names",
     "distance_km",
     "moving_time_min",
     "elapsed_time_min",

@@ -21,7 +21,7 @@ Admin/debug commands are local operator workflows and are not part of the MCP su
 | `weekly` | `weekly` | Weekly summary product command. |
 | `raw` | `admin raw` | Raw Strava API/debug command, admin only. |
 | `log` | `admin log` | Local sync log inspection, admin only. |
-| `kudos` | removed | Kudos listing is not retained in the product surface. |
+| `kudos` | folded into workout metrics | Likes are retained as `kudos_count` in workout lists/details and `kudos_names` in workout detail, not as a separate CLI command. |
 | `db-preflight` | `admin db-preflight` | Local DB safety check. |
 | `db-check` | `admin db-check` | Local DB safety check alias. |
 | `db-migrate` | `admin db-migrate` | Local DB migration with backup. |

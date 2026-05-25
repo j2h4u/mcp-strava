@@ -18,6 +18,7 @@ from mcp_strava.application.metric_services import (
     list_workouts_service,
     project_fitness_state_service,
 )
+from mcp_strava.mcp_content import MCP_PROMPT_NAMES, load_prompt
 from mcp_strava.settings import Settings, get_settings, load_settings
 from mcp_strava.types import ServiceEnvelope, dc_to_dict
 
@@ -28,6 +29,12 @@ MCP_TOOL_NAMES = (
     "compare_periods",
     "project_fitness_state",
 )
+
+MCP_INSTRUCTIONS = """Read-only factual training metrics from the local Strava mirror.
+Do not invent or request sync, admin, debug, raw SQL, token, or raw Strava capabilities.
+For user-facing narrative, expand abbreviations on first use, avoid raw floating-point dumps,
+and explain what each important number means in context. Do not make medical diagnoses or
+pretend this MCP server interprets training; interpretation belongs to the calling agent."""
 
 _SAFE_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _WILDCARD_HOSTS = {"0.0.0.0", "::"}
@@ -45,11 +52,11 @@ def _tool_annotations() -> ToolAnnotations:
 
 def _envelope_payload(envelope: ServiceEnvelope) -> dict[str, Any]:
     return {
-        "data": dc_to_dict(envelope.data),
-        "freshness": dc_to_dict(envelope.freshness),
-        "completeness": dc_to_dict(envelope.completeness),
-        "warnings": [dc_to_dict(item) for item in envelope.warnings],
-        "rationale": [dc_to_dict(item) for item in envelope.rationale],
+        "data": dc_to_dict(envelope.data, round_floats=True),
+        "freshness": dc_to_dict(envelope.freshness, round_floats=True),
+        "completeness": dc_to_dict(envelope.completeness, round_floats=True),
+        "warnings": [dc_to_dict(item, round_floats=True) for item in envelope.warnings],
+        "rationale": [dc_to_dict(item, round_floats=True) for item in envelope.rationale],
     }
 
 
@@ -126,13 +133,37 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
     validate_http_settings(resolved_settings)
     server = FastMCP(
         name="mcp-strava",
-        instructions="Read-only training metric facts from local Strava mirror.",
+        instructions=MCP_INSTRUCTIONS,
         host=resolved_settings.http.host,
         port=resolved_settings.http.port,
         streamable_http_path="/mcp",
         stateless_http=True,
         transport_security=build_transport_security(resolved_settings),
     )
+
+    @server.prompt(
+        name="strava_daily_training_brief",
+        title="Strava Daily Training Brief",
+        description="Daily Russian training brief scenario using factual Strava MCP metrics.",
+    )
+    def strava_daily_training_brief() -> str:
+        return load_prompt("strava_daily_training_brief")
+
+    @server.prompt(
+        name="strava_weekly_training_digest",
+        title="Strava Weekly Training Digest",
+        description="Weekly Russian training digest scenario using period comparison metrics.",
+    )
+    def strava_weekly_training_digest() -> str:
+        return load_prompt("strava_weekly_training_digest")
+
+    @server.prompt(
+        name="strava_shoe_mileage_watchdog",
+        title="Strava Shoe Mileage Watchdog",
+        description="Shoe-mileage review scenario that only reports facts exposed by the MCP surface.",
+    )
+    def strava_shoe_mileage_watchdog() -> str:
+        return load_prompt("strava_shoe_mileage_watchdog")
 
     @server.tool(
         name="get_fitness_state",

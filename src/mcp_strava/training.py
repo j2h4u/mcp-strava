@@ -282,8 +282,12 @@ def calc_progressive_signal(conn, daily_trimp, today_str=None, enriched_activiti
     # Group CC values by sport_type (per-sport trends — don't mix Run and Hike!)
     from collections import defaultdict
     ccs_by_sport: dict[str, list[float]] = defaultdict(list)
+    last_date_by_sport: dict[str, datetime] = {}
     for row in rows:
         sport = row['sport_type']
+        row_date = datetime.strptime(str(row['date'])[:10], '%Y-%m-%d')
+        if sport not in last_date_by_sport or row_date > last_date_by_sport[sport]:
+            last_date_by_sport[sport] = row_date
         enr = enriched_by_id.get(row['id'])
         if enr and enr.cc is not None:
             ccs_by_sport[sport].append(enr.cc)
@@ -302,10 +306,24 @@ def calc_progressive_signal(conn, daily_trimp, today_str=None, enriched_activiti
 
     # Per-sport CC trends: each sport contributes bonus weighted by its activity count.
     # Minimum 3 activities per sport for a valid trend.
-    total_cc_activities = sum(len(v) for v in ccs_by_sport.values())
+    today_dt = datetime.strptime(today, '%Y-%m-%d')
+    freshness_cutoff = today_dt - timedelta(days=Config.Model.PROGRESSIVE_CC_MAX_STALENESS_DAYS)
+    fresh_cc_counts = {
+        sport: len(ccs)
+        for sport, ccs in ccs_by_sport.items()
+        if len(ccs) >= 3 and last_date_by_sport.get(sport) is not None and last_date_by_sport[sport] >= freshness_cutoff
+    }
+    total_cc_activities = sum(fresh_cc_counts.values()) or 1
     for sport, ccs in sorted(ccs_by_sport.items()):
         if len(ccs) < 3:
             cc_trends[sport] = None
+            continue
+        last_sport_date = last_date_by_sport.get(sport)
+        if last_sport_date is None or last_sport_date < freshness_cutoff:
+            cc_trends[sport] = None
+            days_ago = (today_dt - last_sport_date).days if last_sport_date else None
+            suffix = f'последняя активность {days_ago} дн. назад' if days_ago is not None else 'нет датированных активностей'
+            reasons.append(f'CC {sport}: нет свежих данных ({suffix})')
             continue
         sport_trend = trend(ccs)
         cc_trends[sport] = sport_trend
@@ -339,7 +357,7 @@ def calc_progressive_signal(conn, daily_trimp, today_str=None, enriched_activiti
             else:
                 bonus -= 0.05 * sport_weight
                 reasons.append(f'CC {sport} немного растёт ({sport_trend}) — стоит последить')
-        else:
+        elif sport_trend is not None:
             reasons.append(f'CC {sport} стабилен ({sport_trend})')
 
     # Build combined cc_trend string for backward compatibility.

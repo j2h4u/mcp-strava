@@ -184,6 +184,34 @@ def test_trend():
     print("  OK: trend — edges, rise, fall, stable, zero denom, near-zero clamp")
 
 
+def test_progressive_signal_ignores_stale_cc_trends(monkeypatch):
+    """Progressive CC trends require recent sport-specific data."""
+    import mcp_strava.training as training
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE activities (id INTEGER PRIMARY KEY, date TEXT, sport_type TEXT)")
+    for activity_id, day in enumerate(("2026-05-09", "2026-05-10", "2026-05-11", "2026-05-12"), start=1):
+        conn.execute(
+            "INSERT INTO activities (id, date, sport_type) VALUES (?, ?, 'Run')",
+            (activity_id, f"{day}T07:00:00"),
+        )
+
+    cc_by_activity = {1: 50.0, 2: 49.0, 3: 48.0, 4: 47.0}
+
+    def fake_efficiency(_conn, activity_id):
+        return 100 / cc_by_activity[activity_id]
+
+    monkeypatch.setattr(training, "calc_efficiency_factor", fake_efficiency)
+    monkeypatch.setattr(training, "calc_hr_recovery", lambda *_args, **_kwargs: None)
+
+    result = training.calc_progressive_signal(conn, {}, today_str="2026-05-25")
+
+    assert result.cc_trends["Run"] is None
+    assert any("нет свежих данных" in reason for reason in result.reasons)
+    assert all("стабилен (None)" not in reason for reason in result.reasons)
+
+
 def test_sim_one_day():
     """_sim_one_day: formula correctness, fatigue responds faster than fitness."""
     from mcp_strava.training import _sim_one_day

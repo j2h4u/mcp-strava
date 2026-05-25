@@ -15,6 +15,7 @@ WORKDIR /app
 
 COPY pyproject.toml /app/pyproject.toml
 COPY src /app/src
+COPY mcp-content /app/mcp-content
 RUN pip install --no-cache-dir /app
 
 RUN groupadd --gid 1000 mcp \

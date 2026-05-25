@@ -86,6 +86,7 @@ def _insert_activity(conn: sqlite3.Connection, activity_id: int, day: str, *, sp
         "has_heartrate": with_hr,
         "average_heartrate": avg_hr,
         "max_heartrate": max_hr,
+        "kudos_count": 2 if activity_id == 701 else 0,
     }
     conn.execute(
         """
@@ -115,6 +116,13 @@ def _repo_with_facts(path: Path) -> SQLiteRepository:
     _insert_activity(conn, 701, "2026-05-20", sport_type="Run", with_hr=True)
     _insert_activity(conn, 702, "2026-05-21", sport_type="Run", with_hr=True)
     _insert_activity(conn, 703, "2026-05-19", sport_type="Hike", with_hr=False)
+    conn.executemany(
+        "INSERT INTO kudos (activity_id, firstname, lastname, fetched_at) VALUES (?, ?, ?, ?)",
+        [
+            (701, "Ada", "Lovelace", "2026-05-21T06:01:00"),
+            (701, "Grace", "Hopper", "2026-05-21T06:01:00"),
+        ],
+    )
     conn.executemany(
         """
         INSERT INTO activity_metric_facts (

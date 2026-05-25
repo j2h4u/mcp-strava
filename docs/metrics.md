@@ -46,6 +46,8 @@ This is the core metric inventory. `exposed_in` lists MCP tools that currently e
 | hr_recovery_total_rest_sec | seconds | activity | per_sport | sum | context | get_workout_detail, compare_periods | Total seconds across detected HR recovery rest pauses. |
 | hr_recovery_worst_bpm_per_min | bpm_per_min | activity | per_sport | min | higher_is_worse | get_workout_detail, compare_periods | Minimum HR drop rate across detected rest pauses, in bpm per minute. |
 | hrr_pct | percent | activity | per_sport | median | lower_is_easier | get_workout_detail, compare_periods | Median activity heartrate normalized to heart-rate reserve: (median_hr - Config.Athlete.HR_REST) / (observed_hr_max - HR_REST) * 100. |
+| kudos_count | count | activity | both | none | context | list_workouts, get_workout_detail | Strava summary_json.kudos_count for the activity, defaulting to 0 when Strava omitted it. |
+| kudos_names | text_list | activity | both | none | context | get_workout_detail | Names stored from the Strava kudos endpoint for the activity, grouped by activity_id and formatted from firstname and lastname. |
 | last_hike_days_ago | count | period | global | last | lower_is_recent | core-only | Days since the latest mirrored Hike activity. |
 | load_trend_pct | percent | period | global | trend | higher_is_more | core-only | Percent change of rolling daily TRIMP load between the current window and the previous equally sized window. |
 | max_hr | bpm | activity | per_sport | max | higher_is_more | list_workouts, get_workout_detail, compare_periods | Strava summary_json.max_heartrate rounded to an integer bpm. |
@@ -77,6 +79,14 @@ This is the core metric inventory. `exposed_in` lists MCP tools that currently e
 | volume_28d | count | period | global | sum | higher_is_more | get_fitness_state, compare_periods | Activity count over the 28-day rolling window. |
 | volume_7d | count | period | global | sum | higher_is_more | get_fitness_state, compare_periods | Activity count over the 7-day rolling window. |
 | weekly_trimp | trimp | period | global | sum | higher_is_more | get_fitness_state, compare_periods | Sum of effective_trimp over the 7-day rolling window ending at the query day. |
+
+## Interpretation Caveats
+
+- `cardiac_cost`, adjusted cardiac cost, cardiac drift, HR recovery, and heart-rate reserve metrics are sport-sensitive. Compare them per sport unless the agent explicitly explains why cross-sport comparison is acceptable.
+- Traditional decoupling can be unavailable because pace variability makes the signal invalid; this is a metric-quality fact, not necessarily a missing mirror-data failure.
+- Cardiac drift severity and quality labels describe the algorithm's activity-level signal quality. They are not medical diagnoses.
+- Safety warnings are factual training-data flags. They must not be presented as medical advice.
+- Temperature, subjective effort, sleep, resting heart rate, illness, and other external factors are not part of this mirror unless a metric explicitly says so.
 
 ## Excluded Interpretations
 

@@ -32,6 +32,7 @@ def test_dockerfile_source_contract() -> None:
     assert 'ENTRYPOINT ["python", "-m", "mcp_strava.deploy.entrypoint"]' in text
     assert "mcp_strava.deploy.healthcheck" in text
     assert "/runtime/data/strava.db" in text
+    assert "COPY mcp-content /app/mcp-content" in text
 
 
 def test_compose_source_contract() -> None:

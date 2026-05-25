@@ -156,6 +156,25 @@ def _summary_json(row) -> dict[str, object]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _kudos_count(summary: dict[str, object]) -> int:
+    value = summary.get("kudos_count")
+    try:
+        return int(value) if value is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _kudos_names(rows) -> list[str]:
+    names: list[str] = []
+    for row in rows:
+        firstname = str(_row_get(row, "firstname", "") or "").strip()
+        lastname = str(_row_get(row, "lastname", "") or "").strip()
+        name = " ".join(part for part in (firstname, lastname) if part)
+        if name:
+            names.append(name)
+    return names
+
+
 def _next_day(day: str) -> str:
     return (date.fromisoformat(day) + timedelta(days=1)).isoformat()
 
@@ -231,9 +250,9 @@ def _activity_value(row, metric_id: str):
     return round(float(value) * float(scale), 3)
 
 
-def _activity_payload(row) -> dict[str, object]:
+def _activity_payload(row, *, kudos_names: list[str] | None = None) -> dict[str, object]:
     summary = _summary_json(row)
-    return {
+    payload = {
         "activity_id": int(row["activity_id"]),
         "activity_date": row["activity_day"],
         "sport_type": row["sport_type"],
@@ -264,8 +283,12 @@ def _activity_payload(row) -> dict[str, object]:
         "hrr_pct": _activity_value(row, "hrr_pct"),
         "start_time": str(summary.get("start_date_local", ""))[11:16] or None,
         "hr_anomaly_count": int(row["anomaly_count"] or 0),
+        "kudos_count": _kudos_count(summary),
         "completeness": _fact_status(row),
     }
+    if kudos_names is not None:
+        payload["kudos_names"] = kudos_names
+    return payload
 
 
 def _latest_as_of_day(checked_at: datetime) -> str:
@@ -373,6 +396,7 @@ def list_workouts_service(
                 "trimp",
                 "avg_hr",
                 "max_hr",
+                "kudos_count",
                 "completeness",
             )
         }
@@ -416,7 +440,7 @@ def get_workout_detail_service(
                 rationale=_rationale("Workout detail requested from materialized activity facts."),
             )
 
-        data = _activity_payload(row)
+        data = _activity_payload(row, kudos_names=_kudos_names(repo.kudos_for_activity(resolved_id)))
         missing = _parse_json_list(row["missing_reasons_json"])
         stream_derived = [
             data["hr_recovery_median_bpm_per_min"],

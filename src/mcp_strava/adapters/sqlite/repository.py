@@ -1728,6 +1728,17 @@ class SQLiteRepository:
             (limit,),
         ).fetchall()
 
+    def kudos_for_activity(self, activity_id: int) -> list[tuple]:
+        return self.conn.execute(
+            """
+            SELECT activity_id, firstname, lastname, fetched_at
+            FROM kudos
+            WHERE activity_id = ?
+            ORDER BY firstname COLLATE NOCASE, lastname COLLATE NOCASE
+            """,
+            (activity_id,),
+        ).fetchall()
+
     def upsert_kudos(self, activity_id: int, firstname: str, lastname: str, fetched_at: str) -> None:
         self.conn.execute(
             """

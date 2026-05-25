@@ -94,6 +94,7 @@ class Config:
     class Model:
         """Training model time constants (days)."""
         PROGRESSIVE_WINDOW = 21  # days for progressive signal quality trend analysis
+        PROGRESSIVE_CC_MAX_STALENESS_DAYS = 7  # per-sport CC trend must include recent data
         BANISTER_WARMUP_DAYS = 90  # days to warm up Banister model before trend analysis
         class Banister:
             TAU_FATIGUE = 10   # short-term load decay (age-adjusted: slower recovery at 50+)

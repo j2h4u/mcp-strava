@@ -21,6 +21,12 @@ EXPECTED_TOOL_NAMES = (
     "project_fitness_state",
 )
 
+EXPECTED_PROMPT_NAMES = (
+    "strava_daily_training_brief",
+    "strava_weekly_training_digest",
+    "strava_shoe_mileage_watchdog",
+)
+
 
 def _envelope(data: dict, *, unavailable: bool = False) -> ServiceEnvelope:
     return ServiceEnvelope(
@@ -61,6 +67,29 @@ def test_mcp_tool_allowlist_is_exact() -> None:
     from mcp_strava.interfaces import mcp_http
 
     assert mcp_http.MCP_TOOL_NAMES == EXPECTED_TOOL_NAMES
+    assert mcp_http.MCP_PROMPT_NAMES == EXPECTED_PROMPT_NAMES
+    assert "sync" in mcp_http.MCP_INSTRUCTIONS
+    assert "raw SQL" in mcp_http.MCP_INSTRUCTIONS
+    assert "medical diagnoses" in mcp_http.MCP_INSTRUCTIONS
+
+
+def test_mcp_prompts_are_content_backed_and_do_not_expand_tool_surface() -> None:
+    from mcp_strava.interfaces import mcp_http
+
+    server = mcp_http.build_mcp_server()
+    prompts = asyncio.run(server.list_prompts())
+    tools = asyncio.run(server.list_tools())
+
+    assert tuple(prompt.name for prompt in prompts) == EXPECTED_PROMPT_NAMES
+    assert tuple(tool.name for tool in tools) == EXPECTED_TOOL_NAMES
+
+    daily = asyncio.run(server.get_prompt("strava_daily_training_brief"))
+    text = daily.messages[0].content.text
+    assert "list_workouts" in text
+    assert "get_fitness_state" in text
+    assert "kudos_count" in text
+    assert "scripts/cli.py" not in text
+    assert "/opt/data/skills" not in text
 
 
 def test_validate_http_settings_and_transport_security() -> None:
@@ -181,6 +210,26 @@ def test_mcp_tools_have_annotations_and_structured_output(monkeypatch) -> None:
         assert set(payload.keys()) == {"data", "freshness", "completeness", "warnings", "rationale"}
         assert READ_MODEL_METADATA_KEYS <= set(payload["completeness"]["coverage"]["read_model"])
         assert len(content) <= 1
+
+
+def test_mcp_payload_rounds_floats_at_surface(monkeypatch) -> None:
+    from mcp_strava.interfaces import mcp_http
+
+    monkeypatch.setattr(
+        mcp_http,
+        "get_fitness_state_service",
+        lambda **_: _envelope({"fitness": 42.5678, "tiny": 0.006789}),
+    )
+    monkeypatch.setattr(mcp_http, "list_workouts_service", lambda **_: _envelope([]))
+    monkeypatch.setattr(mcp_http, "get_workout_detail_service", lambda workout_id, **_: _envelope({}))
+    monkeypatch.setattr(mcp_http, "compare_periods_service", lambda **_: _envelope({}))
+    monkeypatch.setattr(mcp_http, "project_fitness_state_service", lambda **_: _envelope({}))
+
+    server = mcp_http.build_mcp_server()
+    _, payload = asyncio.run(server.call_tool("get_fitness_state", {}))
+
+    assert payload["data"]["fitness"] == 43
+    assert payload["data"]["tiny"] == 0.0068
 
 
 def test_get_workout_detail_missing_id_is_unavailable(monkeypatch) -> None:

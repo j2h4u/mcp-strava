@@ -263,6 +263,7 @@ def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_pat
 
         repo.upsert_kudos(1, "A", "B", "2026-05-21T08:00:00Z")
         assert repo.list_kudos(limit=5)
+        assert repo.kudos_for_activity(1)
 
         repo.append_sync_log(
             timestamp="2026-05-21T09:00:00Z",
