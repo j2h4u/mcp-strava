@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-25T17:07:38.783Z"
+last_updated: "2026-05-25T20:25:42.722Z"
 last_activity: 2026-05-25
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 39
-  completed_plans: 34
-  percent: 87
+  completed_plans: 35
+  percent: 88
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-24)
 ## Current Position
 
 Phase: 08 (duckdb-primary-storage-aggregate-analytics-surface) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-05-25
 
@@ -78,6 +78,7 @@ Last activity: 2026-05-25
 | Phase 08 P08-01 | 7min | 2 tasks | 3 files |
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-02 | 12 min | 3 tasks | 10 files |
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-05 | 10 min | 3 tasks | 4 files |
+| Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-03 | 20min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -136,6 +137,9 @@ Recent decisions affecting current work:
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Aggregate semantics stay in metric_registry.py through typed metadata instead of alternate pseudo metric ids. — Preserves current metric ids and keeps aggregate math centralized for DuckDB query builders.
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Metric bundles are scenario-oriented registry data and do not change the existing five-tool MCP allowlist. — Keeps this plan as a registry prerequisite; the get_training_aggregates handler is added later.
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Weighted heart-rate aggregate metadata requires explicit denominator and weight columns. — Prevents silent fallback to naive averages for HR aggregate rows.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: DuckDBRepository is the primary runtime repository for DuckDB MCP_STRAVA_DB_PATH values. — Plan 08-03 cut runtime repository routing over to DuckDB while preserving the neutral MCP_STRAVA_DB_PATH setting.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Explicit SQLite paths remain reachable only as rollback, migration, and test-fixture compatibility. — Full-suite verification still needs historical SQLite fixtures and rollback input paths, but runtime DuckDB paths must not shadow-write SQLite.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Refresh materialization statically routes live DuckDB repositories to the DuckDB materializer. — This satisfies Review H-1 by preventing live DuckDB storage from calling the SQLite materializer after cutover.
 
 ### Roadmap Evolution
 
@@ -159,8 +163,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-25T17:07:15.985Z
-Stopped at: Completed 08-05-PLAN.md
+Last session: 2026-05-25T20:25:42.707Z
+Stopped at: Completed 08-duckdb-primary-storage-aggregate-analytics-surface-08-03-PLAN.md
 Resume file: None
 
 ## Quick Tasks Completed

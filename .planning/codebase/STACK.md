@@ -1,10 +1,10 @@
 ---
-analysis_date: 2026-05-22
-last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
+analysis_date: 2026-05-25
+last_mapped_commit: b981bd75c7a61554958d9cab8be7bab0bc9b559b
 ---
 # Technology Stack
 
-**Analysis Date:** 2026-05-22
+**Analysis Date:** 2026-05-25
 
 ## Languages
 
@@ -41,10 +41,11 @@ last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
 
 **Critical:**
 - `mcp` 1.27.1 - MCP server surface and SDK client support; the lockfile shows `anyio`, `httpx`, `jsonschema`, `pydantic`, `pydantic-settings`, `starlette`, `uvicorn`, and related transitive packages.
+- `duckdb` 1.5.3 - Primary runtime mirror storage, repository access, migrations, and read-model facts in `src/mcp_strava/adapters/duckdb/*`.
 - `PyYAML` 6.0.3 - YAML parsing/serialization for gateway registration in `deploy/gateway_register.py`.
 
 **Infrastructure:**
-- `sqlite3` (stdlib) - Local mirror storage, preflight checks, backups, and migrations in `src/mcp_strava/adapters/sqlite/*`.
+- `sqlite3` (stdlib) - Migration input, rollback compatibility, backups, and historical fixture support in `src/mcp_strava/adapters/sqlite/*`.
 - `urllib.request` / `urllib.error` / `urllib.parse` (stdlib) - Strava OAuth and API requests in `src/mcp_strava/adapters/strava/token_refresh.py` and `src/mcp_strava/adapters/strava/transport.py`.
 - `json` (stdlib) - Serialization of Strava payloads, MCP envelopes, and CLI output across `src/mcp_strava/*.py`.
 
@@ -53,6 +54,7 @@ last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
 **Environment:**
 - `src/mcp_strava/settings.py` loads `MCP_STRAVA_DB_PATH`, `MCP_STRAVA_TOKEN_PATH`, `MCP_STRAVA_RUNTIME_PROFILE`, `MCP_STRAVA_HTTP_HOST`, `MCP_STRAVA_HTTP_PORT`, `MCP_STRAVA_ALLOW_CONTAINER_BIND`, `MCP_STRAVA_ALLOWED_HOSTS`, `MCP_STRAVA_ALLOWED_ORIGINS`, `MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS`, `MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS`, and `MCP_STRAVA_PROJECT_ROOT`.
 - Strava auth values are file-backed in the token file: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REFRESH_TOKEN`, `STRAVA_ACCESS_TOKEN`, and `STRAVA_EXPIRES_AT` in `src/mcp_strava/adapters/strava/token_provider.py` and `src/mcp_strava/db.py`.
+- `MCP_STRAVA_DB_PATH` remains the single primary storage path setting. Local defaults resolve to `data/strava.duckdb`; live/container profiles resolve to `/runtime/data/strava.duckdb`.
 - `deploy/Dockerfile` and `deploy/docker-compose.yml` hard-set container-safe defaults for `MCP_STRAVA_RUNTIME_PROFILE`, `MCP_STRAVA_HTTP_HOST`, `MCP_STRAVA_HTTP_PORT`, `MCP_STRAVA_ALLOW_CONTAINER_BIND`, and `MCP_STRAVA_DB_PATH`.
 
 **Build:**
@@ -65,7 +67,7 @@ last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
 **Development:**
 - Python 3.14+ with write access to the repo checkout, local `.env`, and `data/`.
 - Network access to `https://www.strava.com` for token refresh and API fetches.
-- Local SQLite mirror state under `data/strava.db` or the path selected by `MCP_STRAVA_DB_PATH`.
+- Local DuckDB mirror state under `data/strava.duckdb` or the path selected by `MCP_STRAVA_DB_PATH`; SQLite `.db` paths are compatibility inputs, not the primary runtime target.
 
 **Production:**
 - Docker container runtime on the local MCP network.
@@ -73,4 +75,4 @@ last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
 
 ---
 
-*Stack analysis: 2026-05-22*
+*Stack analysis: 2026-05-25*
