@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+from copy import deepcopy
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -44,6 +45,10 @@ pretend this MCP server interprets training; interpretation belongs to the calli
 _SAFE_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _WILDCARD_HOSTS = {"0.0.0.0", "::"}
 _UNSAFE_TRANSPORT_VALUES = {"*", "0.0.0.0", "::"}
+_CACHEABLE_TOOL_NAMES = {"compare_periods", "get_training_aggregates"}
+_TOOL_CACHE_TTL_SECONDS = 30.0
+_TOOL_CACHE_MAX_ENTRIES = 32
+_TOOL_RESPONSE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def _tool_annotations() -> ToolAnnotations:
@@ -100,6 +105,46 @@ def _run_logged_tool(name: str, operation) -> dict[str, Any]:
         warnings_count=len(payload.get("warnings") or []),
         data_shape=_data_shape(payload.get("data")),
     )
+    return payload
+
+
+def _cache_key(name: str, arguments: dict[str, Any]) -> str:
+    return json.dumps({"tool": name, "arguments": arguments}, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _prune_tool_response_cache(now: float) -> None:
+    expired = [key for key, (expires_at, _payload) in _TOOL_RESPONSE_CACHE.items() if expires_at <= now]
+    for key in expired:
+        _TOOL_RESPONSE_CACHE.pop(key, None)
+    while len(_TOOL_RESPONSE_CACHE) >= _TOOL_CACHE_MAX_ENTRIES:
+        oldest_key = min(_TOOL_RESPONSE_CACHE, key=lambda key: _TOOL_RESPONSE_CACHE[key][0])
+        _TOOL_RESPONSE_CACHE.pop(oldest_key, None)
+
+
+def _run_cached_logged_tool(name: str, arguments: dict[str, Any], operation) -> dict[str, Any]:
+    if name not in _CACHEABLE_TOOL_NAMES:
+        return _run_logged_tool(name, operation)
+
+    key = _cache_key(name, arguments)
+    now = time.monotonic()
+    cached = _TOOL_RESPONSE_CACHE.get(key)
+    if cached is not None and cached[0] > now:
+        started = time.perf_counter()
+        payload = deepcopy(cached[1])
+        _emit_log("mcp_tool_call_started", tool=name, cached=True)
+        _emit_log(
+            "mcp_tool_call_finished",
+            tool=name,
+            cached=True,
+            duration_ms=round((time.perf_counter() - started) * 1000, 3),
+            warnings_count=len(payload.get("warnings") or []),
+            data_shape=_data_shape(payload.get("data")),
+        )
+        return payload
+
+    payload = _run_logged_tool(name, operation)
+    _prune_tool_response_cache(now)
+    _TOOL_RESPONSE_CACHE[key] = (now + _TOOL_CACHE_TTL_SECONDS, deepcopy(payload))
     return payload
 
 
@@ -227,8 +272,16 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         period_b_end: str,
         sport: str | None = None,
     ) -> dict[str, Any]:
-        return _run_logged_tool(
+        cache_args = {
+            "period_a_start": period_a_start,
+            "period_a_end": period_a_end,
+            "period_b_start": period_b_start,
+            "period_b_end": period_b_end,
+            "sport": sport,
+        }
+        return _run_cached_logged_tool(
             "compare_periods",
+            cache_args,
             lambda: compare_periods_service(
                 period_a_start=period_a_start,
                 period_a_end=period_a_end,
@@ -291,8 +344,21 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
             as_of_day=as_of_day,
             window_days=window_days,
         )
-        return _run_logged_tool(
+        cache_args = {
+            "end_date": end_date,
+            "bucket": bucket,
+            "start_date": start_date,
+            "metric_ids": list(metric_ids or []),
+            "metric_bundle": metric_bundle,
+            "scope": scope,
+            "sports": list(sports or []),
+            "include_empty_buckets": include_empty_buckets,
+            "as_of_day": as_of_day,
+            "window_days": window_days,
+        }
+        return _run_cached_logged_tool(
             "get_training_aggregates",
+            cache_args,
             lambda: get_training_aggregates_service(
                 request,
                 signal_first_use=False,

@@ -307,6 +307,35 @@ def test_mcp_payload_rounds_floats_at_surface(monkeypatch) -> None:
     assert payload["data"]["tiny"] == 0.0068
 
 
+def test_expensive_mcp_tools_use_short_lived_response_cache(monkeypatch) -> None:
+    from mcp_strava.interfaces import mcp_http
+
+    calls = 0
+
+    def operation() -> ServiceEnvelope:
+        nonlocal calls
+        calls += 1
+        return _envelope({"rows": [{"metric_id": "trimp"}]})
+
+    monkeypatch.setattr(mcp_http, "_TOOL_CACHE_TTL_SECONDS", 30.0)
+    mcp_http._TOOL_RESPONSE_CACHE.clear()
+
+    first = mcp_http._run_cached_logged_tool(
+        "get_training_aggregates",
+        {"metric_ids": ["trimp"], "bucket": "week"},
+        operation,
+    )
+    second = mcp_http._run_cached_logged_tool(
+        "get_training_aggregates",
+        {"metric_ids": ["trimp"], "bucket": "week"},
+        operation,
+    )
+
+    assert calls == 1
+    assert first == second
+    mcp_http._TOOL_RESPONSE_CACHE.clear()
+
+
 def test_get_workout_detail_missing_id_is_unavailable(monkeypatch) -> None:
     from mcp_strava.interfaces import mcp_http
 
