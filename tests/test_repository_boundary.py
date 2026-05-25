@@ -536,3 +536,31 @@ def test_ast_guard_blocks_direct_sqlite_outside_allowlist() -> None:
 def test_load_paths_use_repository_instead_of_raw_activity_stream_sql() -> None:
     violations = _guard_load_paths_do_not_use_raw_activity_stream_sql()
     assert violations == []
+
+
+def test_runtime_dbconn_and_repository_factory_route_duckdb_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcp_strava.adapters.duckdb.connection import open_fixture_db
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.adapters.duckdb.schema import create_schema
+    from mcp_strava.db import DbConn, repository_from_connection
+    from mcp_strava.settings import reset_settings_cache
+
+    fixture = tmp_path / "strava.duckdb"
+    conn = open_fixture_db(fixture)
+    try:
+        create_schema(conn)
+    finally:
+        conn.close()
+
+    monkeypatch.setenv("MCP_STRAVA_DB_PATH", str(fixture))
+    reset_settings_cache()
+    try:
+        with DbConn() as conn:
+            repo = repository_from_connection(conn)
+            assert isinstance(repo, DuckDBRepository)
+            assert conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0] == 0
+    finally:
+        reset_settings_cache()

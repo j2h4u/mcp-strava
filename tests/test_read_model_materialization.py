@@ -735,3 +735,74 @@ def test_materializer_failure_keeps_dirty_rows_and_does_not_mark_success(tmp_pat
 
     assert success_count == 0
     assert activity_fact_count == 0
+
+
+def _create_duckdb_read_model_repo(tmp_path: Path):
+    from mcp_strava.adapters.duckdb.connection import open_fixture_db
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.adapters.duckdb.schema import create_schema
+
+    fixture = tmp_path / "read-model.duckdb"
+    conn = open_fixture_db(fixture)
+    try:
+        create_schema(conn)
+    finally:
+        conn.close()
+    return fixture, DuckDBRepository.from_path(fixture)
+
+
+def test_duckdb_materializer_writes_fact_tiers_and_clears_dirty_rows(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.read_model_materializer import materialize_read_model
+
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+    with repo:
+        _seed_dirty_activity_with_streams(repo)
+        result = materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+
+        activity_fact = repo.fetch_activity_metric_fact(920, metric_version=1)
+        daily_facts = repo.fetch_daily_load_facts("2026-05-21", "2026-05-22", scope="all")
+        model_fact = repo.fetch_latest_training_model_day(1, as_of_day="2026-05-24")
+        rolling = repo.fetch_rolling_period_facts("2026-05-24", 7, scope="all")
+        run_count = repo.conn.execute(
+            "SELECT COUNT(*) FROM read_model_refresh_runs WHERE status = 'ok'"
+        ).fetchone()[0]
+        dirty = repo.dirty_activity_rows(activity_id=920)
+
+    assert result["status"] == "ok"
+    assert activity_fact is not None
+    assert activity_fact["source_hash"]
+    assert activity_fact["trimp"] > 0
+    assert activity_fact["stream_sample_count"] == 180
+    assert activity_fact["heartrate_sample_count"] == 180
+    assert daily_facts and daily_facts[0]["activity_count"] == 1
+    assert model_fact is not None and model_fact["fitness"] is not None
+    assert rolling is not None and rolling["active_days"] >= 1
+    assert run_count == 1
+    assert dirty == []
+
+
+def test_duckdb_materializer_rolls_back_facts_and_keeps_dirty_rows_on_failure(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.read_model_materializer import materialize_read_model
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+
+    class FailingDailyFactRepo(DuckDBRepository):
+        def upsert_daily_load_fact(self, *args, **kwargs):
+            raise RuntimeError("daily fact failed")
+
+    with repo:
+        _seed_dirty_activity_with_streams(repo)
+        failing_repo = FailingDailyFactRepo(repo.conn)
+
+        with pytest.raises(RuntimeError, match="daily fact failed"):
+            materialize_read_model(failing_repo, metric_version=1, now="2026-05-24T12:00:00")
+
+        assert repo.dirty_activity_rows(activity_id=920)
+        success_count = repo.conn.execute(
+            "SELECT COUNT(*) FROM read_model_refresh_runs WHERE status = 'ok'"
+        ).fetchone()[0]
+        activity_fact_count = repo.conn.execute("SELECT COUNT(*) FROM activity_metric_facts").fetchone()[0]
+
+    assert success_count == 0
+    assert activity_fact_count == 0

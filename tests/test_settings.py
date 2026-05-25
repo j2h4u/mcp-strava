@@ -8,7 +8,7 @@ from mcp_strava.settings import get_settings, load_settings, reset_settings_cach
 def test_load_settings_defaults() -> None:
     settings = load_settings(environ={}, project_root=Path('/tmp/project'))
 
-    assert settings.database_path == Path('/tmp/project/data/strava.db')
+    assert settings.database_path == Path('/tmp/project/data/strava.duckdb')
     assert settings.token_path == Path('/tmp/project/.env')
     assert settings.runtime_profile == 'local'
     assert settings.http.host == '127.0.0.1'
@@ -32,8 +32,21 @@ def test_load_settings_defaults_to_current_working_directory(tmp_path: Path, mon
 
     settings = load_settings(environ={})
 
-    assert settings.database_path == tmp_path / 'data' / 'strava.db'
+    assert settings.database_path == tmp_path / 'data' / 'strava.duckdb'
     assert settings.token_path == tmp_path / '.env'
+
+
+def test_container_runtime_database_path_is_canonical_duckdb_path() -> None:
+    import mcp_strava.settings as settings_module
+
+    settings = load_settings(
+        environ={'MCP_STRAVA_RUNTIME_PROFILE': 'docker'},
+        project_root=Path('/tmp/project'),
+    )
+
+    assert settings.database_path == Path('/runtime/data/strava.duckdb')
+    assert 'MCP_STRAVA_DB_PATH' in settings_module._KEYS
+    assert 'MCP_STRAVA_DUCKDB_PATH' not in settings_module._KEYS
 
 
 def test_load_settings_reads_process_environment_when_environ_omitted(

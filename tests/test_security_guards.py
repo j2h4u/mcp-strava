@@ -64,7 +64,6 @@ def _direct_sqlite_violations() -> list[str]:
     violations: list[str] = []
     allow_prefixes = ("src/mcp_strava/adapters/sqlite/",)
     allow_exact = {
-        "src/mcp_strava/db.py",
         "src/mcp_strava/adapters/duckdb/migrations.py",
     }
     for py_file in src_root.rglob("*.py"):
@@ -211,6 +210,34 @@ def test_cmd_sql_is_not_reused_as_service_or_mcp_surface() -> None:
 
 def test_direct_sqlite_access_stays_inside_allowed_boundaries() -> None:
     assert _direct_sqlite_violations() == []
+
+
+def _runtime_sqlite_repository_violations() -> list[str]:
+    root = Path(__file__).resolve().parents[1]
+    runtime_paths = [
+        "src/mcp_strava/db.py",
+        "src/mcp_strava/sync.py",
+        "src/mcp_strava/refresh/_sync_ops.py",
+    ]
+    forbidden_modules = {
+        "mcp_strava.adapters.sqlite.repository",
+        "mcp_strava.adapters.sqlite.read_model_materializer",
+    }
+    violations: list[str] = []
+    for rel_path in runtime_paths:
+        module = ast.parse((root / rel_path).read_text(encoding="utf-8"), filename=rel_path)
+        for node in ast.walk(module):
+            if isinstance(node, ast.ImportFrom) and node.module in forbidden_modules:
+                violations.append(f"{rel_path}:{node.lineno} from {node.module}")
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name in forbidden_modules:
+                        violations.append(f"{rel_path}:{node.lineno} import {alias.name}")
+    return violations
+
+
+def test_runtime_paths_do_not_import_sqlite_repository_or_materializer_after_duckdb_cutover() -> None:
+    assert _runtime_sqlite_repository_violations() == []
 
 
 def test_sync_never_calls_init_db_and_db_init_db_has_no_ddl() -> None:
@@ -513,7 +540,7 @@ def test_sync_activities_quick_invokes_run_once_with_force_true_per_D15(monkeypa
         ),
     )
     monkeypatch.setattr(sync, "DbConn", FakeDbConn)
-    monkeypatch.setattr(sync.SQLiteRepository, "from_connection", staticmethod(lambda _conn: "repo"))
+    monkeypatch.setattr(sync.DuckDBRepository, "from_connection", staticmethod(lambda _conn: "repo"))
     monkeypatch.setattr(sync.refresh_runtime, "run_once", fake_run_once)
 
     result = sync.sync_activities(quick=True)
@@ -596,7 +623,7 @@ def test_backfill_activities_invokes_run_backfill_per_D16(monkeypatch, tmp_path:
         ),
     )
     monkeypatch.setattr(sync, "DbConn", FakeDbConn)
-    monkeypatch.setattr(sync.SQLiteRepository, "from_connection", staticmethod(lambda _conn: "repo"))
+    monkeypatch.setattr(sync.DuckDBRepository, "from_connection", staticmethod(lambda _conn: "repo"))
     monkeypatch.setattr(sync.refresh_runtime, "run_once", fake_run_once)
     monkeypatch.setattr(sync.refresh_runtime, "run_backfill", fake_run_backfill)
 
