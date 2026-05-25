@@ -60,7 +60,11 @@ def main(argv: list[str] | None = None) -> int:
         _prepare_duckdb_target_if_missing(db_path)
         if _needs_migration(db_path):
             run_migrations(db_path)
-        validate_runtime_db(db_path, quick=False)
+        validate_runtime_db(
+            db_path,
+            quick=False,
+            allow_active_refresh_lease=db_path.suffix.lower() == ".duckdb",
+        )
     except Exception as exc:
         print(f"entrypoint preflight failed: {exc}", file=sys.stderr)
         return 1

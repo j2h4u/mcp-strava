@@ -157,13 +157,18 @@ def _lease_active(refresh_state: dict[str, object]) -> bool:
         return True
 
 
-def _validate_duckdb_runtime_db(path: Path, *, quick: bool = False) -> dict[str, object]:
+def _validate_duckdb_runtime_db(
+    path: Path,
+    *,
+    quick: bool = False,
+    allow_active_refresh_lease: bool = False,
+) -> dict[str, object]:
     with open_expected_duckdb(path) as conn:
         missing = [table for table in DUCKDB_TABLES if not _duckdb_table_exists(conn, table)]
         if missing:
             raise RuntimeError(f"Missing required DuckDB runtime table: {missing[0]}")
         refresh_state = _duckdb_refresh_state(conn)
-        if _lease_active(refresh_state):
+        if _lease_active(refresh_state) and not allow_active_refresh_lease:
             raise RuntimeError(f"active refresh lease blocks DuckDB startup: {refresh_state.get('lease_owner')}")
         activity_count = int(conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0])
         if quick:
@@ -182,7 +187,12 @@ def _validate_duckdb_runtime_db(path: Path, *, quick: bool = False) -> dict[str,
         }
 
 
-def validate_runtime_db(path: Path, *, quick: bool = False) -> dict[str, object]:
+def validate_runtime_db(
+    path: Path,
+    *,
+    quick: bool = False,
+    allow_active_refresh_lease: bool = False,
+) -> dict[str, object]:
     """Validate runtime DB structure.
 
     DuckDB runtime validation is an offline startup gate. Live health checks use
@@ -191,7 +201,11 @@ def validate_runtime_db(path: Path, *, quick: bool = False) -> dict[str, object]
     if not path.exists():
         raise RuntimeError(f"Expected runtime DB does not exist: {path}")
     if _is_duckdb_path(path):
-        return _validate_duckdb_runtime_db(path, quick=quick)
+        return _validate_duckdb_runtime_db(
+            path,
+            quick=quick,
+            allow_active_refresh_lease=allow_active_refresh_lease,
+        )
 
     with open_expected_mirror_db(path) as conn:
         if quick:

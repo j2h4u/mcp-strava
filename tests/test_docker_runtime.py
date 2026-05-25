@@ -270,10 +270,11 @@ def test_entrypoint_runs_preflight_before_exec(monkeypatch: pytest.MonkeyPatch, 
 
     calls: list[tuple[str, object]] = []
 
-    def fake_validate(path: Path, *, quick: bool = False) -> None:
+    def fake_validate(path: Path, *, quick: bool = False, allow_active_refresh_lease: bool = False) -> None:
         calls.append(("validate", path))
         assert path == db_path
         assert quick is False
+        assert allow_active_refresh_lease is False
 
     def fake_needs_migration(path: Path) -> bool:
         calls.append(("needs_migration", path))
@@ -314,9 +315,10 @@ def test_entrypoint_runs_migration_before_preflight_when_needed(
         assert path == db_path
         calls.append("run_migrations")
 
-    def fake_validate(path: Path, *, quick: bool = False) -> None:
+    def fake_validate(path: Path, *, quick: bool = False, allow_active_refresh_lease: bool = False) -> None:
         assert path == db_path
         assert quick is False
+        assert allow_active_refresh_lease is False
         calls.append("validate")
 
     def fake_execvp(program: str, argv: list[str]) -> None:
@@ -365,10 +367,11 @@ def test_entrypoint_auto_cutover_prepares_missing_duckdb_from_sibling_sqlite(
         duckdb_path.write_bytes(b"duckdb placeholder")
         return Report()
 
-    def fake_validate(path: Path, *, quick: bool = False) -> None:
+    def fake_validate(path: Path, *, quick: bool = False, allow_active_refresh_lease: bool = False) -> None:
         calls.append(("validate", path))
         assert path == duckdb_path
         assert quick is False
+        assert allow_active_refresh_lease is True
 
     def fake_execvp(program: str, argv: list[str]) -> None:
         del program, argv
@@ -415,8 +418,8 @@ def test_entrypoint_missing_duckdb_without_sibling_sqlite_still_fails_closed(
         nonlocal cutover_called
         cutover_called = True
 
-    def fake_validate(path: Path, *, quick: bool = False) -> None:
-        del quick
+    def fake_validate(path: Path, *, quick: bool = False, allow_active_refresh_lease: bool = False) -> None:
+        del quick, allow_active_refresh_lease
         raise RuntimeError(f"missing {path}")
 
     monkeypatch.setenv("MCP_STRAVA_DB_PATH", str(duckdb_path))
@@ -438,8 +441,8 @@ def test_entrypoint_exits_without_exec_when_preflight_fails(
 
     exec_called = False
 
-    def fake_validate(_path: Path, *, quick: bool = False) -> None:
-        del quick
+    def fake_validate(_path: Path, *, quick: bool = False, allow_active_refresh_lease: bool = False) -> None:
+        del quick, allow_active_refresh_lease
         raise RuntimeError("boom")
 
     def fake_execvp(program: str, argv: list[str]) -> None:
@@ -457,10 +460,32 @@ def test_entrypoint_exits_without_exec_when_preflight_fails(
     assert exec_called is False
 
 
-def test_entrypoint_blocks_active_duckdb_refresh_lease_before_owner_start(
+def test_duckdb_preflight_blocks_active_refresh_lease_by_default(
+    tmp_path: Path,
+) -> None:
+    from mcp_strava.adapters.duckdb.schema import create_schema
+    from mcp_strava.deploy.preflight import validate_runtime_db
+
+    db_path = tmp_path / "active.duckdb"
+    import duckdb
+
+    conn = duckdb.connect(str(db_path))
+    create_schema(conn)
+    conn.execute(
+        """
+        INSERT INTO refresh_state (id, lease_owner, lease_expires_at)
+        VALUES (1, 'refresh-worker', '2099-01-01T00:00:00')
+        """
+    )
+    conn.close()
+
+    with pytest.raises(RuntimeError, match="active refresh lease"):
+        validate_runtime_db(db_path)
+
+
+def test_entrypoint_allows_active_duckdb_refresh_lease_before_owner_start(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     from mcp_strava.adapters.duckdb.schema import create_schema
     from mcp_strava.deploy import entrypoint
@@ -484,17 +509,16 @@ def test_entrypoint_blocks_active_duckdb_refresh_lease_before_owner_start(
         del program, argv
         nonlocal exec_called
         exec_called = True
+        raise SystemExit(0)
 
     monkeypatch.setenv("MCP_STRAVA_DB_PATH", str(db_path))
     monkeypatch.setattr(entrypoint, "_needs_migration", lambda _path: False)
     monkeypatch.setattr(entrypoint.os, "execvp", fake_execvp)
 
-    rc = entrypoint.main([])
+    with pytest.raises(SystemExit):
+        entrypoint.main([])
 
-    captured = capsys.readouterr()
-    assert rc != 0
-    assert exec_called is False
-    assert "active refresh lease" in captured.err
+    assert exec_called is True
 
 
 def test_prepare_runtime_backup_copy_and_live_env(tmp_path: Path) -> None:
