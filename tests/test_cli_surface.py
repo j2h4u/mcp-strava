@@ -42,6 +42,7 @@ ADMIN_COMMANDS = {
     "mirror-refresh",
     "mirror-coverage",
     "token-refresh",
+    "duckdb-cutover",
     "backfill",
     "backfill-streams",
     "sql",
@@ -215,10 +216,159 @@ def test_admin_commands_are_namespaced_and_distinct(monkeypatch: pytest.MonkeyPa
     assert "mirror-refresh" in cli.ADMIN_COMMANDS
     assert "mirror-coverage" in cli.ADMIN_COMMANDS
     assert "token-refresh" in cli.ADMIN_COMMANDS
+    assert "duckdb-cutover" in cli.ADMIN_COMMANDS
     assert "sync" not in cli.COMMANDS
     assert "refresh" not in cli.COMMANDS
     assert "admin" in cli.COMMANDS
     assert ADMIN_COMMANDS.isdisjoint(PRODUCT_SERVICES)
+
+
+def test_admin_duckdb_cutover_help_uses_canonical_runtime_path(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import mcp_strava.cli as cli
+
+    monkeypatch.setattr(sys, "argv", ["mcp_strava", "admin", "duckdb-cutover", "--help"])
+
+    cli.main()
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
+
+    assert "admin duckdb-cutover" in text
+    assert "/runtime/data/strava.duckdb" in text
+    assert "full Strava resync" not in text.lower()
+
+
+def test_admin_duckdb_cutover_requires_apply_confirmation_for_live_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import mcp_strava.cli as cli
+
+    def forbidden_cutover(*_args, **_kwargs):
+        raise AssertionError("live-looking cutover must fail before migration runs")
+
+    monkeypatch.setattr(cli, "run_duckdb_cutover", forbidden_cutover, raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "mcp_strava",
+            "admin",
+            "duckdb-cutover",
+            "--source-sqlite",
+            str(tmp_path / "source.db"),
+            "--target-duckdb",
+            "/runtime/data/strava.duckdb",
+            "--backup-dir",
+            str(tmp_path / "backups"),
+            "--json",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "confirm" in captured.err.lower()
+
+
+def test_admin_duckdb_cutover_prints_report_and_does_not_construct_strava_collaborators(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import mcp_strava.cli as cli
+
+    source = tmp_path / "source.db"
+    target = tmp_path / "target.duckdb"
+    backups = tmp_path / "backups"
+    source.write_bytes(b"sqlite-fixture-placeholder")
+    calls: list[dict[str, object]] = []
+
+    class FakeReport:
+        backup_path = backups / "strava-pre-phase-8-20260525T120000Z.db"
+        duckdb_path = target
+        parity_ok = True
+        cast_failures: list[dict[str, object]] = []
+        rollback = {
+            "sqlite_backup_path": str(backup_path),
+            "instructions": ["stop runtime", "restore pinned SQLite backup", "run preflight"],
+        }
+
+        def to_dict(self) -> dict[str, object]:
+            return {
+                "backup_path": str(self.backup_path),
+                "duckdb_path": str(self.duckdb_path),
+                "parity_ok": self.parity_ok,
+                "cast_failures": self.cast_failures,
+                "rollback": self.rollback,
+            }
+
+    def fake_cutover(**kwargs):
+        calls.append(kwargs)
+        return FakeReport()
+
+    def forbidden_strava(*_args, **_kwargs):
+        raise AssertionError("DuckDB cutover must not construct Strava collaborators")
+
+    monkeypatch.setattr(cli, "run_duckdb_cutover", fake_cutover, raising=False)
+    monkeypatch.setattr(cli, "build_refresh_collaborators", forbidden_strava, raising=False)
+    monkeypatch.setattr(cli, "api_request", forbidden_strava, raising=False)
+    monkeypatch.setattr(cli, "sync_activities", forbidden_strava, raising=False)
+    monkeypatch.setattr(cli, "backfill_activities", forbidden_strava, raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "mcp_strava",
+            "admin",
+            "duckdb-cutover",
+            "--source-sqlite",
+            str(source),
+            "--target-duckdb",
+            str(target),
+            "--backup-dir",
+            str(backups),
+            "--apply",
+            "--confirm-live-cutover",
+            "--json",
+        ],
+    )
+
+    cli.main()
+    payload = json.loads(capsys.readouterr().out)
+
+    assert calls == [
+        {
+            "source_sqlite_path": source,
+            "target_duckdb_path": target,
+            "backup_dir": backups,
+            "now": None,
+            "owner": "cli-admin",
+        }
+    ]
+    assert payload["backup_path"] == str(FakeReport.backup_path)
+    assert payload["duckdb_path"] == str(target)
+    assert payload["parity_ok"] is True
+    assert payload["cast_failures"] == []
+    assert "rollback" in payload
+
+
+def test_duckdb_cutover_is_absent_from_mcp_and_product_surfaces() -> None:
+    from mcp_strava.application.registry import PRODUCT_SERVICES
+    from mcp_strava.interfaces.mcp_http import MCP_INSTRUCTIONS, MCP_TOOL_NAMES
+
+    rendered_tools = " ".join(MCP_TOOL_NAMES).lower()
+    rendered_instructions = MCP_INSTRUCTIONS.lower()
+
+    assert "duckdb-cutover" not in PRODUCT_SERVICES
+    assert "duckdb-cutover" not in rendered_tools
+    assert "storage-migrate" not in rendered_tools
+    assert "duckdb-cutover" not in rendered_instructions
 
 
 def test_admin_mirror_coverage_json_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
