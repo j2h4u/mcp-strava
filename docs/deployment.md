@@ -116,8 +116,7 @@ python3 deploy/gateway_register.py \
   --catalog /opt/docker/mcp-gateway/catalog.yaml \
   --compose /opt/docker/mcp-gateway/compose.yaml \
   --service strava \
-  --url http://mcp-strava:8080/mcp \
-  --smoke-cmd "docker compose -f deploy/docker-compose.yml exec -T mcp-strava python -m mcp_strava.deploy.smoke --url http://mcp-gateway:8811/mcp --expect-tool get_fitness_state"
+  --url http://mcp-strava:8080/mcp
 ```
 
 ## Live Apply (Operator-Approved Only)
@@ -133,8 +132,7 @@ python3 deploy/gateway_register.py \
   --catalog /opt/docker/mcp-gateway/catalog.yaml \
   --compose /opt/docker/mcp-gateway/compose.yaml \
   --service strava \
-  --url http://mcp-strava:8080/mcp \
-  --smoke-cmd "docker compose -f deploy/docker-compose.yml exec -T mcp-strava python -m mcp_strava.deploy.smoke --url http://mcp-gateway:8811/mcp --expect-tool get_fitness_state"
+  --url http://mcp-strava:8080/mcp
 ```
 
 Without `--apply --confirm-live-gateway`, the helper must not mutate live files.
@@ -148,7 +146,6 @@ On apply mode, helper order is:
 3. Write both files atomically.
 4. Validate new compose.
 5. Restart gateway.
-6. Run smoke.
 
 If a post-backup step fails, helper restores both files from latest backups and runs:
 

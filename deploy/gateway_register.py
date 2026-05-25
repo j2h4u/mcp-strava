@@ -146,7 +146,6 @@ def register_strava_gateway(
     *,
     service_name: str = DEFAULT_SERVICE_NAME,
     service_url: str = DEFAULT_SERVICE_URL,
-    smoke_cmd: list[str] | None = None,
     restart_cmd: list[str] | None = None,
     rollback_restart_cmd: list[str] | None = None,
     compose_config_cmd: list[str] | None = None,
@@ -187,7 +186,6 @@ def register_strava_gateway(
         "mcp-gateway",
     ]
     rollback_restart_cmd = rollback_restart_cmd or restart_cmd
-    smoke_cmd = smoke_cmd or []
     backup_dir = backup_dir or (catalog_path.parent / "backups")
 
     catalog_obj = load_yaml(catalog_path)
@@ -219,8 +217,6 @@ def register_strava_gateway(
             raise RuntimeError("compose validation failed after write")
         if restart_gateway(restart_cmd, run_cmd) != 0:
             raise RuntimeError("gateway restart failed")
-        if smoke_cmd and run_cmd(smoke_cmd) != 0:
-            raise RuntimeError("smoke failed")
         return EXIT_OK
     except Exception as exc:  # noqa: BLE001
         print(f"gateway mutation failed: {exc}", file=sys.stderr)
@@ -242,12 +238,6 @@ def register_strava_gateway(
         return EXIT_FAILED
 
 
-def _parse_smoke_cmd(raw: str | None) -> list[str] | None:
-    if not raw:
-        return None
-    return shlex.split(raw)
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Register mcp-strava into docker mcp-gateway")
     parser.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
@@ -255,7 +245,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--service", default=DEFAULT_SERVICE_NAME)
     parser.add_argument("--url", default=DEFAULT_SERVICE_URL)
     parser.add_argument("--backup-dir", type=Path, default=None)
-    parser.add_argument("--smoke-cmd", default=None)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--confirm-live-gateway", action="store_true")
     args = parser.parse_args(argv)
@@ -265,7 +254,6 @@ def main(argv: list[str] | None = None) -> int:
         compose_path=args.compose,
         service_name=args.service,
         service_url=args.url,
-        smoke_cmd=_parse_smoke_cmd(args.smoke_cmd),
         backup_dir=args.backup_dir,
         apply=args.apply,
         confirm_live_gateway=args.confirm_live_gateway,

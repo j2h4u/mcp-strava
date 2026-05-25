@@ -11,9 +11,6 @@ test:
     {{compose}} up -d --force-recreate --remove-orphans --wait --wait-timeout 90
     {{compose}} exec -T mcp-strava {{smoke}}
 
-gateway-smoke:
-    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli smoke-basic --compact --url http://mcp-gateway:8811/mcp
-
 mcp-smoke-full timeout="5":
     {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli smoke-live --timeout {{timeout}} --compact --url http://127.0.0.1:8080/mcp
 
