@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
-status: milestone_complete
-last_updated: "2026-05-25T17:01:06+05:00"
-last_activity: 2026-05-25 -- Completed quick task 260525-ng3 Hermes prompts and metric polish
+status: phase_added
+last_updated: "2026-05-25T19:38:02+05:00"
+last_activity: 2026-05-25 -- Added Phase 8 DuckDB Primary Storage & Aggregate Analytics Surface
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 7
   total_plans: 31
   completed_plans: 31
-  percent: 100
-stopped_at: Milestone complete (Phase 7 was final phase)
+  percent: 88
+stopped_at: Phase 8 added; ready for context discussion
 ---
 
 # Project State
@@ -21,14 +21,14 @@ stopped_at: Milestone complete (Phase 7 was final phase)
 See: .planning/PROJECT.md (updated 2026-05-24)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Milestone complete
+**Current focus:** Phase 8 context discussion
 
 ## Current Position
 
-Phase: 07
+Phase: 08
 Plan: Not started
-Status: Milestone complete
-Last activity: 2026-05-25 -- Completed quick task 260525-ng3 Hermes prompts and metric polish
+Status: Phase added; ready for discussion
+Last activity: 2026-05-25 -- Added Phase 8 DuckDB Primary Storage & Aggregate Analytics Surface
 
 ## Performance Metrics
 
@@ -129,6 +129,10 @@ Recent decisions affecting current work:
 - [Phase 07]: Phase 7 self-UAT passed against Docker MCP with live v5 read-model facts and sub-500ms p95 for all product tools.
 - [Quick 260524-v31]: Docker/runtime Python baseline is Python 3.14.
 
+### Roadmap Evolution
+
+- Phase 8 added: DuckDB Primary Storage & Aggregate Analytics Surface
+
 ### Pending Todos
 
 None yet.
@@ -147,8 +151,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-24T22:59:41+05:00
-Stopped at: Phase 7 complete; milestone v1.1 ready for completion/archive
+Last session: 2026-05-25T19:38:02+05:00
+Stopped at: Phase 8 added; ready for context discussion
 Resume file: None
 
 ## Quick Tasks Completed

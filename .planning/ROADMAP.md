@@ -2,7 +2,7 @@
 
 ## Overview
 
-This roadmap refactors the current CLI-first codebase into a layered service architecture while preserving the existing `data/strava.db` mirror. The first milestone established package/settings, repository, Strava adapter, application/CLI, MCP, and Docker boundaries. The v1.1 milestone adds a full-fidelity mirror layer so Strava stream data is retained in lossless normalized SQLite structures before analytics projections are derived. The next milestone materializes derived metrics in SQLite read-model tables so MCP tools read prepared facts instead of recomputing expensive stream-derived metrics on request.
+This roadmap refactors the current CLI-first codebase into a layered service architecture while preserving the existing Strava mirror. The first milestone established package/settings, repository, Strava adapter, application/CLI, MCP, and Docker boundaries. The v1.1 milestone added a full-fidelity SQLite mirror layer and materialized derived metrics so MCP tools read prepared facts instead of recomputing expensive stream-derived metrics on request. The next milestone migrates primary storage to DuckDB and adds an aggregate analytics surface for period/bucket queries.
 
 ## Phases
 
@@ -19,6 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: MCP HTTP Surface & Docker Hardening** - Expose read-only MCP tools and finalize local-safe container/runtime boundaries. (completed 2026-05-22)
 - [x] **Phase 6: Full-Fidelity Strava Mirror** - Preserve Strava stream data in lossless normalized SQLite structures, generalize stream ingestion, unify GPS storage, and backfill missing stream channels safely. (completed 2026-05-24)
 - [x] **Phase 7: Materialized Metrics Read Model** - Persist derived activity, daily load, model, and rolling-window facts beside the Strava mirror so MCP tools aggregate prepared facts under sub-500ms latency targets. (completed 2026-05-24)
+- [ ] **Phase 8: DuckDB Primary Storage & Aggregate Analytics Surface** - Migrate the primary local mirror from SQLite to DuckDB and expose bucketed aggregate analytics for MCP period and metric queries.
 
 ## Phase Details
 
@@ -142,10 +143,30 @@ Plans:
   - [x] `07-05-PLAN.md` — MCP service cutover to fact-only read-model queries with read-model metadata
   - [x] `07-06-PLAN.md` — Query-plan, Docker-first, and warm p95 performance validation gates
 
+### Phase 8: DuckDB Primary Storage & Aggregate Analytics Surface
+**Goal**: The local Strava mirror uses DuckDB as the primary runtime database, preserving mirrored data and derived metric facts while enabling native time-bucket, median/quantile, weighted-average, and period aggregation queries for MCP tools.
+**Depends on**: Phase 7
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+  1. Existing live SQLite mirror data is backed up, migrated into a DuckDB database, and parity-checked for source rows, stream coverage, kudos, refresh state, and derived metric facts.
+  2. Runtime repository, refresh, migration, preflight, healthcheck, Docker, and CLI paths use DuckDB as primary storage rather than SQLite, with SQLite retained only as migration input/backup.
+  3. Aggregate analytics can answer day/week/month/year/all-time bucketed metric queries using DuckDB-native SQL primitives such as time buckets, medians/quantiles, weighted averages, and grouped distributions.
+  4. `compare_periods` is implemented over the same aggregate query layer as the general aggregate MCP tool, preserving freshness/completeness metadata and avoiding raw SQL exposure through MCP.
+  5. Python runtime remains on Python 3.14 and uses the current stable 3.14 patch in Docker where available.
+**Cross-cutting constraints:**
+  - Preserve the current live data before migration; no Strava full resync is allowed as a substitute for local migration.
+  - MCP remains a read-only factual metrics surface; no raw SQL/admin/debug/storage migration tools cross into MCP.
+  - Domain-specific metrics such as TRIMP, cardiac cost, drift, HR recovery, fitness, fatigue, and form remain explicit metric facts; DuckDB handles aggregation, not domain interpretation.
+  - Avoid a permanent SQLite + DuckDB dual-primary design; any SQLite bridge is transitional migration tooling only.
+**Plans:** 0 plans
+
+Plans:
+  - [ ] TBD (run /gsd-plan-phase 8 to break down)
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -156,3 +177,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 5. MCP HTTP Surface & Docker Hardening | 6/6 | Complete    | 2026-05-22 |
 | 6. Full-Fidelity Strava Mirror | 4/4 | Complete    | 2026-05-24 |
 | 7. Materialized Metrics Read Model | 6/6 | Complete    | 2026-05-24 |
+| 8. DuckDB Primary Storage & Aggregate Analytics Surface | 0/0 | Not planned | - |
