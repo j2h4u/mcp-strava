@@ -611,6 +611,36 @@ def test_worker_materialization_uses_repository_factory_and_runtime_stage(monkey
     assert [name for name, _value in calls] == ["repo_factory", "materialize_stage"]
 
 
+def test_worker_logs_exception_message_and_traceback(monkeypatch, capsys):
+    from mcp_strava.refresh import worker
+
+    events = []
+
+    class StopAfterFirstWait:
+        def is_set(self) -> bool:
+            return False
+
+        def wait(self, timeout: int) -> bool:
+            assert timeout == 5
+            return True
+
+    def fake_run_pending_once(*, emit_idle: bool = True) -> int:
+        assert emit_idle is False
+        raise RuntimeError("duckdb fatal detail")
+
+    monkeypatch.setattr(worker, "run_pending_once", fake_run_pending_once)
+    monkeypatch.setattr(worker, "_emit", lambda event, **fields: events.append((event, fields)))
+
+    worker.run_forever(poll_seconds=5, stop_event=StopAfterFirstWait(), emit_start=False)
+
+    captured = capsys.readouterr()
+    assert events == [
+        ("refresh_worker_error", {"error_type": "RuntimeError", "error": "duckdb fatal detail"}),
+    ]
+    assert "Traceback" in captured.err
+    assert "RuntimeError: duckdb fatal detail" in captured.err
+
+
 def test_refresh_worker_source_uses_storage_neutral_repository_boundary() -> None:
     source = (Path(__file__).resolve().parents[1] / "src" / "mcp_strava" / "refresh" / "worker.py").read_text(
         encoding="utf-8"

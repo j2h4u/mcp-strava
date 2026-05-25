@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+import traceback
 from datetime import datetime
 from threading import Event
 
@@ -200,7 +201,8 @@ def run_forever(
         try:
             run_pending_once(emit_idle=False)
         except Exception as exc:  # noqa: BLE001
-            _emit("refresh_worker_error", error_type=type(exc).__name__)
+            _emit("refresh_worker_error", error_type=type(exc).__name__, error=str(exc))
+            traceback.print_exc(file=sys.stderr)
         if stop_event is not None:
             if stop_event.wait(resolved_poll_seconds):
                 break
