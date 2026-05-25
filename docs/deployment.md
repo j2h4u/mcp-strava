@@ -4,7 +4,8 @@
 
 After live cutover, use `/opt/docker/mcp-strava` as canonical runtime state:
 
-- DB: `/opt/docker/mcp-strava/data/strava.db`
+- DuckDB DB after Phase 8: `/opt/docker/mcp-strava/data/strava.duckdb` (container path `/runtime/data/strava.duckdb`)
+- SQLite DB before Phase 8 and rollback input: `/opt/docker/mcp-strava/data/strava.db`
 - Tokens/env: `/opt/docker/mcp-strava/.env`
 - Live CLI env overlay: `/opt/docker/mcp-strava/live.env`
 
@@ -24,7 +25,7 @@ python3 -m mcp_strava.deploy.prepare_runtime \
 
 For live refresh/admin commands, either source `/opt/docker/mcp-strava/live.env` or set:
 
-- `MCP_STRAVA_DB_PATH=/opt/docker/mcp-strava/data/strava.db`
+- `MCP_STRAVA_DB_PATH=/opt/docker/mcp-strava/data/strava.duckdb`
 - `MCP_STRAVA_TOKEN_PATH=/opt/docker/mcp-strava/.env`
 
 ## Backend Build/Run Checks (Autonomous-Safe)
@@ -100,12 +101,122 @@ just test
 7. Run the explicit warm p95 gate. This measures tool calls after startup and fails if any MCP tool exceeds the 500 ms p95 target:
 
 ```bash
-just mcp-read-model-perf
+just mcp-read-model-perf 20 2 500
 ```
 
 The p95 gate covers all product MCP tools: `get_fitness_state`, `list_workouts`, `get_workout_detail`, `compare_periods`, and `project_fitness_state`.
 
 Do not remove the pinned pre-Phase-7 backup until the commands above pass and the key MCP outputs still match the expected live mirror shape.
+
+## Phase 8 DuckDB Cutover Validation
+
+This is the live storage cutover from pinned SQLite input to DuckDB primary runtime. It must not run a full Strava resync. Keep the pinned pre-Phase-8 SQLite backup until DuckDB parity, Docker smoke, MCP smoke, the 100 ms p95 gate, and the first accepted post-cutover refresh pass have all been recorded.
+
+1. Stop or quiesce runtime writers before touching live storage:
+
+```bash
+docker compose -f deploy/docker-compose.yml stop mcp-strava
+```
+
+2. Confirm there is no active refresh lease on the SQLite source. An active lease blocks cutover; wait for it to finish or resolve the refresh checkpoint before continuing.
+
+```bash
+MCP_STRAVA_DB_PATH=/opt/docker/mcp-strava/data/strava.db \
+MCP_STRAVA_TOKEN_PATH=/opt/docker/mcp-strava/.env \
+python -m mcp_strava admin db-preflight --json
+```
+
+3. Tag the currently accepted image before rebuilding, so rollback has an immutable pre-cutover runtime image:
+
+```bash
+docker image tag mcp-strava:latest mcp-strava:pre-phase-8
+```
+
+4. Run the local admin DuckDB cutover from the stable SQLite source. The command creates a pinned pre-Phase-8 SQLite backup, migrates from that backup/copy, writes the DuckDB target, and reports row-count parity plus rollback metadata.
+
+```bash
+python -m mcp_strava admin duckdb-cutover \
+  --source-sqlite /opt/docker/mcp-strava/data/strava.db \
+  --target-duckdb /opt/docker/mcp-strava/data/strava.duckdb \
+  --backup-dir /opt/docker/mcp-strava/data/backups \
+  --apply \
+  --confirm-live-cutover \
+  --json
+```
+
+The target above is the host-mounted form of the canonical runtime DB. The container must see the same file as `/runtime/data/strava.duckdb`.
+
+5. Run DuckDB post-checks and record the pinned backup path, DuckDB target path, parity result, and rollback image tag:
+
+```bash
+MCP_STRAVA_DB_PATH=/opt/docker/mcp-strava/data/strava.duckdb \
+python -m mcp_strava.deploy.preflight --db /opt/docker/mcp-strava/data/strava.duckdb
+```
+
+6. Rebuild and recreate the Docker runtime with `MCP_STRAVA_DB_PATH=/runtime/data/strava.duckdb`:
+
+```bash
+docker compose -f deploy/docker-compose.yml config
+docker compose -f deploy/docker-compose.yml build
+docker compose -f deploy/docker-compose.yml up -d --force-recreate --wait
+```
+
+7. Validate the container runtime uses Python 3.14 and imports DuckDB:
+
+```bash
+docker compose -f deploy/docker-compose.yml exec -T mcp-strava python -c "import sys, duckdb; assert sys.version_info[:2] == (3, 14); print(sys.version.split()[0], duckdb.__version__)"
+```
+
+8. Run Docker and MCP acceptance gates. These use owner-process/HTTP validation for live DuckDB; health, smoke, and perf must not independently open the live DuckDB file read-write.
+
+```bash
+just test
+just mcp-smoke-full
+just mcp-read-model-perf 20 2 100
+```
+
+The smoke and p95 gates cover exactly six product MCP tools: `get_fitness_state`, `list_workouts`, `get_workout_detail`, `compare_periods`, `project_fitness_state`, and `get_training_aggregates`. The MCP surface must not include sync, backfill, raw, SQL, token, admin, debug, gear, migration, or recompute tools.
+
+9. Record the first accepted post-cutover refresh pass from the owner process before releasing the pinned backup:
+
+```bash
+docker compose -f deploy/docker-compose.yml logs --since 2h mcp-strava
+```
+
+Accept only a runtime-owned `refresh_ok` pass, or an explicitly recorded refresh request consumption that leaves read-model facts current. Do not run a standalone live DuckDB refresh worker while the owner process is up.
+
+Full Strava resync is not a rollback or validation mechanism for Phase 8.
+
+## Phase 8 DuckDB Rollback
+
+Rollback means stopping the DuckDB runtime and returning to the pinned SQLite backup plus the pre-cutover image/config. Do not delete the pinned pre-Phase-8 SQLite backup as part of rollback or validation.
+
+1. Stop the DuckDB runtime:
+
+```bash
+docker compose -f deploy/docker-compose.yml stop mcp-strava
+```
+
+2. Restore or repoint runtime config to the pinned SQLite backup and previous DB path, then use the pre-cutover image tag:
+
+```bash
+docker image tag mcp-strava:pre-phase-8 mcp-strava:latest
+```
+
+3. Run SQLite preflight, recreate Docker, and rerun owner-process/HTTP smoke and p95 validation:
+
+```bash
+MCP_STRAVA_DB_PATH=/opt/docker/mcp-strava/data/strava.db \
+MCP_STRAVA_TOKEN_PATH=/opt/docker/mcp-strava/.env \
+python -m mcp_strava admin db-preflight --json
+
+docker compose -f deploy/docker-compose.yml up -d --force-recreate --wait
+just test
+just mcp-smoke-full
+just mcp-read-model-perf 20 2 100
+```
+
+Full Strava resync is not a rollback path. The local pinned SQLite backup and `mcp-strava:pre-phase-8` image tag are the rollback source of truth.
 
 ## Gateway Registration Dry-Run (Default)
 

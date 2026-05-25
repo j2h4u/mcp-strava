@@ -121,6 +121,33 @@ def test_phase7_deployment_runbook_documents_read_model_performance_gate() -> No
         assert tool_name in text
 
 
+def test_phase8_deployment_runbook_documents_duckdb_cutover_and_rollback() -> None:
+    text = _read_text(_repo_root() / "docs" / "deployment.md")
+    lowered = text.lower()
+
+    assert "phase 8 duckdb cutover validation" in lowered
+    assert "pinned pre-phase-8 sqlite backup" in lowered
+    assert "first accepted post-cutover refresh pass" in lowered
+    assert "no active refresh lease" in lowered
+    assert "mcp-strava:pre-phase-8" in text
+    assert "/runtime/data/strava.duckdb" in text
+    assert "/opt/docker/mcp-strava/data/strava.duckdb" in text
+    assert "python -m mcp_strava admin duckdb-cutover" in text
+    assert "--confirm-live-cutover" in text
+    assert "just test" in text
+    assert "just mcp-smoke-full" in text
+    assert "just mcp-read-model-perf 20 2 100" in text
+    assert "owner-process/HTTP validation" in text
+    assert "get_training_aggregates" in text
+    assert "docker compose -f deploy/docker-compose.yml exec -T mcp-strava python -c" in text
+    assert "assert sys.version_info[:2] == (3, 14)" in text
+    assert "Full Strava resync is not a rollback or validation mechanism" in text
+    assert "Full Strava resync is not a rollback path" in text
+    assert "mcp-read-model-perf samples=" not in text
+    assert "mcp-read-model-perf warmup=" not in text
+    assert "mcp-read-model-perf p95" not in text
+
+
 def test_preflight_main_missing_db_fails(tmp_path: Path) -> None:
     from mcp_strava.deploy.preflight import main as preflight_main
 
