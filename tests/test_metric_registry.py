@@ -3,10 +3,16 @@
 from pathlib import Path
 
 from mcp_strava.application.metric_registry import (
+    AGGREGATE_METRIC_BUNDLES,
+    AGGREGATE_MODES,
     EXCLUDED_INTERPRETATIONS,
     MCP_TOOL_IDS,
     METRIC_REGISTRY,
+    SUPPORTED_AGGREGATE_BUCKETS,
+    SUPPORTED_AGGREGATE_SCOPES,
+    SUPPORTED_ROLLING_WINDOW_DAYS,
     metric_catalog_payload,
+    metrics_for_aggregate_bundle,
     metrics_for_tool,
 )
 from mcp_strava.application import metric_services
@@ -99,6 +105,28 @@ FORBIDDEN_METRIC_IDS = {
 
 ALLOWED_SPORT_SCOPE = {"global", "per_sport", "both"}
 ALLOWED_COMPARISON_MODE = {"sum", "avg", "median", "last", "min", "max", "trend", "distribution", "none"}
+EXPECTED_AGGREGATE_MODES = {
+    "sum",
+    "calendar_average",
+    "weighted_average",
+    "ratio_of_sums",
+    "quantile",
+    "last_state",
+    "distribution",
+    "kudos_count",
+}
+EXPECTED_AGGREGATE_BUCKETS = {"day", "week", "month", "year", "all_time"}
+EXPECTED_AGGREGATE_SCOPES = {"global", "per_sport", "both"}
+EXPECTED_ROLLING_WINDOWS = {7, 14, 28, 42, 90}
+EXPECTED_AGGREGATE_BUNDLES = {
+    "daily_brief",
+    "weekly_digest",
+    "monthly_digest",
+    "period_comparison",
+    "sport_efficiency",
+    "historical_facts",
+}
+EXPECTED_QUANTILES = ("p25", "median", "p75")
 ALLOWED_TOOLS = {
     "get_fitness_state",
     "list_workouts",
@@ -209,3 +237,114 @@ def test_compare_periods_registry_metrics_are_mapped_without_skip_bucket():
         if definition.comparison_mode == "none" or "compare_periods" not in definition.exposed_in:
             continue
         assert metric_id in mapped, f"{metric_id} must be mapped"
+
+
+def test_aggregate_registry_contract_enumerates_supported_modes_and_filters():
+    assert set(AGGREGATE_MODES) == EXPECTED_AGGREGATE_MODES
+    assert set(SUPPORTED_AGGREGATE_BUCKETS) == EXPECTED_AGGREGATE_BUCKETS
+    assert set(SUPPORTED_AGGREGATE_SCOPES) == EXPECTED_AGGREGATE_SCOPES
+    assert set(SUPPORTED_ROLLING_WINDOW_DAYS) == EXPECTED_ROLLING_WINDOWS
+
+
+def test_aggregate_exposed_metrics_have_complete_query_metadata():
+    aggregate_metrics = [metric for metric in METRIC_REGISTRY.values() if metric.aggregate_mode is not None]
+    assert aggregate_metrics, "get_training_aggregates must have registry-owned metrics"
+
+    for metric in aggregate_metrics:
+        assert metric.unit
+        assert metric.calculation
+        assert metric.aggregate_mode in EXPECTED_AGGREGATE_MODES
+        assert metric.aggregate_source
+        assert metric.metric_version_policy in {"single", "mixed_allowed", "mixed_degraded"}
+        assert set(metric.supported_buckets).issubset(EXPECTED_AGGREGATE_BUCKETS)
+        assert metric.supported_buckets, f"{metric.metric_id} must declare aggregate buckets"
+        assert set(metric.supported_scopes).issubset(EXPECTED_AGGREGATE_SCOPES)
+        assert metric.supported_scopes, f"{metric.metric_id} must declare aggregate scopes"
+        assert not set(metric.supported_scopes) & {"gear", "equipment"}
+        assert metric.sample_size_column, f"{metric.metric_id} must expose sample-size provenance"
+
+
+def test_aggregate_modes_map_locked_semantic_decisions():
+    expected_modes = {
+        "distance_km": ("sum", "distance_m"),
+        "moving_time_min": ("sum", "moving_time_s"),
+        "elevation_m": ("sum", "elevation_gain_m"),
+        "trimp": ("sum", "trimp"),
+        "avg_trimp_per_day": ("calendar_average", "calendar_days"),
+        "avg_hr": ("weighted_average", "heartrate_sample_count"),
+        "vertical_speed_m_per_h": ("ratio_of_sums", "vertical_speed_duration_hours"),
+        "cardiac_cost": ("quantile", None),
+        "fitness": ("last_state", None),
+        "form_zone": ("distribution", None),
+        "kudos_count": ("kudos_count", "activity_count"),
+    }
+    for metric_id, (mode, denominator) in expected_modes.items():
+        metric = METRIC_REGISTRY[metric_id]
+        assert metric.aggregate_mode == mode, metric_id
+        if denominator is not None:
+            assert metric.denominator == denominator or metric.denominator_column == denominator, metric_id
+
+
+def test_weighted_hr_and_power_metrics_require_explicit_denominators():
+    weighted_metrics = [
+        metric
+        for metric in METRIC_REGISTRY.values()
+        if metric.aggregate_mode == "weighted_average" or metric.unit in {"bpm", "watts"}
+    ]
+    assert weighted_metrics
+    for metric in weighted_metrics:
+        assert metric.weight_column, metric.metric_id
+        assert metric.denominator_column, metric.metric_id
+        assert metric.denominator != "naive_activity_average", metric.metric_id
+
+
+def test_quantile_metrics_require_distribution_context_and_sample_size():
+    quantile_metrics = [metric for metric in METRIC_REGISTRY.values() if metric.aggregate_mode == "quantile"]
+    assert quantile_metrics
+    for metric in quantile_metrics:
+        assert tuple(metric.quantiles) == EXPECTED_QUANTILES, metric.metric_id
+        assert metric.sample_size_column, metric.metric_id
+        assert "sample" in metric.sample_size_column, metric.metric_id
+
+
+def test_aggregate_bundles_resolve_only_known_metric_ids():
+    assert set(AGGREGATE_METRIC_BUNDLES) == EXPECTED_AGGREGATE_BUNDLES
+    for bundle_id, metric_ids in AGGREGATE_METRIC_BUNDLES.items():
+        assert metric_ids, f"{bundle_id} bundle must not be empty"
+        assert set(metrics_for_aggregate_bundle(bundle_id)) == set(metric_ids)
+        unknown = set(metric_ids) - set(METRIC_REGISTRY)
+        assert not unknown, f"{bundle_id} has unknown metric ids: {sorted(unknown)}"
+        for metric_id in metric_ids:
+            metric = METRIC_REGISTRY[metric_id]
+            assert metric.aggregate_mode is not None, metric_id
+            assert bundle_id in metric.bundle_ids, metric_id
+
+    with pytest.raises(ValueError):
+        metrics_for_aggregate_bundle("gear_efficiency")
+
+
+def test_aggregate_registry_does_not_create_pseudo_metric_ids_for_math_variants():
+    forbidden_suffixes = (
+        "_sum",
+        "_weighted_avg",
+        "_weighted_average",
+        "_ratio_sum",
+        "_ratio_of_sums",
+        "_quantile",
+        "_p25",
+        "_p75",
+        "_last_state",
+    )
+    offenders = [
+        metric_id
+        for metric_id in METRIC_REGISTRY
+        if metric_id.endswith(forbidden_suffixes)
+    ]
+    assert not offenders
+
+
+def test_kudos_aggregate_excludes_kudos_names():
+    assert METRIC_REGISTRY["kudos_count"].aggregate_mode == "kudos_count"
+    assert METRIC_REGISTRY["kudos_names"].aggregate_mode is None
+    for metric_ids in AGGREGATE_METRIC_BUNDLES.values():
+        assert "kudos_names" not in metric_ids
