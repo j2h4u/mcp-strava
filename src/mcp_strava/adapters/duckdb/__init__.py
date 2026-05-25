@@ -7,11 +7,16 @@ from mcp_strava.adapters.duckdb.migrations import (
     DuckDBMigrationError,
     run_duckdb_cutover,
 )
+from mcp_strava.adapters.duckdb.read_model_materializer import materialize_read_model
+from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository
 
 __all__ = [
     "CANONICAL_DUCKDB_RUNTIME_PATH",
+    "CURRENT_METRIC_VERSION",
     "DuckDBCutoverReport",
     "DuckDBMigrationError",
+    "DuckDBRepository",
+    "materialize_read_model",
     "open_expected_mirror_db",
     "open_fixture_db",
     "run_duckdb_cutover",
