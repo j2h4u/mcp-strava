@@ -22,6 +22,7 @@ EXPECTED_TOOL_NAMES = {
     "get_workout_detail",
     "compare_periods",
     "project_fitness_state",
+    "get_training_aggregates",
 }
 
 LATENCY_TOOL_ORDER = [
@@ -30,6 +31,7 @@ LATENCY_TOOL_ORDER = [
     "get_workout_detail",
     "compare_periods",
     "project_fitness_state",
+    "get_training_aggregates",
 ]
 
 
@@ -299,6 +301,16 @@ def default_warm_latency_calls(*, workout_id: int, today: str | date | None = No
                 "scenarios": ["rest", "maintain"],
             },
         },
+        {
+            "name": "get_training_aggregates",
+            "arguments": {
+                "start_date": (today_date - timedelta(days=28)).isoformat(),
+                "end_date": today_date.isoformat(),
+                "bucket": "week",
+                "metric_bundle": "weekly_digest",
+                "scope": "global",
+            },
+        },
     ]
 
 
@@ -425,6 +437,19 @@ async def run_live_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, An
             {"target_date": (today + timedelta(days=7)).isoformat(), "scenarios": ["rest", "maintain"]},
         ),
     )
+    aggregates = _require_success(
+        "get_training_aggregates",
+        await client.call_tool(
+            "get_training_aggregates",
+            {
+                "start_date": (today - timedelta(days=28)).isoformat(),
+                "end_date": today.isoformat(),
+                "bucket": "week",
+                "metric_bundle": "weekly_digest",
+                "scope": "global",
+            },
+        ),
+    )
 
     payloads = {
         "get_fitness_state": fitness,
@@ -432,6 +457,7 @@ async def run_live_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, An
         "get_workout_detail": detail,
         "compare_periods": comparison,
         "project_fitness_state": projection,
+        "get_training_aggregates": aggregates,
     }
     return {
         "status": "ok",

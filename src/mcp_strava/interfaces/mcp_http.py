@@ -11,6 +11,10 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.server import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
+from mcp_strava.application.aggregate_services import (
+    AggregateServiceRequest,
+    get_training_aggregates_service,
+)
 from mcp_strava.application.metric_services import (
     compare_periods_service,
     get_fitness_state_service,
@@ -28,6 +32,7 @@ MCP_TOOL_NAMES = (
     "get_workout_detail",
     "compare_periods",
     "project_fitness_state",
+    "get_training_aggregates",
 )
 
 MCP_INSTRUCTIONS = """Read-only factual training metrics from the local Strava mirror.
@@ -255,7 +260,53 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
             ),
         )
 
+    @server.tool(
+        name="get_training_aggregates",
+        description="Returns bucketed factual training metric aggregates from prepared local facts.",
+        annotations=_tool_annotations(),
+        structured_output=True,
+    )
+    def get_training_aggregates(
+        end_date: str,
+        bucket: str,
+        start_date: str | None = None,
+        metric_ids: list[str] | None = None,
+        metric_bundle: str | None = None,
+        scope: str = "global",
+        sports: list[str] | None = None,
+        include_empty_buckets: bool = False,
+        as_of_day: str | None = None,
+        window_days: int | None = None,
+    ) -> dict[str, Any]:
+        sport_filter = _single_sport_filter(sports)
+        request = AggregateServiceRequest(
+            metric_ids=tuple(metric_ids or ()),
+            bundle_id=metric_bundle,
+            bucket=bucket,
+            start_day=start_date,
+            end_day_exclusive=end_date,
+            scope=scope,
+            sport_filter=sport_filter,
+            include_empty_buckets=include_empty_buckets,
+            as_of_day=as_of_day,
+            window_days=window_days,
+        )
+        return _run_logged_tool(
+            "get_training_aggregates",
+            lambda: get_training_aggregates_service(
+                request,
+                signal_first_use=False,
+            ),
+        )
+
     return server
+
+
+def _single_sport_filter(sports: list[str] | None) -> str | None:
+    selected = [sport for sport in (sports or []) if sport]
+    if len(selected) > 1:
+        raise ValueError("Only one sport filter is supported for aggregate requests")
+    return selected[0] if selected else None
 
 
 def main(argv: list[str] | None = None) -> int:
