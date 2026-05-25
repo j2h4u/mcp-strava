@@ -7,14 +7,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from mcp_strava.adapters.sqlite.migrations import run_preflight
-from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.adapters.strava import (
     FileTokenProvider,
     RateLimitPolicy,
     StravaTransport,
     TokenRefreshTransport,
 )
-from mcp_strava.db import DbConn
+from mcp_strava.db import DbConn, repository_from_connection
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import Settings, get_settings
 
@@ -42,14 +41,24 @@ def ensure_refresh_schema(preflight_report) -> None:
         )
 
 
+def ensure_runtime_refresh_schema(settings: Settings) -> None:
+    if settings.database_path.suffix.lower() == ".duckdb":
+        with DbConn() as conn:
+            repo = repository_from_connection(conn)
+            repo.get_refresh_state()
+            repo.pending_refresh_requests()
+        return
+    ensure_refresh_schema(run_preflight(settings.database_path))
+
+
 def record_refresh_misconfigured(settings: Settings | None = None) -> None:
     """Record a safe refresh configuration failure for freshness surfaces."""
     settings = settings or get_settings()
-    ensure_refresh_schema(run_preflight(settings.database_path))
+    ensure_runtime_refresh_schema(settings)
     at = _now_iso()
     backoff_until = (datetime.now() + timedelta(hours=1)).isoformat()
     with DbConn() as conn:
-        repo = SQLiteRepository.from_connection(conn)
+        repo = repository_from_connection(conn)
         repo.record_refresh_failure(at, "refresh_misconfigured", backoff_until)
         repo.append_sync_log(
             timestamp=at,

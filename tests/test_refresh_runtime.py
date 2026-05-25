@@ -553,18 +553,23 @@ def test_worker_materializes_read_model_in_bounded_batch(monkeypatch):
             del metric_version
             return {"dirty_count": 12}
 
-    def fake_materialize(repo, *, metric_version, limit):
-        del repo, metric_version
-        calls.append(limit)
+    def fake_repository_from_connection(conn):
+        calls.append(("repo_factory", conn))
+        return FakeRepo()
+
+    def fake_materialize_stage(repo, metric_version, now_iso, renew_lease, limit=None):
+        del repo, metric_version, now_iso, renew_lease
+        calls.append(("materialize_stage", limit))
         return {"dirty_rows_cleared": limit}
 
     monkeypatch.setattr(worker, "DbConn", FakeDbConn)
-    monkeypatch.setattr(worker.SQLiteRepository, "from_connection", lambda _conn: FakeRepo())
-    monkeypatch.setattr(worker, "materialize_read_model", fake_materialize)
+    monkeypatch.setattr(worker, "repository_from_connection", fake_repository_from_connection)
+    monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", fake_materialize_stage)
     monkeypatch.setattr(worker, "_emit", lambda event, **fields: events.append((event, fields)))
 
     assert worker._materialize_dirty_read_model(batch_size=5) == 5
-    assert calls == [5]
+    assert [call[0] for call in calls] == ["repo_factory", "materialize_stage"]
+    assert calls[-1] == ("materialize_stage", 5)
     assert events == [
         ("read_model_materialize_started", {"dirty_count": 12, "batch_size": 5}),
         ("read_model_materialize_ok", {"dirty_rows_cleared": 5, "dirty_count_remaining": 7}),
@@ -592,7 +597,7 @@ def test_worker_materialization_uses_repository_factory_and_runtime_stage(monkey
         calls.append(("repo_factory", conn))
         return FakeRepo()
 
-    def fake_materialize_stage(repo, metric_version, now_iso, renew_lease):
+    def fake_materialize_stage(repo, metric_version, now_iso, renew_lease, limit=None):
         del repo, metric_version, now_iso, renew_lease
         calls.append(("materialize_stage", 3))
         return {"dirty_rows_cleared": 3}
@@ -670,13 +675,9 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
 
     monkeypatch.setattr(worker, "get_settings", lambda: settings)
     monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
-    monkeypatch.setattr(
-        worker,
-        "run_preflight",
-        lambda _path: SimpleNamespace(row_counts={"refresh_state": 1, "refresh_requests": 0}),
-    )
+    monkeypatch.setattr(worker, "ensure_runtime_refresh_schema", lambda _settings: None)
     monkeypatch.setattr(worker, "DbConn", FakeDbConn)
-    monkeypatch.setattr(worker.SQLiteRepository, "from_connection", lambda _conn: FakeRepo())
+    monkeypatch.setattr(worker, "repository_from_connection", lambda _conn: FakeRepo())
     monkeypatch.setattr(
         worker,
         "build_refresh_collaborators",
@@ -737,13 +738,9 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
 
     monkeypatch.setattr(worker, "get_settings", lambda: settings)
     monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
-    monkeypatch.setattr(
-        worker,
-        "run_preflight",
-        lambda _path: SimpleNamespace(row_counts={"refresh_state": 1, "refresh_requests": 0}),
-    )
+    monkeypatch.setattr(worker, "ensure_runtime_refresh_schema", lambda _settings: None)
     monkeypatch.setattr(worker, "DbConn", FakeDbConn)
-    monkeypatch.setattr(worker.SQLiteRepository, "from_connection", lambda _conn: FakeRepo())
+    monkeypatch.setattr(worker, "repository_from_connection", lambda _conn: FakeRepo())
     monkeypatch.setattr(
         worker,
         "build_refresh_collaborators",
@@ -793,13 +790,9 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
 
     monkeypatch.setattr(worker, "get_settings", lambda: settings)
     monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
-    monkeypatch.setattr(
-        worker,
-        "run_preflight",
-        lambda _path: SimpleNamespace(row_counts={"refresh_state": 1, "refresh_requests": 0}),
-    )
+    monkeypatch.setattr(worker, "ensure_runtime_refresh_schema", lambda _settings: None)
     monkeypatch.setattr(worker, "DbConn", FakeDbConn)
-    monkeypatch.setattr(worker.SQLiteRepository, "from_connection", lambda _conn: FakeRepo())
+    monkeypatch.setattr(worker, "repository_from_connection", lambda _conn: FakeRepo())
     monkeypatch.setattr(
         worker,
         "build_refresh_collaborators",

@@ -18,6 +18,7 @@ from mcp_strava.refresh import worker as refresh_worker
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 _DEFAULT_STATE_PATH = Path("/tmp/mcp-strava-supervisor.json")
+DUCKDB_OWNER_CONNECTION_POLICY = "per-thread-connection"
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,7 @@ def _write_state(children: list[ChildProcess]) -> None:
             "pid": os.getpid(),
             "db_mode": "duckdb-primary" if _duckdb_runtime_mode() else "sqlite-compat",
             "refresh_scheduler": "in-process" if _duckdb_runtime_mode() and _refresh_worker_enabled() else "disabled",
+            "connection_policy": DUCKDB_OWNER_CONNECTION_POLICY if _duckdb_runtime_mode() else "sqlite-compat",
         },
         "children": {
             child.name: {"pid": child.process.pid}

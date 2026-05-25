@@ -54,6 +54,7 @@ def test_service_state_records_single_owner_process(tmp_path: Path, monkeypatch:
     payload = json.loads(state_path.read_text(encoding="utf-8"))
     assert payload["owner"]["pid"] == os.getpid()
     assert payload["owner"]["db_mode"] == "duckdb-primary"
+    assert payload["owner"]["connection_policy"] == "per-thread-connection"
     assert "refresh" not in payload.get("children", {})
 
 

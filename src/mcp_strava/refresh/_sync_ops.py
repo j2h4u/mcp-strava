@@ -263,6 +263,7 @@ def materialize_read_model_stage(
     metric_version: int,
     now_iso: str,
     renew_lease: Callable[[], None] | None,
+    limit: int | None = None,
 ) -> dict[str, object]:
     materializer = materialize_duckdb_read_model
     if not isinstance(repo, DuckDBRepository):
@@ -272,6 +273,7 @@ def materialize_read_model_stage(
         metric_version=metric_version,
         now=now_iso,
         renew_lease=renew_lease,
+        limit=limit,
     )
 
 
