@@ -9,10 +9,12 @@ from pathlib import Path
 
 import pytest
 
+from mcp_strava.adapters.duckdb.connection import open_fixture_db
 from mcp_strava.adapters.sqlite.migrations import run_migrations
-from mcp_strava.application.metric_registry import METRIC_REGISTRY
+from mcp_strava.application.metric_registry import METRIC_REGISTRY, metrics_for_aggregate_bundle
 from mcp_strava.types import FreshnessMetadata, ServiceEnvelope, dc_to_dict
 from tests.test_read_model_queries import READ_MODEL_METADATA_KEYS, _repo_with_facts
+from tests.test_training_aggregates import _aggregate_fixture
 
 FORBIDDEN_KEYS = {
     "recommendation",
@@ -468,24 +470,28 @@ def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_p
     from mcp_strava.application.metric_services import compare_periods_service
 
     _block_legacy_recompute(monkeypatch)
-    repo = _repo_with_facts(tmp_path / "compare.db")
+    db_path = _aggregate_fixture(tmp_path / "compare.duckdb")
+    conn = open_fixture_db(db_path)
     try:
         envelope = compare_periods_service(
-            period_a_start="2026-05-20",
-            period_a_end="2026-05-21",
-            period_b_start="2026-05-19",
-            period_b_end="2026-05-20",
+            period_a_start="2026-05-05",
+            period_a_end="2026-05-13",
+            period_b_start="2026-05-13",
+            period_b_end="2026-06-01",
             sport=None,
             now=datetime.fromisoformat("2026-05-21T09:00:00"),
             signal_first_use=False,
-            connection=repo.conn,
+            connection=conn,
         )
     finally:
-        repo.close()
+        conn.close()
 
     payload = dc_to_dict(envelope)
     assert set(payload) == ENVELOPE_KEYS
-    _assert_read_model_metadata(payload)
+    metadata = payload["completeness"]["coverage"].get("read_model")
+    assert isinstance(metadata, dict)
+    assert READ_MODEL_METADATA_KEYS <= set(metadata)
+    assert metadata["status"] == "current"
     assert "global" in payload["data"]
     assert "per_sport" in payload["data"]
 
@@ -522,7 +528,7 @@ def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_p
     run_metrics = per_sport["Run"]["metrics"]
     assert "cardiac_cost" in run_metrics
     assert "metric_id" not in run_metrics["cardiac_cost"]
-    assert run_metrics["cardiac_cost"]["metric_version_status"] in {"consistent", "missing", "mixed"}
+    assert run_metrics["cardiac_cost"]["metric_version_status"] in {"single", "unavailable", "mixed_degraded"}
 
     dist = global_metrics["time_in_hr_zones_min"]
     assert "buckets" in dist["period_a"]
@@ -667,20 +673,21 @@ def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_
     from mcp_strava.application.metric_services import compare_periods_service
 
     _block_legacy_recompute(monkeypatch)
-    repo = _repo_with_facts(tmp_path / "compare-run.db")
+    db_path = _aggregate_fixture(tmp_path / "compare-run.duckdb")
+    conn = open_fixture_db(db_path)
     try:
         envelope = compare_periods_service(
-            period_a_start="2026-05-20",
-            period_a_end="2026-05-21",
-            period_b_start="2026-05-19",
-            period_b_end="2026-05-20",
+            period_a_start="2026-05-05",
+            period_a_end="2026-05-13",
+            period_b_start="2026-05-13",
+            period_b_end="2026-06-01",
             sport="Run",
             now=datetime.fromisoformat("2026-05-21T09:00:00"),
             signal_first_use=False,
-            connection=repo.conn,
+            connection=conn,
         )
     finally:
-        repo.close()
+        conn.close()
 
     payload = dc_to_dict(envelope)
     assert payload["data"]["global"]["scope_filter"] == "sport"
@@ -742,17 +749,6 @@ def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path, monkeypatc
         fitness = dc_to_dict(get_fitness_state_service(now=now, signal_first_use=False, connection=repo.conn))
         workouts = dc_to_dict(list_workouts_service(limit=1, now=now, signal_first_use=False, connection=repo.conn))
         detail = dc_to_dict(get_workout_detail_service(701, now=now, signal_first_use=False, connection=repo.conn))
-        compare = dc_to_dict(
-            compare_periods_service(
-                period_a_start="2026-05-20",
-                period_a_end="2026-05-21",
-                period_b_start="2026-05-19",
-                period_b_end="2026-05-20",
-                now=now,
-                signal_first_use=False,
-                connection=repo.conn,
-            )
-        )
         projection = dc_to_dict(
             project_fitness_state_service(
                 target_date="2026-05-23",
@@ -764,6 +760,22 @@ def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path, monkeypatc
         )
     finally:
         repo.close()
+
+    compare_conn = open_fixture_db(_aggregate_fixture(tmp_path / "registry-compare.duckdb"))
+    try:
+        compare = dc_to_dict(
+            compare_periods_service(
+                period_a_start="2026-05-05",
+                period_a_end="2026-05-13",
+                period_b_start="2026-05-13",
+                period_b_end="2026-06-01",
+                now=now,
+                signal_first_use=False,
+                connection=compare_conn,
+            )
+        )
+    finally:
+        compare_conn.close()
 
     assert set(fitness["data"]) == _repo_metric_ids_for_tool("get_fitness_state")
     assert all(value is not None for value in fitness["data"].values())
@@ -779,7 +791,7 @@ def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path, monkeypatc
     compare_metric_ids = set(compare["data"]["global"]["metrics"])
     for sport_payload in compare["data"]["per_sport"].values():
         compare_metric_ids.update(sport_payload["metrics"])
-    assert compare_metric_ids == _repo_metric_ids_for_tool("compare_periods")
+    assert compare_metric_ids == set(metrics_for_aggregate_bundle("period_comparison"))
 
     easy = projection["data"]["scenarios"]["easy"]
     projection_metric_ids = {"target_date_form", "post_weekend_monday_form", "activity_template_trimp"}

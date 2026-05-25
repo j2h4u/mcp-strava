@@ -15,7 +15,6 @@ from mcp_strava.application.metric_registry import (
     metrics_for_aggregate_bundle,
     metrics_for_tool,
 )
-from mcp_strava.application import metric_services
 import pytest
 
 
@@ -133,6 +132,7 @@ ALLOWED_TOOLS = {
     "get_workout_detail",
     "compare_periods",
     "project_fitness_state",
+    "get_training_aggregates",
 }
 
 
@@ -271,13 +271,22 @@ def test_docs_metrics_md_includes_aggregate_registry_contract():
     assert not any(term in lowered for term in added_coaching_terms)
 
 
-def test_compare_periods_registry_metrics_are_mapped_without_skip_bucket():
-    mapped = set(metric_services.COMPARE_PERIODS_HANDLERS.keys())
-    assert metric_services.COMPARE_PERIODS_SKIP_REASONS == {}
+def test_compare_periods_registry_metrics_resolve_through_aggregate_bundle():
+    compare_metrics = {
+        metric_id
+        for metric_id, definition in METRIC_REGISTRY.items()
+        if definition.comparison_mode != "none" and "compare_periods" in definition.exposed_in
+    }
+    bundle_metrics = set(metrics_for_aggregate_bundle("period_comparison"))
+
+    assert compare_metrics == bundle_metrics
     for metric_id, definition in METRIC_REGISTRY.items():
         if definition.comparison_mode == "none" or "compare_periods" not in definition.exposed_in:
             continue
-        assert metric_id in mapped, f"{metric_id} must be mapped"
+        assert definition.aggregate_mode is not None, metric_id
+        assert definition.aggregate_source, metric_id
+        assert definition.sample_size_column, metric_id
+        assert definition.metric_version_policy in {"single", "mixed_allowed", "mixed_degraded"}
 
 
 def test_aggregate_registry_contract_enumerates_supported_modes_and_filters():
