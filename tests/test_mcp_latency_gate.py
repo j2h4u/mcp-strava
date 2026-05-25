@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from mcp_strava.devtools.mcp_client.client import (
+    DEFAULT_LATENCY_P95_MS,
     EXPECTED_TOOL_NAMES,
     McpClientError,
     measure_warm_tool_latency,
@@ -29,6 +30,10 @@ class FakeLatencyClient:
                 "warnings": [],
             },
         }
+
+
+def test_default_latency_gate_threshold_is_100_ms() -> None:
+    assert DEFAULT_LATENCY_P95_MS == 100.0
 
 
 def test_measure_warm_tool_latency_records_startup_separately() -> None:

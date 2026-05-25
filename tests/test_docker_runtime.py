@@ -5,6 +5,7 @@ import sqlite3
 import sys
 import tomllib
 
+import duckdb
 import pytest
 
 from tests.test_sqlite_safety import _create_fixture_db
@@ -20,6 +21,7 @@ def _read_text(path: Path) -> str:
 
 def test_project_runtime_requires_python_314_and_duckdb_dependency() -> None:
     assert sys.version_info[:2] == (3, 14)
+    assert duckdb.__version__.startswith("1.5.")
 
     pyproject = tomllib.loads(_read_text(_repo_root() / "pyproject.toml"))
     project = pyproject["project"]
@@ -62,6 +64,30 @@ def test_compose_source_contract() -> None:
     assert "MCP_STRAVA_TOKEN_PATH" in text and "/runtime/.env" in text
     assert "MCP_STRAVA_READ_MODEL_BATCH_SIZE" in text
     assert "mcp-backends" in text
+
+
+def test_docker_smoke_and_perf_use_owner_process_http_path() -> None:
+    root = _repo_root()
+    justfile = _read_text(root / "Justfile")
+    client_sources = "\n".join(
+        _read_text(root / path)
+        for path in (
+            Path("src/mcp_strava/devtools/mcp_client/client.py"),
+            Path("src/mcp_strava/devtools/mcp_client/cli.py"),
+            Path("src/mcp_strava/deploy/smoke.py"),
+        )
+    )
+    healthcheck = _read_text(root / "src/mcp_strava/deploy/healthcheck.py")
+
+    assert "mcp-smoke-full" in justfile
+    assert "mcp-read-model-perf" in justfile
+    assert "--url http://127.0.0.1:8080/mcp" in justfile
+    assert "p95_ms=\"100\"" in justfile
+    for forbidden in ("duckdb.connect", "open_expected_duckdb", "validate_runtime_db"):
+        assert forbidden not in client_sources
+        assert forbidden not in healthcheck
+    assert "HTTPConnection(\"127.0.0.1\"" in healthcheck
+    assert "db_mode\") != \"duckdb-primary\"" in healthcheck
 
 
 def test_dockerignore_contract() -> None:

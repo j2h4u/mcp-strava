@@ -14,7 +14,7 @@ from mcp.client.streamable_http import streamable_http_client
 DEFAULT_TIMEOUT_SECONDS = 5.0
 DEFAULT_LATENCY_WARMUP = 2
 DEFAULT_LATENCY_SAMPLES = 20
-DEFAULT_LATENCY_P95_MS = 500.0
+DEFAULT_LATENCY_P95_MS = 100.0
 
 EXPECTED_TOOL_NAMES = {
     "get_fitness_state",
