@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-25T21:06:20.303Z"
+last_updated: "2026-05-25T21:35:47.905Z"
 last_activity: 2026-05-25
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 39
-  completed_plans: 37
+  completed_plans: 38
   percent: 88
 ---
 
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-24)
 ## Current Position
 
 Phase: 08 (duckdb-primary-storage-aggregate-analytics-surface) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-05-25
 
@@ -81,6 +81,7 @@ Last activity: 2026-05-25
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-03 | 20min | 3 tasks | 13 files |
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-04 | 9 min | 3 tasks | 15 files |
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-06 | 39min | 3 tasks | 5 files |
+| Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-07 | 12min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -148,6 +149,9 @@ Recent decisions affecting current work:
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Aggregate queries use DuckDB views and whitelisted registry metadata, not caller-supplied storage names or SQL.
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: All-time buckets keep caller bounds when supplied and otherwise default start to the earliest local activity before the exclusive end.
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Aggregate service validation happens before opening or executing query work for invalid product parameters.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Expose get_training_aggregates as the sixth and only new product MCP tool. — Implements D-15/D-16 while preserving the product-only MCP allowlist.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Format compare_periods from two bounded period_comparison aggregate requests with bucket=all_time. — Implements D-23 through D-25 and removes separate comparison row-scanning semantics.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Use aggregate scope=both internally for comparison bundles. — Allows global and per-sport aggregate rows to share one registry-backed comparison path without adding public MCP controls.
 
 ### Roadmap Evolution
 
@@ -171,8 +175,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-25T21:06:20.290Z
-Stopped at: Completed 08-duckdb-primary-storage-aggregate-analytics-surface-08-06-PLAN.md
+Last session: 2026-05-25T21:35:47.892Z
+Stopped at: Completed 08-duckdb-primary-storage-aggregate-analytics-surface-08-07-PLAN.md
 Resume file: None
 
 ## Quick Tasks Completed
