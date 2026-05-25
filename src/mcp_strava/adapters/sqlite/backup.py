@@ -29,7 +29,7 @@ def _unique_backup_path(target_dir: Path, label: str | None = None) -> Path:
 
 
 def _is_pinned_backup(path: Path) -> bool:
-    return path.name.startswith("strava-pre-phase-7-")
+    return path.name.startswith("strava-pre-phase-")
 
 
 def create_timestamped_backup(
@@ -45,6 +45,14 @@ def create_pre_phase_7_backup(
 ) -> Path:
     """Create the pinned backup that protects the pre-Phase-7 mirror state."""
     return _create_backup(source_db, backups_dir=backups_dir, label="pre-phase-7")
+
+
+def create_pre_phase_8_backup(
+    source_db: str | Path,
+    backups_dir: str | Path | None = None,
+) -> Path:
+    """Create the pinned backup that protects the pre-Phase-8 SQLite mirror."""
+    return _create_backup(source_db, backups_dir=backups_dir, label="pre-phase-8")
 
 
 def _create_backup(
