@@ -571,6 +571,50 @@ def test_worker_materializes_read_model_in_bounded_batch(monkeypatch):
     ]
 
 
+def test_worker_materialization_uses_repository_factory_and_runtime_stage(monkeypatch):
+    from mcp_strava.refresh import worker
+
+    calls: list[tuple[str, object]] = []
+
+    class FakeDbConn:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeRepo:
+        def read_model_status(self, metric_version=None):
+            del metric_version
+            return {"dirty_count": 8}
+
+    def fake_repository_from_connection(conn):
+        calls.append(("repo_factory", conn))
+        return FakeRepo()
+
+    def fake_materialize_stage(repo, metric_version, now_iso, renew_lease):
+        del repo, metric_version, now_iso, renew_lease
+        calls.append(("materialize_stage", 3))
+        return {"dirty_rows_cleared": 3}
+
+    monkeypatch.setattr(worker, "DbConn", FakeDbConn)
+    monkeypatch.setattr(worker, "repository_from_connection", fake_repository_from_connection)
+    monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", fake_materialize_stage)
+    monkeypatch.setattr(worker, "_emit", lambda *_args, **_kwargs: None)
+
+    assert worker._materialize_dirty_read_model(batch_size=3) == 3
+    assert [name for name, _value in calls] == ["repo_factory", "materialize_stage"]
+
+
+def test_refresh_worker_source_uses_storage_neutral_repository_boundary() -> None:
+    source = (Path(__file__).resolve().parents[1] / "src" / "mcp_strava" / "refresh" / "worker.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "from mcp_strava.adapters.sqlite.repository import SQLiteRepository" not in source
+    assert "from mcp_strava.db import DbConn, repository_from_connection" in source
+
+
 def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_path):
     from mcp_strava.refresh import Stage
     from mcp_strava.refresh import worker

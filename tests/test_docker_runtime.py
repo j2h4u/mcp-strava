@@ -42,7 +42,8 @@ def test_dockerfile_source_contract() -> None:
     assert "EXPOSE 8080" in text
     assert 'ENTRYPOINT ["python", "-m", "mcp_strava.deploy.entrypoint"]' in text
     assert "mcp_strava.deploy.healthcheck" in text
-    assert "/runtime/data/strava.db" in text
+    assert "/runtime/data/strava.duckdb" in text
+    assert "/runtime/data/strava.db" not in text
     assert "COPY mcp-content /app/mcp-content" in text
 
 
@@ -56,7 +57,8 @@ def test_compose_source_contract() -> None:
     assert "ports:" not in text
     assert 'expose: ["8080"]' in text or "expose:\n      - \"8080\"" in text
     assert "/opt/docker/mcp-strava:/runtime" in text
-    assert "MCP_STRAVA_DB_PATH" in text and "/runtime/data/strava.db" in text
+    assert "MCP_STRAVA_DB_PATH" in text and "/runtime/data/strava.duckdb" in text
+    assert "/runtime/data/strava.db" not in text
     assert "MCP_STRAVA_TOKEN_PATH" in text and "/runtime/.env" in text
     assert "MCP_STRAVA_READ_MODEL_BATCH_SIZE" in text
     assert "mcp-backends" in text
@@ -293,6 +295,46 @@ def test_entrypoint_exits_without_exec_when_preflight_fails(
     rc = entrypoint.main([])
     assert rc != 0
     assert exec_called is False
+
+
+def test_entrypoint_blocks_active_duckdb_refresh_lease_before_owner_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from mcp_strava.adapters.duckdb.schema import create_schema
+    from mcp_strava.deploy import entrypoint
+
+    db_path = tmp_path / "active.duckdb"
+    import duckdb
+
+    conn = duckdb.connect(str(db_path))
+    create_schema(conn)
+    conn.execute(
+        """
+        INSERT INTO refresh_state (id, lease_owner, lease_expires_at)
+        VALUES (1, 'refresh-worker', '2099-01-01T00:00:00')
+        """
+    )
+    conn.close()
+
+    exec_called = False
+
+    def fake_execvp(program: str, argv: list[str]) -> None:
+        del program, argv
+        nonlocal exec_called
+        exec_called = True
+
+    monkeypatch.setenv("MCP_STRAVA_DB_PATH", str(db_path))
+    monkeypatch.setattr(entrypoint, "_needs_migration", lambda _path: False)
+    monkeypatch.setattr(entrypoint.os, "execvp", fake_execvp)
+
+    rc = entrypoint.main([])
+
+    captured = capsys.readouterr()
+    assert rc != 0
+    assert exec_called is False
+    assert "active refresh lease" in captured.err
 
 
 def test_prepare_runtime_backup_copy_and_live_env(tmp_path: Path) -> None:
