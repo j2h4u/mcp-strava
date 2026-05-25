@@ -6,6 +6,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from mcp_strava.constants import Config
+from mcp_strava.adapters.duckdb.migrations import (
+    CANONICAL_DUCKDB_RUNTIME_PATH,
+    DuckDBMigrationError,
+    run_duckdb_cutover,
+)
 from mcp_strava.adapters.sqlite.migrations import run_migrations, run_preflight
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.application import (
@@ -479,6 +484,115 @@ def cmd_db_migrate(args):
     )
 
 
+def _duckdb_cutover_usage() -> str:
+    return (
+        "Usage: python -m mcp_strava admin duckdb-cutover "
+        "--source-sqlite <path> --target-duckdb <path> --backup-dir <path> "
+        "[--apply --confirm-live-cutover] [--json]\n\n"
+        f"Canonical Docker/runtime DuckDB target: {CANONICAL_DUCKDB_RUNTIME_PATH}\n"
+        "This is a local admin storage cutover command. It creates a pinned SQLite backup, "
+        "migrates from that backup into DuckDB, verifies parity, and reports rollback metadata."
+    )
+
+
+def _pop_required_path_option(args: list[str], option: str) -> Path:
+    if option not in args:
+        _usage_error(_duckdb_cutover_usage())
+    idx = args.index(option)
+    if idx + 1 >= len(args):
+        _usage_error(_duckdb_cutover_usage())
+    value = Path(args[idx + 1])
+    del args[idx : idx + 2]
+    return value
+
+
+def _live_looking_duckdb_target(path: Path) -> bool:
+    rendered = str(path)
+    return rendered == CANONICAL_DUCKDB_RUNTIME_PATH or rendered.startswith("/runtime/") or rendered.startswith("/opt/docker/mcp-strava/")
+
+
+def _cutover_report_to_dict(report) -> dict[str, object]:
+    if hasattr(report, "to_dict"):
+        return report.to_dict()
+    return {
+        "backup_path": str(report.backup_path),
+        "duckdb_path": str(report.duckdb_path),
+        "parity_ok": bool(report.parity_ok),
+        "cast_failures": list(report.cast_failures),
+        "rollback": dict(report.rollback),
+    }
+
+
+def cmd_duckdb_cutover(args):
+    if "--help" in args or "-h" in args:
+        print(_duckdb_cutover_usage())
+        return
+
+    json_output = _pop_json_flag(args)
+    apply = "--apply" in args
+    if apply:
+        args.remove("--apply")
+    confirm_live = "--confirm-live-cutover" in args
+    if confirm_live:
+        args.remove("--confirm-live-cutover")
+
+    source_path = _pop_required_path_option(args, "--source-sqlite")
+    target_path = _pop_required_path_option(args, "--target-duckdb")
+    backup_dir = _pop_required_path_option(args, "--backup-dir")
+    if args:
+        _usage_error(_duckdb_cutover_usage())
+
+    if _live_looking_duckdb_target(target_path) and (not apply or not confirm_live):
+        print(
+            "Refusing live-looking DuckDB cutover target without --apply --confirm-live-cutover.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    if not apply:
+        payload = {
+            "backup_path": None,
+            "duckdb_path": str(target_path),
+            "parity_ok": False,
+            "cast_failures": [],
+            "rollback": {
+                "sqlite_backup_path": None,
+                "duckdb_path": str(target_path),
+                "instructions": [
+                    "rerun with --apply after stopping writers and confirming the target path",
+                ],
+            },
+            "status": "dry_run",
+        }
+    else:
+        try:
+            report = run_duckdb_cutover(
+                source_sqlite_path=source_path,
+                target_duckdb_path=target_path,
+                backup_dir=backup_dir,
+                now=None,
+                owner="cli-admin",
+            )
+        except DuckDBMigrationError as exc:
+            if exc.report is not None:
+                payload = _cutover_report_to_dict(exc.report)
+                payload["status"] = "failed"
+                payload["error"] = str(exc)
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                print(json.dumps({"status": "failed", "error": str(exc)}, indent=2, ensure_ascii=False))
+            raise SystemExit(1) from exc
+        payload = _cutover_report_to_dict(report)
+
+    if json_output:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+
+    print("DuckDB Cutover")
+    for key in ("backup_path", "duckdb_path", "parity_ok", "cast_failures", "rollback"):
+        print(f"- {key}: {payload.get(key)}")
+
+
 def cmd_mirror_coverage(args):
     json_output = _pop_json_flag(args)
     db_path: str | None = None
@@ -767,6 +881,7 @@ ADMIN_COMMANDS = {
     "mirror-refresh": cmd_db_refresh,
     "mirror-coverage": cmd_mirror_coverage,
     "token-refresh": cmd_refresh,
+    "duckdb-cutover": cmd_duckdb_cutover,
     "backfill": cmd_backfill,
     "backfill-streams": cmd_backfill_streams,
     "sql": cmd_sql,
