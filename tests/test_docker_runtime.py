@@ -283,6 +283,101 @@ def test_entrypoint_runs_migration_before_preflight_when_needed(
     assert calls == ["needs_migration", "run_migrations", "validate", "execvp"]
 
 
+def test_entrypoint_auto_cutover_prepares_missing_duckdb_from_sibling_sqlite(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from mcp_strava.deploy import entrypoint
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    sqlite_path = data_dir / "strava.db"
+    sqlite_path.write_bytes(b"sqlite placeholder")
+    duckdb_path = data_dir / "strava.duckdb"
+    calls: list[tuple[str, object]] = []
+
+    class Report:
+        backup_path = data_dir / "backups" / "strava.db"
+
+    def fake_needs_migration(path: Path) -> bool:
+        calls.append(("needs_migration", path))
+        return False
+
+    def fake_cutover(**kwargs: object) -> Report:
+        calls.append(("cutover", kwargs))
+        assert kwargs["source_sqlite_path"] == sqlite_path
+        assert kwargs["target_duckdb_path"] == duckdb_path
+        assert kwargs["backup_dir"] == data_dir / "backups"
+        assert kwargs["owner"] == "entrypoint"
+        duckdb_path.write_bytes(b"duckdb placeholder")
+        return Report()
+
+    def fake_validate(path: Path, *, quick: bool = False) -> None:
+        calls.append(("validate", path))
+        assert path == duckdb_path
+        assert quick is False
+
+    def fake_execvp(program: str, argv: list[str]) -> None:
+        del program, argv
+        calls.append(("execvp", duckdb_path.exists()))
+        raise SystemExit(0)
+
+    monkeypatch.setenv("MCP_STRAVA_DB_PATH", str(duckdb_path))
+    monkeypatch.setattr(entrypoint, "_needs_migration", fake_needs_migration)
+    monkeypatch.setattr(entrypoint, "run_duckdb_cutover", fake_cutover)
+    monkeypatch.setattr(entrypoint, "validate_runtime_db", fake_validate)
+    monkeypatch.setattr(entrypoint.os, "execvp", fake_execvp)
+
+    with pytest.raises(SystemExit):
+        entrypoint.main([])
+
+    assert calls == [
+        ("needs_migration", sqlite_path),
+        (
+            "cutover",
+            {
+                "source_sqlite_path": sqlite_path,
+                "target_duckdb_path": duckdb_path,
+                "backup_dir": data_dir / "backups",
+                "now": None,
+                "owner": "entrypoint",
+            },
+        ),
+        ("needs_migration", duckdb_path),
+        ("validate", duckdb_path),
+        ("execvp", True),
+    ]
+
+
+def test_entrypoint_missing_duckdb_without_sibling_sqlite_still_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from mcp_strava.deploy import entrypoint
+
+    duckdb_path = tmp_path / "data" / "strava.duckdb"
+    cutover_called = False
+
+    def fake_cutover(**_kwargs: object) -> None:
+        nonlocal cutover_called
+        cutover_called = True
+
+    def fake_validate(path: Path, *, quick: bool = False) -> None:
+        del quick
+        raise RuntimeError(f"missing {path}")
+
+    monkeypatch.setenv("MCP_STRAVA_DB_PATH", str(duckdb_path))
+    monkeypatch.setattr(entrypoint, "run_duckdb_cutover", fake_cutover)
+    monkeypatch.setattr(entrypoint, "validate_runtime_db", fake_validate)
+    monkeypatch.setattr(entrypoint.os, "execvp", lambda *_args: pytest.fail("must not exec"))
+
+    rc = entrypoint.main([])
+
+    assert rc != 0
+    assert cutover_called is False
+    assert not duckdb_path.exists()
+
+
 def test_entrypoint_exits_without_exec_when_preflight_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

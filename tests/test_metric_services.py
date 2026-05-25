@@ -652,6 +652,42 @@ def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path, monkeypatc
     assert easy["post_weekend_monday_form"] is not None
 
 
+def test_metric_services_use_duckdb_repository_for_duckdb_connections(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcp_strava.adapters.duckdb.connection import open_expected_mirror_db
+    from mcp_strava.application.metric_services import get_fitness_state_service, list_workouts_service
+    from tests.test_training_aggregates import _aggregate_fixture
+
+    _block_legacy_recompute(monkeypatch)
+    db_path = _aggregate_fixture(tmp_path / "primary.duckdb")
+    conn = open_expected_mirror_db(db_path)
+    try:
+        workouts = dc_to_dict(
+            list_workouts_service(
+                limit=1,
+                now=datetime.fromisoformat("2026-05-21T14:00:00"),
+                signal_first_use=False,
+                connection=conn,
+            )
+        )
+        fitness = dc_to_dict(
+            get_fitness_state_service(
+                now=datetime.fromisoformat("2026-05-21T14:00:00"),
+                signal_first_use=False,
+                connection=conn,
+            )
+        )
+    finally:
+        conn.close()
+
+    assert workouts["data"][0]["activity_id"] == 105
+    assert workouts["data"][0]["activity_date"] == "2026-06-01"
+    assert workouts["data"][0]["trimp"] == 999.0
+    assert fitness["data"]["fitness"] == 40.0
+
+
 def test_project_fitness_state_service_validates_custom_rows(tmp_path: Path) -> None:
     from mcp_strava.application.metric_services import project_fitness_state_service
 

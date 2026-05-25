@@ -7,11 +7,11 @@ from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 from statistics import median
 
-from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION, SQLiteRepository
+from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION
 from mcp_strava.application.freshness import build_freshness_metadata
 from mcp_strava.application.metric_registry import METRIC_REGISTRY
 from mcp_strava.constants import Config
-from mcp_strava.db import DbConn
+from mcp_strava.db import DbConn, repository_from_connection
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
 from mcp_strava.training import forward_simulate
@@ -179,7 +179,7 @@ def _next_day(day: str) -> str:
     return (date.fromisoformat(day) + timedelta(days=1)).isoformat()
 
 
-def _read_model_status(repo: SQLiteRepository) -> dict[str, object]:
+def _read_model_status(repo) -> dict[str, object]:
     return repo.read_model_status(metric_version=CURRENT_METRIC_VERSION)
 
 
@@ -295,7 +295,7 @@ def _latest_as_of_day(checked_at: datetime) -> str:
     return checked_at.date().isoformat()
 
 
-def _rolling_by_window(repo: SQLiteRepository, as_of_day: str) -> dict[int, object]:
+def _rolling_by_window(repo, as_of_day: str) -> dict[int, object]:
     return {
         window: repo.fetch_rolling_period_facts(
             as_of_day,
@@ -315,7 +315,7 @@ def get_fitness_state_service(
 ) -> ServiceEnvelope:
     checked_at = now or datetime.now()
     with _connection_context(connection) as conn:
-        repo = SQLiteRepository.from_connection(conn)
+        repo = repository_from_connection(conn)
         freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         as_of_day = _latest_as_of_day(checked_at)
@@ -361,7 +361,7 @@ def list_workouts_service(
     start_day = start_date or "0001-01-01"
     end_day = _next_day(end_date) if end_date else "9999-12-31"
     with _connection_context(connection) as conn:
-        repo = SQLiteRepository.from_connection(conn)
+        repo = repository_from_connection(conn)
         freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
         rows = repo.fetch_activity_metric_facts(
             start_day,
@@ -420,7 +420,7 @@ def get_workout_detail_service(
 ) -> ServiceEnvelope:
     checked_at = now or datetime.now()
     with _connection_context(connection) as conn:
-        repo = SQLiteRepository.from_connection(conn)
+        repo = repository_from_connection(conn)
         freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         resolved_id = repo.latest_activity_id() if activity_id == "latest" else int(activity_id)
@@ -671,7 +671,7 @@ def compare_periods_service(
 ) -> ServiceEnvelope:
     checked_at = now or datetime.now()
     with _connection_context(connection) as conn:
-        repo = SQLiteRepository.from_connection(conn)
+        repo = repository_from_connection(conn)
         freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         period_a_rows = repo.fetch_activity_metric_facts(
@@ -831,7 +831,7 @@ def _scenario_trimps(
     raise ValueError(f"Unsupported scenario: {scenario}")
 
 
-def _daily_trimp_history(repo: SQLiteRepository, start_day: str, end_day: str) -> dict[str, float]:
+def _daily_trimp_history(repo, start_day: str, end_day: str) -> dict[str, float]:
     rows = repo.fetch_daily_load_facts(start_day, _next_day(end_day), scope="all", metric_version=CURRENT_METRIC_VERSION)
     return {row["day"]: float(row["effective_trimp"] or 0.0) for row in rows}
 
@@ -860,7 +860,7 @@ def project_fitness_state_service(
 
     days = [today_day + timedelta(days=offset) for offset in range(horizon_days + 1)]
     with _connection_context(connection) as conn:
-        repo = SQLiteRepository.from_connection(conn)
+        repo = repository_from_connection(conn)
         freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         baseline = repo.fetch_latest_training_model_day(CURRENT_METRIC_VERSION, as_of_day=today_day.isoformat())
