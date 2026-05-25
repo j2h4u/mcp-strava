@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
-from statistics import median
 
 from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION
+from mcp_strava.application.aggregate_services import (
+    AggregateServiceRequest,
+    get_training_aggregates_service,
+)
 from mcp_strava.application.freshness import build_freshness_metadata
 from mcp_strava.application.metric_registry import METRIC_REGISTRY
 from mcp_strava.constants import Config
@@ -91,16 +94,6 @@ ROLLING_FACTS = {
     "volume_7d": (7, "activity_count", 1.0),
     "volume_28d": (28, "activity_count", 1.0),
 }
-
-COMPARE_PERIODS_HANDLERS = {
-    **{metric_id: "activity_metric_facts" for metric_id in ACTIVITY_SCALAR_FACTS},
-    "time_in_hr_zones_min": "activity_metric_facts",
-    **{metric_id: "training_model_daily" for metric_id in MODEL_FACTS},
-    **{metric_id: "rolling_period_facts" for metric_id in ROLLING_FACTS},
-}
-
-COMPARE_PERIODS_SKIP_REASONS: dict[str, str] = {}
-
 
 def _project_fitness_state_metrics(model, rolling: dict[int, object]) -> dict[str, object]:
     data: dict[str, object] = {}
@@ -474,187 +467,166 @@ def get_workout_detail_service(
     )
 
 
-def _compare_summary(values: list, comparison_mode: str):
-    scalar_values = [value for value in values if _is_number(value)]
-    if not scalar_values:
-        return None
-    if comparison_mode == "sum":
-        return round(float(sum(scalar_values)), 3)
-    if comparison_mode == "avg":
-        return round(float(sum(scalar_values) / len(scalar_values)), 3)
-    if comparison_mode == "median":
-        return round(float(median(scalar_values)), 3)
-    if comparison_mode == "last":
-        return round(float(scalar_values[-1]), 3)
-    if comparison_mode == "min":
-        return round(float(min(scalar_values)), 3)
-    if comparison_mode == "max":
-        return round(float(max(scalar_values)), 3)
-    if comparison_mode == "trend":
-        if len(scalar_values) < 2:
-            return None
-        return round(float(scalar_values[-1] - scalar_values[0]), 3)
-    return None
+def _aggregate_rows(envelope: ServiceEnvelope) -> list[dict[str, object]]:
+    data = envelope.data if isinstance(envelope.data, dict) else {}
+    rows = data.get("rows", [])
+    return [row for row in rows if isinstance(row, dict)]
 
 
-def _version_status(rows_a: list, rows_b: list) -> str:
-    versions = {int(row["metric_version"]) for row in rows_a + rows_b if row["metric_version"] is not None}
-    if not versions:
-        return "missing"
-    if len(versions) > 1:
-        return "mixed"
-    return "consistent"
+def _compare_row_key(row: dict[str, object]) -> tuple[str, str | None, str]:
+    scope = str(row.get("scope") or "global")
+    metric_id = str(row["metric_id"])
+    if scope == "per_sport":
+        return scope, str(row.get("sport_type") or "unknown"), metric_id
+    return "global", None, metric_id
 
 
-def compare_scalar_metric(
-    metric_id: str,
-    comparison_mode: str,
-    values_a: list,
-    values_b: list,
-    missing_a: list[str],
-    missing_b: list[str],
-    rows_a: list | None = None,
-    rows_b: list | None = None,
-) -> dict[str, object]:
-    a_value = _compare_summary(values_a, comparison_mode)
-    b_value = _compare_summary(values_b, comparison_mode)
-    missing = sorted(set(missing_a + missing_b))
-    if not values_a:
-        missing.append("no_activity_in_period")
-    if not values_b:
-        missing.append("no_activity_in_period")
-    missing = sorted(set(missing))
-    delta = round(a_value - b_value, 3) if _is_number(a_value) and _is_number(b_value) else None
-    delta_pct = round((delta / b_value) * 100, 2) if _is_number(delta) and _is_number(b_value) and b_value != 0 else None
+def _compare_rows_by_key(rows: list[dict[str, object]]) -> dict[tuple[str, str | None, str], dict[str, object]]:
+    return {_compare_row_key(row): row for row in rows}
+
+
+def _row_missing_reasons(row: dict[str, object] | None) -> list[str]:
+    if row is None:
+        return ["no_activity_in_period"]
+    reasons = row.get("missing_reasons") or []
+    return [str(reason) for reason in reasons if reason]
+
+
+def _row_sample_size(row: dict[str, object] | None) -> int:
+    if row is None:
+        return 0
+    return int(row.get("sample_size") or 0)
+
+
+def _row_activity_count(row: dict[str, object] | None) -> int:
+    if row is None:
+        return 0
+    return int(row.get("activity_count") or 0)
+
+
+def _coverage_value(row: dict[str, object] | None) -> float:
+    if row is None or str(row.get("completeness_status")) == "unavailable":
+        return 0.0
+    if str(row.get("completeness_status")) == "partial":
+        return 0.5
+    return 1.0
+
+
+def _period_record(row: dict[str, object] | None) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "sample_size": _row_sample_size(row),
+        "activity_count": _row_activity_count(row),
+        "completeness_status": str(row.get("completeness_status")) if row is not None else "unavailable",
+        "missing_reasons": _row_missing_reasons(row),
+        "metric_version_status": str(row.get("metric_version_status")) if row is not None else "unavailable",
+        "bucket_start": row.get("bucket_start") if row is not None else None,
+        "bucket_end": row.get("bucket_end") if row is not None else None,
+    }
+    distribution = row.get("distribution") if row is not None else None
+    if isinstance(distribution, dict):
+        payload["buckets"] = distribution
+    else:
+        payload["value"] = row.get("value") if row is not None else None
+    return payload
+
+
+def _metric_version_status(row_a: dict[str, object] | None, row_b: dict[str, object] | None) -> str:
+    statuses = {
+        str(row.get("metric_version_status"))
+        for row in (row_a, row_b)
+        if row is not None and row.get("metric_version_status") is not None
+    }
+    if not statuses:
+        return "unavailable"
+    if "mixed_degraded" in statuses:
+        return "mixed_degraded"
+    if "mixed_allowed" in statuses:
+        return "mixed_allowed"
+    if len(statuses) == 1:
+        return next(iter(statuses))
+    return "mixed_degraded"
+
+
+def _distribution_delta(
+    row_a: dict[str, object] | None,
+    row_b: dict[str, object] | None,
+) -> tuple[dict[str, float], dict[str, float | None], float | None]:
+    buckets_a = row_a.get("distribution") if row_a is not None and isinstance(row_a.get("distribution"), dict) else {}
+    buckets_b = row_b.get("distribution") if row_b is not None and isinstance(row_b.get("distribution"), dict) else {}
+    keys = sorted(set(buckets_a) | set(buckets_b))
+    deltas: dict[str, float] = {}
+    delta_pct: dict[str, float | None] = {}
+    for key in keys:
+        a_value = float(buckets_a.get(key) or 0.0)
+        b_value = float(buckets_b.get(key) or 0.0)
+        delta = round(a_value - b_value, 3)
+        deltas[key] = delta
+        delta_pct[key] = round((delta / b_value) * 100, 2) if b_value else None
+    total_a = sum(float(value or 0.0) for value in buckets_a.values())
+    total_b = sum(float(value or 0.0) for value in buckets_b.values())
+    overlap = None
+    if total_a > 0 and total_b > 0:
+        overlap = round((sum(min(float(buckets_a.get(key) or 0.0), float(buckets_b.get(key) or 0.0)) for key in keys) / max(total_a, total_b)) * 100, 2)
+    return deltas, delta_pct, overlap
+
+
+def _compare_aggregate_pair(row_a: dict[str, object] | None, row_b: dict[str, object] | None) -> dict[str, object]:
+    period_a = _period_record(row_a)
+    period_b = _period_record(row_b)
+    missing = sorted(set(_row_missing_reasons(row_a) + _row_missing_reasons(row_b)))
+    distribution_a = row_a is not None and isinstance(row_a.get("distribution"), dict)
+    distribution_b = row_b is not None and isinstance(row_b.get("distribution"), dict)
+    if distribution_a or distribution_b:
+        bucket_deltas, bucket_delta_pct, overlap = _distribution_delta(row_a, row_b)
+        return {
+            "period_a": period_a,
+            "period_b": period_b,
+            "bucket_deltas": bucket_deltas,
+            "bucket_delta_pct": bucket_delta_pct,
+            "distribution_overlap_pct": overlap,
+            "delta": None,
+            "delta_pct": None,
+            "trend_direction": "unavailable",
+            "sample_size": {"period_a": _row_sample_size(row_a), "period_b": _row_sample_size(row_b)},
+            "coverage": {"period_a": _coverage_value(row_a), "period_b": _coverage_value(row_b)},
+            "missing_reasons": missing,
+            "metric_version_status": _metric_version_status(row_a, row_b),
+        }
+
+    value_a = period_a.get("value")
+    value_b = period_b.get("value")
+    delta = round(float(value_a) - float(value_b), 3) if _is_number(value_a) and _is_number(value_b) else None
+    delta_pct = round((delta / float(value_b)) * 100, 2) if _is_number(delta) and _is_number(value_b) and float(value_b) != 0 else None
     trend = "unavailable"
     if _is_number(delta):
-        trend = "flat" if abs(delta) < 1e-9 else ("up" if delta > 0 else "down")
+        trend = "flat" if abs(float(delta)) < 1e-9 else ("up" if float(delta) > 0 else "down")
     return {
-        "period_a": {"value": a_value, "sample_size": len(values_a)},
-        "period_b": {"value": b_value, "sample_size": len(values_b)},
+        "period_a": period_a,
+        "period_b": period_b,
         "delta": delta,
         "delta_pct": delta_pct,
         "trend_direction": trend,
-        "sample_size": {"period_a": len(values_a), "period_b": len(values_b)},
-        "coverage": {"period_a": 1.0 if values_a else 0.0, "period_b": 1.0 if values_b else 0.0},
+        "sample_size": {"period_a": _row_sample_size(row_a), "period_b": _row_sample_size(row_b)},
+        "coverage": {"period_a": _coverage_value(row_a), "period_b": _coverage_value(row_b)},
         "missing_reasons": missing,
-        "metric_version_status": _version_status(rows_a or [], rows_b or []),
+        "metric_version_status": _metric_version_status(row_a, row_b),
     }
 
 
-def compare_distribution_metric(values_a: list, values_b: list, missing_a: list[str], missing_b: list[str], rows_a: list | None = None, rows_b: list | None = None) -> dict[str, object]:
-    missing = sorted(set(missing_a + missing_b))
-    if not values_a or not values_b:
-        missing = sorted(set(missing + ["no_activity_in_period"]))
-    zone_count = 5
-    buckets_a = {f"z{i + 1}": 0.0 for i in range(zone_count)}
-    buckets_b = {f"z{i + 1}": 0.0 for i in range(zone_count)}
-    for zones in values_a:
-        if not isinstance(zones, list):
-            continue
-        for idx, value in enumerate(zones[:zone_count]):
-            buckets_a[f"z{idx + 1}"] += float(value or 0.0)
-    for zones in values_b:
-        if not isinstance(zones, list):
-            continue
-        for idx, value in enumerate(zones[:zone_count]):
-            buckets_b[f"z{idx + 1}"] += float(value or 0.0)
-    for key in buckets_a:
-        buckets_a[key] = round(buckets_a[key], 2)
-        buckets_b[key] = round(buckets_b[key], 2)
-    bucket_deltas = {key: round(buckets_a[key] - buckets_b[key], 2) for key in buckets_a}
-    bucket_delta_pct = {
-        key: (round((bucket_deltas[key] / buckets_b[key]) * 100, 2) if buckets_b[key] else None) for key in buckets_a
-    }
-    total_a = sum(buckets_a.values())
-    total_b = sum(buckets_b.values())
-    overlap = None
-    if total_a > 0 and total_b > 0:
-        overlap = round((sum(min(buckets_a[k], buckets_b[k]) for k in buckets_a) / max(total_a, total_b)) * 100, 2)
-    elif "insufficient_history" not in missing:
-        missing.append("insufficient_history")
-    return {
-        "period_a": {"buckets": buckets_a, "sample_size": len(values_a)},
-        "period_b": {"buckets": buckets_b, "sample_size": len(values_b)},
-        "bucket_deltas": bucket_deltas,
-        "bucket_delta_pct": bucket_delta_pct,
-        "distribution_overlap_pct": overlap,
-        "delta": None,
-        "delta_pct": None,
-        "trend_direction": "unavailable",
-        "sample_size": {"period_a": len(values_a), "period_b": len(values_b)},
-        "coverage": {"period_a": 1.0 if values_a else 0.0, "period_b": 1.0 if values_b else 0.0},
-        "missing_reasons": sorted(set(missing)),
-        "metric_version_status": _version_status(rows_a or [], rows_b or []),
-    }
-
-
-def _values_for_metric(metric_id: str, rows: list) -> tuple[list, list[str]]:
-    values: list = []
-    missing: list[str] = []
-    for row in rows:
-        value = _activity_value(row, metric_id)
-        if value is None:
-            missing.extend(_parse_json_list(row["missing_reasons_json"]) or ["metric_not_applicable"])
-        else:
-            values.append(value)
-    return values, sorted(set(missing))
-
-
-def _compare_metric_from_rows(metric, rows_a: list, rows_b: list) -> dict[str, object]:
-    values_a, missing_a = _values_for_metric(metric.metric_id, rows_a)
-    values_b, missing_b = _values_for_metric(metric.metric_id, rows_b)
-    if metric.comparison_mode == "distribution":
-        return compare_distribution_metric(values_a, values_b, missing_a, missing_b, rows_a, rows_b)
-    return compare_scalar_metric(
-        metric.metric_id,
-        metric.comparison_mode,
-        values_a,
-        values_b,
-        missing_a,
-        missing_b,
-        rows_a,
-        rows_b,
-    )
-
-
-def _compare_model_metric(metric, model_a, model_b) -> dict[str, object]:
-    column = MODEL_FACTS[metric.metric_id]
-    value_a = model_a[column] if model_a is not None else None
-    value_b = model_b[column] if model_b is not None else None
-    rows_a = [model_a] if model_a is not None else []
-    rows_b = [model_b] if model_b is not None else []
-    return compare_scalar_metric(
-        metric.metric_id,
-        metric.comparison_mode,
-        [value_a] if value_a is not None else [],
-        [value_b] if value_b is not None else [],
-        [] if value_a is not None else ["insufficient_history"],
-        [] if value_b is not None else ["insufficient_history"],
-        rows_a,
-        rows_b,
-    )
-
-
-def _compare_rolling_metric(metric, rolling_a: dict[int, object], rolling_b: dict[int, object]) -> dict[str, object]:
-    window, column, scale = ROLLING_FACTS[metric.metric_id]
-    row_a = rolling_a.get(window)
-    row_b = rolling_b.get(window)
-    value_a = row_a[column] if row_a is not None else None
-    value_b = row_b[column] if row_b is not None else None
-    scaled_a = round(float(value_a) * scale, 3) if value_a is not None else None
-    scaled_b = round(float(value_b) * scale, 3) if value_b is not None else None
-    rows_a = [row_a] if row_a is not None else []
-    rows_b = [row_b] if row_b is not None else []
-    return compare_scalar_metric(
-        metric.metric_id,
-        metric.comparison_mode,
-        [scaled_a] if scaled_a is not None else [],
-        [scaled_b] if scaled_b is not None else [],
-        [] if scaled_a is not None else ["insufficient_history"],
-        [] if scaled_b is not None else ["insufficient_history"],
-        rows_a,
-        rows_b,
+def _compare_request(
+    *,
+    start_day: str,
+    end_day_exclusive: str,
+    sport: str | None,
+) -> AggregateServiceRequest:
+    return AggregateServiceRequest(
+        metric_ids=(),
+        bundle_id="period_comparison",
+        bucket="all_time",
+        start_day=start_day,
+        end_day_exclusive=end_day_exclusive,
+        scope="both",
+        sport_filter=sport,
     )
 
 
@@ -671,75 +643,42 @@ def compare_periods_service(
 ) -> ServiceEnvelope:
     checked_at = now or datetime.now()
     with _connection_context(connection) as conn:
-        repo = repository_from_connection(conn)
-        freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
-        read_model = _read_model_status(repo)
-        period_a_rows = repo.fetch_activity_metric_facts(
-            period_a_start,
-            _next_day(period_a_end),
-            sport=sport,
-            metric_version=CURRENT_METRIC_VERSION,
+        period_a_envelope = get_training_aggregates_service(
+            _compare_request(
+                start_day=period_a_start,
+                end_day_exclusive=period_a_end,
+                sport=sport,
+            ),
+            now=checked_at,
+            signal_first_use=signal_first_use,
+            connection=conn,
         )
-        period_b_rows = repo.fetch_activity_metric_facts(
-            period_b_start,
-            _next_day(period_b_end),
-            sport=sport,
-            metric_version=CURRENT_METRIC_VERSION,
+        period_b_envelope = get_training_aggregates_service(
+            _compare_request(
+                start_day=period_b_start,
+                end_day_exclusive=period_b_end,
+                sport=sport,
+            ),
+            now=checked_at,
+            signal_first_use=False,
+            connection=conn,
         )
-        model_a = repo.fetch_latest_training_model_day(
-            CURRENT_METRIC_VERSION,
-            as_of_day=period_a_end,
-        )
-        model_b = repo.fetch_latest_training_model_day(
-            CURRENT_METRIC_VERSION,
-            as_of_day=period_b_end,
-        )
-        rolling_windows = sorted({spec[0] for spec in ROLLING_FACTS.values()})
-        rolling_a = {
-            window: repo.fetch_rolling_period_facts(
-                period_a_end,
-                window,
-                scope="all",
-                metric_version=CURRENT_METRIC_VERSION,
-            )
-            for window in rolling_windows
-        }
-        rolling_b = {
-            window: repo.fetch_rolling_period_facts(
-                period_b_end,
-                window,
-                scope="all",
-                metric_version=CURRENT_METRIC_VERSION,
-            )
-            for window in rolling_windows
-        }
-        sports = sorted(set([row["sport_type"] for row in period_a_rows + period_b_rows]))
 
+    period_a_by_key = _compare_rows_by_key(_aggregate_rows(period_a_envelope))
+    period_b_by_key = _compare_rows_by_key(_aggregate_rows(period_b_envelope))
+    keys = sorted(set(period_a_by_key) | set(period_b_by_key))
     global_section = {"scope_filter": "sport" if sport else "all", "metrics": {}}
     per_sport_section: dict[str, dict[str, object]] = {}
-    for metric in METRIC_REGISTRY.values():
-        if "compare_periods" not in metric.exposed_in or metric.comparison_mode == "none":
-            continue
-        if metric.metric_id in MODEL_FACTS:
-            global_section["metrics"][metric.metric_id] = _compare_model_metric(metric, model_a, model_b)
-            continue
-        if metric.metric_id in ROLLING_FACTS:
-            global_section["metrics"][metric.metric_id] = _compare_rolling_metric(metric, rolling_a, rolling_b)
-            continue
-        if metric.metric_id not in ACTIVITY_SCALAR_FACTS and metric.metric_id != "time_in_hr_zones_min":
-            continue
-        if metric.sport_scope in {"global", "both"}:
-            global_section["metrics"][metric.metric_id] = _compare_metric_from_rows(metric, period_a_rows, period_b_rows)
-        if metric.sport_scope in {"per_sport", "both"}:
-            for sport_name in sports:
-                if sport is not None and sport_name != sport:
-                    continue
-                a_rows = [row for row in period_a_rows if row["sport_type"] == sport_name]
-                b_rows = [row for row in period_b_rows if row["sport_type"] == sport_name]
-                if not a_rows and not b_rows:
-                    continue
-                per_sport_section.setdefault(sport_name, {"metrics": {}})
-                per_sport_section[sport_name]["metrics"][metric.metric_id] = _compare_metric_from_rows(metric, a_rows, b_rows)
+    for scope, sport_name, metric_id in keys:
+        comparison = _compare_aggregate_pair(period_a_by_key.get((scope, sport_name, metric_id)), period_b_by_key.get((scope, sport_name, metric_id)))
+        if scope == "per_sport":
+            if sport is not None and sport_name != sport:
+                continue
+            resolved_sport = sport_name or "unknown"
+            per_sport_section.setdefault(resolved_sport, {"metrics": {}})
+            per_sport_section[resolved_sport]["metrics"][metric_id] = comparison
+        else:
+            global_section["metrics"][metric_id] = comparison
 
     data = {
         "periods": {
@@ -749,6 +688,7 @@ def compare_periods_service(
         "global": global_section,
         "per_sport": per_sport_section,
     }
+    read_model = period_a_envelope.completeness.coverage.get("read_model", {})
     completeness = CompletenessMetadata(
         status=_status_from_read_model(read_model, has_data=True, missing=[]),
         missing=[],
@@ -756,15 +696,16 @@ def compare_periods_service(
             "global_metrics": sorted(global_section["metrics"].keys()),
             "per_sport": sorted(per_sport_section.keys()),
             "supported_missing_reasons": sorted(COMPARISON_MISSING_REASONS),
-            "read_model": read_model,
+            "read_model": period_a_envelope.completeness.coverage.get("read_model", {}),
+            "period_b_read_model": period_b_envelope.completeness.coverage.get("read_model", {}),
         },
     )
     return ServiceEnvelope(
         data=data,
-        freshness=freshness,
+        freshness=period_a_envelope.freshness,
         completeness=completeness,
-        warnings=[],
-        rationale=_rationale("Period comparison returns factual read-model metric deltas and coverage only."),
+        warnings=[*period_a_envelope.warnings, *period_b_envelope.warnings],
+        rationale=_rationale("Period comparison formats two bounded all-time aggregate requests over prepared local metric facts."),
     )
 
 

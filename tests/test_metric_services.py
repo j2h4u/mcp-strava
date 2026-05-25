@@ -12,7 +12,13 @@ import pytest
 from mcp_strava.adapters.duckdb.connection import open_fixture_db
 from mcp_strava.adapters.sqlite.migrations import run_migrations
 from mcp_strava.application.metric_registry import METRIC_REGISTRY, metrics_for_aggregate_bundle
-from mcp_strava.types import FreshnessMetadata, ServiceEnvelope, dc_to_dict
+from mcp_strava.types import (
+    CompletenessMetadata,
+    FreshnessMetadata,
+    ServiceEnvelope,
+    ServiceRationale,
+    dc_to_dict,
+)
 from tests.test_read_model_queries import READ_MODEL_METADATA_KEYS, _repo_with_facts
 from tests.test_training_aggregates import _aggregate_fixture
 

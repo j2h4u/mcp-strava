@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 import calendar
 import json
@@ -53,7 +53,7 @@ class AggregateRow:
     denominator: str | None
     value: float | int | str | None
     quantiles: dict[str, float] | None
-    distribution: dict[str, int] | None
+    distribution: dict[str, float | int] | None
     sample_size: int
     activity_count: int
     null_count: int
@@ -144,7 +144,7 @@ _QUANTILE_LABELS = ("p25", "median", "p75")
 def validate_aggregate_request(request: AggregateRequest) -> tuple[MetricDefinition, ...]:
     if request.bucket not in SUPPORTED_AGGREGATE_BUCKETS:
         raise ValueError(f"Unsupported aggregate bucket: {request.bucket}")
-    if request.scope not in {"global", "per_sport"}:
+    if request.scope not in {"global", "per_sport", "both"}:
         raise ValueError(f"Unsupported aggregate scope: {request.scope}")
     if request.sport_filter is not None and request.sport_filter not in ALL_SPORTS:
         raise ValueError(f"Unsupported sport filter: {request.sport_filter}")
@@ -188,8 +188,9 @@ def query_training_aggregates(conn, request: AggregateRequest) -> list[Aggregate
     definitions = validate_aggregate_request(request)
     rows: list[AggregateRow] = []
     for metric in definitions:
-        effective_start, effective_end = _effective_range_for_metric(conn, request, metric)
-        rows.extend(_query_metric(conn, request, metric, effective_start, effective_end))
+        for scoped_request in _scoped_requests_for_metric(request, metric):
+            effective_start, effective_end = _effective_range_for_metric(conn, scoped_request, metric)
+            rows.extend(_query_metric(conn, scoped_request, metric, effective_start, effective_end))
     return sorted(rows, key=lambda row: (row.bucket_start, row.metric_id, row.sport_type or ""))
 
 
@@ -212,11 +213,27 @@ def _metric_definition(metric_id: str) -> MetricDefinition:
 
 
 def _validate_metric_scope(metric: MetricDefinition, scope: str) -> None:
+    if scope == "both":
+        if not set(metric.supported_scopes) & {"global", "per_sport", "both"}:
+            raise ValueError(f"Metric {metric.metric_id} has no supported aggregate scope")
+        return
     scopes = set(metric.supported_scopes)
     if scope == "global" and not ({"global", "both"} & scopes):
         raise ValueError(f"Metric {metric.metric_id} does not support global scope")
     if scope == "per_sport" and not ({"per_sport", "both"} & scopes):
         raise ValueError(f"Metric {metric.metric_id} does not support per_sport scope")
+
+
+def _scoped_requests_for_metric(request: AggregateRequest, metric: MetricDefinition) -> tuple[AggregateRequest, ...]:
+    if request.scope != "both":
+        return (request,)
+    scopes = set(metric.supported_scopes)
+    requests: list[AggregateRequest] = []
+    if {"global", "both"} & scopes:
+        requests.append(replace(request, scope="global"))
+    if {"per_sport", "both"} & scopes:
+        requests.append(replace(request, scope="per_sport"))
+    return tuple(requests)
 
 
 def _parse_day(value: str, field_name: str) -> date:
@@ -397,6 +414,8 @@ def _query_distribution(
     effective_start: date,
     effective_end: date,
 ) -> list[AggregateRow]:
+    if metric.metric_id == "time_in_hr_zones_min":
+        return _query_hr_zone_distribution(conn, request, metric, effective_start, effective_end)
     source = str(metric.aggregate_source)
     view = _SOURCE_VIEWS[source]
     day_column = _SOURCE_DAY_COLUMNS[source]
@@ -471,6 +490,69 @@ def _query_distribution(
     return [_aggregate_row_from_group(metric, request, effective_start, effective_end, row) for row in grouped.values()]
 
 
+def _query_hr_zone_distribution(
+    conn,
+    request: AggregateRequest,
+    metric: MetricDefinition,
+    effective_start: date,
+    effective_end: date,
+) -> list[AggregateRow]:
+    source = str(metric.aggregate_source)
+    view = _SOURCE_VIEWS[source]
+    day_column = _SOURCE_DAY_COLUMNS[source]
+    bucket_expr = _bucket_expression(request, day_column, effective_start)
+    sport_expr = _sport_output_expression(request)
+    where, params = _where_clause(source, request, effective_start, effective_end)
+    statement = f"""
+        WITH prepared AS (
+            SELECT
+                {bucket_expr} AS bucket_start,
+                {sport_expr} AS output_sport_type,
+                zone1_seconds,
+                zone2_seconds,
+                zone3_seconds,
+                zone4_seconds,
+                zone5_seconds,
+                heartrate_sample_count,
+                activity_count,
+                metric_version,
+                computed_at,
+                completeness_status,
+                missing_reasons_json
+            FROM {view}
+            WHERE {where}
+        )
+        SELECT
+            bucket_start,
+            output_sport_type,
+            SUM(COALESCE(zone1_seconds, 0)) / 60.0 AS z1,
+            SUM(COALESCE(zone2_seconds, 0)) / 60.0 AS z2,
+            SUM(COALESCE(zone3_seconds, 0)) / 60.0 AS z3,
+            SUM(COALESCE(zone4_seconds, 0)) / 60.0 AS z4,
+            SUM(COALESCE(zone5_seconds, 0)) / 60.0 AS z5,
+            COUNT(*) AS row_count,
+            SUM(COALESCE(activity_count, 0)) AS activity_count,
+            SUM(CASE WHEN heartrate_sample_count IS NULL OR heartrate_sample_count <= 0 THEN 1 ELSE 0 END) AS excluded_count,
+            0 AS null_count,
+            SUM(COALESCE(heartrate_sample_count, 0)) AS sample_size,
+            COUNT(DISTINCT metric_version) AS metric_version_count,
+            MAX(computed_at) AS materialized_at,
+            list(DISTINCT completeness_status) AS completeness_statuses,
+            list(missing_reasons_json) AS missing_reason_payloads
+        FROM prepared
+        GROUP BY bucket_start, output_sport_type
+        ORDER BY bucket_start, output_sport_type
+    """
+    rows = []
+    for row in _rows(conn.execute(statement, params)):
+        row["distribution"] = {
+            f"z{idx}": float(row[f"z{idx}"] or 0.0)
+            for idx in range(1, 6)
+        }
+        rows.append(_aggregate_row_from_group(metric, request, effective_start, effective_end, row))
+    return rows
+
+
 def _rows(result) -> list[dict[str, object]]:
     columns = [item[0] for item in result.description]
     return [dict(zip(columns, row, strict=False)) for row in result.fetchall()]
@@ -524,6 +606,8 @@ def _where_clause(
 
 
 def _value_expression(metric: MetricDefinition) -> str:
+    if metric.metric_id == "time_in_hr_zones_min":
+        return "zone1_seconds"
     if metric.aggregate_mode == "ratio_of_sums" and metric.numerator_column is not None:
         return _column_expression(metric.numerator_column, metric.metric_id)
     if metric.metric_id in _METRIC_VALUE_EXPRESSIONS:

@@ -16,6 +16,7 @@ MCP_TOOL_IDS = (
     "get_workout_detail",
     "compare_periods",
     "project_fitness_state",
+    "get_training_aggregates",
 )
 
 AGGREGATE_MODES = (
@@ -750,14 +751,30 @@ def _apply_aggregate_metadata() -> None:
     for metric_id, metadata in _AGGREGATE_METADATA_BY_METRIC_ID.items():
         if metric_id not in METRIC_REGISTRY:
             raise ValueError(f"Unknown aggregate metric id: {metric_id}")
+        exposed_in = list(METRIC_REGISTRY[metric_id].exposed_in)
+        if "get_training_aggregates" not in exposed_in:
+            exposed_in.append("get_training_aggregates")
         METRIC_REGISTRY[metric_id] = replace(
             METRIC_REGISTRY[metric_id],
             bundle_ids=_bundle_ids_by_metric_id(metric_id),
+            exposed_in=exposed_in,
             **metadata,
         )
 
 
 _apply_aggregate_metadata()
+
+
+def _apply_compare_periods_exposure() -> None:
+    compare_metrics = set(AGGREGATE_METRIC_BUNDLES["period_comparison"])
+    for metric_id, metric in tuple(METRIC_REGISTRY.items()):
+        exposed_in = [tool_id for tool_id in metric.exposed_in if tool_id != "compare_periods"]
+        if metric_id in compare_metrics and metric.comparison_mode != "none":
+            exposed_in.append("compare_periods")
+        METRIC_REGISTRY[metric_id] = replace(metric, exposed_in=exposed_in)
+
+
+_apply_compare_periods_exposure()
 
 
 EXCLUDED_INTERPRETATIONS: dict[str, ExcludedInterpretation] = {
