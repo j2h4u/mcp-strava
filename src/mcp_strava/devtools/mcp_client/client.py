@@ -308,7 +308,7 @@ def default_warm_latency_calls(*, workout_id: int, today: str | date | None = No
                 "end_date": today_date.isoformat(),
                 "bucket": "week",
                 "metric_bundle": "weekly_digest",
-                "scope": "global",
+                "scope": "both",
             },
         },
     ]
@@ -446,7 +446,7 @@ async def run_live_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, An
                 "end_date": today.isoformat(),
                 "bucket": "week",
                 "metric_bundle": "weekly_digest",
-                "scope": "global",
+                "scope": "both",
             },
         ),
     )

@@ -129,7 +129,7 @@ def test_default_warm_latency_calls_include_training_aggregates() -> None:
         "end_date": "2026-05-24",
         "bucket": "week",
         "metric_bundle": "weekly_digest",
-        "scope": "global",
+        "scope": "both",
     }
 
 
