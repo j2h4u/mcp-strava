@@ -2,6 +2,37 @@
 
 This is the core metric inventory. `exposed_in` lists MCP tools that currently expose a metric; `core-only` means the metric is still a first-class core/report/analytics metric but is not currently emitted by an MCP tool.
 
+## Aggregate Registry Contract
+
+This section is drift-tested against `src/mcp_strava/application/metric_registry.py`. Aggregation semantics are defined in registry metadata and are not duplicated as alternate metric ids.
+
+Supported aggregate modes: `sum`, `calendar_average`, `weighted_average`, `ratio_of_sums`, `quantile`, `last_state`, `distribution`, `kudos_count`.
+
+Supported buckets: `day`, `week`, `month`, `year`, `all_time`. Week buckets use Monday start. Date ranges are half-open: `[start_day, end_day_exclusive)`.
+
+Supported rolling windows: `7`, `14`, `28`, `42`, `90` days.
+
+Supported scopes: `global`, `per_sport`, `both`. Gear and equipment are not aggregate scopes or bundle dimensions.
+
+Default quantiles for distribution context: `p25`, `median`, `p75`. Quantile metrics expose a sample-size field so low-sample buckets can be represented as facts.
+
+Denominator and provenance terms currently used by aggregate metadata: `activity_count`, `activity_sample_count`, `active_day_count`, `calendar_day_count`, `calendar_days`, `cardiac_drift_significant`, `distance_m`, `effective_trimp`, `elapsed_time_s`, `elevation_gain_m`, `heartrate_sample_count`, `latest_day`, `model_day_count`, `moving_time_s`, `rest_day_count`, `rolling_sample_count`, `trimp`, `vertical_speed_duration_hours`, `vertical_speed_total_ascent_m`.
+
+Registry aggregate bundles:
+
+| bundle_id | metric_ids |
+|---|---|
+| `daily_brief` | `fitness`, `fatigue`, `form`, `form_zone`, `acwr`, `acwr_zone`, `weekly_trimp`, `total_trimp_14d`, `avg_trimp_per_day`, `active_days`, `rest_days`, `daily_avg_trimp_7d`, `rolling_median_cc`, `rolling_median_hr_recovery`, `kudos_count` |
+| `weekly_digest` | `trimp`, `distance_km`, `moving_time_min`, `elapsed_time_min`, `elevation_m`, `active_days`, `weekly_trimp`, `volume_7d`, `avg_hr`, `max_hr`, `cardiac_cost`, `cardiac_cost_adjusted`, `cardiac_drift_pct`, `hrr_pct` |
+| `monthly_digest` | `trimp`, `distance_km`, `moving_time_min`, `elevation_m`, `active_days`, `volume_28d`, `daily_avg_trimp_28d`, `daily_avg_trimp_90d`, `fitness`, `fatigue`, `form` |
+| `period_comparison` | `trimp`, `distance_km`, `moving_time_min`, `elapsed_time_min`, `elevation_m`, `active_days`, `rest_days`, `fitness`, `fatigue`, `form`, `acwr`, `avg_hr`, `max_hr`, `hr_recovery_median_bpm_per_min`, `vertical_speed_m_per_h`, `cardiac_cost`, `cardiac_cost_adjusted`, `cardiac_drift_pct`, `hrr_pct`, `cardiac_drift_significant`, `time_in_hr_zones_min` |
+| `sport_efficiency` | `avg_hr`, `hr_recovery_median_bpm_per_min`, `vertical_speed_m_per_h`, `cardiac_cost`, `cardiac_cost_adjusted`, `cardiac_drift_pct`, `hrr_pct`, `rolling_median_cc`, `rolling_median_cc_adj`, `rolling_median_hr_recovery`, `rolling_median_cardiac_drift_pct` |
+| `historical_facts` | `sport_type`, `form_zone`, `acwr_zone`, `cardiac_drift_severity`, `cardiac_drift_quality`, `kudos_count`, `active_days`, `activity_streak_days`, `rest_streak_days`, `last_hike_days_ago` |
+
+Aggregate rows carry bucket start/end, bucket width, `metric_id`, `unit`, `aggregate_mode`, denominator metadata, value, sample size, activity count, null/excluded count, completeness status, missing reasons, metric version status, materialized timestamp, mirror freshness, and read-model freshness.
+
+## Metric Inventory
+
 | metric_id | unit | scope | sport_scope | comparison_mode | directionality | exposed_in | calculation |
 |---|---|---|---|---|---|---|---|
 | active_days | count | period | global | sum | higher_is_more | get_fitness_state, compare_periods | Count of days with activity_count > 0 in the 14-day rolling window. |
