@@ -143,3 +143,60 @@ Below are findings at each severity level.
 2. **H-2:** DuckDB runtime file path is not pinned — risk of misconfiguration at cutover.
 
 `None` if both are resolved per their remediation sections above.
+
+---
+
+# Phase 8 Review Convergence
+
+Phase: 08 — DuckDB Primary Storage & Aggregate Analytics Surface
+Cycle: 2
+Reviewers: claude, opencode
+Generated: 2026-05-25
+
+CYCLE_SUMMARY: current_high=0
+
+## Current HIGH Concerns
+
+None.
+
+## Claude Review
+
+Claude rechecked the revised plans against the previous Cycle 1 HIGHs and found both blocking issues resolved.
+
+- OpenCode H-1, DuckDB read-model materializer/refit: resolved. `08-03-PLAN.md` now creates or explicitly refits `src/mcp_strava/adapters/duckdb/read_model_materializer.py`, requires the post-cutover import path to resolve to the DuckDB writer, and adds tests proving fact writes and dirty clearing land in DuckDB. `08-04-PLAN.md` routes refresh/backfill materialization through that 08-03 entrypoint.
+- OpenCode H-2, canonical DuckDB runtime path: resolved. `/runtime/data/strava.duckdb` is now pinned across migration, settings/runtime cutover, Docker/healthcheck/topology, live cutover, rollback, and tests.
+
+New current findings are not HIGH:
+
+- MEDIUM: `avg_hr` and `max_hr` aggregate-source semantics should be pinned explicitly in `08-06`/`08-05` so `compare_periods` parity is not accidentally lost when the row-scanning path is removed.
+- MEDIUM: `08-VALIDATION.md` per-task verification map has some mislabeled owning plan numbers, but individual plan verify commands are correct.
+- LOW: document that rolling window `42` is computed from `daily_load_facts`, not read from the existing physical `rolling_period_facts` table.
+- LOW: DuckDB schema/DML porting details such as sequences, upsert syntax, and row-helper behavior are implied by the plans but should be kept visible during execution.
+
+Claude's conclusion:
+
+## Current HIGH Concerns
+
+None.
+
+## OpenCode Review
+
+OpenCode also rechecked the revised plans and found both Cycle 1 HIGHs resolved.
+
+- H-1 resolved: `08-03` now includes `src/mcp_strava/adapters/duckdb/read_model_materializer.py`, explicitly creates/refits it, and `08-04` routes owner-process refresh through that DuckDB materializer.
+- H-2 resolved: `/runtime/data/strava.duckdb` is pinned in `08-02`, `08-03`, `08-04`, and `08-08` for migration, runtime, Docker, healthcheck, live validation, and rollback.
+
+New current findings are not HIGH:
+
+- MEDIUM: `08-04` should state that background refresh exceptions are contained, logged, lease-failed/expired, and retried later without killing the MCP serving thread.
+- MEDIUM: `08-03` should specify the repository factory detection rule for `.duckdb` versus SQLite compatibility paths.
+- MEDIUM: `08-01` should make the Python 3.14 test-runner guard explicit so developers do not accidentally run tests under system Python 3.13.
+- LOW: document the `all_time` bounded-bucket asymmetry.
+- LOW: note execution ordering around CLI versus MCP surface file changes.
+- LOW: consider the semantic naming of bounded `bucket='all_time'` calls during implementation.
+
+OpenCode's conclusion:
+
+## Current HIGH Concerns
+
+None.
