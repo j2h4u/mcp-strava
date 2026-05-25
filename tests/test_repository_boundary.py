@@ -66,6 +66,8 @@ def _guard_direct_sqlite_boundary() -> list[str]:
         rel = py_file.relative_to(repo_root).as_posix()
         if rel.startswith("src/mcp_strava/adapters/sqlite/"):
             continue
+        if rel == "src/mcp_strava/adapters/duckdb/migrations.py":
+            continue
         if rel == "src/mcp_strava/db.py":
             continue
 

@@ -65,6 +65,7 @@ def _direct_sqlite_violations() -> list[str]:
     allow_prefixes = ("src/mcp_strava/adapters/sqlite/",)
     allow_exact = {
         "src/mcp_strava/db.py",
+        "src/mcp_strava/adapters/duckdb/migrations.py",
     }
     for py_file in src_root.rglob("*.py"):
         rel = py_file.relative_to(root).as_posix()

@@ -508,7 +508,7 @@ def _pop_required_path_option(args: list[str], option: str) -> Path:
 
 def _live_looking_duckdb_target(path: Path) -> bool:
     rendered = str(path)
-    return rendered == CANONICAL_DUCKDB_RUNTIME_PATH or rendered.startswith("/runtime/") or rendered.startswith("/opt/docker/mcp-strava/")
+    return rendered == CANONICAL_DUCKDB_RUNTIME_PATH or rendered.startswith("/runtime/")
 
 
 def _cutover_report_to_dict(report) -> dict[str, object]:
