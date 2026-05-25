@@ -158,10 +158,17 @@ Plans:
   - MCP remains a read-only factual metrics surface; no raw SQL/admin/debug/storage migration tools cross into MCP.
   - Domain-specific metrics such as TRIMP, cardiac cost, drift, HR recovery, fitness, fatigue, and form remain explicit metric facts; DuckDB handles aggregation, not domain interpretation.
   - Avoid a permanent SQLite + DuckDB dual-primary design; any SQLite bridge is transitional migration tooling only.
-**Plans:** 0 plans
+**Plans:** 8 plans
 
 Plans:
-  - [ ] TBD (run /gsd-plan-phase 8 to break down)
+  - [ ] `08-01-PLAN.md` — DuckDB package legitimacy gate and dependency baseline
+  - [ ] `08-02-PLAN.md` — One-shot SQLite-to-DuckDB migration, pinned backup, parity, and admin cutover command
+  - [ ] `08-03-PLAN.md` — DuckDB primary repository and runtime connection cutover
+  - [ ] `08-04-PLAN.md` — Single-owner DuckDB runtime topology, healthcheck, refresh, and Docker path refit
+  - [ ] `08-05-PLAN.md` — Metric registry aggregate semantics, bundles, denominators, and docs
+  - [ ] `08-06-PLAN.md` — DuckDB aggregate views/query builders and aggregate application service
+  - [ ] `08-07-PLAN.md` — `get_training_aggregates` MCP tool and `compare_periods` aggregate-layer rewrite
+  - [ ] `08-08-PLAN.md` — Docker-first smoke, MCP smoke, 100 ms p95, live cutover, and rollback validation
 
 ## Progress
 
@@ -177,4 +184,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 5. MCP HTTP Surface & Docker Hardening | 6/6 | Complete    | 2026-05-22 |
 | 6. Full-Fidelity Strava Mirror | 4/4 | Complete    | 2026-05-24 |
 | 7. Materialized Metrics Read Model | 6/6 | Complete    | 2026-05-24 |
-| 8. DuckDB Primary Storage & Aggregate Analytics Surface | 0/0 | Not planned | - |
+| 8. DuckDB Primary Storage & Aggregate Analytics Surface | 0/8 | Planned | - |
