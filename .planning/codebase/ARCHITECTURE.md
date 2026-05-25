@@ -177,8 +177,13 @@ last_mapped_commit: b981bd75c7a61554958d9cab8be7bab0bc9b559b
 
 **Runtime Preflight**
 - Location: `src/mcp_strava/deploy/preflight.py`
-- Triggers: container health check, startup validation, runtime validation commands.
+- Triggers: startup validation and runtime validation commands before the owner process starts.
 - Responsibilities: fail closed if the runtime DuckDB mirror is missing or structurally invalid.
+
+**Runtime Healthcheck**
+- Location: `src/mcp_strava/deploy/healthcheck.py`
+- Triggers: Docker `HEALTHCHECK`.
+- Responsibilities: validate owner-process state, child liveness metadata, and HTTP readiness without opening the live DuckDB file read-write.
 
 **Runtime Prep**
 - Location: `src/mcp_strava/deploy/prepare_runtime.py`
@@ -187,7 +192,7 @@ last_mapped_commit: b981bd75c7a61554958d9cab8be7bab0bc9b559b
 
 ## Architectural Constraints
 
-- **Threading:** the main application path is synchronous; no async runtime or worker queue exists outside the MCP SDK client smoke helper.
+- **Threading:** the main application path is synchronous; the Docker runtime uses one DuckDB owner process with an in-process refresh thread and per-thread DuckDB connections.
 - **Global state:** `src/mcp_strava/metrics.py` caches HR max, `src/mcp_strava/settings.py` caches resolved settings, and `src/mcp_strava/adapters/strava/rate_limit.py` keeps in-memory quota state.
 - **Circular imports:** `src/mcp_strava/constants.py` imports sport helpers at module end after `Config` is defined; keep that ordering intact.
 - **Local-only exposure:** `src/mcp_strava/interfaces/mcp_http.py` rejects unsafe bind settings unless the profile explicitly allows container binding.

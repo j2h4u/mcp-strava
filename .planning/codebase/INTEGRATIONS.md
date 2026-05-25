@@ -21,15 +21,16 @@ last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
 ## Data Storage
 
 **Databases:**
-- SQLite - Primary mirror storage in `data/strava.db` and, in container mode, `/opt/docker/mcp-strava/data/strava.db`.
-  - Connection: `src/mcp_strava/adapters/sqlite/connection.py` opens the mirror with `mode=rw`, WAL, and `busy_timeout`.
-  - Client: `src/mcp_strava/adapters/sqlite/repository.py`, `src/mcp_strava/db.py`, and `src/mcp_strava/deploy/preflight.py`.
+- DuckDB - Primary mirror storage in `data/strava.duckdb` and, in container mode, `/runtime/data/strava.duckdb` via the `/opt/docker/mcp-strava` runtime mount.
+  - Connection: `src/mcp_strava/adapters/duckdb/connection.py` opens the expected mirror fail-closed.
+  - Client: `src/mcp_strava/adapters/duckdb/repository.py`, `src/mcp_strava/db.py`, `src/mcp_strava/deploy/preflight.py`, and the owner-process refresh runtime.
+- SQLite - Compatibility input for rollback, migration, and historical test fixtures only.
 
 **File Storage:**
 - Local filesystem only - Token files, backups, and runtime state live on disk under `.env`, `data/`, and `/opt/docker/mcp-strava/`.
 
 **Caching:**
-- SQLite is the durable cache - There is no separate Redis or remote cache layer.
+- DuckDB is the durable local mirror/read-model store - There is no separate Redis or remote cache layer.
 - Token refresh writes back to the local token file - `src/mcp_strava/adapters/strava/token_provider.py`.
 
 ## Authentication & Identity
@@ -45,8 +46,8 @@ last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
 - None detected - No external error-tracking service is wired in.
 
 **Logs:**
-- Process stderr/stdout and SQLite audit rows - Sync/runtime failures are printed locally and recorded in `sync_log` via `src/mcp_strava/db.py` and related refresh code.
-- Container health - `deploy/Dockerfile` uses a `HEALTHCHECK` that runs `python -m mcp_strava.deploy.preflight`.
+- Process stderr/stdout and DuckDB audit rows - Sync/runtime failures are printed locally and recorded in `sync_log` via `src/mcp_strava/db.py` and related refresh code.
+- Container health - `deploy/Dockerfile` uses a `HEALTHCHECK` that runs `python -m mcp_strava.deploy.healthcheck`, which checks owner-process state and HTTP readiness without directly opening the live DuckDB file.
 
 ## CI/CD & Deployment
 

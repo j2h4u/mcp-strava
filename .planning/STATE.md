@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-25T20:25:42.722Z"
+last_updated: "2026-05-25T20:45:48.020Z"
 last_activity: 2026-05-25
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 39
-  completed_plans: 35
+  completed_plans: 36
   percent: 88
 ---
 
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-24)
 ## Current Position
 
 Phase: 08 (duckdb-primary-storage-aggregate-analytics-surface) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-05-25
 
@@ -79,6 +79,7 @@ Last activity: 2026-05-25
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-02 | 12 min | 3 tasks | 10 files |
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-05 | 10 min | 3 tasks | 4 files |
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-03 | 20min | 3 tasks | 13 files |
+| Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-04 | 9 min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -140,6 +141,9 @@ Recent decisions affecting current work:
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: DuckDBRepository is the primary runtime repository for DuckDB MCP_STRAVA_DB_PATH values. — Plan 08-03 cut runtime repository routing over to DuckDB while preserving the neutral MCP_STRAVA_DB_PATH setting.
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Explicit SQLite paths remain reachable only as rollback, migration, and test-fixture compatibility. — Full-suite verification still needs historical SQLite fixtures and rollback input paths, but runtime DuckDB paths must not shadow-write SQLite.
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Refresh materialization statically routes live DuckDB repositories to the DuckDB materializer. — This satisfies Review H-1 by preventing live DuckDB storage from calling the SQLite materializer after cutover.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: DuckDB container runtime uses one owner process with in-process refresh scheduling and per-thread DuckDB connections. — Enforces D-13 and prevents multiple read-write DuckDB owners.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Docker healthcheck validates owner-process state and HTTP readiness instead of opening the live DuckDB file. — Keeps health probes from contending with the live DuckDB owner.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Standalone refresh.worker refuses live DuckDB container mode. — Refresh remains automatic below MCP through the owner process only.
 
 ### Roadmap Evolution
 
@@ -163,8 +167,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-25T20:25:42.707Z
-Stopped at: Completed 08-duckdb-primary-storage-aggregate-analytics-surface-08-03-PLAN.md
+Last session: 2026-05-25T20:45:48.004Z
+Stopped at: Completed 08-duckdb-primary-storage-aggregate-analytics-surface-08-04-PLAN.md
 Resume file: None
 
 ## Quick Tasks Completed
