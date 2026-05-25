@@ -74,7 +74,7 @@ def rolling_avg_from_prefix(prefix, window, end_idx):
 # ─── Per-Activity Efficiency from Streams ───
 
 def get_activity_metrics(conn):
-    """Query all activities with cardiac efficiency metrics (CC only, May 2026).
+    """Query all activities with cardiac efficiency metrics.
     
     Returns list of ActivityMetrics indexed by date via build_acts_by_date().
     EF, bkm, VO2max removed from regular analytics (coach review #2, #4).
@@ -128,7 +128,7 @@ def rolling_eff(acts_by_date, end_date, window_days, sports=None):
         sports: set of sport_type strings to include (None = all)
     
     Returns RollingEfficiency or None.
-    CC-only (May 2026): EF, bkm, VO2max removed.
+    CC-only (May 2026): EF, bkm, and VO2max removed.
     """
     cc_v, cc_adj_v, epkm_v = [], [], []
     dist_t, time_t, elev_t, count = 0, 0, 0, 0
@@ -248,12 +248,11 @@ def weekly_digest(conn, today=None):
             for m in ['median_cc', 'median_cc_adj']:
                 if getattr(eff_now, m, None) and getattr(eff_prev, m, None):
                     trends[f'{sport}_28d_{m}'] = pct_change(getattr(eff_now, m), getattr(eff_prev, m))
-    
+
     eff_run_now = rolling_eff(acts_by_date, today, 90, sports=RUNNING_SPORTS)
     eff_run_prev = rolling_eff(acts_by_date, today - timedelta(days=90), 90, sports=RUNNING_SPORTS)
     if eff_run_now and eff_run_prev:
         trends['run_90d_median_cc'] = pct_change(eff_run_now.median_cc, eff_run_prev.median_cc)
-        # VO2max removed from regular analytics (coach review #4)
     
     trends = {k: v for k, v in trends.items() if v is not None}
     
@@ -267,22 +266,19 @@ def weekly_digest(conn, today=None):
               3: 'spring', 4: 'spring', 5: 'spring',
               6: 'summer', 7: 'summer', 8: 'summer',
               9: 'autumn', 10: 'autumn', 11: 'autumn'}.get(today.month, 'unknown')
-    
+
     last_hike = None
     for a in reversed(act_metrics):
         if a.sport == 'Hike':
             last_hike = (today - datetime.strptime(a.date, '%Y-%m-%d').date()).days
             break
-    
-    # Activity streak: consecutive days with activity, counting back from today.
-    # Uses raw_daily (all activities, not just HR-filtered) for correct streak counting.
+
     streak = 0
     d = today
     while d.isoformat() in raw_daily:
         streak += 1
         d -= timedelta(days=1)
 
-    # Rest streak: consecutive days without activity
     rest_streak = 0
     d = today
     while d.isoformat() not in raw_daily:

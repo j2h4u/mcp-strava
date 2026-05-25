@@ -130,24 +130,17 @@ def test_ewma():
     print("  OK: ewma — empty, single, decay, gaps")
 
 
-def test_form_zone():
-    """Form zone classification — boundary values."""
-    from mcp_strava.training import _form_zone, _form_zone_short
+def test_form_zone_and_marker():
+    """Form zone and sparkline marker boundary values."""
+    from mcp_strava.training import _form_marker, _form_zone
 
-    # Simplified 3-zone (May 2026)
     assert _form_zone(-31) == 'tired'
-    assert _form_zone(-6) == 'tired'
-    assert _form_zone(-5) == 'normal'
-    assert _form_zone(0) == 'normal'
-    assert _form_zone(9) == 'normal'
-    assert _form_zone(10) == 'fresh'
-    assert _form_zone(50) == 'fresh'
-
-    # Short form
-    assert _form_zone_short(-31) == '🟠'
-    assert _form_zone_short(5) == '🟢'
-    assert _form_zone_short(30) == '🔵'
-    print("  OK: _form_zone — 3-zone boundaries correct")
+    assert _form_zone(5) == 'normal'
+    assert _form_zone(30) == 'fresh'
+    assert _form_marker(-31) == '🟠'
+    assert _form_marker(5) == '🟢'
+    assert _form_marker(30) == '🔵'
+    print("  OK: form zone and marker boundaries correct")
 
 
 def test_trend():

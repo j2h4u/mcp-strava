@@ -61,7 +61,7 @@ MCP_STRAVA_TOKEN_PATH=/opt/docker/mcp-strava/.env \
 python -m mcp_strava admin db-preflight --json
 ```
 
-3. Migrate the live database to `user_version=5`:
+3. Migrate the live database to `user_version=6`:
 
 ```bash
 MCP_STRAVA_DB_PATH=/opt/docker/mcp-strava/data/strava.db \

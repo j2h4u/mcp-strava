@@ -121,20 +121,24 @@ def _repo_with_facts(path: Path) -> SQLiteRepository:
             activity_id, activity_day, sport_type, source_hash, source_revision,
             metric_version, computed_at, completeness_status, missing_reasons_json,
             trimp, zone1_seconds, zone2_seconds, zone3_seconds, zone4_seconds, zone5_seconds,
+            hr_recovery_pause_count, hr_recovery_total_rest_sec,
             hr_recovery_median_rate, hr_recovery_best_rate, hr_recovery_worst_rate,
             hr_recovery_avg_rate, vertical_speed_vmh, vertical_speed_total_ascent_m,
-            vertical_speed_duration_hours, cardiac_cost, adjusted_cardiac_cost,
-            cardiac_drift_pct, cardiac_drift_severity, hrr_pct, z5_seconds,
+            vertical_speed_duration_hours, cardiac_cost, cardiac_drift_pct,
+            adjusted_cardiac_cost, cardiac_drift_severity, cardiac_drift_significant,
+            cardiac_drift_quality, hrr_pct,
             anomaly_count, distance_m, moving_time_s, elapsed_time_s, elevation_gain_m,
             heartrate_sample_count, stream_sample_count
         ) VALUES (
             :activity_id, :activity_day, :sport_type, :source_hash, :source_revision,
             :metric_version, :computed_at, :completeness_status, :missing_reasons_json,
             :trimp, :zone1_seconds, :zone2_seconds, :zone3_seconds, :zone4_seconds, :zone5_seconds,
+            :hr_recovery_pause_count, :hr_recovery_total_rest_sec,
             :hr_recovery_median_rate, :hr_recovery_best_rate, :hr_recovery_worst_rate,
             :hr_recovery_avg_rate, :vertical_speed_vmh, :vertical_speed_total_ascent_m,
-            :vertical_speed_duration_hours, :cardiac_cost, :adjusted_cardiac_cost,
-            :cardiac_drift_pct, :cardiac_drift_severity, :hrr_pct, :z5_seconds,
+            :vertical_speed_duration_hours, :cardiac_cost, :cardiac_drift_pct,
+            :adjusted_cardiac_cost, :cardiac_drift_severity, :cardiac_drift_significant,
+            :cardiac_drift_quality, :hrr_pct,
             :anomaly_count, :distance_m, :moving_time_s, :elapsed_time_s, :elevation_gain_m,
             :heartrate_sample_count, :stream_sample_count
         )
@@ -156,6 +160,8 @@ def _repo_with_facts(path: Path) -> SQLiteRepository:
                 "zone3_seconds": 360,
                 "zone4_seconds": 180,
                 "zone5_seconds": 30,
+                "hr_recovery_pause_count": 1,
+                "hr_recovery_total_rest_sec": 45,
                 "hr_recovery_median_rate": 18.0,
                 "hr_recovery_best_rate": 28.0,
                 "hr_recovery_worst_rate": 8.0,
@@ -164,11 +170,12 @@ def _repo_with_facts(path: Path) -> SQLiteRepository:
                 "vertical_speed_total_ascent_m": 130.0,
                 "vertical_speed_duration_hours": 0.6,
                 "cardiac_cost": 44.0,
-                "adjusted_cardiac_cost": 43.0,
+                "adjusted_cardiac_cost": 41.3,
                 "cardiac_drift_pct": 2.5,
                 "cardiac_drift_severity": "stable",
+                "cardiac_drift_significant": 0,
+                "cardiac_drift_quality": "good",
                 "hrr_pct": 68.0,
-                "z5_seconds": 30,
                 "anomaly_count": 0,
                 "distance_m": 5000.0,
                 "moving_time_s": 1800,
@@ -193,6 +200,8 @@ def _repo_with_facts(path: Path) -> SQLiteRepository:
                 "zone3_seconds": 300,
                 "zone4_seconds": 120,
                 "zone5_seconds": 0,
+                "hr_recovery_pause_count": 0,
+                "hr_recovery_total_rest_sec": 0,
                 "hr_recovery_median_rate": None,
                 "hr_recovery_best_rate": None,
                 "hr_recovery_worst_rate": None,
@@ -204,8 +213,9 @@ def _repo_with_facts(path: Path) -> SQLiteRepository:
                 "adjusted_cardiac_cost": None,
                 "cardiac_drift_pct": None,
                 "cardiac_drift_severity": None,
+                "cardiac_drift_significant": 0,
+                "cardiac_drift_quality": None,
                 "hrr_pct": None,
-                "z5_seconds": 0,
                 "anomaly_count": 1,
                 "distance_m": 5000.0,
                 "moving_time_s": 1800,
@@ -230,6 +240,8 @@ def _repo_with_facts(path: Path) -> SQLiteRepository:
                 "zone3_seconds": 0,
                 "zone4_seconds": 0,
                 "zone5_seconds": 0,
+                "hr_recovery_pause_count": 0,
+                "hr_recovery_total_rest_sec": 0,
                 "hr_recovery_median_rate": None,
                 "hr_recovery_best_rate": None,
                 "hr_recovery_worst_rate": None,
@@ -241,8 +253,9 @@ def _repo_with_facts(path: Path) -> SQLiteRepository:
                 "adjusted_cardiac_cost": None,
                 "cardiac_drift_pct": None,
                 "cardiac_drift_severity": None,
+                "cardiac_drift_significant": 0,
+                "cardiac_drift_quality": None,
                 "hrr_pct": None,
-                "z5_seconds": 0,
                 "anomaly_count": 0,
                 "distance_m": 9000.0,
                 "moving_time_s": 7200,
@@ -274,12 +287,12 @@ def _repo_with_facts(path: Path) -> SQLiteRepository:
         INSERT INTO training_model_daily (
             day, scope, sport_type, metric_version, computed_at,
             completeness_status, missing_reasons_json, effective_trimp,
-            observed_trimp, fitness, fatigue, form, form_zone, atl, ctl,
-            acwr, load_7d, load_28d, load_42d, input_days, missing_days
+            observed_trimp, fitness, fatigue, form,
+            form_zone, acwr_zone, acwr, load_7d, load_28d, load_42d, input_days, missing_days
         ) VALUES (
             '2026-05-21', 'all', 'all', 1, '2026-05-21T06:15:00',
             'complete', '[]', 88.0, 88.0, 42.0, 37.0, 5.0,
-            'normal', 37.0, 42.0, 0.881, 180.0, 268.0, 370.0, 3, 0
+            'normal', 'sweet_spot', 0.881, 180.0, 268.0, 370.0, 3, 0
         )
         """
     )
@@ -291,14 +304,14 @@ def _repo_with_facts(path: Path) -> SQLiteRepository:
                 computed_at, completeness_status, missing_reasons_json,
                 activity_count, active_days, rest_days, observed_trimp,
                 effective_trimp, distance_m, moving_time_s, elevation_gain_m,
-                high_zone_seconds, anomaly_count, fitness, fatigue, form,
-                atl, ctl, acwr, median_cardiac_cost, median_adjusted_cardiac_cost,
+                high_zone_seconds, anomaly_count, fitness, fatigue, form, form_zone,
+                acwr_zone, acwr, median_cardiac_cost, median_adjusted_cardiac_cost,
                 median_hr_recovery, median_cardiac_drift_pct
             ) VALUES (
                 '2026-05-21', ?, 'all', 'all', 1, '2026-05-21T06:20:00',
                 'complete', '[]', 3, ?, ?, ?, ?, 19000.0, 10800,
-                560.0, 330, 1, 42.0, 37.0, 5.0, 37.0, 42.0,
-                0.881, 44.0, 43.0, 18.0, 2.5
+                560.0, 330, 1, 42.0, 37.0, 5.0, 'normal',
+                'sweet_spot', 0.881, 44.0, 41.3, 18.0, 2.5
             )
             """,
             (window, active, rest, effective, effective),

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 import json
+from statistics import median
 
 from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION, SQLiteRepository
 from mcp_strava.constants import Config
-from mcp_strava.metrics import check_hr_anomalies, check_z5_minutes, enrich_activity
+from mcp_strava.metrics import check_hr_anomalies, enrich_activity
 from mcp_strava.training import calc_banister_series
 
 ROLLING_WINDOWS = (7, 14, 28, 90)
@@ -68,6 +69,38 @@ def _zone_seconds(repo: SQLiteRepository, activity_id: int) -> tuple[int, int, i
     return tuple(int(row[f"z{idx}"] or 0) for idx in range(1, 6))
 
 
+def _adjusted_cardiac_cost(cc: float | None, distance_m: float | None, elevation_m: float | None) -> float | None:
+    if cc is None or not distance_m or distance_m <= 0:
+        return None
+    elevation_per_km = float(elevation_m or 0.0) / (float(distance_m) / 1000.0)
+    return round(float(cc) - Config.Efficiency.CC_ELEV_COEFF * elevation_per_km, 3)
+
+
+def _form_zone(form: float) -> str:
+    if form < -5:
+        return "tired"
+    if form < 10:
+        return "normal"
+    return "fresh"
+
+
+def _acwr_zone(acwr: float | None) -> str:
+    if acwr is None:
+        return "unknown"
+    if 0.8 <= acwr <= 1.3:
+        return "sweet_spot"
+    if 1.3 < acwr <= Config.Thresholds.ACWR_DANGER:
+        return "caution"
+    if acwr > Config.Thresholds.ACWR_DANGER:
+        return "danger"
+    return "undertrained"
+
+
+def _median_or_none(values: list[object]) -> float | None:
+    numeric = [float(value) for value in values if value is not None]
+    return round(float(median(numeric)), 3) if numeric else None
+
+
 def _activity_fact(repo: SQLiteRepository, dirty_row, metric_version: int, computed_at: str) -> dict[str, object]:
     activity_id = int(dirty_row["activity_id"])
     activity = repo.activity_by_id(activity_id)
@@ -80,7 +113,6 @@ def _activity_fact(repo: SQLiteRepository, dirty_row, metric_version: int, compu
     enriched = enrich_activity(repo.conn, activity)
     stream_count, hr_count = _stream_counts(repo, activity_id)
     zone1, zone2, zone3, zone4, zone5 = _zone_seconds(repo, activity_id)
-    z5_seconds, _z5_warning = check_z5_minutes(repo.conn, activity_id)
     anomaly_count, _anomaly_warning = check_hr_anomalies(repo.conn, activity_id)
 
     missing: list[str] = []
@@ -115,6 +147,8 @@ def _activity_fact(repo: SQLiteRepository, dirty_row, metric_version: int, compu
         "zone3_seconds": zone3,
         "zone4_seconds": zone4,
         "zone5_seconds": zone5,
+        "hr_recovery_pause_count": recovery.pauses_found if recovery else 0,
+        "hr_recovery_total_rest_sec": recovery.total_rest_sec if recovery else 0,
         "hr_recovery_median_rate": recovery.median_rate if recovery else None,
         "hr_recovery_best_rate": recovery.best_rate if recovery else None,
         "hr_recovery_worst_rate": recovery.worst_rate if recovery else None,
@@ -123,11 +157,12 @@ def _activity_fact(repo: SQLiteRepository, dirty_row, metric_version: int, compu
         "vertical_speed_total_ascent_m": vertical.total_ascent_m if vertical else None,
         "vertical_speed_duration_hours": vertical.duration_hours if vertical else None,
         "cardiac_cost": enriched.cc,
-        "adjusted_cardiac_cost": enriched.cc,
+        "adjusted_cardiac_cost": _adjusted_cardiac_cost(enriched.cc, activity.distance, activity.total_elevation_gain),
         "cardiac_drift_pct": drift.drift_pct if drift else None,
         "cardiac_drift_severity": drift.severity if drift else None,
+        "cardiac_drift_significant": 1 if drift and drift.is_significant else 0,
+        "cardiac_drift_quality": drift.quality if drift else None,
         "hrr_pct": enriched.hrr_pct,
-        "z5_seconds": z5_seconds or 0,
         "anomaly_count": anomaly_count,
         "distance_m": activity.distance,
         "moving_time_s": activity.moving_time,
@@ -217,6 +252,7 @@ def _materialize_model_facts(
         fitness = float(point["fitness"])
         fatigue = float(point["fatigue"])
         form = float(point["form"])
+        acwr = round(fatigue / fitness, 3) if fitness > 0 else None
         repo.upsert_training_model_daily_fact(
             {
                 "day": point["date"],
@@ -231,10 +267,9 @@ def _materialize_model_facts(
                 "fitness": fitness,
                 "fatigue": fatigue,
                 "form": form,
-                "form_zone": "tired" if form < -5 else ("normal" if form < 10 else "fresh"),
-                "atl": fatigue,
-                "ctl": fitness,
-                "acwr": round(fatigue / fitness, 3) if fitness > 0 else None,
+                "form_zone": _form_zone(form),
+                "acwr_zone": _acwr_zone(acwr),
+                "acwr": acwr,
                 "load_7d": fatigue,
                 "load_28d": None,
                 "load_42d": fitness,
@@ -278,12 +313,21 @@ def _materialize_rolling_facts(
         ).fetchone()
         model = repo.conn.execute(
             """
-            SELECT fitness, fatigue, form, atl, ctl, acwr
+            SELECT fitness, fatigue, form, form_zone, acwr_zone, acwr
             FROM training_model_daily
             WHERE day = ? AND scope = 'all' AND sport_type = 'all' AND metric_version = ?
             """,
             (as_of_day, metric_version),
         ).fetchone()
+        metric_rows = repo.conn.execute(
+            """
+            SELECT cardiac_cost, adjusted_cardiac_cost, hr_recovery_median_rate, cardiac_drift_pct
+            FROM activity_metric_facts
+            WHERE activity_day BETWEEN ? AND ?
+              AND metric_version = ?
+            """,
+            (start, as_of_day, metric_version),
+        ).fetchall()
         repo.upsert_rolling_period_fact(
             {
                 "as_of_day": as_of_day,
@@ -307,13 +351,13 @@ def _materialize_rolling_facts(
                 "fitness": model["fitness"] if model else None,
                 "fatigue": model["fatigue"] if model else None,
                 "form": model["form"] if model else None,
-                "atl": model["atl"] if model else None,
-                "ctl": model["ctl"] if model else None,
+                "form_zone": model["form_zone"] if model else None,
+                "acwr_zone": model["acwr_zone"] if model else None,
                 "acwr": model["acwr"] if model else None,
-                "median_cardiac_cost": None,
-                "median_adjusted_cardiac_cost": None,
-                "median_hr_recovery": None,
-                "median_cardiac_drift_pct": None,
+                "median_cardiac_cost": _median_or_none([row["cardiac_cost"] for row in metric_rows]),
+                "median_adjusted_cardiac_cost": _median_or_none([row["adjusted_cardiac_cost"] for row in metric_rows]),
+                "median_hr_recovery": _median_or_none([row["hr_recovery_median_rate"] for row in metric_rows]),
+                "median_cardiac_drift_pct": _median_or_none([row["cardiac_drift_pct"] for row in metric_rows]),
             }
         )
 

@@ -47,8 +47,10 @@ ACTIVITY_SCALAR_FACTS = {
     "moving_time_min": ("moving_time_s", 1 / 60),
     "elapsed_time_min": ("elapsed_time_s", 1 / 60),
     "elevation_m": ("elevation_gain_m", 1.0),
-    "hr_recovery_pauses": (None, 1.0),
-    "hr_recovery_total_rest_sec": (None, 1.0),
+    "avg_hr": (None, 1.0),
+    "max_hr": (None, 1.0),
+    "hr_recovery_pauses": ("hr_recovery_pause_count", 1.0),
+    "hr_recovery_total_rest_sec": ("hr_recovery_total_rest_sec", 1.0),
     "hr_recovery_median_bpm_per_min": ("hr_recovery_median_rate", 1.0),
     "hr_recovery_best_bpm_per_min": ("hr_recovery_best_rate", 1.0),
     "hr_recovery_worst_bpm_per_min": ("hr_recovery_worst_rate", 1.0),
@@ -59,9 +61,8 @@ ACTIVITY_SCALAR_FACTS = {
     "cardiac_cost": ("cardiac_cost", 1.0),
     "cardiac_cost_adjusted": ("adjusted_cardiac_cost", 1.0),
     "cardiac_drift_pct": ("cardiac_drift_pct", 1.0),
-    "cardiac_drift_significant": ("cardiac_drift_pct", 1.0),
+    "cardiac_drift_significant": ("cardiac_drift_significant", 1.0),
     "hrr_pct": ("hrr_pct", 1.0),
-    "z5_seconds": ("z5_seconds", 1.0),
     "hr_anomaly_count": ("anomaly_count", 1.0),
 }
 
@@ -70,9 +71,8 @@ MODEL_FACTS = {
     "fatigue": "fatigue",
     "form": "form",
     "form_zone": "form_zone",
+    "acwr_zone": "acwr_zone",
     "acwr": "acwr",
-    "atl": "atl",
-    "ctl": "ctl",
 }
 
 ROLLING_FACTS = {
@@ -86,25 +86,20 @@ ROLLING_FACTS = {
     "daily_avg_trimp_90d": (90, "effective_trimp", 1 / 90),
     "rolling_median_cc": (90, "median_cardiac_cost", 1.0),
     "rolling_median_cc_adj": (90, "median_adjusted_cardiac_cost", 1.0),
+    "rolling_median_hr_recovery": (90, "median_hr_recovery", 1.0),
+    "rolling_median_cardiac_drift_pct": (90, "median_cardiac_drift_pct", 1.0),
     "volume_7d": (7, "activity_count", 1.0),
     "volume_28d": (28, "activity_count", 1.0),
-    "load_trend_pct": (28, "effective_trimp", 1.0),
 }
 
 COMPARE_PERIODS_HANDLERS = {
     **{metric_id: "activity_metric_facts" for metric_id in ACTIVITY_SCALAR_FACTS},
     "time_in_hr_zones_min": "activity_metric_facts",
-    "cardiac_drift_severity": "activity_metric_facts",
-    **{metric_id: "training_model_daily" for metric_id in MODEL_FACTS if metric_id != "form_zone"},
+    **{metric_id: "training_model_daily" for metric_id in MODEL_FACTS},
+    **{metric_id: "rolling_period_facts" for metric_id in ROLLING_FACTS},
 }
 
-COMPARE_PERIODS_SKIP_REASONS = {
-    metric_id: "not_materialized_for_period_comparison"
-    for metric_id, definition in METRIC_REGISTRY.items()
-    if definition.comparison_mode != "none"
-    and "compare_periods" in definition.exposed_in
-    and metric_id not in COMPARE_PERIODS_HANDLERS
-}
+COMPARE_PERIODS_SKIP_REASONS: dict[str, str] = {}
 
 
 def _project_fitness_state_metrics(model, rolling: dict[int, object]) -> dict[str, object]:
@@ -116,13 +111,6 @@ def _project_fitness_state_metrics(model, rolling: dict[int, object]) -> dict[st
         row = rolling.get(window)
         value = row[column] if row is not None else None
         _metric_if_registered(data, metric_id, round(float(value) * scale, 3) if value is not None else None)
-    _metric_if_registered(data, "activity_streak_days", None)
-    _metric_if_registered(data, "rest_streak_days", None)
-    _metric_if_registered(data, "last_hike_days_ago", None)
-    _metric_if_registered(data, "progressive_load_bonus", None)
-    _metric_if_registered(data, "progressive_cc_trends", None)
-    _metric_if_registered(data, "z5_seconds", int(_row_get(rolling.get(7), "high_zone_seconds", 0) or 0))
-    _metric_if_registered(data, "hr_anomaly_count", int(_row_get(rolling.get(7), "anomaly_count", 0) or 0))
     return data
 
 
@@ -225,13 +213,15 @@ def _zone_minutes(row) -> list[float]:
 
 
 def _activity_value(row, metric_id: str):
+    if metric_id in {"avg_hr", "max_hr"}:
+        summary = _summary_json(row)
+        summary_key = "average_heartrate" if metric_id == "avg_hr" else "max_heartrate"
+        value = summary.get(summary_key)
+        return round(float(value), 3) if value is not None else None
     if metric_id == "time_in_hr_zones_min":
         return _zone_minutes(row)
     if metric_id == "cardiac_drift_severity":
         return row["cardiac_drift_severity"]
-    if metric_id == "cardiac_drift_significant":
-        value = row["cardiac_drift_pct"]
-        return 1 if value is not None and float(value) >= 5.0 else 0
     column, scale = ACTIVITY_SCALAR_FACTS.get(metric_id, (None, 1.0))
     if column is None:
         return None
@@ -256,8 +246,8 @@ def _activity_payload(row) -> dict[str, object]:
         "avg_hr": summary.get("average_heartrate"),
         "max_hr": int(round(summary["max_heartrate"])) if summary.get("max_heartrate") else None,
         "time_in_hr_zones_min": _zone_minutes(row),
-        "hr_recovery_pauses": None,
-        "hr_recovery_total_rest_sec": None,
+        "hr_recovery_pauses": int(row["hr_recovery_pause_count"] or 0),
+        "hr_recovery_total_rest_sec": int(row["hr_recovery_total_rest_sec"] or 0),
         "hr_recovery_median_bpm_per_min": _activity_value(row, "hr_recovery_median_bpm_per_min"),
         "hr_recovery_best_bpm_per_min": _activity_value(row, "hr_recovery_best_bpm_per_min"),
         "hr_recovery_worst_bpm_per_min": _activity_value(row, "hr_recovery_worst_bpm_per_min"),
@@ -269,11 +259,10 @@ def _activity_payload(row) -> dict[str, object]:
         "cardiac_cost_adjusted": _activity_value(row, "cardiac_cost_adjusted"),
         "cardiac_drift_pct": _activity_value(row, "cardiac_drift_pct"),
         "cardiac_drift_severity": row["cardiac_drift_severity"],
-        "cardiac_drift_quality": None,
-        "cardiac_drift_significant": _activity_value(row, "cardiac_drift_significant"),
+        "cardiac_drift_significant": int(row["cardiac_drift_significant"] or 0),
+        "cardiac_drift_quality": row["cardiac_drift_quality"],
         "hrr_pct": _activity_value(row, "hrr_pct"),
         "start_time": str(summary.get("start_date_local", ""))[11:16] or None,
-        "z5_seconds": int(row["z5_seconds"] or 0),
         "hr_anomaly_count": int(row["anomaly_count"] or 0),
         "completeness": _fact_status(row),
     }
@@ -623,6 +612,28 @@ def _compare_model_metric(metric, model_a, model_b) -> dict[str, object]:
     )
 
 
+def _compare_rolling_metric(metric, rolling_a: dict[int, object], rolling_b: dict[int, object]) -> dict[str, object]:
+    window, column, scale = ROLLING_FACTS[metric.metric_id]
+    row_a = rolling_a.get(window)
+    row_b = rolling_b.get(window)
+    value_a = row_a[column] if row_a is not None else None
+    value_b = row_b[column] if row_b is not None else None
+    scaled_a = round(float(value_a) * scale, 3) if value_a is not None else None
+    scaled_b = round(float(value_b) * scale, 3) if value_b is not None else None
+    rows_a = [row_a] if row_a is not None else []
+    rows_b = [row_b] if row_b is not None else []
+    return compare_scalar_metric(
+        metric.metric_id,
+        metric.comparison_mode,
+        [scaled_a] if scaled_a is not None else [],
+        [scaled_b] if scaled_b is not None else [],
+        [] if scaled_a is not None else ["insufficient_history"],
+        [] if scaled_b is not None else ["insufficient_history"],
+        rows_a,
+        rows_b,
+    )
+
+
 def compare_periods_service(
     *,
     period_a_start: str,
@@ -659,6 +670,25 @@ def compare_periods_service(
             CURRENT_METRIC_VERSION,
             as_of_day=period_b_end,
         )
+        rolling_windows = sorted({spec[0] for spec in ROLLING_FACTS.values()})
+        rolling_a = {
+            window: repo.fetch_rolling_period_facts(
+                period_a_end,
+                window,
+                scope="all",
+                metric_version=CURRENT_METRIC_VERSION,
+            )
+            for window in rolling_windows
+        }
+        rolling_b = {
+            window: repo.fetch_rolling_period_facts(
+                period_b_end,
+                window,
+                scope="all",
+                metric_version=CURRENT_METRIC_VERSION,
+            )
+            for window in rolling_windows
+        }
         sports = sorted(set([row["sport_type"] for row in period_a_rows + period_b_rows]))
 
     global_section = {"scope_filter": "sport" if sport else "all", "metrics": {}}
@@ -666,10 +696,13 @@ def compare_periods_service(
     for metric in METRIC_REGISTRY.values():
         if "compare_periods" not in metric.exposed_in or metric.comparison_mode == "none":
             continue
-        if metric.metric_id in MODEL_FACTS and metric.metric_id != "form_zone":
+        if metric.metric_id in MODEL_FACTS:
             global_section["metrics"][metric.metric_id] = _compare_model_metric(metric, model_a, model_b)
             continue
-        if metric.metric_id not in ACTIVITY_SCALAR_FACTS and metric.metric_id not in {"time_in_hr_zones_min", "cardiac_drift_severity"}:
+        if metric.metric_id in ROLLING_FACTS:
+            global_section["metrics"][metric.metric_id] = _compare_rolling_metric(metric, rolling_a, rolling_b)
+            continue
+        if metric.metric_id not in ACTIVITY_SCALAR_FACTS and metric.metric_id != "time_in_hr_zones_min":
             continue
         if metric.sport_scope in {"global", "both"}:
             global_section["metrics"][metric.metric_id] = _compare_metric_from_rows(metric, period_a_rows, period_b_rows)
@@ -860,7 +893,6 @@ def project_fitness_state_service(
             "daily_rows": daily_rows,
             "target_date_form": daily_rows[-1]["projected_form"] if daily_rows else None,
             "model_assumptions": assumptions,
-            "progressive_load_bonus": None,
             "activity_template_trimp": assumptions.get("activity_template_trimp"),
             "post_weekend_monday_form": metadata.get("post_weekend_monday_form"),
             "scenario_metadata": metadata,

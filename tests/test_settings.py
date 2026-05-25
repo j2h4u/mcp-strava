@@ -24,6 +24,7 @@ def test_load_settings_defaults() -> None:
     assert settings.freshness.max_age_hours == 24
     assert settings.refresh.interval_seconds == 3600
     assert settings.refresh.stream_backfill_batch_size == 50
+    assert settings.refresh.read_model_batch_size == 25
 
 
 def test_load_settings_defaults_to_current_working_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -51,6 +52,7 @@ def test_load_settings_reads_process_environment_when_environ_omitted(
         'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS',
         'MCP_STRAVA_REFRESH_INTERVAL_SECONDS',
         'MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE',
+        'MCP_STRAVA_READ_MODEL_BATCH_SIZE',
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv('MCP_STRAVA_PROJECT_ROOT', str(tmp_path))
@@ -76,6 +78,7 @@ def test_load_settings_environment_overrides() -> None:
         'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS': '20',
         'MCP_STRAVA_REFRESH_INTERVAL_SECONDS': '7200',
         'MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE': '25',
+        'MCP_STRAVA_READ_MODEL_BATCH_SIZE': '10',
     }
 
     settings = load_settings(environ=env, project_root=Path('/tmp/project'))
@@ -92,6 +95,7 @@ def test_load_settings_environment_overrides() -> None:
     assert settings.freshness.max_age_hours == 20
     assert settings.refresh.interval_seconds == 7200
     assert settings.refresh.stream_backfill_batch_size == 25
+    assert settings.refresh.read_model_batch_size == 10
 
 
 def test_load_settings_env_file_compatibility(tmp_path: Path) -> None:
@@ -114,6 +118,7 @@ def test_load_settings_env_file_compatibility(tmp_path: Path) -> None:
                 'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS=30',
                 'MCP_STRAVA_REFRESH_INTERVAL_SECONDS=5400',
                 'MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE=15',
+                'MCP_STRAVA_READ_MODEL_BATCH_SIZE=5',
                 'IGNORED_KEY=ignored',
             ]
         )
@@ -135,6 +140,7 @@ def test_load_settings_env_file_compatibility(tmp_path: Path) -> None:
     assert settings.freshness.max_age_hours == 30
     assert settings.refresh.interval_seconds == 5400
     assert settings.refresh.stream_backfill_batch_size == 15
+    assert settings.refresh.read_model_batch_size == 5
 
 
 @pytest.mark.parametrize(
@@ -205,6 +211,8 @@ def test_get_settings_cache_can_be_reset(tmp_path: Path) -> None:
         ('MCP_STRAVA_REFRESH_INTERVAL_SECONDS', '59'),
         ('MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE', 'bad'),
         ('MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE', '0'),
+        ('MCP_STRAVA_READ_MODEL_BATCH_SIZE', 'bad'),
+        ('MCP_STRAVA_READ_MODEL_BATCH_SIZE', '0'),
     ],
 )
 def test_load_settings_rejects_invalid_port(key: str, value: str) -> None:

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from mcp_strava.adapters.sqlite.connection import open_expected_mirror_db
-from mcp_strava.adapters.sqlite.schema import READ_MODEL_TABLES_V5, read_user_version, validate_required_inventory
+from mcp_strava.adapters.sqlite.schema import READ_MODEL_TABLES_V6, read_user_version, validate_required_inventory
 
 REQUIRED_RUNTIME_TABLES: tuple[str, ...] = (
     "activities",
@@ -51,8 +51,8 @@ def _validate_phase6_versioned_stream_inventory(conn) -> None:
 
 def _read_model_readiness(conn) -> dict[str, object]:
     version = read_user_version(conn)
-    missing_tables = [table for table in READ_MODEL_TABLES_V5 if not _table_exists(conn, table)]
-    schema_ready = version >= 5 and not missing_tables
+    missing_tables = [table for table in READ_MODEL_TABLES_V6 if not _table_exists(conn, table)]
+    schema_ready = version >= 6 and not missing_tables
     dirty_count = None
     activity_fact_count = None
     ok_run_count = None

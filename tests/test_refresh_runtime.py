@@ -535,6 +535,42 @@ def test_enqueue_refresh_request_if_stale_is_idempotent_per_D04_REFRESH_02(tmp_p
         assert len(repo.pending_refresh_requests()) == 1
 
 
+def test_worker_materializes_read_model_in_bounded_batch(monkeypatch):
+    from mcp_strava.refresh import worker
+
+    calls = []
+    events = []
+
+    class FakeDbConn:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeRepo:
+        def read_model_status(self, metric_version=None):
+            del metric_version
+            return {"dirty_count": 12}
+
+    def fake_materialize(repo, *, metric_version, limit):
+        del repo, metric_version
+        calls.append(limit)
+        return {"dirty_rows_cleared": limit}
+
+    monkeypatch.setattr(worker, "DbConn", FakeDbConn)
+    monkeypatch.setattr(worker.SQLiteRepository, "from_connection", lambda _conn: FakeRepo())
+    monkeypatch.setattr(worker, "materialize_read_model", fake_materialize)
+    monkeypatch.setattr(worker, "_emit", lambda event, **fields: events.append((event, fields)))
+
+    assert worker._materialize_dirty_read_model(batch_size=5) == 5
+    assert calls == [5]
+    assert events == [
+        ("read_model_materialize_started", {"dirty_count": 12, "batch_size": 5}),
+        ("read_model_materialize_ok", {"dirty_rows_cleared": 5, "dirty_count_remaining": 7}),
+    ]
+
+
 def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_path):
     from mcp_strava.refresh import Stage
     from mcp_strava.refresh import worker
@@ -544,7 +580,7 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
     settings = SimpleNamespace(
         database_path=tmp_path / "refresh.db",
         freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
-        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=50),
+        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=50, read_model_batch_size=25),
     )
     state = SimpleNamespace(
         lease_owner=None,
@@ -562,6 +598,10 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
             return False
 
     class FakeRepo:
+        def read_model_status(self, metric_version=None):
+            del metric_version
+            return {"dirty_count": 0}
+
         def get_refresh_state(self):
             return state
 
@@ -614,7 +654,7 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
     settings = SimpleNamespace(
         database_path=tmp_path / "refresh.db",
         freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
-        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=25),
+        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=25, read_model_batch_size=25),
     )
     state = SimpleNamespace(
         lease_owner=None,
@@ -632,6 +672,10 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
             return False
 
     class FakeRepo:
+        def read_model_status(self, metric_version=None):
+            del metric_version
+            return {"dirty_count": 0}
+
         def get_refresh_state(self):
             return state
 
@@ -675,7 +719,7 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
     settings = SimpleNamespace(
         database_path=tmp_path / "refresh.db",
         freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
-        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=50),
+        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=50, read_model_batch_size=25),
     )
     state = SimpleNamespace(
         lease_owner=None,
@@ -693,6 +737,10 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
             return False
 
     class FakeRepo:
+        def read_model_status(self, metric_version=None):
+            del metric_version
+            return {"dirty_count": 0}
+
         def get_refresh_state(self):
             return state
 

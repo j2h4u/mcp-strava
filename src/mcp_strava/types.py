@@ -358,7 +358,7 @@ class BanisterResult:
     fitness: float
     fatigue: float
     form: float
-    form_zone: str       # tired / normal / fresh (simplified to 3, May 2026)
+    form_zone: str       # tired / normal / fresh
 
 
 @dataclass
@@ -456,8 +456,8 @@ class AcwrPoint:
     """ACWR snapshot for a single day."""
     date: str
     acwr: float
-    atl: float
-    ctl: float
+    fatigue: float
+    fitness: float
 
 
 @dataclass
@@ -466,6 +466,7 @@ class BanisterPoint:
     date: str
     form: float
     fatigue: float
+    form_zone: str
 
 
 # ─── Analytics / Rolling Efficiency ───
@@ -491,8 +492,8 @@ class ActivityMetrics:
 class RollingEfficiency:
     """Median efficiency over a rolling window for one sport.
     
-    CC-only output (May 2026 cleanup): EF, bkm, VO2max removed.
-    CC and CC_adj remain as sole cardiac efficiency metrics.
+    CC-only output (May 2026 cleanup): EF, bkm, and VO2max removed.
+    CC and elevation-adjusted CC remain as cardiac-efficiency metrics.
     """
     count: int
     active_days: int
@@ -577,8 +578,11 @@ class ActivityMetricFact:
     adjusted_cardiac_cost: float | None = None
     cardiac_drift_pct: float | None = None
     cardiac_drift_severity: str | None = None
+    cardiac_drift_significant: int = 0
+    cardiac_drift_quality: str | None = None
     hrr_pct: float | None = None
-    z5_seconds: int = 0
+    hr_recovery_pause_count: int = 0
+    hr_recovery_total_rest_sec: int = 0
     anomaly_count: int = 0
     distance_m: float | None = None
     moving_time_s: int | None = None
@@ -630,8 +634,7 @@ class TrainingModelDailyFact:
     fatigue: float | None = None
     form: float | None = None
     form_zone: str | None = None
-    atl: float | None = None
-    ctl: float | None = None
+    acwr_zone: str | None = None
     acwr: float | None = None
     load_7d: float | None = None
     load_28d: float | None = None
@@ -665,8 +668,8 @@ class RollingPeriodFact:
     fitness: float | None = None
     fatigue: float | None = None
     form: float | None = None
-    atl: float | None = None
-    ctl: float | None = None
+    form_zone: str | None = None
+    acwr_zone: str | None = None
     acwr: float | None = None
     median_cardiac_cost: float | None = None
     median_adjusted_cardiac_cost: float | None = None
@@ -944,22 +947,14 @@ class DailyReport:
     rest_days: int = 0
     by_sport: dict[str, BySportBreakdown] = field(default_factory=dict)
 
-    trend_decoupling: Optional[str] = None
-    trend_ef: Optional[str] = None
-    trend_hr_recovery: Optional[str] = None
-    trend_vertical_speed: Optional[str] = None
-    median_decoupling: Optional[float] = None
-    median_ef: Optional[float] = None
-    median_hr_recovery: Optional[float] = None
-
     banister: Optional[BanisterResult] = None
     banister_history: list[BanisterPoint] = field(default_factory=list)
     weekly_trimp: float = 0.0
 
     acwr: Optional[float] = None
     acwr_zone: str = 'unknown'
-    acwr_atl: float = 0.0
-    acwr_ctl: float = 0.0
+    acwr_fatigue: float = 0.0
+    acwr_fitness: float = 0.0
     acwr_history: list[AcwrPoint] = field(default_factory=list)
 
     recommendation: Optional[Recommendation] = None

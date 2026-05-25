@@ -415,6 +415,8 @@ def create_read_model_inventory_v5(conn: sqlite3.Connection) -> None:
             zone3_seconds INTEGER NOT NULL DEFAULT 0,
             zone4_seconds INTEGER NOT NULL DEFAULT 0,
             zone5_seconds INTEGER NOT NULL DEFAULT 0,
+            hr_recovery_pause_count INTEGER NOT NULL DEFAULT 0,
+            hr_recovery_total_rest_sec INTEGER NOT NULL DEFAULT 0,
             hr_recovery_median_rate REAL,
             hr_recovery_best_rate REAL,
             hr_recovery_worst_rate REAL,
@@ -426,8 +428,9 @@ def create_read_model_inventory_v5(conn: sqlite3.Connection) -> None:
             adjusted_cardiac_cost REAL,
             cardiac_drift_pct REAL,
             cardiac_drift_severity TEXT,
+            cardiac_drift_significant INTEGER NOT NULL DEFAULT 0,
+            cardiac_drift_quality TEXT,
             hrr_pct REAL,
-            z5_seconds INTEGER NOT NULL DEFAULT 0,
             anomaly_count INTEGER NOT NULL DEFAULT 0,
             distance_m REAL,
             moving_time_s INTEGER,
@@ -481,8 +484,7 @@ def create_read_model_inventory_v5(conn: sqlite3.Connection) -> None:
             fatigue REAL,
             form REAL,
             form_zone TEXT,
-            atl REAL,
-            ctl REAL,
+            acwr_zone TEXT,
             acwr REAL,
             load_7d REAL,
             load_28d REAL,
@@ -516,8 +518,8 @@ def create_read_model_inventory_v5(conn: sqlite3.Connection) -> None:
             fitness REAL,
             fatigue REAL,
             form REAL,
-            atl REAL,
-            ctl REAL,
+            form_zone TEXT,
+            acwr_zone TEXT,
             acwr REAL,
             median_cardiac_cost REAL,
             median_adjusted_cardiac_cost REAL,
@@ -559,6 +561,228 @@ def create_read_model_inventory_v5(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA optimize")
 
 
+def _queue_read_model_v6_backfill(conn: sqlite3.Connection) -> int:
+    from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION
+
+    now_iso = datetime.now().isoformat(timespec="seconds")
+    cur = conn.execute(
+        """
+        INSERT OR IGNORE INTO metric_dirty_activities (
+            activity_id, activity_day, metric_version, source_revision, reason, queued_at
+        )
+        SELECT
+            a.id,
+            substr(a.date, 1, 10),
+            ?,
+            COALESCE(s.source_revision, 1),
+            'metric_schema_v6_backfill',
+            ?
+        FROM activities a
+        LEFT JOIN activity_source_state s ON s.activity_id = a.id
+        """,
+        (CURRENT_METRIC_VERSION, now_iso),
+    )
+    return int(cur.rowcount)
+
+
+def cleanup_metric_inventory_v6(conn: sqlite3.Connection) -> None:
+    """Drop duplicate/null metric columns and queue factual metric backfill."""
+
+    conn.executescript(
+        """
+        DROP TABLE IF EXISTS activity_metric_facts_v6;
+        CREATE TABLE activity_metric_facts_v6 (
+            activity_id INTEGER NOT NULL,
+            activity_day TEXT NOT NULL,
+            sport_type TEXT NOT NULL,
+            source_hash TEXT NOT NULL,
+            source_revision INTEGER NOT NULL,
+            metric_version INTEGER NOT NULL,
+            computed_at TEXT NOT NULL,
+            completeness_status TEXT NOT NULL,
+            missing_reasons_json TEXT NOT NULL DEFAULT '[]',
+            trimp REAL,
+            zone1_seconds INTEGER NOT NULL DEFAULT 0,
+            zone2_seconds INTEGER NOT NULL DEFAULT 0,
+            zone3_seconds INTEGER NOT NULL DEFAULT 0,
+            zone4_seconds INTEGER NOT NULL DEFAULT 0,
+            zone5_seconds INTEGER NOT NULL DEFAULT 0,
+            hr_recovery_pause_count INTEGER NOT NULL DEFAULT 0,
+            hr_recovery_total_rest_sec INTEGER NOT NULL DEFAULT 0,
+            hr_recovery_median_rate REAL,
+            hr_recovery_best_rate REAL,
+            hr_recovery_worst_rate REAL,
+            hr_recovery_avg_rate REAL,
+            vertical_speed_vmh INTEGER,
+            vertical_speed_total_ascent_m REAL,
+            vertical_speed_duration_hours REAL,
+            cardiac_cost REAL,
+            adjusted_cardiac_cost REAL,
+            cardiac_drift_pct REAL,
+            cardiac_drift_severity TEXT,
+            cardiac_drift_significant INTEGER NOT NULL DEFAULT 0,
+            cardiac_drift_quality TEXT,
+            hrr_pct REAL,
+            anomaly_count INTEGER NOT NULL DEFAULT 0,
+            distance_m REAL,
+            moving_time_s INTEGER,
+            elapsed_time_s INTEGER,
+            elevation_gain_m REAL,
+            heartrate_sample_count INTEGER NOT NULL DEFAULT 0,
+            stream_sample_count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (activity_id, metric_version)
+        );
+        INSERT INTO activity_metric_facts_v6 (
+            activity_id, activity_day, sport_type, source_hash, source_revision,
+            metric_version, computed_at, completeness_status, missing_reasons_json,
+            trimp, zone1_seconds, zone2_seconds, zone3_seconds, zone4_seconds, zone5_seconds,
+            hr_recovery_pause_count, hr_recovery_total_rest_sec,
+            hr_recovery_median_rate, hr_recovery_best_rate, hr_recovery_worst_rate,
+            hr_recovery_avg_rate, vertical_speed_vmh, vertical_speed_total_ascent_m,
+            vertical_speed_duration_hours, cardiac_cost, adjusted_cardiac_cost,
+            cardiac_drift_pct, cardiac_drift_severity, cardiac_drift_significant, cardiac_drift_quality,
+            hrr_pct, anomaly_count, distance_m, moving_time_s,
+            elapsed_time_s, elevation_gain_m, heartrate_sample_count, stream_sample_count
+        )
+        SELECT
+            activity_id, activity_day, sport_type, source_hash, source_revision,
+            metric_version, computed_at, completeness_status, missing_reasons_json,
+            trimp, zone1_seconds, zone2_seconds, zone3_seconds, zone4_seconds, zone5_seconds,
+            0, 0,
+            hr_recovery_median_rate, hr_recovery_best_rate, hr_recovery_worst_rate,
+            hr_recovery_avg_rate, vertical_speed_vmh, vertical_speed_total_ascent_m,
+            vertical_speed_duration_hours, cardiac_cost, adjusted_cardiac_cost,
+            cardiac_drift_pct, cardiac_drift_severity,
+            CASE WHEN cardiac_drift_severity IN ('significant', 'severe') THEN 1 ELSE 0 END,
+            NULL,
+            hrr_pct, anomaly_count, distance_m, moving_time_s,
+            elapsed_time_s, elevation_gain_m, heartrate_sample_count, stream_sample_count
+        FROM activity_metric_facts;
+        DROP TABLE activity_metric_facts;
+        ALTER TABLE activity_metric_facts_v6 RENAME TO activity_metric_facts;
+        CREATE INDEX IF NOT EXISTS idx_activity_metric_day_sport_version
+            ON activity_metric_facts(activity_day, sport_type, metric_version);
+        CREATE INDEX IF NOT EXISTS idx_activity_metric_activity_version
+            ON activity_metric_facts(activity_id, metric_version);
+
+        DROP TABLE IF EXISTS training_model_daily_v6;
+        CREATE TABLE training_model_daily_v6 (
+            day TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            sport_type TEXT NOT NULL,
+            metric_version INTEGER NOT NULL,
+            computed_at TEXT NOT NULL,
+            completeness_status TEXT NOT NULL,
+            missing_reasons_json TEXT NOT NULL DEFAULT '[]',
+            effective_trimp REAL NOT NULL DEFAULT 0.0,
+            observed_trimp REAL,
+            fitness REAL,
+            fatigue REAL,
+            form REAL,
+            form_zone TEXT,
+            acwr_zone TEXT,
+            acwr REAL,
+            load_7d REAL,
+            load_28d REAL,
+            load_42d REAL,
+            input_days INTEGER NOT NULL DEFAULT 0,
+            missing_days INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (day, scope, sport_type, metric_version)
+        );
+        INSERT INTO training_model_daily_v6 (
+            day, scope, sport_type, metric_version, computed_at,
+            completeness_status, missing_reasons_json, effective_trimp,
+            observed_trimp, fitness, fatigue, form, form_zone, acwr_zone,
+            acwr, load_7d, load_28d, load_42d, input_days, missing_days
+        )
+        SELECT
+            day, scope, sport_type, metric_version, computed_at,
+            completeness_status, missing_reasons_json, effective_trimp,
+            observed_trimp, fitness, fatigue, form,
+            CASE WHEN form < -5 THEN 'tired' WHEN form < 10 THEN 'normal' ELSE 'fresh' END,
+            CASE
+                WHEN acwr IS NULL THEN 'unknown'
+                WHEN acwr >= 0.8 AND acwr <= 1.3 THEN 'sweet_spot'
+                WHEN acwr > 1.3 AND acwr <= 1.35 THEN 'caution'
+                WHEN acwr > 1.35 THEN 'danger'
+                ELSE 'undertrained'
+            END,
+            acwr, load_7d, load_28d, load_42d, input_days, missing_days
+        FROM training_model_daily;
+        DROP TABLE training_model_daily;
+        ALTER TABLE training_model_daily_v6 RENAME TO training_model_daily;
+        CREATE INDEX IF NOT EXISTS idx_training_model_day_scope_sport_version
+            ON training_model_daily(day, scope, sport_type, metric_version);
+
+        DROP TABLE IF EXISTS rolling_period_facts_v6;
+        CREATE TABLE rolling_period_facts_v6 (
+            as_of_day TEXT NOT NULL,
+            window_days INTEGER NOT NULL,
+            scope TEXT NOT NULL,
+            sport_type TEXT NOT NULL,
+            metric_version INTEGER NOT NULL,
+            computed_at TEXT NOT NULL,
+            completeness_status TEXT NOT NULL,
+            missing_reasons_json TEXT NOT NULL DEFAULT '[]',
+            activity_count INTEGER NOT NULL DEFAULT 0,
+            active_days INTEGER NOT NULL DEFAULT 0,
+            rest_days INTEGER NOT NULL DEFAULT 0,
+            observed_trimp REAL,
+            effective_trimp REAL NOT NULL DEFAULT 0.0,
+            distance_m REAL NOT NULL DEFAULT 0.0,
+            moving_time_s INTEGER NOT NULL DEFAULT 0,
+            elevation_gain_m REAL NOT NULL DEFAULT 0.0,
+            high_zone_seconds INTEGER NOT NULL DEFAULT 0,
+            anomaly_count INTEGER NOT NULL DEFAULT 0,
+            fitness REAL,
+            fatigue REAL,
+            form REAL,
+            form_zone TEXT,
+            acwr_zone TEXT,
+            acwr REAL,
+            median_cardiac_cost REAL,
+            median_adjusted_cardiac_cost REAL,
+            median_hr_recovery REAL,
+            median_cardiac_drift_pct REAL,
+            PRIMARY KEY (as_of_day, window_days, scope, sport_type, metric_version)
+        );
+        INSERT INTO rolling_period_facts_v6 (
+            as_of_day, window_days, scope, sport_type, metric_version,
+            computed_at, completeness_status, missing_reasons_json,
+            activity_count, active_days, rest_days, observed_trimp,
+            effective_trimp, distance_m, moving_time_s, elevation_gain_m,
+            high_zone_seconds, anomaly_count, fitness, fatigue, form, form_zone,
+            acwr_zone, acwr, median_cardiac_cost, median_adjusted_cardiac_cost,
+            median_hr_recovery, median_cardiac_drift_pct
+        )
+        SELECT
+            as_of_day, window_days, scope, sport_type, metric_version,
+            computed_at, completeness_status, missing_reasons_json,
+            activity_count, active_days, rest_days, observed_trimp,
+            effective_trimp, distance_m, moving_time_s, elevation_gain_m,
+            high_zone_seconds, anomaly_count, fitness, fatigue, form,
+            CASE WHEN form < -5 THEN 'tired' WHEN form < 10 THEN 'normal' ELSE 'fresh' END,
+            CASE
+                WHEN acwr IS NULL THEN 'unknown'
+                WHEN acwr >= 0.8 AND acwr <= 1.3 THEN 'sweet_spot'
+                WHEN acwr > 1.3 AND acwr <= 1.35 THEN 'caution'
+                WHEN acwr > 1.35 THEN 'danger'
+                ELSE 'undertrained'
+            END,
+            acwr, median_cardiac_cost, median_adjusted_cardiac_cost,
+            median_hr_recovery, median_cardiac_drift_pct
+        FROM rolling_period_facts;
+        DROP TABLE rolling_period_facts;
+        ALTER TABLE rolling_period_facts_v6 RENAME TO rolling_period_facts;
+        CREATE INDEX IF NOT EXISTS idx_rolling_period_asof_window_scope_sport_version
+            ON rolling_period_facts(as_of_day, window_days, scope, sport_type, metric_version);
+        """
+    )
+    _queue_read_model_v6_backfill(conn)
+    set_user_version(conn, 6)
+    conn.execute("PRAGMA optimize")
+
+
 def _seed_initial_read_model_dirty_queue(conn: sqlite3.Connection) -> int:
     """Queue existing mirror rows once so first v5 refresh materializes facts."""
     from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION, SQLiteRepository
@@ -597,6 +821,7 @@ MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     3: create_lossless_stream_inventory_v3,
     4: create_canonical_gps_inventory_v4,
     5: create_read_model_inventory_v5,
+    6: cleanup_metric_inventory_v6,
 }
 
 
@@ -627,6 +852,12 @@ def run_migrations(db_path: str | Path) -> PreflightReport:
     after = run_preflight(path)
 
     for table, before_count in before.row_counts.items():
+        if before.user_version < 6 and table == "metric_dirty_activities":
+            if after.row_counts.get(table, 0) < before_count:
+                raise RuntimeError(
+                    f"Post-migration dirty queue parity failed for {table}: {before_count} > {after.row_counts.get(table)}"
+                )
+            continue
         if after.row_counts.get(table) != before_count:
             raise RuntimeError(
                 f"Post-migration row parity failed for {table}: {before_count} != {after.row_counts.get(table)}"

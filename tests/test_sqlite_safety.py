@@ -239,7 +239,7 @@ def test_safe02_backup_integrity_check_failure_blocks_success_d04(
         backup_module.create_timestamped_backup(fixture, backups_dir=backups_dir)
 
 
-def test_safe03_baseline_migration_sets_user_version_to_5_idempotently_d02(tmp_path: Path) -> None:
+def test_safe03_baseline_migration_sets_user_version_to_6_idempotently_d02(tmp_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import run_migrations
 
     fixture = tmp_path / "fixture.db"
@@ -251,7 +251,7 @@ def test_safe03_baseline_migration_sets_user_version_to_5_idempotently_d02(tmp_p
         count = conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
         refresh_state_count = conn.execute("SELECT COUNT(*) FROM refresh_state").fetchone()[0]
         refresh_requests_count = conn.execute("SELECT COUNT(*) FROM refresh_requests").fetchone()[0]
-    assert user_version == 5
+    assert user_version == 6
     assert count == 42
     assert refresh_state_count == 1
     assert refresh_requests_count == 0
@@ -281,7 +281,7 @@ def test_migration_v1_to_v3_creates_refresh_tables_and_preserves_parity(tmp_path
         refresh_state_count = conn.execute("SELECT COUNT(*) FROM refresh_state").fetchone()[0]
         refresh_requests_count = conn.execute("SELECT COUNT(*) FROM refresh_requests").fetchone()[0]
 
-    assert user_version == 5
+    assert user_version == 6
     assert refresh_state_count == 1
     assert refresh_requests_count == 0
     assert after_counts == before_counts
@@ -296,7 +296,7 @@ def test_preflight_v3_includes_refresh_tables(tmp_path: Path) -> None:
 
     report = run_preflight(fixture)
 
-    assert report.user_version == 5
+    assert report.user_version == 6
     assert report.row_counts["refresh_state"] == 1
     assert report.row_counts["refresh_requests"] == 0
 
@@ -350,7 +350,7 @@ def test_safe03_synthetic_schema_change_detects_row_or_load_parity_d06_d07(tmp_p
             ewma7=load7,
             ewma28=load28,
             ewma42=load42,
-            acwr_inputs={"atl": ban.fatigue if ban else 0.0, "ctl": load28},
+            acwr_inputs={"fatigue": ban.fatigue if ban else 0.0, "fitness": load28},
         )
 
         conn.execute("ALTER TABLE activities ADD COLUMN synthetic_nullable TEXT")
@@ -371,7 +371,10 @@ def test_safe03_synthetic_schema_change_detects_row_or_load_parity_d06_d07(tmp_p
             ewma7=ewma(history_after, tau=7, end_date=as_of).get(as_of, 0.0),
             ewma28=ewma(history_after, tau=28, end_date=as_of).get(as_of, 0.0),
             ewma42=ewma(history_after, tau=42, end_date=as_of).get(as_of, 0.0),
-            acwr_inputs={"atl": ban_after.fatigue if ban_after else 0.0, "ctl": ewma(history_after, tau=28, end_date=as_of).get(as_of, 0.0)},
+            acwr_inputs={
+                "fatigue": ban_after.fatigue if ban_after else 0.0,
+                "fitness": ewma(history_after, tau=28, end_date=as_of).get(as_of, 0.0),
+            },
         )
 
     result = evaluate_parity(before, after, tolerance=0.1)
@@ -391,7 +394,7 @@ def test_safe03_banister_series_tail_parity_is_enforced_d07() -> None:
         ewma7=10.0,
         ewma28=10.0,
         ewma42=10.0,
-        acwr_inputs={"atl": 9.0, "ctl": 10.0},
+        acwr_inputs={"fatigue": 9.0, "fitness": 10.0},
     )
     after = ParitySnapshot(
         row_counts={"activities": 1},
@@ -403,7 +406,7 @@ def test_safe03_banister_series_tail_parity_is_enforced_d07() -> None:
         ewma7=10.0,
         ewma28=10.0,
         ewma42=10.0,
-        acwr_inputs={"atl": 9.0, "ctl": 10.0},
+        acwr_inputs={"fatigue": 9.0, "fitness": 10.0},
     )
 
     result = evaluate_parity(before, after, tolerance=0.1)

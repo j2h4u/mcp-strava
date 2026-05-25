@@ -305,8 +305,7 @@ def test_get_fitness_state_service_returns_metric_bundle_envelope(tmp_path: Path
         "form",
         "form_zone",
         "acwr",
-        "atl",
-        "ctl",
+        "acwr_zone",
         "weekly_trimp",
         "total_trimp_14d",
         "avg_trimp_per_day",
@@ -315,13 +314,12 @@ def test_get_fitness_state_service_returns_metric_bundle_envelope(tmp_path: Path
         "daily_avg_trimp_7d",
         "daily_avg_trimp_28d",
         "daily_avg_trimp_90d",
-        "activity_streak_days",
-        "rest_streak_days",
-        "last_hike_days_ago",
-        "progressive_load_bonus",
-        "progressive_cc_trends",
-        "z5_seconds",
-        "hr_anomaly_count",
+        "rolling_median_cc",
+        "rolling_median_cc_adj",
+        "rolling_median_hr_recovery",
+        "rolling_median_cardiac_drift_pct",
+        "volume_7d",
+        "volume_28d",
     }
     assert expected_metrics.issubset(set(payload["data"]))
     _assert_metric_ids_exist(set(payload["data"]).intersection(_repo_metric_ids_for_tool("get_fitness_state")))
@@ -407,7 +405,10 @@ def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reaso
         "hr_recovery_median_bpm_per_min",
         "vertical_speed_m_per_h",
         "cardiac_cost",
+        "cardiac_cost_adjusted",
         "cardiac_drift_pct",
+        "cardiac_drift_severity",
+        "cardiac_drift_significant",
         "cardiac_drift_quality",
         "hrr_pct",
     }
@@ -486,6 +487,9 @@ def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_p
         "cardiac_cost",
         "cardiac_cost_adjusted",
         "cardiac_drift_pct",
+        "cardiac_drift_significant",
+        "avg_hr",
+        "max_hr",
         "hr_recovery_median_bpm_per_min",
         "hrr_pct",
         "vertical_speed_m_per_h",
@@ -579,6 +583,68 @@ def test_project_fitness_state_service_supports_standard_scenarios(tmp_path: Pat
     serialized = json.dumps(payload).lower()
     for forbidden in ("best_scenario", "recommended_scenario", "should_train", "ready", "on_track"):
         assert forbidden not in serialized
+
+
+def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_strava.application.metric_services import (
+        compare_periods_service,
+        get_fitness_state_service,
+        get_workout_detail_service,
+        list_workouts_service,
+        project_fitness_state_service,
+    )
+
+    _block_legacy_recompute(monkeypatch)
+    repo = _repo_with_facts(tmp_path / "registry-match.db")
+    try:
+        now = datetime.fromisoformat("2026-05-21T09:00:00")
+        fitness = dc_to_dict(get_fitness_state_service(now=now, signal_first_use=False, connection=repo.conn))
+        workouts = dc_to_dict(list_workouts_service(limit=1, now=now, signal_first_use=False, connection=repo.conn))
+        detail = dc_to_dict(get_workout_detail_service(701, now=now, signal_first_use=False, connection=repo.conn))
+        compare = dc_to_dict(
+            compare_periods_service(
+                period_a_start="2026-05-20",
+                period_a_end="2026-05-21",
+                period_b_start="2026-05-19",
+                period_b_end="2026-05-20",
+                now=now,
+                signal_first_use=False,
+                connection=repo.conn,
+            )
+        )
+        projection = dc_to_dict(
+            project_fitness_state_service(
+                target_date="2026-05-23",
+                scenarios=["easy"],
+                now=now,
+                signal_first_use=False,
+                connection=repo.conn,
+            )
+        )
+    finally:
+        repo.close()
+
+    assert set(fitness["data"]) == _repo_metric_ids_for_tool("get_fitness_state")
+    assert all(value is not None for value in fitness["data"].values())
+
+    assert set(workouts["data"][0]) - {"completeness"} == _repo_metric_ids_for_tool("list_workouts")
+    assert set(detail["data"]) - {"completeness"} == _repo_metric_ids_for_tool("get_workout_detail")
+    assert detail["data"]["hr_recovery_pauses"] is not None
+    assert detail["data"]["hr_recovery_total_rest_sec"] is not None
+    assert detail["data"]["cardiac_drift_severity"] is not None
+    assert detail["data"]["cardiac_drift_significant"] is not None
+    assert detail["data"]["cardiac_drift_quality"] is not None
+
+    compare_metric_ids = set(compare["data"]["global"]["metrics"])
+    for sport_payload in compare["data"]["per_sport"].values():
+        compare_metric_ids.update(sport_payload["metrics"])
+    assert compare_metric_ids == _repo_metric_ids_for_tool("compare_periods")
+
+    easy = projection["data"]["scenarios"]["easy"]
+    projection_metric_ids = {"target_date_form", "post_weekend_monday_form", "activity_template_trimp"}
+    projection_metric_ids.update(easy["daily_rows"][0].keys() - {"date"})
+    assert projection_metric_ids == _repo_metric_ids_for_tool("project_fitness_state")
+    assert easy["post_weekend_monday_form"] is not None
 
 
 def test_project_fitness_state_service_validates_custom_rows(tmp_path: Path) -> None:

@@ -89,24 +89,21 @@ def calc_banister_series(daily_trimp, end_date=None):
     return series
 
 
-def _form_zone(form):
-    """Classify form into training zones (simplified to 3, May 2026).
-    7-zone classification was excessive — athlete doesn't feel the difference
-    between 'very_fresh' and 'peak'. Reduced to tired/normal/fresh."""
-    if form < -5:
-        return 'tired'
-    elif form < 10:
-        return 'normal'
-    else:
-        return 'fresh'
-
-
 # ---------------------------------------------------------------------------
 # Form visualisation helpers
 # ---------------------------------------------------------------------------
 
-def _form_zone_short(form):
-    """Short form zone labels for sparkline (simplified to 3 zones)."""
+def _form_zone(form):
+    """Classify form into stable, agent-friendly training zones."""
+    if form < -5:
+        return 'tired'
+    if form < 10:
+        return 'normal'
+    return 'fresh'
+
+
+def _form_marker(form):
+    """Short visual form marker for sparklines."""
     if form < -5:  return '🟠'
     if form < 10:  return '🟢'
     return '🔵'
@@ -144,7 +141,7 @@ def _form_sparkline(history, width=30):
                 bar[i] = fill
         bar[vi] = '█' if vi != zi else bar[vi]
 
-        zone = _form_zone_short(f)
+        zone = _form_marker(f)
         result.append(SparklineBar(
             label=entry.get('label', '') if isinstance(entry, dict) else entry.label,
             bar=''.join(bar),

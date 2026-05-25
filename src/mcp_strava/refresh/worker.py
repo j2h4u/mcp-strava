@@ -12,6 +12,8 @@ from threading import Event
 
 import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.sqlite.migrations import run_preflight
+from mcp_strava.adapters.sqlite.read_model_materializer import materialize_read_model
+from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.db import DbConn
 from mcp_strava.refresh import RefreshSkipped, Stage
@@ -52,6 +54,22 @@ def _stream_channel_backfill_due(state) -> bool:
     return state.checkpoint_stage == Stage.STREAM_CHANNELS_BACKFILL.value
 
 
+def _materialize_dirty_read_model(batch_size: int) -> int:
+    with DbConn() as conn:
+        repo = SQLiteRepository.from_connection(conn)
+        status = repo.read_model_status(metric_version=CURRENT_METRIC_VERSION)
+        dirty_count = int(status.get("dirty_count") or 0)
+        if dirty_count == 0:
+            return 0
+        claim_count = min(dirty_count, batch_size)
+        _emit("read_model_materialize_started", dirty_count=dirty_count, batch_size=claim_count)
+        result = materialize_read_model(repo, metric_version=CURRENT_METRIC_VERSION, limit=claim_count)
+        cleared = int(result.get("dirty_rows_cleared") or 0)
+        remaining = max(dirty_count - cleared, 0)
+        _emit("read_model_materialize_ok", dirty_rows_cleared=cleared, dirty_count_remaining=remaining)
+        return cleared
+
+
 def _run_stream_channel_backfill(repo, transport, refresh_policy, clock, sleeper):
     return refresh_runtime.run_backfill_stream_channels(
         repo,
@@ -68,6 +86,7 @@ def run_pending_once(*, emit_idle: bool = True) -> int:
     """Run one refresh cycle when interval policy or queued requests require it."""
     settings = get_settings()
     ensure_refresh_schema(run_preflight(settings.database_path))
+    _materialize_dirty_read_model(settings.refresh.read_model_batch_size)
     now_iso = _now_iso()
 
     refresh_policy = RefreshPolicy.from_settings(settings)

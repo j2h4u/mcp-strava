@@ -56,13 +56,17 @@ REQUIRED_COLUMNS = {
         "zone3_seconds",
         "zone4_seconds",
         "zone5_seconds",
+        "hr_recovery_pause_count",
+        "hr_recovery_total_rest_sec",
         "hr_recovery_median_rate",
         "vertical_speed_vmh",
         "cardiac_cost",
         "adjusted_cardiac_cost",
         "cardiac_drift_pct",
+        "cardiac_drift_severity",
+        "cardiac_drift_significant",
+        "cardiac_drift_quality",
         "hrr_pct",
-        "z5_seconds",
         "anomaly_count",
         "distance_m",
         "moving_time_s",
@@ -101,8 +105,8 @@ REQUIRED_COLUMNS = {
         "fitness",
         "fatigue",
         "form",
-        "atl",
-        "ctl",
+        "form_zone",
+        "acwr_zone",
         "acwr",
     },
     "rolling_period_facts": {
@@ -124,6 +128,12 @@ REQUIRED_COLUMNS = {
         "fitness",
         "fatigue",
         "form",
+        "form_zone",
+        "acwr_zone",
+        "median_cardiac_cost",
+        "median_adjusted_cardiac_cost",
+        "median_hr_recovery",
+        "median_cardiac_drift_pct",
     },
     "read_model_refresh_runs": {
         "id",
@@ -190,7 +200,7 @@ def _row_counts(conn: sqlite3.Connection, tables: tuple[str, ...]) -> dict[str, 
     }
 
 
-def test_read_model_v5_migration_creates_required_tables_columns_and_indexes(tmp_path: Path) -> None:
+def test_read_model_v6_migration_creates_required_tables_columns_and_indexes(tmp_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import run_migrations
 
     fixture = tmp_path / "fixture.db"
@@ -199,15 +209,22 @@ def test_read_model_v5_migration_creates_required_tables_columns_and_indexes(tmp
     report = run_migrations(fixture)
 
     with sqlite3.connect(fixture) as conn:
-        assert report.user_version == 5
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert report.user_version == 6
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
         assert READ_MODEL_TABLES <= _table_names(conn)
         for table, required in REQUIRED_COLUMNS.items():
             assert required <= _column_names(conn, table), table
+        forbidden_columns = {
+            "activity_metric_facts": {"z5_seconds"},
+            "training_model_daily": {"atl", "ctl"},
+            "rolling_period_facts": {"atl", "ctl"},
+        }
+        for table, forbidden in forbidden_columns.items():
+            assert _column_names(conn, table).isdisjoint(forbidden), table
         assert REQUIRED_INDEXES <= _index_names(conn)
 
 
-def test_read_model_v5_migration_queues_existing_activities_for_initial_materialization(tmp_path: Path) -> None:
+def test_read_model_v6_migration_queues_existing_activities_for_initial_materialization(tmp_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import run_migrations
     from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION
 
@@ -258,7 +275,7 @@ def test_initial_migration_queue_materializes_existing_fixture_activities(tmp_pa
     assert dirty_count == 0
 
 
-def test_read_model_v5_migration_is_idempotent_and_preserves_source_rows(tmp_path: Path) -> None:
+def test_read_model_v6_migration_is_idempotent_and_preserves_source_rows(tmp_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import run_migrations
 
     fixture = tmp_path / "fixture.db"
@@ -273,10 +290,10 @@ def test_read_model_v5_migration_is_idempotent_and_preserves_source_rows(tmp_pat
 
     with sqlite3.connect(fixture) as conn:
         after = _row_counts(conn, SOURCE_TABLES)
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
 
-    assert first.user_version == 5
-    assert second.user_version == 5
+    assert first.user_version == 6
+    assert second.user_version == 6
     assert after == before
 
 
@@ -289,7 +306,7 @@ def test_schema_inventory_reports_read_model_row_counts(tmp_path: Path) -> None:
 
     report = run_preflight(fixture)
 
-    assert report.user_version == 5
+    assert report.user_version == 6
     assert report.row_counts["activity_source_state"] == report.row_counts["activities"]
     assert report.row_counts["metric_dirty_activities"] == report.row_counts["activities"]
     for table in READ_MODEL_TABLES - {"activity_source_state", "metric_dirty_activities"}:

@@ -16,6 +16,7 @@ READ_MODEL_TABLES_V5: tuple[str, ...] = (
     "rolling_period_facts",
     "read_model_refresh_runs",
 )
+READ_MODEL_TABLES_V6: tuple[str, ...] = READ_MODEL_TABLES_V5
 
 REQUIRED_TABLES_BY_VERSION: dict[int, tuple[str, ...]] = {
     1: BASE_TABLES_V1,
@@ -24,6 +25,7 @@ REQUIRED_TABLES_BY_VERSION: dict[int, tuple[str, ...]] = {
     # Reserved for 06-03 canonical GPS cleanup; latlng removal is intentional here.
     4: BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",),
     5: BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",) + READ_MODEL_TABLES_V5,
+    6: BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",) + READ_MODEL_TABLES_V6,
 }
 
 REQUIRED_COLUMNS_BY_VERSION: dict[int, dict[str, tuple[str, ...]]] = {
@@ -285,6 +287,100 @@ REQUIRED_COLUMNS_BY_VERSION: dict[int, dict[str, tuple[str, ...]]] = {
             "last_error",
         ),
     },
+    6: {
+        "activity_metric_facts": (
+            "activity_id",
+            "activity_day",
+            "sport_type",
+            "source_hash",
+            "source_revision",
+            "metric_version",
+            "computed_at",
+            "completeness_status",
+            "missing_reasons_json",
+            "trimp",
+            "zone1_seconds",
+            "zone2_seconds",
+            "zone3_seconds",
+            "zone4_seconds",
+            "zone5_seconds",
+            "hr_recovery_pause_count",
+            "hr_recovery_total_rest_sec",
+            "hr_recovery_median_rate",
+            "hr_recovery_best_rate",
+            "hr_recovery_worst_rate",
+            "hr_recovery_avg_rate",
+            "vertical_speed_vmh",
+            "vertical_speed_total_ascent_m",
+            "vertical_speed_duration_hours",
+            "cardiac_cost",
+            "adjusted_cardiac_cost",
+            "cardiac_drift_pct",
+            "cardiac_drift_severity",
+            "cardiac_drift_significant",
+            "cardiac_drift_quality",
+            "hrr_pct",
+            "anomaly_count",
+            "distance_m",
+            "moving_time_s",
+            "elapsed_time_s",
+            "elevation_gain_m",
+            "heartrate_sample_count",
+            "stream_sample_count",
+        ),
+        "training_model_daily": (
+            "day",
+            "scope",
+            "sport_type",
+            "metric_version",
+            "computed_at",
+            "completeness_status",
+            "missing_reasons_json",
+            "effective_trimp",
+            "observed_trimp",
+            "fitness",
+            "fatigue",
+            "form",
+            "form_zone",
+            "acwr_zone",
+            "acwr",
+            "load_7d",
+            "load_28d",
+            "load_42d",
+            "input_days",
+            "missing_days",
+        ),
+        "rolling_period_facts": (
+            "as_of_day",
+            "window_days",
+            "scope",
+            "sport_type",
+            "metric_version",
+            "computed_at",
+            "completeness_status",
+            "missing_reasons_json",
+            "activity_count",
+            "active_days",
+            "rest_days",
+            "observed_trimp",
+            "effective_trimp",
+            "distance_m",
+            "moving_time_s",
+            "elevation_gain_m",
+            "high_zone_seconds",
+            "anomaly_count",
+            "fitness",
+            "fatigue",
+            "form",
+            "form_zone",
+            "acwr_zone",
+            "acwr",
+            "median_cardiac_cost",
+            "median_adjusted_cardiac_cost",
+            "median_hr_recovery",
+            "median_cardiac_drift_pct",
+        ),
+    },
 }
 
 REQUIRED_INDEXES_BY_VERSION: dict[int, dict[str, dict[str, object]]] = {
@@ -425,7 +521,7 @@ def _required_indexes_for_version(version: int) -> dict[str, dict[str, object]]:
 
 def row_counts(conn: sqlite3.Connection) -> dict[str, int]:
     counts: dict[str, int] = {}
-    table_names = set(BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",) + READ_MODEL_TABLES_V5)
+    table_names = set(BASE_TABLES_V1 + REFRESH_TABLES_V2 + ("stream_channels",) + READ_MODEL_TABLES_V6)
     for table in sorted(table_names):
         if _table_exists(conn, table):
             counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])

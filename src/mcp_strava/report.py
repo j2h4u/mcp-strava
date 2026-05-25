@@ -85,36 +85,31 @@ def daily_report_from_connection(conn, now_local=None):
     banister = calc_banister(daily_trimp, today)
 
     # ACWR
-    ctl_ewma = ewma(daily_trimp, 28, today)
-    ctl_val = ctl_ewma.get(today, 0)
-    atl_val = banister.fatigue if banister else 0
-    acwr = round(atl_val / ctl_val, 2) if ctl_val > 0 else None
+    fitness_ewma = ewma(daily_trimp, 28, today)
+    fitness_val = fitness_ewma.get(today, 0)
+    fatigue_val = banister.fatigue if banister else 0
+    acwr = round(fatigue_val / fitness_val, 2) if fitness_val > 0 else None
     acwr_zone = 'sweet_spot' if acwr and 0.8 <= acwr <= 1.3 else \
                 'caution' if acwr and 1.3 < acwr <= Config.Thresholds.ACWR_DANGER else \
                 'danger' if acwr and acwr > Config.Thresholds.ACWR_DANGER else \
                 'undertrained' if acwr and acwr < 0.8 else 'unknown'
 
-    # ACWR history + Banister history (7 days back)
-    # NOTE: calc_banister() is called 14 times here — each does a full EWMA pass
-    # over daily_trimp. For ~500 days this is negligible (<100ms); if daily_trimp
-    # grows to 10k+ days, precompute the full Banister/EWMA series once.
     acwr_history = []
     banister_history = []
     for delta in range(7, 0, -1):
         past_day = (now_local - timedelta(days=delta)).strftime('%Y-%m-%d')
         past_ban = calc_banister(daily_trimp, past_day)
-        # ACWR
-        past_ctl = ctl_ewma.get(past_day, 0)
-        past_atl = past_ban.fatigue if past_ban else 0
-        past_acwr = round(past_atl / past_ctl, 2) if past_ctl > 0 else None
+        past_fitness = fitness_ewma.get(past_day, 0)
+        past_fatigue = past_ban.fatigue if past_ban else 0
+        past_acwr = round(past_fatigue / past_fitness, 2) if past_fitness > 0 else None
         if past_acwr is not None:
-            acwr_history.append(AcwrPoint(date=past_day, acwr=past_acwr, atl=past_atl, ctl=past_ctl))
-        # Banister
+            acwr_history.append(AcwrPoint(date=past_day, acwr=past_acwr, fatigue=past_fatigue, fitness=past_fitness))
         if past_ban:
             banister_history.append(BanisterPoint(
                 date=past_day,
                 form=past_ban.form,
                 fatigue=past_ban.fatigue,
+                form_zone=past_ban.form_zone,
             ))
 
     # Build report
@@ -140,8 +135,8 @@ def daily_report_from_connection(conn, now_local=None):
         ), 1),
         acwr=acwr,
         acwr_zone=acwr_zone,
-        acwr_atl=atl_val,
-        acwr_ctl=ctl_val,
+        acwr_fatigue=fatigue_val,
+        acwr_fitness=fitness_val,
         acwr_history=acwr_history,
     )
 
@@ -259,7 +254,7 @@ def _generate_recommendation(report):
     # ── Pure predicate functions (no mutation) ──
 
     def _form_signal():
-        """Form zone → (action, intensity, reason). Simplified 3-zone (May 2026)."""
+        """Form zone -> action, intensity, reason."""
         if form_zone == 'tired':
             if form < -15:
                 return ('rest', 'low', f"Форма {form:+.0f} — телу нужна пауза")

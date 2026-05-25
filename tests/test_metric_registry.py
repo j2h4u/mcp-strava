@@ -40,10 +40,9 @@ REQUIRED_METRIC_IDS = {
     "cardiac_cost_adjusted",
     "cardiac_drift_pct",
     "cardiac_drift_severity",
-    "cardiac_drift_quality",
     "cardiac_drift_significant",
+    "cardiac_drift_quality",
     "hrr_pct",
-    "z5_seconds",
     "hr_anomaly_count",
     "daily_trimp",
     "total_trimp_14d",
@@ -62,8 +61,6 @@ REQUIRED_METRIC_IDS = {
     "banister_history",
     "acwr",
     "acwr_zone",
-    "atl",
-    "ctl",
     "acwr_history",
     "daily_avg_trimp_7d",
     "daily_avg_trimp_28d",
@@ -71,6 +68,8 @@ REQUIRED_METRIC_IDS = {
     "rolling_median_cc",
     "rolling_median_cc_adj",
     "rolling_median_epkm",
+    "rolling_median_hr_recovery",
+    "rolling_median_cardiac_drift_pct",
     "volume_7d",
     "volume_28d",
     "load_trend_pct",
@@ -90,6 +89,12 @@ REQUIRED_METRIC_IDS = {
     "activity_template_trimp",
 }
 
+FORBIDDEN_METRIC_IDS = {
+    "z5_seconds",
+    "atl",
+    "ctl",
+}
+
 ALLOWED_SPORT_SCOPE = {"global", "per_sport", "both"}
 ALLOWED_COMPARISON_MODE = {"sum", "avg", "median", "last", "min", "max", "trend", "distribution", "none"}
 ALLOWED_TOOLS = {
@@ -106,6 +111,10 @@ def test_registry_covers_required_metric_ids():
     assert not missing, f"Missing required metric ids: {sorted(missing)}"
 
 
+def test_registry_rejects_duplicate_or_placeholder_metric_ids():
+    assert METRIC_REGISTRY.keys().isdisjoint(FORBIDDEN_METRIC_IDS)
+
+
 def test_registry_entries_have_required_metadata():
     for metric in METRIC_REGISTRY.values():
         assert metric.metric_id
@@ -117,7 +126,6 @@ def test_registry_entries_have_required_metadata():
         assert metric.directionality
         assert metric.requirements
         assert metric.missing_reasons
-        assert metric.exposed_in
         assert metric.calculation
 
 
@@ -155,11 +163,21 @@ def test_unknown_tool_id_is_rejected():
 
 def test_registry_entries_describe_calculation_contract():
     banned_placeholders = {"todo", "tbd", "n/a", "unknown"}
+    banned_phrases = {
+        "reserved",
+        "currently returns null",
+        "currently not materialized",
+        "currently skipped",
+        "currently materialized as the same value",
+        "not materialized for",
+    }
     for metric in METRIC_REGISTRY.values():
         calculation = metric.calculation.strip()
         assert len(calculation) >= 24, f"{metric.metric_id} calculation is too terse"
         assert calculation.lower() not in banned_placeholders
         assert metric.metric_id != calculation, f"{metric.metric_id} repeats its id instead of explaining calculation"
+        lowered = calculation.lower()
+        assert not any(phrase in lowered for phrase in banned_phrases), metric.metric_id
 
 
 def test_metric_catalog_payload_exposes_calculation_contracts():
@@ -178,12 +196,14 @@ def test_docs_metrics_md_stays_in_sync_with_registry():
         )
     for key in EXCLUDED_INTERPRETATIONS:
         assert key in docs_text, f"docs/metrics.md missing exclusion key: {key}"
+    for metric_id in FORBIDDEN_METRIC_IDS:
+        assert metric_id not in docs_text, f"docs/metrics.md still documents removed metric id: {metric_id}"
 
 
-def test_compare_periods_registry_metrics_are_mapped_or_explicitly_skipped():
+def test_compare_periods_registry_metrics_are_mapped_without_skip_bucket():
     mapped = set(metric_services.COMPARE_PERIODS_HANDLERS.keys())
-    skipped = set(metric_services.COMPARE_PERIODS_SKIP_REASONS.keys())
+    assert metric_services.COMPARE_PERIODS_SKIP_REASONS == {}
     for metric_id, definition in METRIC_REGISTRY.items():
         if definition.comparison_mode == "none" or "compare_periods" not in definition.exposed_in:
             continue
-        assert metric_id in mapped or metric_id in skipped, f"{metric_id} must be mapped or explicitly skipped"
+        assert metric_id in mapped, f"{metric_id} must be mapped"

@@ -46,6 +46,7 @@ def test_compose_source_contract() -> None:
     assert "/opt/docker/mcp-strava:/runtime" in text
     assert "MCP_STRAVA_DB_PATH" in text and "/runtime/data/strava.db" in text
     assert "MCP_STRAVA_TOKEN_PATH" in text and "/runtime/.env" in text
+    assert "MCP_STRAVA_READ_MODEL_BATCH_SIZE" in text
     assert "mcp-backends" in text
 
 
@@ -64,7 +65,7 @@ def test_phase7_deployment_runbook_documents_read_model_performance_gate() -> No
     lowered = text.lower()
 
     assert "pinned pre-phase-7 backup" in lowered
-    assert "user_version=5" in text
+    assert "user_version=6" in text
     assert "admin db-migrate --apply" in text
     assert "admin mirror-refresh --force" in text
     assert "just test" in text
@@ -108,7 +109,7 @@ def test_preflight_main_valid_db_passes(tmp_path: Path) -> None:
     assert rc == 0
 
 
-def test_validate_runtime_db_reports_v5_read_model_readiness_without_requiring_current_facts(tmp_path: Path) -> None:
+def test_validate_runtime_db_reports_v6_read_model_readiness_without_requiring_current_facts(tmp_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import run_migrations
     from mcp_strava.deploy.preflight import validate_runtime_db
 
@@ -118,14 +119,14 @@ def test_validate_runtime_db_reports_v5_read_model_readiness_without_requiring_c
 
     report = validate_runtime_db(db_path)
 
-    assert report["user_version"] == 5
+    assert report["user_version"] == 6
     assert report["read_model"]["schema_ready"] is True
     assert report["read_model"]["missing_tables"] == []
     assert report["read_model"]["facts_current"] is False
     assert report["read_model"]["dirty_count"] == 42
 
 
-def test_validate_runtime_db_fails_when_v5_read_model_tables_are_missing(tmp_path: Path) -> None:
+def test_validate_runtime_db_fails_when_v6_read_model_tables_are_missing(tmp_path: Path) -> None:
     from mcp_strava.adapters.sqlite.migrations import run_migrations
     from mcp_strava.deploy.preflight import validate_runtime_db
 
@@ -195,19 +196,65 @@ def test_entrypoint_runs_preflight_before_exec(monkeypatch: pytest.MonkeyPatch, 
         assert path == db_path
         assert quick is False
 
+    def fake_needs_migration(path: Path) -> bool:
+        calls.append(("needs_migration", path))
+        return False
+
     def fake_execvp(program: str, argv: list[str]) -> None:
         calls.append(("execvp", (program, argv)))
         raise SystemExit(0)
 
     monkeypatch.setenv("MCP_STRAVA_DB_PATH", str(db_path))
+    monkeypatch.setattr(entrypoint, "_needs_migration", fake_needs_migration)
     monkeypatch.setattr(entrypoint, "validate_runtime_db", fake_validate)
     monkeypatch.setattr(entrypoint.os, "execvp", fake_execvp)
 
     with pytest.raises(SystemExit):
         entrypoint.main([])
 
-    assert calls[0][0] == "validate"
-    assert calls[1][0] == "execvp"
+    assert calls[0][0] == "needs_migration"
+    assert calls[1][0] == "validate"
+    assert calls[2][0] == "execvp"
+
+
+def test_entrypoint_runs_migration_before_preflight_when_needed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from mcp_strava.deploy import entrypoint
+
+    db_path = tmp_path / "old.db"
+    _create_fixture_db(db_path)
+    calls: list[str] = []
+
+    def fake_needs_migration(path: Path) -> bool:
+        assert path == db_path
+        calls.append("needs_migration")
+        return True
+
+    def fake_run_migrations(path: Path) -> None:
+        assert path == db_path
+        calls.append("run_migrations")
+
+    def fake_validate(path: Path, *, quick: bool = False) -> None:
+        assert path == db_path
+        assert quick is False
+        calls.append("validate")
+
+    def fake_execvp(program: str, argv: list[str]) -> None:
+        del program, argv
+        calls.append("execvp")
+        raise SystemExit(0)
+
+    monkeypatch.setenv("MCP_STRAVA_DB_PATH", str(db_path))
+    monkeypatch.setattr(entrypoint, "_needs_migration", fake_needs_migration)
+    monkeypatch.setattr(entrypoint, "run_migrations", fake_run_migrations)
+    monkeypatch.setattr(entrypoint, "validate_runtime_db", fake_validate)
+    monkeypatch.setattr(entrypoint.os, "execvp", fake_execvp)
+
+    with pytest.raises(SystemExit):
+        entrypoint.main([])
+
+    assert calls == ["needs_migration", "run_migrations", "validate", "execvp"]
 
 
 def test_entrypoint_exits_without_exec_when_preflight_fails(
@@ -227,6 +274,7 @@ def test_entrypoint_exits_without_exec_when_preflight_fails(
         exec_called = True
 
     monkeypatch.setenv("MCP_STRAVA_DB_PATH", str(tmp_path / "missing.db"))
+    monkeypatch.setattr(entrypoint, "_needs_migration", lambda _path: False)
     monkeypatch.setattr(entrypoint, "validate_runtime_db", fake_validate)
     monkeypatch.setattr(entrypoint.os, "execvp", fake_execvp)
 
