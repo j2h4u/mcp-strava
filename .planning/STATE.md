@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-25T20:45:48.020Z"
+last_updated: "2026-05-25T21:06:20.303Z"
 last_activity: 2026-05-25
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 39
-  completed_plans: 36
+  completed_plans: 37
   percent: 88
 ---
 
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-24)
 ## Current Position
 
 Phase: 08 (duckdb-primary-storage-aggregate-analytics-surface) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-05-25
 
@@ -80,6 +80,7 @@ Last activity: 2026-05-25
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-05 | 10 min | 3 tasks | 4 files |
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-03 | 20min | 3 tasks | 13 files |
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-04 | 9 min | 3 tasks | 15 files |
+| Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-06 | 39min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -144,6 +145,9 @@ Recent decisions affecting current work:
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: DuckDB container runtime uses one owner process with in-process refresh scheduling and per-thread DuckDB connections. — Enforces D-13 and prevents multiple read-write DuckDB owners.
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Docker healthcheck validates owner-process state and HTTP readiness instead of opening the live DuckDB file. — Keeps health probes from contending with the live DuckDB owner.
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Standalone refresh.worker refuses live DuckDB container mode. — Refresh remains automatic below MCP through the owner process only.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Aggregate queries use DuckDB views and whitelisted registry metadata, not caller-supplied storage names or SQL.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: All-time buckets keep caller bounds when supplied and otherwise default start to the earliest local activity before the exclusive end.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Aggregate service validation happens before opening or executing query work for invalid product parameters.
 
 ### Roadmap Evolution
 
@@ -167,8 +171,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-25T20:45:48.004Z
-Stopped at: Completed 08-duckdb-primary-storage-aggregate-analytics-surface-08-04-PLAN.md
+Last session: 2026-05-25T21:06:20.290Z
+Stopped at: Completed 08-duckdb-primary-storage-aggregate-analytics-surface-08-06-PLAN.md
 Resume file: None
 
 ## Quick Tasks Completed
