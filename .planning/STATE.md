@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-25T16:51:05.824Z"
+last_updated: "2026-05-25T17:07:38.783Z"
 last_activity: 2026-05-25
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 39
-  completed_plans: 33
-  percent: 85
+  completed_plans: 34
+  percent: 87
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-24)
 ## Current Position
 
 Phase: 08 (duckdb-primary-storage-aggregate-analytics-surface) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-05-25
 
@@ -77,6 +77,7 @@ Last activity: 2026-05-25
 | Phase 07 P07-06 | 62min | 3 tasks | 10 files |
 | Phase 08 P08-01 | 7min | 2 tasks | 3 files |
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-02 | 12 min | 3 tasks | 10 files |
+| Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-05 | 10 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -132,6 +133,9 @@ Recent decisions affecting current work:
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Use admin duckdb-cutover as the local admin storage migration command. — Keeps migration local-admin only and gives later plans a stable command name.
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Create the final DuckDB runtime file only after backup, lease, cast, and parity gates pass. — Protects local data and avoids failed cutovers mutating the canonical target path.
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Allow direct SQLite access outside the SQLite adapter only in the migration-only DuckDB cutover module. — Preserves direct-SQLite guard coverage while allowing stopped-source backup and parity migration reads.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Aggregate semantics stay in metric_registry.py through typed metadata instead of alternate pseudo metric ids. — Preserves current metric ids and keeps aggregate math centralized for DuckDB query builders.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Metric bundles are scenario-oriented registry data and do not change the existing five-tool MCP allowlist. — Keeps this plan as a registry prerequisite; the get_training_aggregates handler is added later.
+- [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Weighted heart-rate aggregate metadata requires explicit denominator and weight columns. — Prevents silent fallback to naive averages for HR aggregate rows.
 
 ### Roadmap Evolution
 
@@ -155,8 +159,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-25T16:50:37.390Z
-Stopped at: Completed 08-02-PLAN.md
+Last session: 2026-05-25T17:07:15.985Z
+Stopped at: Completed 08-05-PLAN.md
 Resume file: None
 
 ## Quick Tasks Completed
