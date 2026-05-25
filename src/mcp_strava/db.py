@@ -1,13 +1,11 @@
 """Database layer — connection management, auth, zones, TRIMP queries."""
 
-import sqlite3
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from mcp_strava.adapters.sqlite.connection import open_expected_mirror_db
-from mcp_strava.adapters.sqlite.migrations import run_preflight
-from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+from mcp_strava.adapters.duckdb.connection import open_expected_mirror_db
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.strava import (
     FileTokenProvider,
     RateLimitPolicy,
@@ -29,7 +27,7 @@ def _env_path() -> str:
 # --- DB ---
 
 class DbConn:
-    """Context manager for SQLite connections — auto-closes on exit."""
+    """Context manager for DuckDB primary connections — auto-closes on exit."""
 
     def __enter__(self):
         self.conn = open_expected_mirror_db(_db_path())
@@ -41,8 +39,18 @@ class DbConn:
 
 
 def init_db(conn):
-    # Phase 2: runtime paths do not run schema-changing DDL.
-    run_preflight(_db_path())
+    # Runtime paths do not run schema-changing DDL; migration owns schema creation.
+    del conn
+    check = open_expected_mirror_db(_db_path())
+    check.close()
+
+
+def repository_from_connection(conn) -> DuckDBRepository:
+    return DuckDBRepository.from_connection(conn)
+
+
+def repository_from_path(db_path: str | Path, *, expected_mirror: bool = False) -> DuckDBRepository:
+    return DuckDBRepository.from_path(db_path, expected_mirror=expected_mirror)
 
 
 # --- Auth ---
@@ -146,17 +154,16 @@ def api_request(path, token=None):
 def get_zones():
     """Get cached zones or fetch from Strava."""
     with DbConn() as conn:
-        row = conn.execute("SELECT zones_json FROM athlete_zones ORDER BY fetched_at DESC LIMIT 1").fetchone()
-        if row:
-            return json.loads(row['zones_json'])
-    # Phase 4 follow-up: move zone writes behind a ZonesService over SQLiteRepository.
+        repo = repository_from_connection(conn)
+        zones_json = repo.latest_athlete_zones()
+        if zones_json is not None:
+            return json.loads(zones_json)
     data, _rate_info = api_request('/athlete/zones')
     zones = [{'min': z['min'], 'max': z['max'] if z['max'] != -1 else 300}
              for z in data['heart_rate']['zones']]
     with DbConn() as conn:
-        conn.execute("INSERT INTO athlete_zones (fetched_at, zones_json) VALUES (?, ?)",
-                     (datetime.now().isoformat(), json.dumps(zones)))
-        conn.commit()
+        repo = repository_from_connection(conn)
+        repo.insert_athlete_zones(datetime.now().isoformat(), json.dumps(zones))
     return zones
 
 
@@ -168,6 +175,6 @@ def get_daily_trimp_history(conn, days=None, sport_filter=None):
     sport_filter='training': exclude non-training activities (Walk) from TRIMP.
                            Prevents daily walking from creating false fatigue signals.
     """
-    repo = SQLiteRepository.from_connection(conn)
+    repo = repository_from_connection(conn)
     since = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d') if days is not None else None
     return repo.observed_trimp_history(since_day=since, sport_filter=sport_filter)

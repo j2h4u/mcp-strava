@@ -58,6 +58,7 @@ _KEYS = {
 _CacheKey = tuple[tuple[tuple[str, str], ...], str | None, str | None]
 
 _CACHED_SETTINGS: dict[_CacheKey, Settings] = {}
+CANONICAL_DUCKDB_RUNTIME_PATH = Path('/runtime/data/strava.duckdb')
 
 
 def _read_env_file(env_file: Path) -> dict[str, str]:
@@ -120,6 +121,12 @@ def _parse_csv(raw: str) -> tuple[str, ...]:
     return values
 
 
+def _default_database_path(root: Path, runtime_profile: str) -> Path:
+    if runtime_profile in {'docker', 'container', 'live'}:
+        return CANONICAL_DUCKDB_RUNTIME_PATH
+    return root / 'data' / 'strava.duckdb'
+
+
 def _resolve_project_root(
     env_map: Mapping[str, str],
     file_values: Mapping[str, str],
@@ -166,9 +173,9 @@ def load_settings(
             return file_values[key]
         return default
 
-    database_path = Path(resolve('MCP_STRAVA_DB_PATH', str(root / 'data' / 'strava.db')))
-    token_path = Path(resolve('MCP_STRAVA_TOKEN_PATH', str(root / '.env')))
     runtime_profile = resolve('MCP_STRAVA_RUNTIME_PROFILE', 'local')
+    database_path = Path(resolve('MCP_STRAVA_DB_PATH', str(_default_database_path(root, runtime_profile))))
+    token_path = Path(resolve('MCP_STRAVA_TOKEN_PATH', str(root / '.env')))
 
     http_host = resolve('MCP_STRAVA_HTTP_HOST', '127.0.0.1')
     http_port = _parse_int(resolve('MCP_STRAVA_HTTP_PORT', '8000'), 'MCP_STRAVA_HTTP_PORT')

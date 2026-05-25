@@ -7,7 +7,7 @@ from calendar import monthrange
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable
 
-from mcp_strava.adapters.sqlite.read_model_materializer import materialize_read_model
+from mcp_strava.adapters.duckdb.read_model_materializer import materialize_read_model
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.types import parse_strava_activity, parse_strava_stream_channels
 
