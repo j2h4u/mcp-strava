@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from calendar import monthrange
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable
 
-from mcp_strava.adapters.duckdb.read_model_materializer import materialize_read_model
+from mcp_strava.adapters.duckdb.read_model_materializer import (
+    materialize_read_model as materialize_duckdb_read_model,
+)
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.types import parse_strava_activity, parse_strava_stream_channels
 
@@ -39,6 +43,11 @@ STREAM_CHANNEL_TO_COLUMN = {
     "grade_adjusted_distance": "gap_distance",
     "moving": "is_moving",
 }
+
+
+def _sqlite_materialize_read_model():
+    sqlite_materializer = importlib.import_module("mcp_strava.adapters.sqlite.read_model_materializer")
+    return sqlite_materializer.materialize_read_model
 
 
 def _is_iso_day(value: str) -> bool:
@@ -255,7 +264,10 @@ def materialize_read_model_stage(
     now_iso: str,
     renew_lease: Callable[[], None] | None,
 ) -> dict[str, object]:
-    return materialize_read_model(
+    materializer = materialize_duckdb_read_model
+    if not isinstance(repo, DuckDBRepository):
+        materializer = _sqlite_materialize_read_model()
+    return materializer(
         repo,
         metric_version=metric_version,
         now=now_iso,

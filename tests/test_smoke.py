@@ -333,4 +333,4 @@ def test_settings_loads_defaults_under_pytest(tmp_path):
     from mcp_strava.settings import load_settings
 
     settings = load_settings(environ={}, project_root=tmp_path)
-    assert str(settings.database_path).endswith("data/strava.db")
+    assert str(settings.database_path).endswith("data/strava.duckdb")

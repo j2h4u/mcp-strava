@@ -1,5 +1,6 @@
 """Database layer — connection management, auth, zones, TRIMP queries."""
 
+import importlib
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -24,13 +25,24 @@ def _env_path() -> str:
     return str(get_settings().token_path)
 
 
+def _is_sqlite_compat_path(path: str | Path) -> bool:
+    return Path(path).suffix.lower() in {".db", ".sqlite", ".sqlite3"}
+
+
+def _open_storage_connection(path: str | Path):
+    if _is_sqlite_compat_path(path):
+        sqlite_connection = importlib.import_module("mcp_strava.adapters.sqlite.connection")
+        return sqlite_connection.open_expected_mirror_db(path)
+    return open_expected_mirror_db(path)
+
+
 # --- DB ---
 
 class DbConn:
-    """Context manager for DuckDB primary connections — auto-closes on exit."""
+    """Context manager for primary storage connections — auto-closes on exit."""
 
     def __enter__(self):
-        self.conn = open_expected_mirror_db(_db_path())
+        self.conn = _open_storage_connection(_db_path())
         return self.conn
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -41,15 +53,21 @@ class DbConn:
 def init_db(conn):
     # Runtime paths do not run schema-changing DDL; migration owns schema creation.
     del conn
-    check = open_expected_mirror_db(_db_path())
+    check = _open_storage_connection(_db_path())
     check.close()
 
 
-def repository_from_connection(conn) -> DuckDBRepository:
+def repository_from_connection(conn):
+    if conn.__class__.__module__ == "sqlite3":
+        sqlite_repository = importlib.import_module("mcp_strava.adapters.sqlite.repository")
+        return sqlite_repository.SQLiteRepository.from_connection(conn)
     return DuckDBRepository.from_connection(conn)
 
 
-def repository_from_path(db_path: str | Path, *, expected_mirror: bool = False) -> DuckDBRepository:
+def repository_from_path(db_path: str | Path, *, expected_mirror: bool = False):
+    if _is_sqlite_compat_path(db_path):
+        sqlite_repository = importlib.import_module("mcp_strava.adapters.sqlite.repository")
+        return sqlite_repository.SQLiteRepository.from_path(db_path, expected_mirror=expected_mirror)
     return DuckDBRepository.from_path(db_path, expected_mirror=expected_mirror)
 
 
