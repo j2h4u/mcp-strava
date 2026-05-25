@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import sqlite3
+import sys
+import tomllib
 
 import pytest
 
@@ -14,6 +16,15 @@ def _repo_root() -> Path:
 
 def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def test_project_runtime_requires_python_314_and_duckdb_dependency() -> None:
+    assert sys.version_info[:2] == (3, 14)
+
+    pyproject = tomllib.loads(_read_text(_repo_root() / "pyproject.toml"))
+    project = pyproject["project"]
+    assert project["requires-python"] == ">=3.14"
+    assert "duckdb>=1.5.3,<1.6" in project["dependencies"]
 
 
 def test_dockerfile_source_contract() -> None:

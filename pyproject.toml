@@ -6,7 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "mcp-strava"
 version = "0.1.0"
 requires-python = ">=3.14"
-dependencies = ["mcp>=1.27.1,<1.28", "PyYAML>=6.0.2,<7"]
+dependencies = [
+    "duckdb>=1.5.3,<1.6",
+    "mcp>=1.27.1,<1.28",
+    "PyYAML>=6.0.2,<7",
+]
 
 [project.optional-dependencies]
 test = ["pytest"]
