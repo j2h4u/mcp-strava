@@ -2,7 +2,7 @@
 
 ## Overview
 
-This roadmap refactors the current CLI-first codebase into a layered service architecture while preserving the existing Strava mirror. The first milestone established package/settings, repository, Strava adapter, application/CLI, MCP, and Docker boundaries. The v1.1 milestone added a full-fidelity SQLite mirror layer and materialized derived metrics so MCP tools read prepared facts instead of recomputing expensive stream-derived metrics on request. The next milestone migrates primary storage to DuckDB and adds an aggregate analytics surface for period/bucket queries.
+This roadmap refactors the current CLI-first codebase into a layered service architecture while preserving the existing Strava mirror. The first milestone established package/settings, repository, Strava adapter, application/CLI, MCP, and Docker boundaries. The v1.1 milestone added a full-fidelity mirror layer, DuckDB primary runtime storage, materialized derived metrics, aggregate analytics, and factual product bundles so MCP and CLI reads consume prepared facts instead of recomputing expensive stream-derived metrics on request.
 
 ## Phases
 
@@ -20,6 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Full-Fidelity Strava Mirror** - Preserve Strava stream data in lossless normalized SQLite structures, generalize stream ingestion, unify GPS storage, and backfill missing stream channels safely. (completed 2026-05-24)
 - [x] **Phase 7: Materialized Metrics Read Model** - Persist derived activity, daily load, model, and rolling-window facts beside the Strava mirror so MCP tools aggregate prepared facts under sub-500ms latency targets. (completed 2026-05-24)
 - [ ] **Phase 8: DuckDB Primary Storage & Aggregate Analytics Surface** - Migrate the primary local mirror from SQLite to DuckDB and expose bucketed aggregate analytics for MCP period and metric queries.
+- [x] **Phase 9: Product factual bundles and CLI read-model consolidation** - Expose factual daily, weekly, historical, status, kudos, and supported gear facts through shared read-model application services for MCP and CLI. (completed 2026-05-26)
 
 ## Phase Details
 
@@ -161,19 +162,19 @@ Plans:
 **Plans:** 7/8 plans executed
 
 Plans:
-  - [ ] `08-01-PLAN.md` — DuckDB package legitimacy gate and dependency baseline
-  - [ ] `08-02-PLAN.md` — One-shot SQLite-to-DuckDB migration, pinned backup, parity, and admin cutover command
-  - [ ] `08-03-PLAN.md` — DuckDB primary repository, read-model materializer, and runtime connection cutover
-  - [ ] `08-04-PLAN.md` — Single-owner DuckDB runtime topology, healthcheck, refresh, and `/runtime/data/strava.duckdb` Docker path refit
-  - [ ] `08-05-PLAN.md` — Metric registry aggregate semantics, bundles, denominators, and docs
-  - [ ] `08-06-PLAN.md` — DuckDB aggregate views/query builders and aggregate application service
-  - [ ] `08-07-PLAN.md` — `get_training_aggregates` MCP tool and `compare_periods` aggregate-layer rewrite
+  - [x] `08-01-PLAN.md` — DuckDB package legitimacy gate and dependency baseline
+  - [x] `08-02-PLAN.md` — One-shot SQLite-to-DuckDB migration, pinned backup, parity, and admin cutover command
+  - [x] `08-03-PLAN.md` — DuckDB primary repository, read-model materializer, and runtime connection cutover
+  - [x] `08-04-PLAN.md` — Single-owner DuckDB runtime topology, healthcheck, refresh, and `/runtime/data/strava.duckdb` Docker path refit
+  - [x] `08-05-PLAN.md` — Metric registry aggregate semantics, bundles, denominators, and docs
+  - [x] `08-06-PLAN.md` — DuckDB aggregate views/query builders and aggregate application service
+  - [x] `08-07-PLAN.md` — `get_training_aggregates` MCP tool and `compare_periods` aggregate-layer rewrite
   - [ ] `08-08-PLAN.md` — Docker-first smoke, MCP smoke, 100 ms p95, live cutover, rollback image tag, and rollback validation
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -185,6 +186,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 6. Full-Fidelity Strava Mirror | 4/4 | Complete    | 2026-05-24 |
 | 7. Materialized Metrics Read Model | 6/6 | Complete    | 2026-05-24 |
 | 8. DuckDB Primary Storage & Aggregate Analytics Surface | 7/8 | In Progress|  |
+| 9. Product factual bundles and CLI read-model consolidation | 4/4 | Complete    | 2026-05-26 |
 
 ### Phase 9: Product factual bundles and CLI read-model consolidation
 
@@ -194,7 +196,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 **Plans:** 4/4 plans complete
 
 Plans:
-- [ ] `09-01-PLAN.md` — Windowed historical/status fact contracts and bundle-safe registry queries
-- [ ] `09-02-PLAN.md` — Shared product factual bundle services with explicit completeness contracts
-- [ ] `09-03-PLAN.md` — CLI read-model consolidation, replacement paths, and legacy service retirement
-- [ ] `09-04-PLAN.md` — MCP bundle/completeness smoke, boundary guards, and verification docs
+- [x] `09-01-PLAN.md` — Windowed historical/status fact contracts and bundle-safe registry queries
+- [x] `09-02-PLAN.md` — Shared product factual bundle services with explicit completeness contracts
+- [x] `09-03-PLAN.md` — CLI read-model consolidation, replacement paths, and legacy service retirement
+- [x] `09-04-PLAN.md` — MCP bundle/completeness smoke, boundary guards, and verification docs

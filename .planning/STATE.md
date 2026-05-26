@@ -2,33 +2,32 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
-status: milestone_complete
-last_updated: 2026-05-26T15:30:47.332Z
-last_activity: 2026-05-26
+status: executing
+last_updated: "2026-05-26T15:33:52.862Z"
+last_activity: 2026-05-26 -- Phase 09 complete; Phase 08 08-08 perf gate remains open
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 43
   completed_plans: 42
   percent: 89
-stopped_at: Milestone complete (Phase 09 was final phase)
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-24)
+See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Milestone complete
+**Current focus:** Phase 08 — duckdb-primary-storage-aggregate-analytics-surface
 
 ## Current Position
 
-Phase: 09
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-05-26
+Phase: 08 (duckdb-primary-storage-aggregate-analytics-surface) — EXECUTING
+Plan: 8 of 8
+Status: Phase 08 final acceptance pending
+Last activity: 2026-05-26 -- Phase 09 complete; Phase 08 08-08 100 ms p95 gate failed
 
 ## Performance Metrics
 
@@ -179,7 +178,7 @@ None yet.
 
 ### Blockers/Concerns
 
-None currently.
+- Phase 08 plan 08-08 still lacks a SUMMARY and final acceptance because `just mcp-read-model-perf 20 2 100` failed on 2026-05-26: `get_fitness_state` p95 100.074 ms, `list_workouts` p95 118.106 ms, and `get_workout_detail` p95 131.927 ms. Phase 09 is complete, but the milestone is not honestly complete until this performance gate is fixed and 08-08 is closed.
 
 ## Deferred Items
 
@@ -191,8 +190,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-26T14:53:34.916Z
-Stopped at: Completed 09-04-PLAN.md
+Last session: 2026-05-26T15:34:00.000Z
+Stopped at: Phase 09 complete; Phase 08 08-08 performance acceptance still open
 Resume file: None
 
 ## Quick Tasks Completed
