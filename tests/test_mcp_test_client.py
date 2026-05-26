@@ -179,8 +179,8 @@ def test_default_warm_latency_calls_include_product_fact_bundle_aggregates() -> 
         assert arguments["start_date"]
         assert arguments["end_date"]
         assert arguments["scope"] == "both"
-        assert arguments["as_of_day"] == "2026-05-24"
-        assert arguments["window_days"] > 0
+        assert "as_of_day" not in arguments
+        assert "window_days" not in arguments
 
 
 def test_live_smoke_calls_each_product_bundle_through_training_aggregates() -> None:

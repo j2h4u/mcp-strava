@@ -321,8 +321,6 @@ def _product_bundle_aggregate_calls(today_date: date) -> list[dict[str, Any]]:
                 "bucket": "all_time",
                 "metric_bundle": "daily_brief",
                 "scope": "both",
-                "as_of_day": today_date.isoformat(),
-                "window_days": 14,
             },
         },
         {
@@ -333,8 +331,6 @@ def _product_bundle_aggregate_calls(today_date: date) -> list[dict[str, Any]]:
                 "bucket": "week",
                 "metric_bundle": "weekly_digest",
                 "scope": "both",
-                "as_of_day": today_date.isoformat(),
-                "window_days": 28,
             },
         },
         {
@@ -345,8 +341,6 @@ def _product_bundle_aggregate_calls(today_date: date) -> list[dict[str, Any]]:
                 "bucket": "all_time",
                 "metric_bundle": "historical_facts",
                 "scope": "both",
-                "as_of_day": today_date.isoformat(),
-                "window_days": 365,
             },
         },
     ]
