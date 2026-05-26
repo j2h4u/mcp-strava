@@ -109,6 +109,13 @@ Existing infrastructure covers all Phase 09 requirements.
 | `just mcp-read-model-perf 20 2 500` | Passed: status `ok`; worst warm p95 was `list_workouts` at 100.721 ms, below 500 ms |
 | `just test` | Passed: Docker build/recreate healthy; smoke-basic status `ok` and six MCP tools |
 
+## Post-UAT Validation Update
+
+| Date | Change | Command | Result |
+|------|--------|---------|--------|
+| 2026-05-26 | Added a regression test proving `get_freshness_service()` routes primary connections through `repository_from_connection()` instead of forcing SQLite. | `uv run pytest -q tests/test_application_services.py tests/test_phase4_e2e.py::test_phase4_cli_freshness_json_uses_fixture_sqlite_without_strava` | 7 passed |
+| 2026-05-26 | Re-ran the full suite after the UAT freshness fix. | `uv run pytest -q` | 354 passed, 1 skipped |
+
 ## Gap Analysis Notes
 
 - No `no_test_file` gaps found. The relevant Phase 09 test files already exist and target behavior rather than only structure.
