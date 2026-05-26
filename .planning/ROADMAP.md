@@ -188,10 +188,13 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 
 ### Phase 9: Product factual bundles and CLI read-model consolidation
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** MCP and CLI product reads expose factual daily, weekly, historical, status, kudos, and supported gear facts from the DuckDB/read-model application layer without adding MCP tools or reviving legacy CLI/recompute paths.
+**Requirements**: APP-01, APP-02, APP-03, APP-04, CLI-01, CLI-02, CLI-03, MCP-01, MCP-02, MCP-03, READMODEL-01, READMODEL-04, PERF-01, TEST-03, TEST-04, TEST-06
 **Depends on:** Phase 8
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 9 to break down)
+- [ ] `09-01-PLAN.md` — Registry-backed bundle-safe aggregate facts and status/gear contracts
+- [ ] `09-02-PLAN.md` — Shared product factual bundle services and aggregate response shaping
+- [ ] `09-03-PLAN.md` — CLI read-model consolidation and dead legacy handler cleanup
+- [ ] `09-04-PLAN.md` — MCP bundle smoke, boundary guards, and verification docs
