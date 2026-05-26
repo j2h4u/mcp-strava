@@ -35,6 +35,26 @@ Aggregate rows carry bucket start/end, bucket width, `metric_id`, `unit`, `aggre
 
 Materialized analytic fact-table columns are also registered here in code as `dimension`, `metric`, `dependency`, or `provenance`; schema drift is tested against that registry before a new column can silently consume storage.
 
+Kudos are factual social context. `kudos_count` is available in workout list/detail and aggregate bundle contexts; `kudos_names` remain detail-only and are excluded from aggregate bundles.
+
+Gear and shoe facts are factual activity-detail context. `gear_id`, `gear_name`, `gear_distance_km`, and `gear_primary` are registered metrics for mirrored detail payloads, but aggregate requests still have no gear/equipment filter, grouping, scope, or bundle dimension.
+
+## Status Fact Registry
+
+Status facts are machine-readable threshold/category facts. They expose code, related metric id, threshold, window, evidence keys, completeness reasons, calculation, and materialized source. They are factual payload inputs, not instruction text.
+
+| code | metric_id | threshold | window | evidence |
+|---|---|---|---|---|
+| `stale_mirror_data` | `activity_date` | `max_age_days=1` | `lookback_days=1` | `last_success_at`, `age_days`, `threshold_days` |
+| `stale_read_model_facts` | `fitness` | `max_age_days=1`, `dirty_count=0` | `lookback_days=1` | `last_materialized_at`, `age_days`, `dirty_count` |
+| `missing_hr` | `avg_hr` | `heartrate_sample_count>=1` | `lookback_days=14` | `activity_count`, `activity_ids` |
+| `missing_streams` | `time_in_hr_zones_min` | `stream_sample_count>=1` | `lookback_days=14` | `activity_count`, `activity_ids` |
+| `excessive_z5_exposure` | `time_in_hr_zones_min` | `zone5_seconds>300`, `z5_lower_bound_bpm=177` | `lookback_days=7` | `activity_id`, `activity_day`, `zone5_seconds`, `z5_lower_bound_bpm` |
+| `hr_anomaly_burst` | `hr_anomaly_count` | `hr_anomaly_count>=3`, `jump_bpm=30` | `lookback_days=7` | `activity_id`, `activity_day`, `hr_anomaly_count`, `jump_bpm` |
+| `cardiac_drift_significant_quality` | `cardiac_drift_significant` | `cardiac_drift_significant=1`, `quality=good|fair` | `lookback_days=7` | `activity_id`, `activity_day`, `cardiac_drift_significant`, `cardiac_drift_quality` |
+| `consecutive_high_load_hikes` | `trimp` | `combined_trimp>800`, `consecutive_days=2` | `lookback_days=7` | `hike_days`, `combined_trimp` |
+| `running_volume_jump` | `distance_km` | `caution_pct=10`, `high_pct=15` | Monday current week vs previous week | `current_week_distance_km`, `previous_week_distance_km`, `increase_pct` |
+
 ## Metric Inventory
 
 | metric_id | unit | scope | sport_scope | comparison_mode | directionality | exposed_in | calculation |
