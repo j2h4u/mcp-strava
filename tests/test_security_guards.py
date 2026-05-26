@@ -110,6 +110,91 @@ def test_cli_has_product_admin_split_and_explicit_db_safety_commands() -> None:
     assert {"sql", "db-preflight", "db-check", "db-migrate", "db-refresh"}.isdisjoint(commands)
 
 
+def test_cli_retired_legacy_product_handlers_and_imports_are_absent() -> None:
+    rel_path = "src/mcp_strava/cli.py"
+    source = _source_text(rel_path)
+    module = ast.parse(source, filename=rel_path)
+    dead_handlers = {
+        "cmd_activities",
+        "cmd_gear",
+        "cmd_stats",
+        "cmd_backtest",
+        "cmd_trend",
+        "cmd_kudos",
+    }
+    legacy_modules = {
+        "mcp_strava.application.reports",
+        "mcp_strava.application.workouts",
+        "mcp_strava.analytics",
+        "mcp_strava.report",
+        "mcp_strava.trends",
+    }
+    legacy_db_imports = {"api_request", "get_daily_trimp_history"}
+    violations: list[str] = []
+
+    for node in module.body:
+        if isinstance(node, ast.FunctionDef) and node.name in dead_handlers:
+            violations.append(f"{rel_path}:{node.lineno} legacy handler {node.name}")
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in legacy_modules:
+                    violations.append(f"{rel_path}:{node.lineno} import {alias.name}")
+        elif isinstance(node, ast.ImportFrom):
+            imported_module = node.module or ""
+            if imported_module in legacy_modules:
+                violations.append(f"{rel_path}:{node.lineno} from {imported_module}")
+            if imported_module == "mcp_strava.db":
+                for alias in node.names:
+                    if alias.name in legacy_db_imports:
+                        violations.append(f"{rel_path}:{node.lineno} from {imported_module} import {alias.name}")
+
+    assert violations == []
+
+
+def test_cli_product_commands_route_to_product_fact_and_metric_services() -> None:
+    rel_path = "src/mcp_strava/cli.py"
+    source = _source_text(rel_path)
+    module = ast.parse(source, filename=rel_path)
+    expected_calls = {
+        "cmd_report": {"get_daily_brief_facts_service"},
+        "cmd_weekly": {"get_weekly_digest_facts_service"},
+        "cmd_workouts": {"list_workouts_service"},
+        "cmd_workout": {"get_workout_detail_service"},
+        "cmd_freshness": {"get_freshness_service"},
+    }
+    forbidden_calls = {
+        "get_daily_report_service",
+        "get_weekly_summary_service",
+        "get_recent_workouts_service",
+        "get_workout_analytics_service",
+        "daily_report",
+        "weekly_digest",
+        "compute_trends",
+        "api_request",
+        "DbConn",
+    }
+    violations: list[str] = []
+
+    for node in module.body:
+        if not isinstance(node, ast.FunctionDef) or node.name not in expected_calls:
+            continue
+        calls: set[str] = set()
+        for child in ast.walk(node):
+            if isinstance(child, ast.Call):
+                if isinstance(child.func, ast.Name):
+                    calls.add(child.func.id)
+                elif isinstance(child.func, ast.Attribute):
+                    calls.add(child.func.attr)
+        missing = expected_calls[node.name] - calls
+        if missing:
+            violations.append(f"{node.name} missing {sorted(missing)}")
+        used_forbidden = sorted(forbidden_calls & calls)
+        if used_forbidden:
+            violations.append(f"{node.name} uses forbidden {used_forbidden}")
+
+    assert violations == []
+
+
 def test_cli_includes_namespaced_admin_refresh_commands() -> None:
     import mcp_strava.cli as cli
 

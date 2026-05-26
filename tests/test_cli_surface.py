@@ -94,56 +94,115 @@ def _install_product_service_spies(monkeypatch: pytest.MonkeyPatch) -> dict[str,
     import mcp_strava.cli as cli
 
     calls: dict[str, list[object]] = {
-        "daily": [],
-        "weekly": [],
+        "daily_brief": [],
+        "weekly_digest": [],
         "recent": [],
         "workout": [],
         "freshness": [],
     }
 
-    def daily_service(**kwargs):
-        calls["daily"].append(kwargs)
-        return _fake_envelope({"today": "2026-05-21", "recommendation": {"action": "rest"}})
+    def daily_brief_service(**kwargs):
+        calls["daily_brief"].append(kwargs)
+        return _fake_envelope(
+            {
+                "bundle_id": "daily_brief",
+                "as_of_day": kwargs.get("as_of_day"),
+                "sections": {
+                    "current_state": {"metrics": {"fitness": 42.0, "form": -3.0}},
+                    "supported_gear": {
+                        "items": [{"activity_id": 702, "gear_id": "g1", "gear_name": "Tempo Shoe"}]
+                    },
+                },
+                "bundle_completeness": {"requested_metrics": ["fitness"], "included_metrics": ["fitness"]},
+            }
+        )
 
-    def weekly_service(**kwargs):
-        calls["weekly"].append(kwargs)
-        return _fake_envelope({"period": {"today": "2026-05-21"}, "current_state": {}, "trends": {}})
+    def weekly_digest_service(**kwargs):
+        calls["weekly_digest"].append(kwargs)
+        return _fake_envelope(
+            {
+                "bundle_id": "weekly_digest",
+                "as_of_day": kwargs.get("as_of_day"),
+                "sections": {
+                    "load": {"rows": [{"metric_id": "trimp", "value": 120.0}]},
+                    "period_trends": {
+                        "comparison": {
+                            "global": {
+                                "metrics": {
+                                    "trimp": {
+                                        "delta": 15.0,
+                                        "trend_direction": "up",
+                                        "sample_size": {"period_a": 4, "period_b": 3},
+                                    }
+                                }
+                            }
+                        }
+                    },
+                },
+                "bundle_completeness": {"requested_metrics": ["trimp"], "included_metrics": ["trimp"]},
+            }
+        )
 
-    def recent_service(limit=15, **kwargs):
+    def recent_service(limit=20, **kwargs):
         calls["recent"].append({"limit": limit, **kwargs})
         return _fake_envelope(
             [
                 {
-                    "id": 702,
-                    "date": "2026-05-21",
-                    "name": "Morning Run",
+                    "activity_id": 702,
+                    "activity_date": "2026-05-21",
+                    "activity_name": "Morning Run",
                     "sport_type": "Run",
                     "distance_km": 5.0,
                     "moving_time_min": 30.0,
+                    "elevation_m": 40.0,
                     "trimp": 80.0,
                     "avg_hr": 145.0,
                     "max_hr": 165,
+                    "kudos_count": 4,
                 }
             ]
         )
 
     def workout_service(activity_id, **kwargs):
         calls["workout"].append({"activity_id": activity_id, **kwargs})
-        return _fake_envelope({"id": 702, "name": "Morning Run", "trimp": 80.0, "avg_hr": 145.0})
+        return _fake_envelope(
+            {
+                "activity_id": 702,
+                "activity_date": "2026-05-21",
+                "activity_name": "Morning Run",
+                "sport_type": "Run",
+                "distance_km": 5.0,
+                "moving_time_min": 30.0,
+                "trimp": 80.0,
+                "avg_hr": 145.0,
+                "max_hr": 165,
+                "cardiac_drift_pct": 3.5,
+                "kudos_count": 4,
+                "kudos_names": ["Ada Lovelace", "Grace Hopper"],
+                "gear_id": "g1",
+                "gear_name": "Tempo Shoe",
+                "gear_distance_km": 123.4,
+                "gear_primary": True,
+            }
+        )
 
     def freshness_service(**kwargs):
         calls["freshness"].append(kwargs)
         return _fake_envelope({"freshness_state": "fresh"})
 
-    monkeypatch.setattr(cli, "get_daily_report_service", daily_service, raising=False)
-    monkeypatch.setattr(cli, "get_weekly_summary_service", weekly_service, raising=False)
-    monkeypatch.setattr(cli, "get_recent_workouts_service", recent_service, raising=False)
-    monkeypatch.setattr(cli, "get_workout_analytics_service", workout_service, raising=False)
+    monkeypatch.setattr(cli, "get_daily_brief_facts_service", daily_brief_service, raising=False)
+    monkeypatch.setattr(cli, "get_weekly_digest_facts_service", weekly_digest_service, raising=False)
+    monkeypatch.setattr(cli, "list_workouts_service", recent_service, raising=False)
+    monkeypatch.setattr(cli, "get_workout_detail_service", workout_service, raising=False)
     monkeypatch.setattr(cli, "get_freshness_service", freshness_service, raising=False)
 
     def forbidden(*_args, **_kwargs):
         raise AssertionError("product CLI must call application services, not legacy internals")
 
+    monkeypatch.setattr(cli, "get_daily_report_service", forbidden, raising=False)
+    monkeypatch.setattr(cli, "get_weekly_summary_service", forbidden, raising=False)
+    monkeypatch.setattr(cli, "get_recent_workouts_service", forbidden, raising=False)
+    monkeypatch.setattr(cli, "get_workout_analytics_service", forbidden, raising=False)
     monkeypatch.setattr(cli, "daily_report", forbidden, raising=False)
     monkeypatch.setattr(cli, "weekly_digest", forbidden, raising=False)
     monkeypatch.setattr(cli, "api_request", forbidden, raising=False)
@@ -156,8 +215,8 @@ def _install_product_service_spies(monkeypatch: pytest.MonkeyPatch) -> dict[str,
 @pytest.mark.parametrize(
     ("args", "service_name", "label"),
     [
-        (("report", "daily"), "daily", "Daily Report"),
-        (("weekly",), "weekly", "Weekly Summary"),
+        (("report", "daily"), "daily_brief", "Daily Report"),
+        (("weekly",), "weekly_digest", "Weekly Summary"),
         (("workouts", "recent", "--limit", "1"), "recent", "Recent Workouts"),
         (("workout", "analyze", "702"), "workout", "Workout Analytics"),
         (("freshness",), "freshness", "Freshness"),
@@ -208,6 +267,79 @@ def test_product_commands_support_json_envelope(
     assert payload["warnings"][0]["code"] == "missing_streams"
 
 
+def test_daily_and_weekly_json_delegate_to_product_fact_bundles(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls = _install_product_service_spies(monkeypatch)
+
+    daily_stdout, _ = _run_cli(monkeypatch, capsys, "report", "daily", "--json")
+    weekly_stdout, _ = _run_cli(monkeypatch, capsys, "weekly", "--json")
+
+    daily_payload = json.loads(daily_stdout)
+    weekly_payload = json.loads(weekly_stdout)
+    assert calls["daily_brief"] and calls["daily_brief"][0]["as_of_day"]
+    assert calls["weekly_digest"] and calls["weekly_digest"][0]["as_of_day"]
+    assert daily_payload["data"]["bundle_id"] == "daily_brief"
+    assert weekly_payload["data"]["bundle_id"] == "weekly_digest"
+    assert "supported_gear" in daily_payload["data"]["sections"]
+    assert "period_trends" in weekly_payload["data"]["sections"]
+    assert "trimp" in weekly_payload["data"]["sections"]["period_trends"]["comparison"]["global"]["metrics"]
+
+
+def test_workouts_recent_forwards_supported_filters_to_metric_service(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls = _install_product_service_spies(monkeypatch)
+
+    stdout, _ = _run_cli(
+        monkeypatch,
+        capsys,
+        "workouts",
+        "recent",
+        "--limit",
+        "7",
+        "--start-date",
+        "2026-05-01",
+        "--end-date",
+        "2026-05-21",
+        "--sport",
+        "Run",
+        "--json",
+    )
+    payload = json.loads(stdout)
+
+    assert calls["recent"] == [
+        {
+            "limit": 7,
+            "start_date": "2026-05-01",
+            "end_date": "2026-05-21",
+            "sport": "Run",
+        }
+    ]
+    assert payload["data"][0]["activity_id"] == 702
+    assert payload["data"][0]["kudos_count"] == 4
+
+
+def test_workout_detail_json_exposes_kudos_names_and_supported_gear_facts(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls = _install_product_service_spies(monkeypatch)
+
+    stdout, _ = _run_cli(monkeypatch, capsys, "workout", "analyze", "702", "--json")
+    payload = json.loads(stdout)
+
+    assert calls["workout"] == [{"activity_id": "702"}]
+    assert payload["data"]["kudos_count"] == 4
+    assert payload["data"]["kudos_names"] == ["Ada Lovelace", "Grace Hopper"]
+    assert payload["data"]["gear_id"] == "g1"
+    assert payload["data"]["gear_name"] == "Tempo Shoe"
+    assert payload["data"]["gear_distance_km"] == 123.4
+    assert payload["data"]["gear_primary"] is True
+
+
 def test_admin_commands_are_namespaced_and_distinct(monkeypatch: pytest.MonkeyPatch) -> None:
     import mcp_strava.cli as cli
     from mcp_strava.application.registry import PRODUCT_SERVICES
@@ -221,6 +353,8 @@ def test_admin_commands_are_namespaced_and_distinct(monkeypatch: pytest.MonkeyPa
     assert "refresh" not in cli.COMMANDS
     assert "admin" in cli.COMMANDS
     assert ADMIN_COMMANDS.isdisjoint(PRODUCT_SERVICES)
+    assert {"daily_brief_facts", "weekly_digest_facts", "historical_facts"}.issubset(PRODUCT_SERVICES)
+    assert {"daily_report", "weekly_summary", "workout_analytics"}.isdisjoint(PRODUCT_SERVICES)
 
 
 def test_admin_duckdb_cutover_help_uses_canonical_runtime_path(
@@ -462,6 +596,10 @@ def test_cli_docs_replacement_mapping_accounts_for_old_commands() -> None:
     assert "token-refresh" in text
     assert "mirror-refresh" in text
     assert "not part of the mcp surface" in lowered
+    assert "| `gear` | available via workout detail |" in lowered
+    assert "| `stats` | folded into product bundle |" in lowered
+    assert "| `trend` | folded into `weekly --json` |" in lowered
+    assert "| `kudos` | available via workout detail |" in lowered
 
 
 def test_product_cli_handlers_do_not_call_legacy_or_admin_runtime_directly() -> None:
