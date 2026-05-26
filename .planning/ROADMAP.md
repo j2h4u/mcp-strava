@@ -194,7 +194,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 **Plans:** 4 plans
 
 Plans:
-- [ ] `09-01-PLAN.md` — Registry-backed bundle-safe aggregate facts and status/gear contracts
-- [ ] `09-02-PLAN.md` — Shared product factual bundle services and aggregate response shaping
-- [ ] `09-03-PLAN.md` — CLI read-model consolidation and dead legacy handler cleanup
-- [ ] `09-04-PLAN.md` — MCP bundle smoke, boundary guards, and verification docs
+- [ ] `09-01-PLAN.md` — Windowed historical/status fact contracts and bundle-safe registry queries
+- [ ] `09-02-PLAN.md` — Shared product factual bundle services with explicit completeness contracts
+- [ ] `09-03-PLAN.md` — CLI read-model consolidation, replacement paths, and legacy service retirement
+- [ ] `09-04-PLAN.md` — MCP bundle/completeness smoke, boundary guards, and verification docs
