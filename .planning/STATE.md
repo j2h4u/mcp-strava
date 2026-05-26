@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-26T13:42:36.304Z"
+last_updated: "2026-05-26T14:33:47.366Z"
 last_activity: 2026-05-26
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 43
-  completed_plans: 40
+  completed_plans: 41
   percent: 78
 ---
 
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-24)
 ## Current Position
 
 Phase: 09 (product-factual-bundles-and-cli-read-model-consolidation) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-05-26
 
@@ -84,6 +84,7 @@ Last activity: 2026-05-26
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-07 | 12min | 3 tasks | 9 files |
 | Phase 09-product-factual-bundles-and-cli-read-model-consolidation P09-01 | 14 min | 3 tasks | 11 files |
 | Phase 09-product-factual-bundles-and-cli-read-model-consolidation P09-02 | 12 min | 2 tasks | 4 files |
+| Phase 09-product-factual-bundles-and-cli-read-model-consolidation P09-03 | 10 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -157,6 +158,9 @@ Recent decisions affecting current work:
 - [Phase 09-product-factual-bundles-and-cli-read-model-consolidation]: Product fact bundles are assembled in application services from existing aggregate, metric, status, and workout-detail services. — Keeps CLI and MCP consumers on the same factual read-model contract without adding MCP tools.
 - [Phase 09-product-factual-bundles-and-cli-read-model-consolidation]: Aggregate service responses preserve rows and add bundle payloads only for daily_brief, weekly_digest, and historical_facts. — Keeps existing aggregate callers compatible while giving scenario bundles product-shaped sections.
 - [Phase 09-product-factual-bundles-and-cli-read-model-consolidation]: Supported gear facts are emitted only from mirrored summary/detail fields with gear_data_not_mirrored completeness when absent. — Preserves the no-Strava-call and no-aggregate-gear-filter boundary.
+- [Phase 09-product-factual-bundles-and-cli-read-model-consolidation]: CLI daily and weekly product reads now call product fact bundle services instead of legacy report recomputation. — Keeps CLI and MCP consumers on the same factual read-model contract.
+- [Phase 09-product-factual-bundles-and-cli-read-model-consolidation]: CLI workout list/detail reads now call metric_services read-model services, including filter forwarding and detail-only kudos/gear facts. — Preserves product capability without reviving legacy activity, gear, or kudos commands.
+- [Phase 09-product-factual-bundles-and-cli-read-model-consolidation]: Legacy application.reports and application.workouts modules were retired rather than retained as compatibility aliases. — The project has no current runtime compatibility need for old service names.
 
 ### Roadmap Evolution
 
@@ -181,8 +185,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-26T13:42:36.288Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-05-26T14:33:47.350Z
+Stopped at: Completed 09-03-PLAN.md
 Resume file: None
 
 ## Quick Tasks Completed
