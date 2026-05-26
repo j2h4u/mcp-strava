@@ -1,170 +1,237 @@
 ---
-analysis_date: 2026-05-22
-last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
+analysis_date: 2026-05-26
+last_mapped_commit: ab203ab
+analysis_scope:
+  - README.md
+  - mcp-content/
+  - tests/
 ---
 # Codebase Structure
 
-**Analysis Date:** 2026-05-22
+**Analysis Date:** 2026-05-26
 
 ## Directory Layout
 
 ```text
 mcp-strava/
-├── AGENTS.md
-├── SKILL.md
-├── pyproject.toml
-├── uv.lock
-├── deploy/
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   └── gateway_register.py
-└── src/
-    └── mcp_strava/
-        ├── application/
-        ├── adapters/
-        ├── deploy/
-        ├── interfaces/
-        └── refresh/
+├── README.md                         # Product, setup, Docker, runtime, and MCP boundary contract
+├── mcp-content/                      # MCP prompt content copied into the runtime image
+│   └── prompts/
+│       ├── strava_daily_training_brief.md
+│       ├── strava_weekly_training_digest.md
+│       └── strava_shoe_mileage_watchdog.md
+└── tests/                            # Architecture, storage, MCP, refresh, deployment, and product contracts
+    ├── __init__.py
+    ├── fixtures/
+    │   └── fake_mcp_server.py
+    ├── test_application_reports.py
+    ├── test_application_services.py
+    ├── test_application_workouts.py
+    ├── test_cli_surface.py
+    ├── test_docker_runtime.py
+    ├── test_duckdb_concurrency_guards.py
+    ├── test_duckdb_migration.py
+    ├── test_duckdb_repository.py
+    ├── test_full_fidelity_mirror.py
+    ├── test_load_status.py
+    ├── test_mcp_latency_gate.py
+    ├── test_mcp_sdk_contract.py
+    ├── test_mcp_surface.py
+    ├── test_mcp_test_client.py
+    ├── test_metric_registry.py
+    ├── test_metric_services.py
+    ├── test_phase01_validation.py
+    ├── test_phase4_e2e.py
+    ├── test_product_fact_bundles.py
+    ├── test_read_model_materialization.py
+    ├── test_read_model_queries.py
+    ├── test_refresh_runtime.py
+    ├── test_repo_hygiene.py
+    ├── test_repository_boundary.py
+    ├── test_security_guards.py
+    ├── test_settings.py
+    ├── test_smoke.py
+    ├── test_sqlite_safety.py
+    ├── test_strava_adapter.py
+    └── test_training_aggregates.py
 ```
 
 ## Directory Purposes
 
-**`src/mcp_strava/`**
-- Purpose: the installable Python package.
-- Contains: CLI, MCP interface, settings, types, constants, analytics, refresh runtime, adapters, and deployment helpers.
-- Key files: `src/mcp_strava/__main__.py`, `src/mcp_strava/cli.py`, `src/mcp_strava/settings.py`, `src/mcp_strava/types.py`.
+**`README.md`:**
+- Purpose: operator-facing project contract for the local Strava mirror, MCP training-metrics server, Strava OAuth setup, Docker smoke flow, runtime state, and MCP boundary.
+- Contains: product summary, requirements, token setup, Docker usage, useful commands, runtime state table, Strava rate-limit notes, and read-only MCP boundary.
+- Key files: `README.md`.
 
-**`src/mcp_strava/application/`**
-- Purpose: product-service composition layer.
-- Contains: service envelopes, freshness metadata, workout/report services, metric registry, and service allowlist.
-- Key files: `src/mcp_strava/application/__init__.py`, `src/mcp_strava/application/metric_services.py`, `src/mcp_strava/application/reports.py`, `src/mcp_strava/application/workouts.py`, `src/mcp_strava/application/freshness.py`.
+**`mcp-content/`:**
+- Purpose: committed MCP prompt content copied into the Docker image and served by `src/mcp_strava/interfaces/mcp_http.py`.
+- Contains: prompt markdown under `mcp-content/prompts/`.
+- Key files: `mcp-content/prompts/strava_daily_training_brief.md`, `mcp-content/prompts/strava_weekly_training_digest.md`, `mcp-content/prompts/strava_shoe_mileage_watchdog.md`.
 
-**`src/mcp_strava/adapters/`**
-- Purpose: persistence and external-system boundaries.
-- Contains: SQLite connection/repository/migration code and Strava OAuth/transport/rate-limit code.
-- Key files: `src/mcp_strava/adapters/sqlite/repository.py`, `src/mcp_strava/adapters/sqlite/migrations.py`, `src/mcp_strava/adapters/strava/transport.py`, `src/mcp_strava/adapters/strava/token_provider.py`.
+**`mcp-content/prompts/`:**
+- Purpose: define agent workflows in Russian without changing the product tool surface.
+- Contains: daily training brief, weekly training digest, and shoe mileage watchdog prompts.
+- Key files: `mcp-content/prompts/strava_daily_training_brief.md`, `mcp-content/prompts/strava_weekly_training_digest.md`, `mcp-content/prompts/strava_shoe_mileage_watchdog.md`.
 
-**`src/mcp_strava/refresh/`**
-- Purpose: staged mirror refresh orchestration.
-- Contains: freshness evaluation, checkpoint stages, runtime lease handling, and sync helpers.
-- Key files: `src/mcp_strava/refresh/runtime.py`, `src/mcp_strava/refresh/_sync_ops.py`, `src/mcp_strava/refresh/freshness.py`, `src/mcp_strava/refresh/checkpoints.py`.
+**`tests/`:**
+- Purpose: executable architecture map and regression suite for MCP surface, CLI/admin separation, repositories, refresh runtime, DuckDB migration, read-model materialization, settings, deployment, and product payloads.
+- Contains: `test_*.py` files with pytest-style tests, AST guards, DB fixtures, fake transports, product envelope assertions, and Docker source-contract checks.
+- Key files: `tests/test_mcp_surface.py`, `tests/test_cli_surface.py`, `tests/test_repository_boundary.py`, `tests/test_refresh_runtime.py`, `tests/test_docker_runtime.py`, `tests/test_metric_services.py`, `tests/test_training_aggregates.py`.
 
-**`src/mcp_strava/interfaces/`**
-- Purpose: public service interfaces.
-- Contains: the streamable HTTP MCP server.
-- Key files: `src/mcp_strava/interfaces/mcp_http.py`.
-
-**`src/mcp_strava/deploy/`**
-- Purpose: runtime validation and preparation helpers.
-- Contains: preflight, runtime preparation, container entrypoint, and MCP smoke checks.
-- Key files: `src/mcp_strava/deploy/preflight.py`, `src/mcp_strava/deploy/prepare_runtime.py`, `src/mcp_strava/deploy/entrypoint.py`, `src/mcp_strava/deploy/smoke.py`.
-
-**`deploy/`**
-- Purpose: repo-level Docker and gateway deployment assets.
-- Contains: container build definition, compose file, and gateway registration helper.
-- Key files: `deploy/Dockerfile`, `deploy/docker-compose.yml`, `deploy/gateway_register.py`.
+**`tests/fixtures/`:**
+- Purpose: test-only helpers for MCP client behavior.
+- Contains: a minimal JSON-RPC MCP server that supports initialize, tool list, tool call, and failure responses.
+- Key files: `tests/fixtures/fake_mcp_server.py`.
 
 ## Key File Locations
 
 **Entry Points:**
-- `src/mcp_strava/__main__.py`: package entrypoint that forwards to the CLI.
-- `src/mcp_strava/cli.py`: operator command dispatcher.
-- `src/mcp_strava/interfaces/mcp_http.py`: MCP server entrypoint.
-- `src/mcp_strava/deploy/entrypoint.py`: container startup entrypoint.
-- `src/mcp_strava/deploy/preflight.py`: runtime DB validation command.
-- `src/mcp_strava/deploy/prepare_runtime.py`: live runtime preparation helper.
-- `src/mcp_strava/deploy/smoke.py`: MCP smoke checker.
-- `deploy/gateway_register.py`: gateway registration helper.
+- `README.md`: documents operator entrypoints `just test`, `just smoke`, `just mcp-smoke-full`, `just mcp-read-model-perf`, `just mcp-list-tools`, and `uv run pytest -q`.
+- `tests/test_phase01_validation.py`: asserts `python -m mcp_strava` usage and that `Justfile` routes to Docker/MCP smoke commands.
+- `tests/test_mcp_test_client.py`: tests `src/mcp_strava/devtools/mcp_client/cli.py` and `src/mcp_strava/devtools/mcp_client/client.py` as MCP smoke entrypoints.
+- `tests/test_docker_runtime.py`: asserts `deploy/Dockerfile`, `deploy/docker-compose.yml`, `src/mcp_strava/deploy/entrypoint.py`, `src/mcp_strava/deploy/healthcheck.py`, and `src/mcp_strava/deploy/prepare_runtime.py` runtime entrypoints.
 
 **Configuration:**
-- `pyproject.toml`: package metadata, setuptools build config, and pytest configuration.
-- `uv.lock`: dependency lockfile for the repo’s pinned environment.
-- `src/mcp_strava/settings.py`: runtime settings loader and cache.
-- `.gitignore`: ignores `.env`, local databases, caches, build artifacts, and `.planning/config.json`.
+- `README.md`: documents `.env`, `/opt/docker/mcp-strava/.env`, `/opt/docker/mcp-strava/live.env`, and runtime DB paths.
+- `tests/test_settings.py`: tests `src/mcp_strava/settings.py` defaults, environment overrides, `.env` compatibility, and invalid setting rejection.
+- `tests/test_phase01_validation.py`: verifies `pyproject.toml` package name, Python version, setuptools `src` layout, and absence of `scripts` project entrypoints.
+- `tests/test_repo_hygiene.py`: verifies `.gitignore` patterns for `.env`, `.planning/config.json`, and database state under `data/`.
 
-**Core Logic:**
-- `src/mcp_strava/application/`: MCP-facing product service assembly.
-- `src/mcp_strava/{metrics,training,analytics,report,trends}.py`: domain computation and reporting.
-- `src/mcp_strava/adapters/sqlite/repository.py`: all SQLite queries and writes.
-- `src/mcp_strava/adapters/strava/`: live Strava access and token refresh.
-- `src/mcp_strava/refresh/`: daily refresh runtime and backfill orchestration.
+**MCP Surface:**
+- `mcp-content/prompts/strava_daily_training_brief.md`: daily brief prompt using `list_workouts`, `get_workout_detail`, `get_fitness_state`, and `project_fitness_state`.
+- `mcp-content/prompts/strava_weekly_training_digest.md`: weekly digest prompt using `compare_periods`, `list_workouts`, `get_workout_detail`, and `get_fitness_state`.
+- `mcp-content/prompts/strava_shoe_mileage_watchdog.md`: shoe mileage watchdog prompt that refuses to infer gear facts if the MCP surface lacks them.
+- `tests/test_mcp_surface.py`: asserts MCP tools, prompt names, schemas, annotations, structured output, short-lived cache, float rounding, and forbidden product fields.
+- `tests/test_mcp_sdk_contract.py`: checks FastMCP streamable HTTP, tool annotations, transport security settings, and streamable HTTP client APIs.
 
-**Deployment/Runtime:**
-- `src/mcp_strava/deploy/`: startup and runtime safety checks.
-- `deploy/`: Docker and gateway rollout files.
+**Product Services:**
+- `tests/test_application_workouts.py`: asserts `src/mcp_strava.application.workouts` is absent and `src/mcp_strava/application/metric_services.py` is the workout application surface.
+- `tests/test_application_reports.py`: asserts `src/mcp_strava.application.reports` is absent and `src/mcp_strava/application/product_facts.py` is the report/fact surface.
+- `tests/test_application_services.py`: tests `src/mcp_strava/application/freshness.py` freshness metadata and first-use refresh request behavior.
+- `tests/test_metric_services.py`: tests `src/mcp_strava/application/metric_services.py` service envelopes for fitness, workouts, detail, comparisons, projections, and DuckDB routing.
+- `tests/test_product_fact_bundles.py`: tests `src/mcp_strava/application/product_facts.py` daily, weekly, historical, status, and gear-fact bundles.
+- `tests/test_training_aggregates.py`: tests `src/mcp_strava/application/aggregate_services.py` aggregate requests, product bundles, buckets, scopes, and validation.
+
+**Metric Registry and Read Model:**
+- `tests/test_metric_registry.py`: verifies `src/mcp_strava/application/metric_registry.py` metric ids, aggregate modes, bundles, supported buckets/scopes/windows, materialized fact column registry, and docs sync.
+- `tests/test_read_model_queries.py`: verifies `src/mcp_strava/adapters/sqlite/repository.py` read-model status, fact queries, half-open ranges, fail-soft behavior, indexed hot query plans, and DuckDB aggregate query guardrails.
+- `tests/test_read_model_materialization.py`: verifies SQLite and DuckDB read-model materializers, dirty queue clearing, model/fact writes, and materialization limits.
+- `tests/test_load_status.py`: checks load-status helpers using `src/mcp_strava/adapters/sqlite/repository.py`, `src/mcp_strava/db.py`, and `src/mcp_strava/training.py`.
+
+**Repository and Storage:**
+- `tests/test_repository_boundary.py`: verifies repository methods, SQLite direct-access guardrails, hot load paths through repositories, and DuckDB routing via `repository_from_connection`.
+- `tests/test_duckdb_repository.py`: verifies `src/mcp_strava/adapters/duckdb/repository.py` has no generic SQL surface and serializes transactions/reads.
+- `tests/test_duckdb_concurrency_guards.py`: verifies deploy/service health behavior around DuckDB owner-process and refresh-worker concurrency.
+- `tests/test_sqlite_safety.py`: verifies SQLite fixture creation, backups, migrations, preflight, parity checks, and backup retention.
+- `tests/test_full_fidelity_mirror.py`: verifies lossless stream inventory, stream channel metadata, atomic replacement, conflict/malformed counts, and stream value preservation.
+- `tests/test_duckdb_migration.py`: verifies SQLite-to-DuckDB cutover, backups, parity, cast errors, active lease rejection, and canonical live DuckDB runtime path.
+
+**Refresh and Strava Integration:**
+- `tests/test_refresh_runtime.py`: tests staged `src/mcp_strava/refresh/*` behavior, fake Strava transports, leases, idempotent refresh requests, worker materialization, stream-channel backfill, and sync wrapper constraints.
+- `tests/test_strava_adapter.py`: tests `src/mcp_strava/adapters/strava/*` token provider, token refresh, rate-limit policy, transport, and failure normalization.
+- `tests/test_security_guards.py`: verifies sync/admin boundaries, no direct storage outside adapters, local-network Docker policy, and safe refresh/backfill wrappers.
+
+**Deployment and Runtime:**
+- `tests/test_docker_runtime.py`: verifies Python/DuckDB runtime dependency, Dockerfile, compose, healthcheck, preflight, entrypoint sequencing, prepare-runtime, runbook contracts, and no public port binding.
+- `tests/test_mcp_latency_gate.py`: verifies warm MCP latency gate, default 100 ms p95 threshold, startup timing separation, and product-bundle aggregate calls.
+- `tests/test_phase4_e2e.py`: verifies CLI freshness JSON path against a fixture SQLite mirror without Strava network.
+
+**Smoke and Baseline Behavior:**
+- `tests/test_smoke.py`: imports package modules and verifies core pure functions, daily report behavior, metrics, sports registry, settings defaults, and package paths.
+- `tests/test_phase01_validation.py`: verifies foundational packaging, module entrypoint, fail-closed DB connection, empty fixture creation, and Docker smoke command routing.
 
 ## Naming Conventions
 
 **Files:**
-- Lower snake case for modules and helpers: `metrics.py`, `token_refresh.py`, `prepare_runtime.py`, `gateway_register.py`.
-- `__init__.py` files are used as small facades, not as large implementation modules.
-- Entry points use `__main__.py`, `cli.py`, or `entrypoint.py` naming.
+- Use lower snake case for prompt files under `mcp-content/prompts/`, for example `mcp-content/prompts/strava_daily_training_brief.md`.
+- Use `test_<area>.py` for tests under `tests/`, for example `tests/test_mcp_surface.py`, `tests/test_refresh_runtime.py`, and `tests/test_duckdb_repository.py`.
+- Use `fake_<thing>.py` for test fakes under `tests/fixtures/`, for example `tests/fixtures/fake_mcp_server.py`.
+- Use `__init__.py` only to mark `tests/` as a package; `tests/__init__.py` is empty.
 
 **Directories:**
-- Package subdomains are nouns or service areas: `application/`, `adapters/`, `refresh/`, `interfaces/`, `deploy/`.
-- Vendor-boundary directories are nested by system: `adapters/sqlite/` and `adapters/strava/`.
+- Place MCP content by type under `mcp-content/prompts/`.
+- Place all pytest modules directly under `tests/` unless the file is a reusable test helper under `tests/fixtures/`.
+- Do not add generated caches under `tests/__pycache__/`; treat `tests/__pycache__/` as generated runtime output.
 
-**Types and services:**
-- Dataclasses and service envelopes use PascalCase names in `src/mcp_strava/types.py`.
-- Command and service functions use snake_case, with CLI handlers using `cmd_*` in `src/mcp_strava/cli.py`.
+**Test Functions:**
+- Use `test_<contract_or_behavior>()` names in `tests/test_*.py`, for example `test_mcp_tool_allowlist_is_exact()` in `tests/test_mcp_surface.py`.
+- Use helper factories with leading underscores in `tests/test_*.py`, for example `_repo_with_facts()` in `tests/test_read_model_queries.py` and `_aggregate_fixture()` in `tests/test_training_aggregates.py`.
+- Use named fixture classes such as `FakeStravaTransport`, `FakeClock`, and `FakeSleeper` in `tests/test_refresh_runtime.py` when a behavior needs injected collaborators.
+
+**Product Identifiers:**
+- Keep MCP tool ids in lower snake case, as asserted by `tests/test_mcp_surface.py`: `get_fitness_state`, `list_workouts`, `get_workout_detail`, `compare_periods`, `project_fitness_state`, `get_training_aggregates`.
+- Keep MCP prompt ids aligned with prompt filenames in `mcp-content/prompts/`, as asserted by `tests/test_mcp_surface.py`: `strava_daily_training_brief`, `strava_weekly_training_digest`, `strava_shoe_mileage_watchdog`.
+- Keep aggregate bundle ids in lower snake case, as asserted by `tests/test_training_aggregates.py` and `tests/test_mcp_test_client.py`: `daily_brief`, `weekly_digest`, `historical_facts`, plus registry-only bundles such as `period_comparison` and `sport_efficiency`.
 
 ## Where to Add New Code
 
-**New MCP tool or product view:**
-- Primary code: `src/mcp_strava/application/`.
-- HTTP exposure: `src/mcp_strava/interfaces/mcp_http.py`.
-- Shared types: `src/mcp_strava/types.py`.
+**New MCP Prompt:**
+- Primary code: add markdown under `mcp-content/prompts/`.
+- Registration and allowlist: update `src/mcp_strava/interfaces/mcp_http.py`.
+- Tests: update `tests/test_mcp_surface.py` with prompt name, content-backed loading, and no tool-surface expansion assertions.
 
-**New SQLite query or mutation:**
-- Primary code: `src/mcp_strava/adapters/sqlite/repository.py`.
-- Schema safety or migration gate: `src/mcp_strava/adapters/sqlite/{schema,migrations,backup}.py`.
-- Connection policy: `src/mcp_strava/adapters/sqlite/connection.py`.
+**New MCP Tool:**
+- Primary code: add the service in `src/mcp_strava/application/` and expose it in `src/mcp_strava/interfaces/mcp_http.py`.
+- Metric facts: add registry definitions in `src/mcp_strava/application/metric_registry.py` when the tool exposes metrics.
+- Tests: update `tests/test_mcp_surface.py`, `tests/test_metric_registry.py`, `tests/test_metric_services.py` or `tests/test_training_aggregates.py`, and `tests/test_mcp_test_client.py`.
 
-**New Strava API behavior:**
-- Primary code: `src/mcp_strava/adapters/strava/`.
-- Error normalization: `src/mcp_strava/adapters/strava/types.py`.
-- Legacy compatibility wrappers: `src/mcp_strava/db.py` and `src/mcp_strava/sync.py`.
+**New Product CLI Command:**
+- Primary code: route through `src/mcp_strava/cli.py` and an application service in `src/mcp_strava/application/`.
+- Registry: update `src/mcp_strava/application/registry.py` if the command is part of product service dispatch.
+- Tests: update `tests/test_cli_surface.py` and `tests/test_security_guards.py` to keep the product/admin split intact.
 
-**New refresh stage or freshness rule:**
-- Primary code: `src/mcp_strava/refresh/`.
-- Settings knobs: `src/mcp_strava/settings.py`.
-- Product-service freshness metadata: `src/mcp_strava/application/freshness.py`.
+**New Admin or Refresh Operation:**
+- Primary code: add to `src/mcp_strava/refresh/`, `src/mcp_strava/sync.py`, `src/mcp_strava/cli.py`, or `src/mcp_strava/deploy/`.
+- Storage safety: use repository methods in `src/mcp_strava/adapters/duckdb/` or `src/mcp_strava/adapters/sqlite/`.
+- Tests: update `tests/test_refresh_runtime.py`, `tests/test_cli_surface.py`, `tests/test_security_guards.py`, and deployment/preflight tests in `tests/test_docker_runtime.py`.
 
-**New deployment or runtime helper:**
-- Runtime safety checks: `src/mcp_strava/deploy/`.
-- Docker/gateway assets: `deploy/`.
+**New Repository Query or Mutation:**
+- Primary code: add storage-specific methods in `src/mcp_strava/adapters/duckdb/repository.py` or `src/mcp_strava/adapters/sqlite/repository.py`.
+- Read-model path: update `src/mcp_strava/adapters/duckdb/aggregate_queries.py` or materializers under `src/mcp_strava/adapters/*/read_model_materializer.py` when query performance matters.
+- Tests: update `tests/test_repository_boundary.py`, `tests/test_duckdb_repository.py`, `tests/test_read_model_queries.py`, and `tests/test_read_model_materialization.py`.
 
-**New shared constants or dataclasses:**
-- Shared types: `src/mcp_strava/types.py`.
-- Shared thresholds and sport registry: `src/mcp_strava/constants.py` and `src/mcp_strava/sports.py`.
+**New Metric or Aggregate Bundle:**
+- Primary code: update `src/mcp_strava/application/metric_registry.py`.
+- Materialization: update `src/mcp_strava/adapters/duckdb/read_model_materializer.py` and SQLite compatibility materializer as needed.
+- Tests: update `tests/test_metric_registry.py`, `tests/test_training_aggregates.py`, `tests/test_product_fact_bundles.py`, and `tests/test_read_model_materialization.py`.
+
+**New Deployment Behavior:**
+- Primary code: add runtime helper under `src/mcp_strava/deploy/` or repo-level asset under `deploy/`.
+- Documentation: update `README.md` for user-visible commands or runtime state.
+- Tests: update `tests/test_docker_runtime.py`, `tests/test_security_guards.py`, and MCP smoke/latency tests when runtime behavior changes.
+
+**New Test Fixture:**
+- Primary code: add reusable fixture helpers under `tests/fixtures/` only if shared across multiple test modules.
+- Local fixtures: keep one-off DB builders or fakes inside the relevant `tests/test_*.py` file.
+- Tests: keep fixture files import-safe and free of live network, live `/opt/docker/mcp-strava`, or real `data/strava.db` mutation.
 
 ## Special Directories
 
-**`deploy/`**
-- Purpose: repository-level container and gateway integration assets.
+**`mcp-content/`:**
+- Purpose: runtime prompt content for MCP.
 - Generated: No.
 - Committed: Yes.
 
-**`src/mcp_strava/adapters/sqlite/`**
-- Purpose: persistence boundary for the local mirror.
+**`mcp-content/prompts/`:**
+- Purpose: content-backed prompt definitions served by the MCP interface.
 - Generated: No.
 - Committed: Yes.
 
-**`src/mcp_strava/adapters/strava/`**
-- Purpose: outbound Strava integration boundary.
+**`tests/`:**
+- Purpose: pytest test suite and architecture contract suite.
 - Generated: No.
 - Committed: Yes.
 
-**`src/mcp_strava/refresh/`**
-- Purpose: mirror freshness and staged sync orchestration.
+**`tests/fixtures/`:**
+- Purpose: reusable test-only fakes such as the stdio JSON-RPC MCP server.
 - Generated: No.
 - Committed: Yes.
 
-**`src/mcp_strava/application/`**
-- Purpose: product-service composition layer used by CLI and MCP.
-- Generated: No.
-- Committed: Yes.
+**`tests/__pycache__/`:**
+- Purpose: Python bytecode cache created by test runs.
+- Generated: Yes.
+- Committed: No.
 
 ---
 
-*Structure analysis: 2026-05-22*
+*Structure analysis: 2026-05-26*

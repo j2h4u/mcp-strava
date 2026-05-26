@@ -1,62 +1,77 @@
 ---
-analysis_date: 2026-05-22
-last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
+analysis_date: 2026-05-26
+last_mapped_commit: ab203ab
+scope:
+  - README.md
+  - mcp-content
+  - tests
 ---
 # External Integrations
 
-**Analysis Date:** 2026-05-22
+**Analysis Date:** 2026-05-26
 
 ## APIs & External Services
 
 **Strava API:**
-- `https://www.strava.com/oauth/token` and `https://www.strava.com/api/v3` - OAuth token refresh and activity/athlete fetches in `src/mcp_strava/adapters/strava/token_refresh.py` and `src/mcp_strava/adapters/strava/transport.py`.
-  - SDK/Client: stdlib `urllib.request` wrappers, not a third-party HTTP client.
-  - Auth: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REFRESH_TOKEN`, `STRAVA_ACCESS_TOKEN`, and `STRAVA_EXPIRES_AT` from the token file path selected by `MCP_STRAVA_TOKEN_PATH`.
+- Strava OAuth and API - `README.md` documents the OAuth application setup, browser authorization URL, and token exchange at `https://www.strava.com/oauth/token`; `tests/test_strava_adapter.py` verifies typed Strava transport behavior, 401 token refresh, retry budgets, and rate-limit headers.
+  - SDK/Client: stdlib `urllib.request` and `urllib.error` wrappers in `src/mcp_strava/adapters/strava`, covered by `tests/test_strava_adapter.py`.
+  - Auth: file-backed `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_ACCESS_TOKEN`, `STRAVA_REFRESH_TOKEN`, and `STRAVA_EXPIRES_AT` selected by `MCP_STRAVA_TOKEN_PATH`.
 
-**Local MCP gateway:**
-- `http://mcp-strava:8080/mcp` - The service URL registered by `deploy/gateway_register.py` into `/opt/docker/mcp-gateway/catalog.yaml` and `/opt/docker/mcp-gateway/compose.yaml`.
-  - SDK/Client: `PyYAML` for catalog/compose edits and `docker compose` for validation/restart.
-  - Auth: Not applicable; the integration is local network routing, not user auth.
+**MCP Clients / Local MCP Network:**
+- Streamable HTTP MCP endpoint - `README.md` and `Justfile` use `http://127.0.0.1:8080/mcp`; `tests/test_mcp_sdk_contract.py` verifies FastMCP streamable HTTP support and `tests/test_mcp_test_client.py` verifies stdio and HTTP smoke-client behavior.
+  - SDK/Client: `mcp` Python package, pinned to 1.27.1 in `uv.lock`.
+  - Auth: no bearer-token or OAuth auth detected in scoped files; access is constrained through local/container networking, allowed hosts, and allowed origins in `tests/test_mcp_surface.py`.
+
+**Docker / Local Runtime Network:**
+- Docker Compose service - `Justfile` runs `docker compose -f deploy/docker-compose.yml`; `tests/test_docker_runtime.py` asserts a service named `mcp-strava`, container name `mcp-strava`, exposed port `8080`, `/opt/docker/mcp-strava:/runtime` mount, and `mcp-backends` network.
+  - SDK/Client: Docker Compose CLI invoked by `Justfile`.
+  - Auth: Not applicable; this is local container orchestration.
 
 ## Data Storage
 
 **Databases:**
-- DuckDB - Primary mirror storage in `data/strava.duckdb` and, in container mode, `/runtime/data/strava.duckdb` via the `/opt/docker/mcp-strava` runtime mount.
-  - Connection: `src/mcp_strava/adapters/duckdb/connection.py` opens the expected mirror fail-closed.
-  - Client: `src/mcp_strava/adapters/duckdb/repository.py`, `src/mcp_strava/db.py`, `src/mcp_strava/deploy/preflight.py`, and the owner-process refresh runtime.
-- SQLite - Compatibility input for rollback, migration, and historical test fixtures only.
+- DuckDB - Primary configured runtime database for local and Docker profiles.
+  - Connection: `MCP_STRAVA_DB_PATH`; defaults verified in `tests/test_settings.py` are `data/strava.duckdb` locally and `/runtime/data/strava.duckdb` in Docker.
+  - Client: `duckdb` 1.5.3 via repository code under `src/mcp_strava/adapters/duckdb`, exercised by `tests/test_duckdb_repository.py`, `tests/test_duckdb_migration.py`, and `tests/test_duckdb_concurrency_guards.py`.
+- SQLite - Local mirror/documented compatibility store and migration/cutover source.
+  - Connection: README documents `/opt/docker/mcp-strava/data/strava.db`; tests create and migrate SQLite fixtures through `src/mcp_strava/adapters/sqlite` in `tests/test_full_fidelity_mirror.py`, `tests/test_repository_boundary.py`, and `tests/test_sqlite_safety.py`.
+  - Client: stdlib `sqlite3`.
 
 **File Storage:**
-- Local filesystem only - Token files, backups, and runtime state live on disk under `.env`, `data/`, and `/opt/docker/mcp-strava/`.
+- Local filesystem only - `README.md` documents `.env`, `/opt/docker/mcp-strava/.env`, `/opt/docker/mcp-strava/live.env`, and `/opt/docker/mcp-strava/data/strava.db`; `tests/test_docker_runtime.py` verifies `/opt/docker/mcp-strava:/runtime`, `/runtime/.env`, `/runtime/data/strava.duckdb`, backups, and live env preparation.
+- MCP prompt content - Prompt files live in `mcp-content/prompts/strava_daily_training_brief.md`, `mcp-content/prompts/strava_weekly_training_digest.md`, and `mcp-content/prompts/strava_shoe_mileage_watchdog.md`; `tests/test_mcp_surface.py` verifies prompts are content-backed and do not expand the tool surface.
 
 **Caching:**
-- DuckDB is the durable local mirror/read-model store - There is no separate Redis or remote cache layer.
-- Token refresh writes back to the local token file - `src/mcp_strava/adapters/strava/token_provider.py`.
+- DuckDB read model - Durable materialized facts and read-model status are stored in the local database, with query/performance behavior covered by `tests/test_read_model_queries.py`, `tests/test_read_model_materialization.py`, and `tests/test_mcp_latency_gate.py`.
+- MCP response cache - `tests/test_mcp_surface.py` verifies a short-lived in-process response cache for expensive MCP tools.
+- No Redis, Memcached, or remote cache detected in scoped files.
 
 ## Authentication & Identity
 
 **Auth Provider:**
-- Strava OAuth 2.0 - Implemented in `src/mcp_strava/adapters/strava/token_refresh.py` and wrapped by `src/mcp_strava/adapters/strava/token_provider.py`.
-  - Implementation: refresh-token flow with file-backed token rotation and atomic writes.
-- MCP HTTP access control - `src/mcp_strava/interfaces/mcp_http.py` enforces safe hosts, allowed origins, and DNS rebinding protection for the streamable HTTP endpoint.
+- Strava OAuth 2.0 - `README.md` documents creating a Strava API application, authorizing with scopes `read,activity:read_all,profile:read_all`, exchanging an authorization code, and storing tokens in a local env file.
+  - Implementation: file-backed refresh-token flow in `src/mcp_strava/adapters/strava`, verified by `tests/test_strava_adapter.py` for single-writer refresh, atomic writes, 0600 token file permissions, token refresh retry budget, and token redaction.
+- MCP HTTP access control - `tests/test_mcp_surface.py` verifies local-safe bind validation, allowed host/origin checks, and rejection of wildcard `allowed_hosts` or `allowed_origins`.
+  - Implementation: transport security in `src/mcp_strava/interfaces/mcp_http`.
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- None detected - No external error-tracking service is wired in.
+- None detected - scoped files do not reference Sentry, OpenTelemetry, external logging SaaS, or a hosted error tracker.
 
 **Logs:**
-- Process stderr/stdout and DuckDB audit rows - Sync/runtime failures are printed locally and recorded in `sync_log` via `src/mcp_strava/db.py` and related refresh code.
-- Container health - `deploy/Dockerfile` uses a `HEALTHCHECK` that runs `python -m mcp_strava.deploy.healthcheck`, which checks owner-process state and HTTP readiness without directly opening the live DuckDB file.
+- Process stdout/stderr - CLI, Docker smoke, and test clients use JSON/text process output in `Justfile`, `tests/test_cli_surface.py`, and `tests/test_mcp_test_client.py`.
+- Database/runtime status rows - refresh state, refresh requests, read-model freshness, and failure reasons are exercised in `tests/test_repository_boundary.py`, `tests/test_refresh_runtime.py`, and `tests/test_duckdb_repository.py`.
+- Container health - `tests/test_docker_runtime.py` and `tests/test_duckdb_concurrency_guards.py` verify owner-process health behavior and HTTP healthcheck behavior without direct live DuckDB opens.
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Docker - Container image build and runtime in `deploy/Dockerfile`.
-- Local MCP network - `deploy/docker-compose.yml` attaches the service to the external `mcp-backends` network.
+- Local Docker Compose - `README.md`, `Justfile`, and `tests/test_docker_runtime.py` define the local container deployment path.
+- Local MCP network - `tests/test_docker_runtime.py` asserts the `mcp-backends` network and no public `ports` binding.
 
 **CI Pipeline:**
-- None detected - No hosted CI configuration is present in the scoped files.
+- None detected in scoped files - the remap scope does not include `.github/` or other hosted CI configuration.
 
 ## Environment Configuration
 
@@ -71,24 +86,34 @@ last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
 - `MCP_STRAVA_ALLOWED_ORIGINS`
 - `MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS`
 - `MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS`
+- `MCP_STRAVA_REFRESH_INTERVAL_SECONDS`
+- `MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE`
+- `MCP_STRAVA_READ_MODEL_BATCH_SIZE`
 - `MCP_STRAVA_PROJECT_ROOT`
+- `MCP_STRAVA_SUPERVISOR_STATE_PATH`
 - `STRAVA_CLIENT_ID`
 - `STRAVA_CLIENT_SECRET`
-- `STRAVA_REFRESH_TOKEN`
 - `STRAVA_ACCESS_TOKEN`
+- `STRAVA_REFRESH_TOKEN`
 - `STRAVA_EXPIRES_AT`
 
 **Secrets location:**
-- `.env` in the repo root for local development, and `/opt/docker/mcp-strava/.env` in container deployment as wired by `deploy/docker-compose.yml` and `deploy/prepare_runtime.py`.
+- Local development token file: `.env` in the repo root, documented by `README.md` and present in the checkout. Contents are secret material and are not read.
+- Docker token file: `/opt/docker/mcp-strava/.env`, documented by `README.md`.
+- Optional Docker operator overlay: `/opt/docker/mcp-strava/live.env`, documented by `README.md` and verified by `tests/test_docker_runtime.py`.
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- None detected - `src/mcp_strava/interfaces/mcp_http.py` exposes only the read-only MCP `streamable-http` endpoint at `/mcp`; no webhook routes are defined.
+- OAuth browser callback - `README.md` uses `http://localhost/exchange_token` as the Strava authorization redirect URI for manual code extraction; no local callback server is detected in scoped files.
+- MCP HTTP endpoint - product tools are served at `/mcp`; `tests/test_mcp_surface.py` verifies the exact read-only tool allowlist: `get_fitness_state`, `list_workouts`, `get_workout_detail`, `compare_periods`, `project_fitness_state`, and `get_training_aggregates`.
+- Webhooks: None detected.
 
 **Outgoing:**
-- None detected - The code only calls Strava OAuth/API endpoints and the local MCP gateway registration path; no webhook callbacks are emitted.
+- Strava OAuth/token refresh and API reads - `tests/test_strava_adapter.py` verifies outgoing HTTP behavior, rate-limit parsing, retries, 401 refresh handling, and token redaction.
+- Docker Compose commands - `Justfile` invokes local Docker Compose for build, service startup, smoke tests, and MCP client calls.
+- Webhooks: None detected.
 
 ---
 
-*Integration audit: 2026-05-22*
+*Integration audit: 2026-05-26*

@@ -1,65 +1,170 @@
 ---
-analysis_date: 2026-05-22
-last_mapped_commit: b207e64f8293ddb0b3432562705b96a0a0264082
+analysis_date: 2026-05-26
+last_mapped_commit: ab203ab
+scope:
+  - README.md
+  - mcp-content
+  - tests
 ---
 
 # Codebase Concerns
 
-**Analysis Date:** 2026-05-22
+**Analysis Date:** 2026-05-26
 
 ## Tech Debt
 
-**Repository concentration**
-- `src/mcp_strava/adapters/sqlite/repository.py:163-214, 585-714` mixes read helpers, write helpers, refresh state, sync logs, and backup-oriented mutation paths in one class. That keeps transaction boundaries implicit and makes the data layer hard to evolve safely.
-- `src/mcp_strava/application/metric_services.py:214-244, 483-516` combines metric routing, activity enrichment, and period-comparison assembly in one service module. The compare-periods path repeats the same heavy work across metrics and sports instead of sharing prepared aggregates.
+**Duplicated database fixtures across tests:**
+- Issue: SQLite and DuckDB schemas are embedded in many test helpers instead of coming from one shared fixture builder.
+- Files: `tests/test_sqlite_safety.py:12`, `tests/test_repository_boundary.py:11`, `tests/test_refresh_runtime.py:96`, `tests/test_read_model_queries.py:22`, `tests/test_metric_services.py:67`, `tests/test_application_services.py:21`, `tests/test_full_fidelity_mirror.py:16`, `tests/test_phase4_e2e.py:13`, `tests/test_duckdb_migration.py:32`
+- Impact: schema changes require many coordinated edits; stale fixture DDL can make tests pass against shapes that production migrations no longer create.
+- Fix approach: use one fixture factory under `tests/` for base mirror schemas, migrated read-model schemas, and DuckDB cutover fixtures; keep per-test data rows local.
+
+**Source-shape guards are spread across the suite:**
+- Issue: Several tests parse or read source files directly to enforce boundaries through string and AST assertions.
+- Files: `tests/test_security_guards.py:40`, `tests/test_security_guards.py:69`, `tests/test_security_guards.py:286`, `tests/test_security_guards.py:527`, `tests/test_repository_boundary.py:60`, `tests/test_read_model_queries.py:529`, `tests/test_docker_runtime.py:253`
+- Impact: these guards are valuable for security and architecture boundaries, but their duplicated scan logic makes legitimate refactors noisy and expensive to maintain.
+- Fix approach: centralize AST/source guard helpers in `tests/` and keep behavior tests as the first line of defense; reserve source-shape assertions for forbidden imports, public exposure, and local-state safety.
+
+**Prompt contracts are partly test-backed and partly manual:**
+- Issue: the MCP prompt names are tested, but only the daily prompt body is inspected for content.
+- Files: `tests/test_mcp_surface.py:239`, `mcp-content/prompts/strava_daily_training_brief.md:5`, `mcp-content/prompts/strava_weekly_training_digest.md:5`, `mcp-content/prompts/strava_shoe_mileage_watchdog.md:5`
+- Impact: the weekly digest and shoe mileage prompts can drift into unsupported tools, admin operations, or unsafe interpretation language without a direct prompt-body regression.
+- Fix approach: parameterize prompt-content tests across all files under `mcp-content/prompts/` and assert allowed tools, forbidden admin/sync/raw-SQL language, medical-safety wording, and no internal file paths.
 
 ## Known Bugs
 
-**Schema validation stage is a stub**
-- `src/mcp_strava/refresh/_sync_ops.py:145-146` defines `schema_validate()` as `return None`. The refresh pipeline advances through a `schema_validate` checkpoint, but no validation actually occurs, so schema drift can pass through silently.
+**README storage contract conflicts with Docker/DuckDB expectations:**
+- Symptoms: `README.md` describes the mirror as local SQLite and documents `/opt/docker/mcp-strava/data/strava.db` as the runtime facts path, while scoped tests assert DuckDB-primary container paths.
+- Files: `README.md:5`, `README.md:122`, `tests/test_docker_runtime.py:47`, `tests/test_docker_runtime.py:62`, `tests/test_settings.py:11`, `tests/test_settings.py:47`
+- Trigger: a new operator following `README.md` prepares or inspects `strava.db` while the Docker-facing tests expect `/runtime/data/strava.duckdb`.
+- Workaround: use the Docker and deployment commands tested in `tests/test_docker_runtime.py` rather than the README path table.
 
-**Settings cache can go stale**
-- `src/mcp_strava/settings.py:113-196` caches settings by environment values and file path, not by the contents of the `.env` file. If the file changes on disk in a long-lived process, `get_settings()` can keep returning stale DB, token, host, and policy values until restart or manual cache reset.
+**README MCP tool list omits the aggregate tool:**
+- Symptoms: `README.md` lists workouts, workout detail, period comparison, fitness state, and projection, but the scoped MCP surface tests require `get_training_aggregates`.
+- Files: `README.md:11`, `tests/test_mcp_surface.py:16`, `tests/test_mcp_surface.py:183`, `tests/test_mcp_latency_gate.py:124`, `tests/test_mcp_test_client.py:170`
+- Trigger: users relying on the README do not see the training aggregate surface that tests treat as part of the product contract.
+- Workaround: use `just mcp-list-tools` from `README.md:109` to inspect the live surface.
 
 ## Security Considerations
 
-**Config enforcement depends on fresh settings**
-- `src/mcp_strava/interfaces/mcp_http.py:75-113` is fail-closed for loopback and wildcard binds, but it consumes `Settings` from the cache above. If the operator tightens host or origin policy in `.env`, the running server does not see the change until the process reloads settings.
-- `src/mcp_strava/adapters/strava/token_provider.py:30-43` rewrites Strava credentials back to the token file after refresh. That is expected behavior, but it makes filesystem permissions part of the security boundary and requires the token path to stay private and writable only by the service user.
+**Strava credential setup can leak through shell history or process listing:**
+- Risk: the token exchange example passes `client_secret` and authorization code on the command line, and the `.env` heredoc writes secrets before `chmod 600` is applied.
+- Files: `README.md:51`, `README.md:63`
+- Current mitigation: `README.md:24` tells operators to treat `.env` as secret material, and `README.md:73` applies `chmod 600`.
+- Recommendations: document a `umask 077` or `install -m 600 /dev/null .env` flow before writing secrets, and prefer reading the Strava secret from a protected file or environment variable instead of placing it directly in a shell command.
+
+**Runtime overlay permissions are allowed to be world-readable:**
+- Risk: `live.env` is documented as an operator env overlay and its test accepts `0644`; this is safe only if it never contains credentials or sensitive host policy.
+- Files: `README.md:123`, `README.md:124`, `tests/test_docker_runtime.py:546`, `tests/test_docker_runtime.py:551`
+- Current mitigation: OAuth credentials are documented separately in `/opt/docker/mcp-strava/.env`.
+- Recommendations: keep `live.env` explicitly non-secret in documentation and tighten the accepted mode to `0600` or `0640` if operators can place sensitive overrides there.
+
+**Public HTTP exposure is protected by tests but remains high-risk configuration:**
+- Risk: local mode must reject wildcard binds, and container mode may bind `0.0.0.0` only behind constrained host/origin policy.
+- Files: `README.md:95`, `tests/test_mcp_surface.py:258`, `tests/test_security_guards.py:801`, `tests/test_docker_runtime.py:52`
+- Current mitigation: tests assert no public compose port binding, explicit allowed hosts/origins, and local fail-closed behavior.
+- Recommendations: keep the compose surface un-published by default, require explicit operator intent for container binds, and include real `just smoke` or `just mcp-smoke-full` checks after deployment changes.
 
 ## Performance Bottlenecks
 
-**Cardiac drift is the most expensive per-activity computation**
-- `src/mcp_strava/cardiac_drift.py:18-122, 259-280` uses Jenks clustering with O(n^2) time and memory. The `max_points=600` cap limits worst-case cost, but the algorithm still does dense work before subsampling and remains expensive for large stream payloads.
+**Repeated source-tree parsing in tests:**
+- Problem: multiple tests walk `src/mcp_strava` with `rglob("*.py")` and parse modules independently.
+- Files: `tests/test_security_guards.py:69`, `tests/test_security_guards.py:286`, `tests/test_security_guards.py:527`, `tests/test_security_guards.py:547`, `tests/test_security_guards.py:579`, `tests/test_repository_boundary.py:65`, `tests/test_refresh_runtime.py:838`
+- Cause: each boundary guard owns its own scan logic.
+- Improvement path: build a cached source inventory fixture for tests that need AST import/call checks, and keep per-test assertions focused on their rule.
 
-**Compare-periods fans out into repeated enrichment**
-- `src/mcp_strava/application/metric_services.py:72-121, 214-244, 483-516` re-enriches activities inside nested loops and rebuilds `daily_report_from_connection()` for each of the model metrics. This multiplies SQL round trips and CPU work as the number of activities or metrics grows.
+**Latency gate unit tests do not measure the product runtime:**
+- Problem: the latency tests validate threshold logic with fake clients and artificial sleeps, not the Docker HTTP MCP server.
+- Files: `tests/test_mcp_latency_gate.py:18`, `tests/test_mcp_latency_gate.py:36`, `tests/test_mcp_latency_gate.py:81`, `tests/test_mcp_test_client.py:141`, `README.md:106`
+- Cause: pytest-level tests cover client math and call selection, while runtime performance is delegated to `just mcp-read-model-perf`.
+- Improvement path: keep `just mcp-read-model-perf` as a required verification gate for read-model changes and record the command in phase acceptance checks, not only in README.
 
-**Write paths commit too frequently**
-- `src/mcp_strava/adapters/sqlite/repository.py:585-714` commits after each stream chunk and after each summary/detail/kudos mutation. That keeps failure windows small, but it makes high-volume sync runs IO-heavy and increases the chance of partially applied state if a batch stops midway.
+**Large fixture-heavy tests create scaling pressure:**
+- Problem: the scoped test suite is fixture-dense, with `tests/test_training_aggregates.py`, `tests/test_refresh_runtime.py`, `tests/test_metric_services.py`, and `tests/test_read_model_materialization.py` carrying many rows, schemas, and date windows.
+- Files: `tests/test_training_aggregates.py:264`, `tests/test_refresh_runtime.py:96`, `tests/test_metric_services.py:67`, `tests/test_read_model_materialization.py:317`
+- Cause: rich coverage is built through repeated local database construction.
+- Improvement path: use reusable seeded fixture builders and keep expensive scenario matrices explicit, so new metrics do not multiply setup cost across unrelated tests.
 
 ## Fragile Areas
 
-**Process-global HR max cache**
-- `src/mcp_strava/metrics.py:12-28` stores `_hr_max_cache` at module scope and never invalidates it when the mirror changes. `%HRR` calculations can stay pinned to an old maximum heart rate until the process restarts.
+**Hard-coded product surface names require coordinated edits:**
+- Files: `tests/test_mcp_surface.py:16`, `tests/test_mcp_surface.py:25`, `tests/test_mcp_latency_gate.py:124`, `tests/test_mcp_test_client.py:170`
+- Why fragile: adding, renaming, or retiring an MCP tool or prompt requires edits in several independent allowlists.
+- Safe modification: update the product registry first, then update a single exported expected-surface contract used by MCP surface, latency, and smoke-client tests.
+- Test coverage: surface drift is well guarded, but the guard data is duplicated.
 
-**Refresh lease has a fixed lifetime**
-- `src/mcp_strava/refresh/runtime.py:47-101` acquires a lease for a fixed window and never renews it during long runs. A refresh that outlives the lease can be overlapped by another worker before the first one finishes.
+**README is not included in the docs drift tests:**
+- Files: `README.md:5`, `README.md:11`, `tests/test_metric_registry.py:249`, `tests/test_cli_surface.py:585`, `tests/test_docker_runtime.py:103`
+- Why fragile: the suite checks `docs/metrics.md`, `docs/cli.md`, and `docs/deployment.md`, while README storage and tool-surface text can diverge from tested behavior.
+- Safe modification: add a lightweight README contract test for runtime storage path, product tool names, and the admin/MCP boundary.
+- Test coverage: README drift is visible only through manual review in the scoped files.
 
-**Cardiac drift degrades silently on exceptions**
-- `src/mcp_strava/cardiac_drift.py:95-122` catches broad exceptions in `auto_jenks()` and falls back to a weaker result. That avoids a hard crash, but it also hides malformed or numerically unstable input behind a low-confidence output.
+**Shoe mileage prompt is ahead of a dedicated shoe-mileage surface:**
+- Files: `mcp-content/prompts/strava_shoe_mileage_watchdog.md:7`, `mcp-content/prompts/strava_shoe_mileage_watchdog.md:12`, `tests/test_product_fact_bundles.py:322`, `tests/test_metric_registry.py:499`, `tests/test_training_aggregates.py:894`
+- Why fragile: the prompt encodes 500 km and 800 km thresholds, while gear facts are tested as context/detail facts rather than aggregate filters or a dedicated mileage endpoint.
+- Safe modification: keep the prompt conservative until the MCP surface exposes complete shoe mileage facts, then move thresholds into a typed service contract or registry entry.
+- Test coverage: gear facts are covered as supported detail facts, but the watchdog prompt behavior is not tested end to end.
 
-**Day iteration is more brittle than it needs to be**
-- `src/mcp_strava/adapters/sqlite/repository.py:420-423` advances dates with string splitting and a local import inside the loop. It works for ISO dates, but it is a fragile place to extend if timezone-aware or non-ISO day handling is introduced later.
+## Scaling Limits
+
+**Prompt and surface contracts scale by duplicated constants:**
+- Current capacity: three prompts and six product tools are covered by hard-coded tuples in scoped tests.
+- Limit: each new prompt/tool increases the number of allowlists and latency-call fixtures that must stay in sync.
+- Scaling path: expose the canonical product surface from one runtime module and have tests compare against that registry instead of repeating names.
+
+**Source-guard scans scale with repository size:**
+- Current capacity: the suite scans a modest `src/mcp_strava` tree several times per run.
+- Limit: repeated `rglob` plus AST parse checks add test latency as modules grow.
+- Scaling path: cache parsed ASTs or consolidate guard rules into one source-boundary test module.
+
+## Dependencies at Risk
+
+**Python minor version check conflicts with plus-version documentation:**
+- Risk: README says Python 3.14+, but the Docker runtime test requires exactly Python 3.14.
+- Impact: a future Python 3.15-compatible environment can fail `tests/test_docker_runtime.py` even if package metadata remains valid.
+- Migration plan: either document the runtime as exactly Python 3.14 or relax `tests/test_docker_runtime.py:22` to match the `>=3.14` contract.
+
+**DuckDB dependency is tightly pinned by test and metadata:**
+- Risk: `tests/test_docker_runtime.py` asserts the loaded DuckDB version starts with `1.5.` and metadata pins `<1.6`.
+- Impact: security or correctness fixes that require DuckDB 1.6+ need coordinated code, test, and deployment changes.
+- Migration plan: introduce an explicit DuckDB upgrade phase with migration parity tests and runtime smoke before widening the dependency range.
+
+## Missing Critical Features
+
+**Dedicated shoe mileage query surface:**
+- Problem: the shoe mileage prompt exists, but scoped tests keep gear facts out of aggregates and only verify gear facts as detail/context data.
+- Blocks: a reliable watchdog answer for per-shoe lifetime mileage without asking the agent to infer across arbitrary workout detail calls.
+
+**README contract verification:**
+- Problem: README carries setup, runtime-state, and tool-surface claims that are not directly checked by the docs regression tests.
+- Blocks: confidence that the first-run operator path matches the tested Docker/DuckDB product surface.
 
 ## Test Coverage Gaps
 
-**High-risk paths worth regression tests**
-- `src/mcp_strava/settings.py`: add a test that mutates the env file on disk and verifies the cache behavior you want.
-- `src/mcp_strava/refresh/runtime.py`: add a lease-expiry and concurrent-refresh regression test.
-- `src/mcp_strava/refresh/_sync_ops.py`: add a failing test that proves the schema-validation checkpoint is not a no-op once it is implemented.
-- `src/mcp_strava/application/metric_services.py`: add a compare-periods test that exercises both global and per-sport fanout without repeated report recomputation.
+**Weekly and shoe prompt body checks:**
+- What's not tested: allowed tools, forbidden admin/sync/raw operations, medical-safety wording, and unsupported-feature behavior for weekly and shoe prompts.
+- Files: `mcp-content/prompts/strava_weekly_training_digest.md`, `mcp-content/prompts/strava_shoe_mileage_watchdog.md`, `tests/test_mcp_surface.py:239`
+- Risk: prompt drift can violate the MCP boundary while the prompt-name test still passes.
+- Priority: High
+
+**README drift checks:**
+- What's not tested: README storage backend wording, runtime paths, and full product MCP tool list.
+- Files: `README.md`, `tests/test_metric_registry.py:249`, `tests/test_cli_surface.py:585`, `tests/test_docker_runtime.py:103`
+- Risk: new setup or operation work follows stale README guidance.
+- Priority: Medium
+
+**Real runtime performance gate in pytest:**
+- What's not tested: warm read-model latency against the actual Docker HTTP MCP server during `uv run pytest -q`.
+- Files: `tests/test_mcp_latency_gate.py`, `tests/test_mcp_test_client.py`, `README.md:106`
+- Risk: fake-client latency tests pass while live `get_training_aggregates` or detail calls exceed the product latency budget.
+- Priority: Medium
+
+**Environment-dependent daily report smoke:**
+- What's not tested: `daily_report()` behavior when `data/strava.db` is absent from the developer checkout.
+- Files: `tests/test_smoke.py:63`, `tests/test_smoke.py:67`, `tests/test_smoke.py:73`
+- Risk: the local smoke suite can skip an end-to-end report path on machines without a mirror database.
+- Priority: Low
 
 ---
 
-*Concerns audit: 2026-05-22*
+*Concerns audit: 2026-05-26*
