@@ -2,20 +2,28 @@
 
 from pathlib import Path
 
+import duckdb
+import pytest
+
+from mcp_strava.adapters.duckdb.schema import create_schema
 from mcp_strava.application.metric_registry import (
     AGGREGATE_METRIC_BUNDLES,
     AGGREGATE_MODES,
     EXCLUDED_INTERPRETATIONS,
     MCP_TOOL_IDS,
     METRIC_REGISTRY,
+    MATERIALIZED_FACT_COLUMN_REGISTRY,
+    MATERIALIZED_FACT_TABLES,
+    MATERIALIZED_ROLLING_WINDOW_DAYS,
     SUPPORTED_AGGREGATE_BUCKETS,
     SUPPORTED_AGGREGATE_SCOPES,
     SUPPORTED_ROLLING_WINDOW_DAYS,
+    aggregate_query_allowed_columns,
     metric_catalog_payload,
+    materialized_fact_column_names,
     metrics_for_aggregate_bundle,
     metrics_for_tool,
 )
-import pytest
 
 
 REQUIRED_METRIC_IDS = {
@@ -294,6 +302,54 @@ def test_aggregate_registry_contract_enumerates_supported_modes_and_filters():
     assert set(SUPPORTED_AGGREGATE_BUCKETS) == EXPECTED_AGGREGATE_BUCKETS
     assert set(SUPPORTED_AGGREGATE_SCOPES) == EXPECTED_AGGREGATE_SCOPES
     assert set(SUPPORTED_ROLLING_WINDOW_DAYS) == EXPECTED_ROLLING_WINDOWS
+    assert set(MATERIALIZED_ROLLING_WINDOW_DAYS) == EXPECTED_ROLLING_WINDOWS
+
+
+def test_materialized_fact_column_registry_matches_duckdb_schema():
+    with duckdb.connect(database=":memory:") as conn:
+        create_schema(conn)
+        for table_name in MATERIALIZED_FACT_TABLES:
+            rows = conn.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = ?
+                ORDER BY ordinal_position
+                """,
+                [table_name],
+            ).fetchall()
+            schema_columns = {str(row[0]) for row in rows}
+            assert schema_columns == set(materialized_fact_column_names(table_name)), table_name
+
+
+def test_fact_column_registry_has_known_roles_and_metric_refs():
+    allowed_roles = {"dimension", "metric", "dependency", "provenance"}
+    for table_name, columns in MATERIALIZED_FACT_COLUMN_REGISTRY.items():
+        assert table_name in MATERIALIZED_FACT_TABLES
+        assert columns, table_name
+        for column in columns.values():
+            assert column.role in allowed_roles, f"{table_name}.{column.column_name}"
+            assert set(column.metric_ids).issubset(METRIC_REGISTRY), f"{table_name}.{column.column_name}"
+            if column.role == "metric":
+                assert column.metric_ids, f"{table_name}.{column.column_name} must point to a metric"
+
+
+def test_aggregate_query_columns_are_registry_derived():
+    from mcp_strava.adapters.duckdb import aggregate_queries
+
+    allowed_columns = aggregate_query_allowed_columns()
+    assert aggregate_queries._ALLOWED_COLUMNS == allowed_columns
+    assert "zone1_seconds" in allowed_columns
+    assert "source_hash" not in allowed_columns
+    assert "computed_at" not in allowed_columns
+
+
+def test_materializers_use_registry_rolling_windows():
+    from mcp_strava.adapters.duckdb.read_model_materializer import ROLLING_WINDOWS as duckdb_windows
+    from mcp_strava.adapters.sqlite.read_model_materializer import ROLLING_WINDOWS as sqlite_windows
+
+    assert duckdb_windows == MATERIALIZED_ROLLING_WINDOW_DAYS
+    assert sqlite_windows == MATERIALIZED_ROLLING_WINDOW_DAYS
 
 
 def test_aggregate_exposed_metrics_have_complete_query_metadata():
@@ -327,6 +383,8 @@ def test_aggregate_modes_map_locked_semantic_decisions():
         "fitness": ("last_state", None),
         "form_zone": ("distribution", None),
         "kudos_count": ("kudos_count", "activity_count"),
+        "volume_7d": ("last_state", "latest_day"),
+        "volume_28d": ("last_state", "latest_day"),
     }
     for metric_id, (mode, denominator) in expected_modes.items():
         metric = METRIC_REGISTRY[metric_id]

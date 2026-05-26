@@ -17,6 +17,7 @@ from mcp_strava.types import (
     FreshnessMetadata,
     ServiceEnvelope,
     ServiceRationale,
+    ServiceWarning,
     dc_to_dict,
 )
 from tests.test_read_model_queries import READ_MODEL_METADATA_KEYS, _repo_with_facts
@@ -624,11 +625,18 @@ def test_compare_periods_service_delegates_to_bounded_all_time_aggregates(monkey
                 last_activity_age_seconds=9600,
             ),
             completeness=CompletenessMetadata(
-                status="complete",
+                status="complete" if len(calls) == 1 else "partial",
                 missing=missing,
                 coverage={"read_model": _read_model_current(), "row_count": 1},
             ),
-            warnings=[],
+            warnings=[
+                ServiceWarning(
+                    code="aggregate_rows_incomplete",
+                    severity="warning",
+                    message="Some aggregate rows have incomplete source coverage.",
+                    field="rows",
+                )
+            ],
             rationale=[ServiceRationale(code="aggregate_layer", message="Prepared aggregate rows.")],
         )
 
@@ -673,6 +681,10 @@ def test_compare_periods_service_delegates_to_bounded_all_time_aggregates(monkey
     assert metric["sample_size"] == {"period_a": 3, "period_b": 2}
     assert "missing_hr" in metric["missing_reasons"]
     assert metric["metric_version_status"] == "single"
+    assert payload["completeness"]["status"] == "partial"
+    assert "missing_hr" in payload["completeness"]["missing"]
+    assert "missing_denominator" in payload["completeness"]["coverage"]["supported_missing_reasons"]
+    assert [warning["code"] for warning in payload["warnings"]] == ["aggregate_rows_incomplete"]
 
 
 def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

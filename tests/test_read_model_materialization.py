@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+from mcp_strava.application.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 from tests.test_sqlite_safety import _create_fixture_db
 
 
@@ -659,7 +660,7 @@ def test_materializer_writes_all_fact_tiers_and_clears_dirty_rows(tmp_path: Path
     assert daily_fact["observed_trimp"] > 0
     assert model_fact is not None
     assert model_fact["fitness"] is not None
-    assert [row["window_days"] for row in rolling_windows] == [7, 14, 28, 90]
+    assert [row["window_days"] for row in rolling_windows] == list(MATERIALIZED_ROLLING_WINDOW_DAYS)
     assert run is not None and run["status"] == "ok"
     assert dirty == []
 
@@ -682,7 +683,7 @@ def test_materializer_is_idempotent_for_same_dirty_set(tmp_path: Path) -> None:
     assert activity_count == 1
     assert daily_count == 4
     assert model_count == 4
-    assert rolling_count == 4
+    assert rolling_count == len(MATERIALIZED_ROLLING_WINDOW_DAYS)
 
 
 def test_materializer_writes_new_metric_versions_without_deleting_old_facts(tmp_path: Path) -> None:

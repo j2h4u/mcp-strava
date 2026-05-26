@@ -5,10 +5,11 @@ import json
 from statistics import median
 
 from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository
+from mcp_strava.application.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 from mcp_strava.constants import Config
 from mcp_strava.training import calc_banister_series
 
-ROLLING_WINDOWS = (7, 14, 28, 90)
+ROLLING_WINDOWS = MATERIALIZED_ROLLING_WINDOW_DAYS
 
 
 def _now_parts(now: str | datetime | None) -> tuple[str, str]:

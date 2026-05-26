@@ -13,6 +13,7 @@ from mcp_strava.application.metric_registry import (
     METRIC_REGISTRY,
     SUPPORTED_AGGREGATE_BUCKETS,
     SUPPORTED_ROLLING_WINDOW_DAYS,
+    aggregate_query_allowed_columns,
     metrics_for_aggregate_bundle,
 )
 from mcp_strava.constants import ALL_SPORTS
@@ -87,51 +88,7 @@ _SOURCE_DAY_COLUMNS = {
     "social_fact": "activity_day",
     "historical_fact": "day",
 }
-_ALLOWED_COLUMNS = {
-    "activity_count",
-    "activity_sample_count",
-    "active_day_count",
-    "rest_day_count",
-    "calendar_days",
-    "calendar_day_count",
-    "model_day_count",
-    "rolling_sample_count",
-    "trimp",
-    "distance_m",
-    "moving_time_s",
-    "elapsed_time_s",
-    "elevation_gain_m",
-    "avg_hr",
-    "max_hr",
-    "kudos_count",
-    "heartrate_sample_count",
-    "stream_sample_count",
-    "hr_recovery_median_rate",
-    "vertical_speed_vmh",
-    "vertical_speed_total_ascent_m",
-    "vertical_speed_duration_hours",
-    "cardiac_cost",
-    "adjusted_cardiac_cost",
-    "cardiac_drift_pct",
-    "cardiac_drift_significant",
-    "cardiac_drift_severity",
-    "cardiac_drift_quality",
-    "hrr_pct",
-    "effective_trimp",
-    "fitness",
-    "fatigue",
-    "form",
-    "form_zone",
-    "acwr",
-    "acwr_zone",
-    "daily_avg_trimp_7d",
-    "daily_avg_trimp_28d",
-    "daily_avg_trimp_90d",
-    "median_cardiac_cost",
-    "median_adjusted_cardiac_cost",
-    "median_hr_recovery",
-    "median_cardiac_drift_pct",
-}
+_ALLOWED_COLUMNS = aggregate_query_allowed_columns()
 _METRIC_VALUE_EXPRESSIONS = {
     "distance_km": "distance_m / 1000.0",
     "moving_time_min": "moving_time_s / 60.0",
@@ -167,6 +124,7 @@ def validate_aggregate_request(request: AggregateRequest) -> tuple[MetricDefinit
     definitions = tuple(_metric_definition(metric_id) for metric_id in metric_ids)
     for metric in definitions:
         _validate_metric_scope(metric, request.scope)
+        _validate_metric_rolling_window(metric, request)
         if request.bucket not in set(metric.supported_buckets):
             raise ValueError(f"Metric {metric.metric_id} does not support bucket {request.bucket}")
         if metric.aggregate_source not in _SOURCE_VIEWS:
@@ -222,6 +180,23 @@ def _validate_metric_scope(metric: MetricDefinition, scope: str) -> None:
         raise ValueError(f"Metric {metric.metric_id} does not support global scope")
     if scope == "per_sport" and not ({"per_sport", "both"} & scopes):
         raise ValueError(f"Metric {metric.metric_id} does not support per_sport scope")
+
+
+def _validate_metric_rolling_window(metric: MetricDefinition, request: AggregateRequest) -> None:
+    if metric.aggregate_source != "rolling_period_fact":
+        return
+    if request.window_days is not None and metric.fixed_rolling_window and request.window_days != metric.rolling_window_days:
+        raise ValueError(f"Metric {metric.metric_id} requires rolling window {metric.rolling_window_days}")
+    if request.window_days is None and metric.rolling_window_days is None:
+        raise ValueError(f"Metric {metric.metric_id} requires window_days")
+
+
+def _effective_rolling_window_days(metric: MetricDefinition, request: AggregateRequest) -> int | None:
+    if metric.aggregate_source != "rolling_period_fact":
+        return None
+    if request.window_days is not None:
+        return request.window_days
+    return metric.rolling_window_days
 
 
 def _scoped_requests_for_metric(request: AggregateRequest, metric: MetricDefinition) -> tuple[AggregateRequest, ...]:
@@ -335,7 +310,7 @@ def _build_numeric_query(
     exclusion_expr = _exclusion_expression(metric)
     aggregate_expr = _aggregate_expression(metric, effective_start, effective_end)
     quantile_expr = _quantile_expression(metric)
-    where, params = _where_clause(source, request, effective_start, effective_end)
+    where, params = _where_clause(metric, request, effective_start, effective_end)
     statement = f"""
         WITH prepared AS (
             SELECT
@@ -423,7 +398,7 @@ def _query_distribution(
     sport_expr = _sport_output_expression(request)
     value_expr = _value_expression(metric)
     sample_expr = _sample_expression(metric)
-    where, params = _where_clause(source, request, effective_start, effective_end)
+    where, params = _where_clause(metric, request, effective_start, effective_end)
     statement = f"""
         WITH prepared AS (
             SELECT
@@ -502,7 +477,7 @@ def _query_hr_zone_distribution(
     day_column = _SOURCE_DAY_COLUMNS[source]
     bucket_expr = _bucket_expression(request, day_column, effective_start)
     sport_expr = _sport_output_expression(request)
-    where, params = _where_clause(source, request, effective_start, effective_end)
+    where, params = _where_clause(metric, request, effective_start, effective_end)
     statement = f"""
         WITH prepared AS (
             SELECT
@@ -581,11 +556,12 @@ def _sport_output_expression(request: AggregateRequest) -> str:
 
 
 def _where_clause(
-    source: str,
+    metric: MetricDefinition,
     request: AggregateRequest,
     effective_start: date,
     effective_end: date,
 ) -> tuple[str, list[object]]:
+    source = str(metric.aggregate_source)
     day_column = _SOURCE_DAY_COLUMNS[source]
     where: list[str] = []
     params: list[object] = []
@@ -595,6 +571,10 @@ def _where_clause(
     else:
         where.extend([f"{day_column} >= CAST(? AS DATE)", f"{day_column} < CAST(? AS DATE)"])
         params.extend([effective_start.isoformat(), effective_end.isoformat()])
+        rolling_window_days = _effective_rolling_window_days(metric, request)
+        if rolling_window_days is not None:
+            where.append("window_days = ?")
+            params.append(rolling_window_days)
     if source in {"daily_load_fact", "training_model_fact", "rolling_period_fact", "historical_fact"}:
         where.append("scope = 'all'")
         if request.scope == "global":

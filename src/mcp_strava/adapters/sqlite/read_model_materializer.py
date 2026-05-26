@@ -7,11 +7,12 @@ import json
 from statistics import median
 
 from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION, SQLiteRepository
+from mcp_strava.application.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 from mcp_strava.constants import Config
 from mcp_strava.metrics import check_hr_anomalies, enrich_activity
 from mcp_strava.training import calc_banister_series
 
-ROLLING_WINDOWS = (7, 14, 28, 90)
+ROLLING_WINDOWS = MATERIALIZED_ROLLING_WINDOW_DAYS
 
 
 def _now_parts(now: str | datetime | None) -> tuple[str, str]:

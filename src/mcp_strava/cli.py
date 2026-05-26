@@ -13,14 +13,10 @@ from mcp_strava.adapters.duckdb.migrations import (
 )
 from mcp_strava.adapters.sqlite.migrations import run_migrations, run_preflight
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
-from mcp_strava.application import (
-    get_daily_report_service,
-    get_freshness_service,
-    get_mirror_coverage_service,
-    get_recent_workouts_service,
-    get_weekly_summary_service,
-    get_workout_analytics_service,
-)
+from mcp_strava.application.freshness import get_freshness_service
+from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
+from mcp_strava.application.reports import get_daily_report_service, get_weekly_summary_service
+from mcp_strava.application.workouts import get_recent_workouts_service, get_workout_analytics_service
 import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.db import (
     DbConn, refresh_token,

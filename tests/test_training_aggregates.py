@@ -594,23 +594,23 @@ def test_bundles_sport_scope_empty_buckets_and_rolling_windows(tmp_path: Path) -
             ),
         )
     )
-    rolling_values = []
+    rolling_widths = []
     for window_days in EXPECTED_WINDOWS:
         rows = _payloads(
             query_training_aggregates(
                 conn,
                 AggregateRequest(
-                    metric_ids=("volume_7d",),
+                    metric_ids=("rolling_median_cc",),
                     bucket="all_time",
                     start_day=None,
                     end_day_exclusive="2026-05-22",
-                    scope="global",
+                    scope="per_sport",
                     as_of_day="2026-05-21",
                     window_days=window_days,
                 ),
             )
         )
-        rolling_values.append(rows[0]["value"])
+        rolling_widths.append(rows[0]["bucket_width"])
     conn.close()
 
     assert {row["metric_id"] for row in bundle_rows} == set(metrics_for_aggregate_bundle("sport_efficiency"))
@@ -620,7 +620,44 @@ def test_bundles_sport_scope_empty_buckets_and_rolling_windows(tmp_path: Path) -
         ("2026-05-06", None),
         ("2026-05-07", None),
     ]
-    assert [int(value) for value in rolling_values] == list(EXPECTED_WINDOWS)
+    assert rolling_widths == [f"rolling_{window_days}d" for window_days in EXPECTED_WINDOWS]
+
+
+def test_fixed_rolling_metrics_filter_to_their_declared_window(tmp_path: Path) -> None:
+    db_path = _aggregate_fixture(tmp_path / "fixed-rolling-window.duckdb")
+    conn = open_fixture_db(db_path)
+
+    try:
+        rows = _payloads(
+            query_training_aggregates(
+                conn,
+                AggregateRequest(
+                    metric_ids=("volume_7d",),
+                    bucket="week",
+                    start_day="2026-05-18",
+                    end_day_exclusive="2026-05-25",
+                    scope="global",
+                ),
+            )
+        )
+        with pytest.raises(ValueError, match="requires rolling window 7"):
+            query_training_aggregates(
+                conn,
+                AggregateRequest(
+                    metric_ids=("volume_7d",),
+                    bucket="all_time",
+                    start_day=None,
+                    end_day_exclusive="2026-05-22",
+                    as_of_day="2026-05-21",
+                    window_days=14,
+                ),
+            )
+    finally:
+        conn.close()
+
+    assert len(rows) == 1
+    assert rows[0]["value"] == 7.0
+    assert rows[0]["aggregation_mode"] == "last_state"
 
 
 def test_product_parameter_rejections_happen_before_query_execution(tmp_path: Path) -> None:
@@ -655,10 +692,11 @@ def test_validation_accepts_exact_rolling_window_allowlist() -> None:
     for window_days in EXPECTED_WINDOWS:
         validate_aggregate_request(
             AggregateRequest(
-                metric_ids=("volume_7d",),
+                metric_ids=("rolling_median_cc",),
                 bucket="all_time",
                 start_day=None,
                 end_day_exclusive="2026-05-22",
+                scope="per_sport",
                 as_of_day="2026-05-21",
                 window_days=window_days,
             )

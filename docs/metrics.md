@@ -10,7 +10,9 @@ Supported aggregate modes: `sum`, `calendar_average`, `weighted_average`, `ratio
 
 Supported buckets: `day`, `week`, `month`, `year`, `all_time`. Week buckets use Monday start. Date ranges are half-open: `[start_day, end_day_exclusive)`.
 
-Supported rolling windows: `7`, `14`, `28`, `42`, `90` days.
+Supported rolling windows: `7`, `14`, `28`, `42`, `90` days. The same set is materialized by the read model.
+
+Rolling-window metrics with a duration in the metric id, such as `volume_7d`, are filtered to that declared `window_days` before bucket aggregation. Generic rolling medians default to the registry window unless the request supplies an allowed `window_days`.
 
 Supported scopes: `global`, `per_sport`, `both`. Gear and equipment are not aggregate scopes or bundle dimensions.
 
@@ -30,6 +32,8 @@ Registry aggregate bundles:
 | `historical_facts` | `sport_type`, `form_zone`, `acwr_zone`, `cardiac_drift_severity`, `cardiac_drift_quality`, `kudos_count`, `active_days`, `activity_streak_days`, `rest_streak_days`, `last_hike_days_ago` |
 
 Aggregate rows carry bucket start/end, bucket width, `metric_id`, `unit`, `aggregate_mode`, denominator metadata, value, sample size, activity count, null/excluded count, completeness status, missing reasons, metric version status, materialized timestamp, mirror freshness, and read-model freshness.
+
+Materialized analytic fact-table columns are also registered here in code as `dimension`, `metric`, `dependency`, or `provenance`; schema drift is tested against that registry before a new column can silently consume storage.
 
 ## Metric Inventory
 

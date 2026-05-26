@@ -920,6 +920,8 @@ class MetricDefinition:
     bundle_ids: list[str] = field(default_factory=list)
     quantiles: list[str] = field(default_factory=list)
     metric_version_policy: str | None = None
+    rolling_window_days: int | None = None
+    fixed_rolling_window: bool = False
 
 
 @dataclass(frozen=True)

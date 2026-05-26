@@ -37,6 +37,7 @@ SAFETY_WARNING_CODES = {
 
 COMPARISON_MISSING_REASONS = {
     "insufficient_history",
+    "missing_denominator",
     "missing_hr",
     "missing_streams",
     "metric_not_applicable",
@@ -698,24 +699,63 @@ def compare_periods_service(
         "per_sport": per_sport_section,
     }
     read_model = period_a_envelope.completeness.coverage.get("read_model", {})
+    period_b_read_model = period_b_envelope.completeness.coverage.get("read_model", {})
+    comparison_missing = sorted(set(period_a_envelope.completeness.missing) | set(period_b_envelope.completeness.missing))
+    comparison_status = _comparison_completeness_status(
+        period_a_envelope.completeness.status,
+        period_b_envelope.completeness.status,
+        period_a_read_model=read_model,
+        period_b_read_model=period_b_read_model,
+        has_data=bool(global_section["metrics"] or per_sport_section),
+    )
     completeness = CompletenessMetadata(
-        status=_status_from_read_model(read_model, has_data=True, missing=[]),
-        missing=[],
+        status=comparison_status,
+        missing=comparison_missing,
         coverage={
             "global_metrics": sorted(global_section["metrics"].keys()),
             "per_sport": sorted(per_sport_section.keys()),
             "supported_missing_reasons": sorted(COMPARISON_MISSING_REASONS),
-            "read_model": period_a_envelope.completeness.coverage.get("read_model", {}),
-            "period_b_read_model": period_b_envelope.completeness.coverage.get("read_model", {}),
+            "read_model": read_model,
+            "period_b_read_model": period_b_read_model,
         },
     )
     return ServiceEnvelope(
         data=data,
         freshness=period_a_envelope.freshness,
         completeness=completeness,
-        warnings=[*period_a_envelope.warnings, *period_b_envelope.warnings],
+        warnings=_dedupe_warnings([*period_a_envelope.warnings, *period_b_envelope.warnings]),
         rationale=_rationale("Period comparison formats two bounded all-time aggregate requests over prepared local metric facts."),
     )
+
+
+def _dedupe_warnings(warnings: list[ServiceWarning]) -> list[ServiceWarning]:
+    deduped: list[ServiceWarning] = []
+    seen: set[tuple[str, str, str, str | None, str | None]] = set()
+    for warning in warnings:
+        evidence_key = json.dumps(warning.evidence, sort_keys=True, default=str) if warning.evidence is not None else None
+        key = (warning.code, warning.severity, warning.message, warning.field, evidence_key)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(warning)
+    return deduped
+
+
+def _comparison_completeness_status(
+    period_a_status: str,
+    period_b_status: str,
+    *,
+    period_a_read_model: dict[str, object],
+    period_b_read_model: dict[str, object],
+    has_data: bool,
+) -> str:
+    if not has_data:
+        return "unavailable"
+    if period_a_read_model.get("status") == "stale" or period_b_read_model.get("status") == "stale":
+        return "stale"
+    if period_a_status != "complete" or period_b_status != "complete":
+        return "partial"
+    return "complete"
 
 
 def _validate_iso_day(value: str) -> date:

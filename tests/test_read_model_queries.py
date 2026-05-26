@@ -6,6 +6,7 @@ from pathlib import Path
 
 from mcp_strava.adapters.sqlite.migrations import run_migrations
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+from mcp_strava.application.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 
 
 READ_MODEL_METADATA_KEYS = {
@@ -304,7 +305,15 @@ def _repo_with_facts(path: Path) -> SQLiteRepository:
         )
         """
     )
-    for window, effective, active, rest in ((7, 268.0, 3, 4), (14, 268.0, 3, 11), (28, 268.0, 3, 25), (90, 268.0, 3, 87)):
+    rolling_inputs = {
+        7: (268.0, 3, 4),
+        14: (268.0, 3, 11),
+        28: (268.0, 3, 25),
+        42: (268.0, 3, 39),
+        90: (268.0, 3, 87),
+    }
+    for window in MATERIALIZED_ROLLING_WINDOW_DAYS:
+        effective, active, rest = rolling_inputs[window]
         conn.execute(
             """
             INSERT INTO rolling_period_facts (
@@ -401,7 +410,7 @@ def test_fact_queries_cover_model_daily_load_rolling_and_detail(tmp_path: Path) 
         rolling = repo.fetch_rolling_period_facts("2026-05-21", 14, scope="all", metric_version=1)
         rolling_by_window = repo.fetch_rolling_period_facts_by_windows(
             "2026-05-21",
-            (7, 14, 28, 90),
+            MATERIALIZED_ROLLING_WINDOW_DAYS,
             scope="all",
             metric_version=1,
         )
@@ -413,7 +422,7 @@ def test_fact_queries_cover_model_daily_load_rolling_and_detail(tmp_path: Path) 
     assert [row["day"] for row in daily] == ["2026-05-19", "2026-05-20", "2026-05-21"]
     assert rolling is not None
     assert rolling["window_days"] == 14
-    assert sorted(rolling_by_window) == [7, 14, 28, 90]
+    assert sorted(rolling_by_window) == list(MATERIALIZED_ROLLING_WINDOW_DAYS)
     assert rolling_by_window[14]["window_days"] == 14
 
 

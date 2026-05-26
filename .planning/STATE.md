@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-25T21:35:47.905Z"
-last_activity: 2026-05-25
+last_updated: "2026-05-26T15:30:15+05:00"
+last_activity: 2026-05-26
 progress:
   total_phases: 8
   completed_phases: 7
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-24)
 Phase: 08 (duckdb-primary-storage-aggregate-analytics-surface) — EXECUTING
 Plan: 8 of 8
 Status: Ready to execute
-Last activity: 2026-05-25
+Last activity: 2026-05-26 - Completed quick task 260526-lal: centralize materialized analytic fact registry and add drift audit
 
 ## Performance Metrics
 
@@ -190,3 +190,4 @@ Resume file: None
 | 260524-v31 bump Docker/runtime Python baseline to 3.14 | 2026-05-24 | `.planning/quick/260524-v31-bump-docker-runtime-python-baseline-to-3/260524-v31-SUMMARY.md` |
 | 260524-xa9 add metric registry calculation descriptions | 2026-05-25 | `.planning/quick/260524-xa9-add-metric-registry-calculation-descript/260524-xa9-SUMMARY.md` |
 | 260525-ng3 Hermes prompts and metric polish | 2026-05-25 | `.planning/quick/260525-ng3-hermes-prompts-metric-polish/260525-ng3-SUMMARY.md` |
+| 260526-lal centralize materialized analytic fact registry and add drift audit | 2026-05-26 | `.planning/quick/260526-lal-centralize-materialized-analytic-fact-re/260526-lal-SUMMARY.md` |
