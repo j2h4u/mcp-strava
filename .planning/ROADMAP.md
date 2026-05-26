@@ -185,3 +185,13 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 6. Full-Fidelity Strava Mirror | 4/4 | Complete    | 2026-05-24 |
 | 7. Materialized Metrics Read Model | 6/6 | Complete    | 2026-05-24 |
 | 8. DuckDB Primary Storage & Aggregate Analytics Surface | 7/8 | In Progress|  |
+
+### Phase 9: Product factual bundles and CLI read-model consolidation
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 8
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 9 to break down)

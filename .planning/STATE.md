@@ -156,6 +156,7 @@ Recent decisions affecting current work:
 ### Roadmap Evolution
 
 - Phase 8 planned: DuckDB Primary Storage & Aggregate Analytics Surface
+- Phase 9 added: Product factual bundles and CLI read-model consolidation
 
 ### Pending Todos
 
