@@ -70,7 +70,7 @@ Each task was committed atomically:
 3. **Auto-fix: Keep bundle smoke requests validator-compatible** - `2c2285b` (`fix`)
 4. **Task 2: Add final boundary guards and verification docs** - `510bbd2` (`test`)
 
-**Plan metadata:** recorded in the final docs commit for this summary.
+**Plan metadata:** `59f643c` (`docs`)
 
 ## Verification
 
@@ -146,7 +146,7 @@ Phase 9 is complete. MCP and CLI product reads remain factual, read-model-backed
 ## Self-Check: PASSED
 
 - Verified summary and all modified files exist on disk.
-- Verified task commits `9cf028d`, `54a34d0`, `2c2285b`, and `510bbd2` exist in git history.
+- Verified task commits `9cf028d`, `54a34d0`, `2c2285b`, `510bbd2`, and `59f643c` exist in git history.
 - Verified targeted tests, direct bundle smoke, and Docker smoke passed.
 
 ---
