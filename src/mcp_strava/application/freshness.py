@@ -1,12 +1,11 @@
-"""Application-level freshness metadata over the local SQLite mirror."""
+"""Application-level freshness metadata over the local mirror."""
 
 from __future__ import annotations
 
 from contextlib import nullcontext
 from datetime import datetime
 
-from mcp_strava.adapters.sqlite.repository import SQLiteRepository
-from mcp_strava.db import DbConn
+from mcp_strava.db import DbConn, repository_from_connection
 from mcp_strava.refresh.freshness import _parse_dt, evaluate_freshness
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
@@ -43,7 +42,7 @@ def _refresh_blocked(state, now: datetime) -> bool:
 
 
 def build_freshness_metadata(
-    repo: SQLiteRepository,
+    repo,
     now: datetime,
     policy: RefreshPolicy,
     *,
@@ -118,7 +117,7 @@ def get_freshness_service(
     conn_context = nullcontext(connection) if connection is not None else DbConn()
 
     with conn_context as conn:
-        repo = SQLiteRepository.from_connection(conn)
+        repo = repository_from_connection(conn)
         freshness = build_freshness_metadata(
             repo,
             checked_at,

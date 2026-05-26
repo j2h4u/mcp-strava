@@ -205,3 +205,54 @@ def test_APP_04_get_freshness_service_returns_shared_envelope(repo: SQLiteReposi
     assert payload["freshness"]["last_successful_refresh_at"] == "2026-05-21T06:00:00"
     assert payload["data"]["last_successful_refresh_at"] == "2026-05-21T06:00:00"
     assert payload["completeness"]["status"] == "complete"
+
+
+def test_get_freshness_service_uses_primary_repository_factory_for_connections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mcp_strava.application.freshness as freshness
+    from mcp_strava.types import RefreshStateRow
+
+    class FakeConnection:
+        pass
+
+    class FakeRepository:
+        def get_refresh_state(self) -> RefreshStateRow:
+            return RefreshStateRow(
+                id=1,
+                last_success_at="2026-05-21T06:00:00",
+                last_attempt_at="2026-05-21T06:00:00",
+                last_status="ok",
+                last_error_code=None,
+                lease_owner=None,
+                lease_expires_at=None,
+                backoff_until=None,
+                checkpoint_stage=None,
+                checkpoint_cursor=None,
+            )
+
+        def latest_activity_at(self) -> str:
+            return "2026-05-21T07:00:00"
+
+        def enqueue_refresh_request(self, *_args) -> bool:
+            raise AssertionError("signal_first_use=False must not enqueue refresh")
+
+    connection = FakeConnection()
+    seen_connections: list[object] = []
+
+    def fake_repository_from_connection(conn):
+        seen_connections.append(conn)
+        return FakeRepository()
+
+    monkeypatch.setattr(freshness, "repository_from_connection", fake_repository_from_connection)
+
+    envelope = freshness.get_freshness_service(
+        now=datetime.fromisoformat("2026-05-21T09:00:00"),
+        signal_first_use=False,
+        connection=connection,
+    )
+    payload = dc_to_dict(envelope)
+
+    assert seen_connections == [connection]
+    assert payload["freshness"]["last_successful_refresh_at"] == "2026-05-21T06:00:00"
+    assert payload["freshness"]["last_activity_at"] == "2026-05-21T07:00:00"
