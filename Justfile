@@ -6,6 +6,9 @@ smoke := "python -m mcp_strava.devtools.mcp_client.cli smoke-basic --compact --u
 default:
     @just --list
 
+build:
+    uv run python -m compileall -q src deploy tests
+
 test:
     {{compose}} build
     {{compose}} up -d --force-recreate --remove-orphans --wait --wait-timeout 90
