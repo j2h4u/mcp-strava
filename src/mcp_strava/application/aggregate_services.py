@@ -93,12 +93,17 @@ def get_training_aggregates_service(
         stale_reason = read_model.get("stale_reason")
         missing.add(str(stale_reason or "read_model_not_current"))
 
+    data = {
+        "request": _request_payload(request),
+        "metrics": [metric.metric_id for metric in metric_definitions],
+        "rows": row_payloads,
+    }
+    bundle_payload = _product_bundle_payload(request.bundle_id, row_payloads, read_model)
+    if bundle_payload is not None:
+        data["bundle"] = bundle_payload
+
     return ServiceEnvelope(
-        data={
-            "request": _request_payload(request),
-            "metrics": [metric.metric_id for metric in metric_definitions],
-            "rows": row_payloads,
-        },
+        data=data,
         freshness=freshness,
         completeness=CompletenessMetadata(
             status=completeness_status,
@@ -117,6 +122,18 @@ def get_training_aggregates_service(
             )
         ],
     )
+
+
+def _product_bundle_payload(
+    bundle_id: str | None,
+    rows: list[dict[str, object]],
+    read_model: dict[str, object],
+) -> dict[str, object] | None:
+    if bundle_id is None:
+        return None
+    from mcp_strava.application.product_facts import format_aggregate_product_bundle
+
+    return format_aggregate_product_bundle(bundle_id, rows, read_model=read_model)
 
 
 def _request_payload(request: AggregateServiceRequest) -> dict[str, object]:
