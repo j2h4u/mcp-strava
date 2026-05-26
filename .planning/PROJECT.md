@@ -2,9 +2,9 @@
 
 ## What This Is
 
-mcp-strava is a local Strava mirror and training analytics service for one primary user. Today it is a Python CLI over a SQLite database populated from Strava; this project refactors it into a service-shaped codebase with core training logic, a SQLite repository, a Strava API adapter, and separate CLI and HTTP MCP control surfaces.
+mcp-strava is a local Strava mirror and training analytics service for one primary user. It now runs as a service-shaped Python codebase with a DuckDB primary runtime store, a Strava API adapter, shared application/read-model services, and separate CLI and HTTP MCP control surfaces.
 
-The long-term shape is a Docker-packaged local MCP server connected to the user's local MCP network. The MCP surface should expose workouts, analytics, reports, and recommendations, not operational sync/admin controls.
+The runtime shape is a Docker-packaged local MCP server connected to the user's local MCP network. The MCP surface exposes factual workouts, analytics, reports, and prepared metric bundles, not operational sync/admin controls.
 
 ## Core Value
 
@@ -48,6 +48,8 @@ Preserve the local Strava mirror and keep trusted training analytics working whi
 - [x] Source mirror writes invalidate derived metrics through durable `source_hash`, `source_revision`, `metric_version`, and dirty-queue semantics — validated in Phase 7
 - [x] Refresh and backfill runtime materializes read-model facts below the MCP boundary without exposing recompute/admin tools — validated in Phase 7
 - [x] MCP metric tools read prepared facts and pass the sub-500 ms warm p95 target on the live Docker runtime — validated in Phase 7
+- [x] DuckDB is the primary runtime storage for MCP/CLI aggregate analytics, with cutover/parity checks, single-owner Docker runtime behavior, and read-model-backed aggregate queries — validated in Phase 8
+- [x] MCP and CLI product reads expose factual daily, weekly, historical, status, kudos, and supported gear facts from shared DuckDB/read-model application services, while MCP remains the exact six-tool product surface — validated in Phase 9
 
 ### Active
 
@@ -70,7 +72,7 @@ The existing SQLite database at `data/strava.db` is valuable. It contains data t
 
 The desired architecture is not an API wrapper over Strava. It is a local mirror plus analytics core. Sync is infrastructure and policy, not an agent-facing action. MCP clients should ask questions about training and analytics; the core decides whether the mirror is fresh enough and whether an internal first-use refresh request is needed.
 
-The v1.1 milestone tightened the mirror contract. Strava stream data is now retained in lossless normalized form, and derived training metrics are materialized into versioned SQLite read-model facts so MCP tools can read prepared data instead of recomputing expensive stream-derived metrics on request.
+The v1.1 milestone tightened the mirror contract. Strava stream data is now retained in lossless normalized form, DuckDB is the primary runtime store, and derived training metrics are materialized into versioned read-model facts so MCP and CLI product reads can consume prepared factual data instead of recomputing expensive stream-derived metrics on request.
 
 Existing codebase concerns that should shape the roadmap:
 
@@ -105,6 +107,8 @@ Existing codebase concerns that should shape the roadmap:
 | Lossless normalized mirror for v1.1 | The local database should preserve Strava stream information in structured queryable form without making permanent raw JSON retention the main contract | Planned for v1.1 Full-Fidelity Strava Mirror |
 | Materialized read model below MCP | MCP tools should remain factual/product-only while refresh/backfill automation owns recomputation and invalidation | Validated in Phase 7 with v5 read-model tables, dirty queue, runtime materialization, and live Docker p95 smoke |
 | Performance gates are explicit | Normal Docker smoke should stay fast, while the full warm p95 check remains available as a deliberate acceptance gate | Validated in Phase 7 through `just mcp-read-model-perf` |
+| DuckDB primary runtime store | Aggregate analytics and time-bucket style product reads fit DuckDB better than SQLite row scans | Validated in Phase 8 with DuckDB cutover, runtime routing, Docker ownership, aggregate queries, and parity checks |
+| Product factual bundles stay inside existing MCP surface | Agents need richer prepared facts, but not additional admin/debug/sync tools or coaching interpretation from this service | Validated in Phase 9 through shared bundle services, six-tool MCP allowlist, direct bundle smoke, and CLI read-model consolidation |
 
 ## Evolution
 
@@ -124,5 +128,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-24 after Phase 7 verification*
-*Completion updated: 2026-05-24 after Phase 7 self-UAT*
+*Last updated: 2026-05-26 after Phase 9 verification*
+*Completion updated: 2026-05-26 after Phase 9 execution*
