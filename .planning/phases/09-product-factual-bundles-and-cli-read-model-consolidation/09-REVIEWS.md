@@ -1,7 +1,7 @@
 ---
 phase: 9
 reviewers: [claude, opencode]
-reviewed_at: 2026-05-26T11:57:22.351Z
+reviewed_at: 2026-05-26T12:22:01.794Z
 plans_reviewed: [09-01-PLAN.md, 09-02-PLAN.md, 09-03-PLAN.md, 09-04-PLAN.md]
 ---
 
@@ -242,3 +242,152 @@ Both reviewers agree that Phase 9 preserves the hard product boundary: no new MC
 
 - Claude treats missing historical/status computations as two current HIGH blockers because the plan can produce query-broken or hollow factual bundles.
 - OpenCode treats 09-01 mostly as low risk, but raises a HIGH on 09-02 because downstream bundle services need an explicit partial-completeness contract.
+
+---
+
+# Phase 9 Review Convergence — Cycle 2
+
+Phase: 09 — Product factual bundles and CLI read-model consolidation
+Cycle: 2
+Reviewers: claude, opencode
+Generated: 2026-05-26
+Reviewed commit: `234a81d24129779f0e816fd70e91f611fd852fbb`
+
+CYCLE_SUMMARY: current_high=0
+
+## Current HIGH Concerns
+
+None.
+
+## Claude Review
+
+# Cross-AI Plan Review — Phase 9 Cycle 2
+
+## 1. Summary
+
+The four Phase 9 plans now form a coherent wave chain (registry/query → bundle services → CLI consolidation → MCP/boundary/docs) that targets restoring factual product bundles on the DuckDB/read-model layer without adding MCP tools or reviving legacy recompute paths.
+
+Claude focused on whether the three prior-cycle HIGH concerns are resolved in the current artifacts:
+
+- **Claude H-1 (streak/last-hike facts mapped to absent columns):** Resolved. 09-01 now explicitly forbids mapping `activity_streak_days`/`rest_streak_days`/`last_hike_days_ago` to absent `training_model_daily` columns and scopes a concrete derived source (`v_historical_context_facts` view / CTEs over `daily_load_facts.activity_count` and `activity_metric_facts` where `sport_type='Hike'`) with fixture-backed non-`unavailable` assertions.
+- **Claude H-2 (windowed cross-activity status facts not scoped):** Resolved. 09-01 adds typed status fact contracts, a `STATUS_FACT_REGISTRY`, explicit definitions for `consecutive_high_load_hikes` and `running_volume_jump`, and a cross-activity status query path with named missing reasons.
+- **OpenCode H-1 (no bundle completeness contract):** Resolved. 09-02 now mandates `bundle_completeness` on every section with `requested_metrics`/`included_metrics`/`unavailable_metrics`/`skipped_metrics`/`scope_incompatible_metrics` plus an enumerated reason-code vocabulary, and explicitly forbids silently dropped metrics.
+
+No unresolved HIGH remains. Remaining concerns are MEDIUM/LOW.
+
+## 2. Strengths
+
+- **Executable verification of the prior HIGHs.** The revised plans convert the previously abstract gaps into RED tests that assert non-`unavailable` fixture rows and concrete evidence payloads.
+- **Boundary discipline is well-guarded.** Six-tool allowlist is preserved, `compare_periods` stays on the aggregate path, admin/sync/raw/sql stay below MCP, AST-based guards replace grep-style matching, and kudos/gear constraints are tested.
+- **Registry remains single source of truth.** Thresholds and evidence keys are required to live in `STATUS_FACT_REGISTRY`, and `MATERIALIZED_FACT_COLUMN_REGISTRY` stays the only allowed column source.
+- **Legacy retirement has replacement-path coverage.** 09-03 ties deletion of `reports.py`/`workouts.py` and dead handlers to documented and tested replacement rows.
+
+## 3. Concerns
+
+**MEDIUM — Performance risk of new windowed streak/status queries on the cached aggregate path.** `historical_facts` streak derivation and the cross-activity `consecutive_high_load_hikes`/`running_volume_jump` status queries are added into the `get_training_aggregates`/bundle path. 09-04 specifies a p95 gate and a non-Docker fallback, but no plan pre-scopes mitigation if the windowed computations regress p95.
+
+**MEDIUM — Cross-plan deletion sequencing for `application/reports.py` and `application/workouts.py`.** 09-03 deletes both modules but only runs `test_cli_surface.py` and `test_security_guards.py` in its verify step. Other importers would surface later. A pre-deletion importer check should be explicit in 09-03.
+
+**MEDIUM — MCP daily-brief completeness vs. D-05.** D-05 lists recent workouts among daily-brief facts, but `get_training_aggregates(bundle_id="daily_brief")` returns aggregate/status/model/load rows only; recent-workout facts are composed from `list_workouts`/`get_workout_detail`. 09-04 documents this, but a machine-visible `composed_externally` completeness marker would make the gap clearer.
+
+**LOW — Status-fact threshold provenance for `hr_anomaly_burst`.** The 30 bpm threshold should be recorded as provenance of the already materialized `anomaly_count`, not re-applied as a second runtime threshold.
+
+**LOW — `running_volume_jump` per-sport source ambiguity.** Weekly Run distance comparison needs per-sport granularity; the plan permits using read-model/activity facts but does not pin the exact source table.
+
+## 4. Suggestions
+
+- Add a 09-03 pre-step to enumerate all importers of `application.reports` / `application.workouts` before deletion.
+- Make 09-04 p95 measurement bundle-specific for `daily_brief` and `historical_facts`.
+- Pin `running_volume_jump` and `consecutive_high_load_hikes` source tables explicitly in 09-01.
+- Consider a `composed_externally` reason code or analogous marker for MCP bundle facts intentionally provided by other existing MCP tools.
+
+## 5. Risk Assessment
+
+Delivery risk is moderate because 09-01 and 09-02 are complex, but the prior HIGHs are now backed by executable tests. Boundary/security risk is low. Performance and regression risks are moderate-low and covered by planned gates.
+
+## Current HIGH Concerns
+
+None.
+
+CYCLE_SUMMARY: current_high=0
+
+---
+
+## OpenCode Review
+
+# Phase 9 Cycle 2 — Cross-AI Plan Review
+
+## 1. Summary
+
+The revised plans (09-01 through 09-04) substantively resolve all three prior-cycle HIGH concerns. The historical streak/last-hike facts now derive from explicit DuckDB windowed views/CTEs rather than absent `training_model_daily` columns. The D-09 cross-activity status facts (`consecutive_high_load_hikes`, `running_volume_jump`) now scope explicit windowed query paths with registered thresholds, evidence shapes, and fixture-backed availability gating. Every product bundle section now carries an explicit `bundle_completeness` contract with reason codes for unavailable, skipped, and scope-incompatible metrics. The four-plan structure is well-layered: registry/query safety (09-01), shared factual bundle services (09-02), CLI consolidation (09-03), and boundary smoke (09-04).
+
+## 2. Strengths
+
+- Prior HIGH concerns are directly addressed with executable detail, not abstract promises.
+- Bundle completeness now covers included, unavailable, skipped, and scope-incompatible metrics with reason codes.
+- D-09 status facts specify evidence payload shapes (`dates`, `combined_trimp`, `current_week_km`, `previous_week_km`, `pct_change`).
+- CLI dead-handler retirement uses AST-level guards rather than grep-style comments.
+- The MCP tool surface stays at exactly six tools.
+- Coaching language bans are enforced in tests.
+
+## 3. Concerns
+
+### MEDIUM
+
+1. **09-01 Task 2 has an overly broad implementation surface.** It must add typed status contracts, a multi-entry `STATUS_FACT_REGISTRY`, a DuckDB windowed view, cross-activity query paths, and mixed-scope bundle normalization in one task. Consider splitting types/registry work from schema/query work.
+2. **09-02 Task 2 changes `aggregate_services.py` response shape.** The plan says it preserves the current rows contract while adding bundle sections, but it does not specify whether bundle sections are always present or conditional.
+3. **09-03 deletion of `reports.py`/`workouts.py` is conditionally scoped.** A missed import could surface late after the phase is marked done.
+
+### LOW
+
+1. **The `season` fact is not clearly registry-backed.** It can be computed inline, but that creates a small registry-consistency gap with D-11.
+2. **09-03 lacks explicit service-failure handling for CLI commands.** The plan should define whether product service failures print structured JSON errors, raw tracebacks, or non-zero exits only.
+3. **09-04 does not explicitly regression-test pre-existing MCP tools.** Existing CI likely covers this, but the new smoke focus is on bundle paths.
+
+## 4. Suggestions
+
+- Break 09-01 Task 2 into types/registry and schema/query sub-parts.
+- Specify the aggregate response shape contract for bundle and non-bundle requests.
+- Register `season` as a derived/category metric if D-11 is interpreted strictly.
+- Add a service-error handling clause to 09-03.
+- Add one-shot old-tool regression assertions in 09-04 for `get_fitness_state` and `list_workouts`.
+
+## 5. Risk Assessment
+
+OpenCode rated the remaining risks MEDIUM or LOW. The TDD approach mitigates 09-01 complexity, MCP cache-key tests mitigate aggregate response shape risk, AST guards catch surviving legacy imports, and 09-04 covers performance.
+
+## Current HIGH Concerns
+
+None.
+
+CYCLE_SUMMARY: current_high=0
+
+---
+
+## Cycle 2 Consensus Summary
+
+Both reviewers agree that the revised plans resolve the three cycle-1 HIGH concerns:
+
+- Historical streak and last-hike facts now have explicit windowed view/CTE derivation and fixture-backed non-`unavailable` tests.
+- D-09 cross-activity status facts now have typed contracts, registered thresholds/evidence, and local read-model query paths.
+- Bundle completeness is now caller-visible through reason-coded `bundle_completeness` arrays, with silent drops forbidden.
+
+### Agreed Strengths
+
+- The MCP surface remains exactly six product tools and no sync/admin/raw/debug behavior is introduced.
+- Phase 9 continues to use registry/read-model facts rather than old request-time recompute paths.
+- Tests are planned for factual status payloads, no coaching language, CLI dead-handler removal, and MCP bundle smoke.
+- Kudos and gear constraints remain factual and local, without aggregate gear filtering.
+
+### Agreed Non-HIGH Concerns
+
+- 09-01 has a broad implementation task and may benefit from finer execution sub-steps.
+- Windowed historical/status queries introduce performance risk that the planned p95 gates should measure per bundle.
+- Deleting `application.reports` and `application.workouts` should include an explicit importer check before removal.
+- MCP daily-brief composition should remain machine-visible so facts supplied by other existing tools are not mistaken for omissions.
+
+### Divergent Views
+
+- Claude emphasized performance, deletion sequencing, and MCP daily-brief composition as MEDIUM risks.
+- OpenCode emphasized task breadth and response-shape clarity as MEDIUM risks.
+- Neither reviewer identified any unresolved current HIGH concern.
