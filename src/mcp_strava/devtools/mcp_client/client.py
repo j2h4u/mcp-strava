@@ -34,6 +34,8 @@ LATENCY_TOOL_ORDER = [
     "get_training_aggregates",
 ]
 
+PRODUCT_BUNDLE_SMOKE_IDS = ("daily_brief", "weekly_digest", "historical_facts")
+
 
 class McpClientError(RuntimeError):
     """Raised when the MCP endpoint or protocol response is invalid."""
@@ -274,12 +276,7 @@ async def run_basic_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, A
 def default_warm_latency_calls(*, workout_id: int, today: str | date | None = None) -> list[dict[str, Any]]:
     if workout_id < 0:
         raise ValueError("workout_id must be zero or positive")
-    if today is None:
-        today_date = date.today()
-    elif isinstance(today, date):
-        today_date = today
-    else:
-        today_date = date.fromisoformat(today)
+    today_date = _coerce_day(today)
 
     return [
         {"name": "get_fitness_state", "arguments": {}},
@@ -301,14 +298,55 @@ def default_warm_latency_calls(*, workout_id: int, today: str | date | None = No
                 "scenarios": ["rest", "maintain"],
             },
         },
+        *_product_bundle_aggregate_calls(today_date),
+    ]
+
+
+def _coerce_day(value: str | date | None) -> date:
+    if value is None:
+        return date.today()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(value)
+
+
+def _product_bundle_aggregate_calls(today_date: date) -> list[dict[str, Any]]:
+    end_exclusive = (today_date + timedelta(days=1)).isoformat()
+    return [
         {
             "name": "get_training_aggregates",
             "arguments": {
-                "start_date": (today_date - timedelta(days=28)).isoformat(),
-                "end_date": today_date.isoformat(),
+                "start_date": (today_date - timedelta(days=13)).isoformat(),
+                "end_date": end_exclusive,
+                "bucket": "all_time",
+                "metric_bundle": "daily_brief",
+                "scope": "both",
+                "as_of_day": today_date.isoformat(),
+                "window_days": 14,
+            },
+        },
+        {
+            "name": "get_training_aggregates",
+            "arguments": {
+                "start_date": (today_date - timedelta(days=27)).isoformat(),
+                "end_date": end_exclusive,
                 "bucket": "week",
                 "metric_bundle": "weekly_digest",
                 "scope": "both",
+                "as_of_day": today_date.isoformat(),
+                "window_days": 28,
+            },
+        },
+        {
+            "name": "get_training_aggregates",
+            "arguments": {
+                "start_date": (today_date - timedelta(days=365)).isoformat(),
+                "end_date": end_exclusive,
+                "bucket": "all_time",
+                "metric_bundle": "historical_facts",
+                "scope": "both",
+                "as_of_day": today_date.isoformat(),
+                "window_days": 365,
             },
         },
     ]
@@ -410,23 +448,27 @@ async def measure_warm_tool_latency(
     return result
 
 
-async def run_live_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, Any]:
+async def run_live_smoke(
+    client: StdioMcpClient | HttpMcpClient,
+    *,
+    today: str | date | None = None,
+) -> dict[str, Any]:
     tool_names = await verify_tool_surface(client)
     fitness = _require_success("get_fitness_state", await client.call_tool("get_fitness_state", {}))
     workouts = _require_success("list_workouts", await client.call_tool("list_workouts", {"limit": 3}))
     workout_id = _extract_first_workout_id(workouts)
     detail = _require_success("get_workout_detail", await client.call_tool("get_workout_detail", {"workout_id": workout_id}))
 
-    today = date.today()
+    today_date = _coerce_day(today)
     comparison = _require_success(
         "compare_periods",
         await client.call_tool(
             "compare_periods",
             {
-                "period_a_start": (today - timedelta(days=13)).isoformat(),
-                "period_a_end": (today - timedelta(days=7)).isoformat(),
-                "period_b_start": (today - timedelta(days=6)).isoformat(),
-                "period_b_end": today.isoformat(),
+                "period_a_start": (today_date - timedelta(days=13)).isoformat(),
+                "period_a_end": (today_date - timedelta(days=7)).isoformat(),
+                "period_b_start": (today_date - timedelta(days=6)).isoformat(),
+                "period_b_end": today_date.isoformat(),
             },
         ),
     )
@@ -434,22 +476,17 @@ async def run_live_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, An
         "project_fitness_state",
         await client.call_tool(
             "project_fitness_state",
-            {"target_date": (today + timedelta(days=7)).isoformat(), "scenarios": ["rest", "maintain"]},
+            {"target_date": (today_date + timedelta(days=7)).isoformat(), "scenarios": ["rest", "maintain"]},
         ),
     )
-    aggregates = _require_success(
-        "get_training_aggregates",
-        await client.call_tool(
+    aggregate_payloads: dict[str, dict[str, Any]] = {}
+    for call in _product_bundle_aggregate_calls(today_date):
+        arguments = dict(call["arguments"])
+        bundle_id = str(arguments["metric_bundle"])
+        aggregate_payloads[bundle_id] = _require_success(
             "get_training_aggregates",
-            {
-                "start_date": (today - timedelta(days=28)).isoformat(),
-                "end_date": today.isoformat(),
-                "bucket": "week",
-                "metric_bundle": "weekly_digest",
-                "scope": "both",
-            },
-        ),
-    )
+            await client.call_tool("get_training_aggregates", arguments),
+        )
 
     payloads = {
         "get_fitness_state": fitness,
@@ -457,13 +494,17 @@ async def run_live_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, An
         "get_workout_detail": detail,
         "compare_periods": comparison,
         "project_fitness_state": projection,
-        "get_training_aggregates": aggregates,
+        **{
+            f"get_training_aggregates:{bundle_id}": payload
+            for bundle_id, payload in aggregate_payloads.items()
+        },
     }
     return {
         "status": "ok",
         "mode": "full",
         "tools": sorted(tool_names),
         "called": sorted(payloads.keys()),
+        "aggregate_bundles": list(aggregate_payloads),
         "workout_id": workout_id,
         "data_shapes": {name: _data_shape(payload.get("structuredContent", {}).get("data")) for name, payload in payloads.items()},
         "warnings": {
