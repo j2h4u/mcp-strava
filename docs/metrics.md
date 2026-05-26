@@ -73,6 +73,10 @@ Materialized analytic fact-table columns are also registered here in code as `di
 | fitness | model_units | model | global | last | higher_is_more | get_fitness_state, compare_periods | Banister long-term fitness EWMA of daily effective_trimp using Config.Model.Banister.TAU_FITNESS. |
 | form | model_units | model | global | last | higher_is_more | get_fitness_state, compare_periods | Banister form = fitness - fatigue. |
 | form_zone | category | model | global | none | context | get_fitness_state | Agent-friendly form category: tired when form < -5, normal when -5 <= form < 10, fresh when form >= 10. |
+| gear_distance_km | km | activity | both | none | context | get_workout_detail | Total mirrored Strava gear distance in meters divided by 1000 when the detailed gear payload provides distance. |
+| gear_id | id | activity | both | none | context | get_workout_detail | Strava gear id copied from the activity summary or detail payload when mirrored for an activity. |
+| gear_name | text | activity | both | none | context | get_workout_detail | Gear or shoe display name copied from the detailed Strava gear payload when it is mirrored for an activity. |
+| gear_primary | boolean | activity | both | none | context | get_workout_detail | Boolean primary-gear flag copied from the detailed Strava gear payload when Strava marks a shoe as primary. |
 | hr_anomaly_count | count | activity | both | sum | higher_is_worse | get_workout_detail, compare_periods | Count of consecutive stream heartrate jumps greater than 30 bpm. |
 | hr_recovery_avg_bpm_per_min | bpm_per_min | activity | per_sport | avg | higher_is_better | get_workout_detail, compare_periods | Arithmetic mean HR drop rate across detected rest pauses, in bpm per minute. |
 | hr_recovery_best_bpm_per_min | bpm_per_min | activity | per_sport | max | higher_is_better | get_workout_detail, compare_periods | Maximum HR drop rate across detected rest pauses, in bpm per minute. |

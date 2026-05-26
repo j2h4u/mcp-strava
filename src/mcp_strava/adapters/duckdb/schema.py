@@ -307,6 +307,7 @@ DUCKDB_VIEWS: tuple[str, ...] = (
     "v_activity_aggregate_facts",
     "v_daily_aggregate_facts",
     "v_training_model_state_facts",
+    "v_historical_context_facts",
     "v_rolling_aggregate_facts",
     "v_metric_version_status",
 )
@@ -410,6 +411,80 @@ SELECT
     1::BIGINT AS model_day_count,
     0::BIGINT AS activity_count
 FROM training_model_daily;
+
+CREATE OR REPLACE VIEW v_historical_context_facts AS
+WITH days AS (
+    SELECT
+        CAST(day AS DATE) AS day,
+        metric_version,
+        computed_at,
+        completeness_status,
+        missing_reasons_json,
+        activity_count
+    FROM daily_load_facts
+    WHERE scope = 'all' AND sport_type = 'all'
+),
+last_hikes AS (
+    SELECT
+        d.day,
+        MAX(CAST(a.activity_day AS DATE)) AS last_hike_day
+    FROM days d
+    LEFT JOIN activity_metric_facts a
+        ON a.sport_type = 'Hike'
+       AND CAST(a.activity_day AS DATE) <= d.day
+    GROUP BY d.day
+)
+SELECT
+    d.day,
+    'all' AS scope,
+    'all' AS sport_type,
+    d.metric_version,
+    d.computed_at,
+    d.completeness_status,
+    d.missing_reasons_json,
+    d.activity_count,
+    CASE
+        WHEN d.activity_count <= 0 THEN 0
+        ELSE (
+            SELECT COUNT(*)
+            FROM days recent
+            WHERE recent.day <= d.day
+              AND recent.activity_count > 0
+              AND recent.day > COALESCE(
+                    (
+                        SELECT MAX(gap.day)
+                        FROM days gap
+                        WHERE gap.day <= d.day AND gap.activity_count = 0
+                    ),
+                    DATE '1900-01-01'
+              )
+        )
+    END::BIGINT AS activity_streak_days,
+    CASE
+        WHEN d.activity_count > 0 THEN 0
+        ELSE (
+            SELECT COUNT(*)
+            FROM days recent
+            WHERE recent.day <= d.day
+              AND recent.activity_count = 0
+              AND recent.day > COALESCE(
+                    (
+                        SELECT MAX(gap.day)
+                        FROM days gap
+                        WHERE gap.day <= d.day AND gap.activity_count > 0
+                    ),
+                    DATE '1900-01-01'
+              )
+        )
+    END::BIGINT AS rest_streak_days,
+    CASE
+        WHEN h.last_hike_day IS NULL THEN NULL
+        ELSE date_diff('day', h.last_hike_day, d.day)
+    END::BIGINT AS last_hike_days_ago,
+    1::BIGINT AS calendar_days,
+    1::BIGINT AS calendar_day_count
+FROM days d
+LEFT JOIN last_hikes h ON h.day = d.day;
 
 CREATE OR REPLACE VIEW v_rolling_aggregate_facts AS
 SELECT

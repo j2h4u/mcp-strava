@@ -925,6 +925,31 @@ class MetricDefinition:
 
 
 @dataclass(frozen=True)
+class StatusFactDefinition:
+    code: str
+    metric_id: str
+    threshold: dict[str, Any]
+    window: dict[str, Any]
+    evidence_keys: list[str]
+    completeness_reasons: list[str]
+    calculation: str
+    materialized_from: str
+
+
+@dataclass
+class StatusFact:
+    code: str
+    metric_id: str
+    status: str
+    threshold: dict[str, Any]
+    window: dict[str, Any]
+    evidence: dict[str, Any]
+    completeness: dict[str, Any]
+    calculation: str
+    materialized_from: str
+
+
+@dataclass(frozen=True)
 class ExcludedInterpretation:
     field: str
     reason: str
