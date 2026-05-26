@@ -187,6 +187,91 @@ Accept only a runtime-owned `refresh_ok` pass, or an explicitly recorded refresh
 
 Full Strava resync is not a rollback or validation mechanism for Phase 8.
 
+## Phase 9 Product Bundle Verification
+
+Phase 9 validation proves factual product bundles and the consolidated CLI read paths without using gateway or infrastructure wrapper smoke. Every MCP smoke command below talks directly to this server at `http://127.0.0.1:8080/mcp`.
+
+1. Run targeted bundle and direct-client tests:
+
+```bash
+uv run pytest -q tests/test_mcp_surface.py tests/test_mcp_test_client.py
+```
+
+2. Run CLI/product boundary tests:
+
+```bash
+uv run pytest -q tests/test_cli_surface.py tests/test_security_guards.py
+```
+
+3. Run the dedicated direct MCP bundle smoke recipe. This starts the local Docker service and calls the six-tool MCP server directly; it does not call the MCP gateway.
+
+```bash
+just phase9-bundle-smoke
+```
+
+4. Run the ordinary Docker smoke and full direct MCP smoke:
+
+```bash
+just test
+just mcp-smoke-full
+```
+
+5. Run the Docker warm p95 gate at the Phase 9 target. The gate must cover all six product tools and keep each warm p95 under 500 ms:
+
+```bash
+just mcp-read-model-perf 20 2 500
+```
+
+6. If Docker is unavailable, use the non-Docker fallback against fixture-backed bundle service calls. This measures `get_training_aggregates_service` for `daily_brief`, `weekly_digest`, and `historical_facts` under the same 500 ms warm p95 target:
+
+```bash
+uv run python - <<'PY'
+import statistics
+import tempfile
+import time
+from datetime import datetime
+from pathlib import Path
+
+from mcp_strava.adapters.duckdb.connection import open_fixture_db
+from mcp_strava.application.aggregate_services import AggregateServiceRequest, get_training_aggregates_service
+from tests.test_training_aggregates import _aggregate_fixture
+
+bundles = ("daily_brief", "weekly_digest", "historical_facts")
+samples = 20
+warmup = 2
+threshold_ms = 500.0
+
+with tempfile.TemporaryDirectory() as tmp:
+    db_path = _aggregate_fixture(Path(tmp) / "phase9-bundle-perf.duckdb")
+    conn = open_fixture_db(db_path)
+    try:
+        for bundle_id in bundles:
+            request = AggregateServiceRequest(
+                metric_ids=(),
+                bundle_id=bundle_id,
+                bucket="all_time",
+                start_day="2026-05-01",
+                end_day_exclusive="2026-05-25",
+                scope="both",
+            )
+            for _ in range(warmup):
+                get_training_aggregates_service(request, now=datetime(2026, 5, 24, 9, 0, 0), signal_first_use=False, connection=conn)
+            timings = []
+            for _ in range(samples):
+                started = time.perf_counter()
+                get_training_aggregates_service(request, now=datetime(2026, 5, 24, 9, 0, 0), signal_first_use=False, connection=conn)
+                timings.append((time.perf_counter() - started) * 1000)
+            p95 = statistics.quantiles(timings, n=20)[18]
+            print(f"{bundle_id}: p95={p95:.3f}ms")
+            if p95 > threshold_ms:
+                raise SystemExit(f"{bundle_id} p95 exceeded {threshold_ms}ms")
+    finally:
+        conn.close()
+PY
+```
+
+Do not run gateway registration, gateway catalog mutation, raw SQL, sync, backfill, token, log, or recompute commands as Phase 9 product verification. Those remain local admin or deployment operations below the MCP/product surface.
+
 ## Phase 8 DuckDB Rollback
 
 Rollback means stopping the DuckDB runtime and returning to the pinned SQLite backup plus the pre-cutover image/config. Do not delete the pinned pre-Phase-8 SQLite backup as part of rollback or validation.

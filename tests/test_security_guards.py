@@ -355,6 +355,152 @@ def _import_violations(rel_path: str, disallowed_prefixes: tuple[str, ...]) -> l
     return violations
 
 
+def _call_names(rel_path: str, function_names: set[str] | None = None) -> dict[str, set[str]]:
+    module = ast.parse(_source_text(rel_path), filename=rel_path)
+    calls_by_function: dict[str, set[str]] = {}
+    for node in module.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        if function_names is not None and node.name not in function_names:
+            continue
+        calls: set[str] = set()
+        for child in ast.walk(node):
+            if isinstance(child, ast.Call):
+                if isinstance(child.func, ast.Name):
+                    calls.add(child.func.id)
+                elif isinstance(child.func, ast.Attribute):
+                    calls.add(child.func.attr)
+        calls_by_function[node.name] = calls
+    return calls_by_function
+
+
+def test_product_bundle_services_do_not_import_admin_sync_raw_or_legacy_read_paths() -> None:
+    product_modules = [
+        "src/mcp_strava/application/product_facts.py",
+        "src/mcp_strava/application/aggregate_services.py",
+    ]
+    disallowed_prefixes = (
+        "mcp_strava.adapters.strava",
+        "mcp_strava.sync",
+        "mcp_strava.refresh.runtime",
+        "mcp_strava.application.reports",
+        "mcp_strava.application.workouts",
+        "mcp_strava.analytics",
+        "mcp_strava.report",
+        "mcp_strava.trends",
+    )
+    violations: list[str] = []
+
+    for rel_path in product_modules:
+        violations.extend(_import_violations(rel_path, disallowed_prefixes))
+        module = ast.parse(_source_text(rel_path), filename=rel_path)
+        for node in ast.walk(module):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            imported_module = node.module or ""
+            if imported_module != "mcp_strava.db":
+                continue
+            for alias in node.names:
+                if alias.name in {"api_request", "refresh_token"}:
+                    violations.append(f"{rel_path}:{node.lineno} from {imported_module} import {alias.name}")
+
+    assert violations == []
+
+
+def test_product_bundle_services_do_not_call_request_time_recompute_or_admin_handlers() -> None:
+    product_modules = [
+        "src/mcp_strava/application/product_facts.py",
+        "src/mcp_strava/application/aggregate_services.py",
+    ]
+    forbidden_calls = {
+        "daily_report",
+        "daily_report_from_connection",
+        "weekly_digest",
+        "compute_trends",
+        "enrich_activity",
+        "check_z5_minutes",
+        "check_hr_anomalies",
+        "activity_stream_rows",
+        "stream_hr_velocity_rows",
+        "stream_hr_velocity_simple_rows",
+        "stream_hr_velocity_time_rows",
+        "stream_hr_time_rows",
+        "stream_altitude_rows",
+        "api_request",
+        "refresh_token",
+        "cmd_sql",
+        "cmd_strava_raw",
+        "cmd_log",
+        "cmd_backfill",
+        "cmd_duckdb_cutover",
+        "backfill_activities",
+        "sync_activities",
+    }
+    violations: list[str] = []
+
+    for rel_path in product_modules:
+        for function_name, calls in _call_names(rel_path).items():
+            used_forbidden = sorted(forbidden_calls & calls)
+            if used_forbidden:
+                violations.append(f"{rel_path}:{function_name} uses {used_forbidden}")
+
+    assert violations == []
+
+
+def test_cli_product_commands_do_not_call_admin_raw_or_recompute_paths() -> None:
+    product_command_names = {
+        "cmd_report",
+        "cmd_weekly",
+        "cmd_workouts",
+        "cmd_workout",
+        "cmd_freshness",
+    }
+    forbidden_calls = {
+        "cmd_sql",
+        "cmd_refresh",
+        "cmd_backfill",
+        "cmd_db_refresh",
+        "cmd_strava_raw",
+        "cmd_log",
+        "cmd_duckdb_cutover",
+        "cmd_mirror_coverage",
+        "cmd_backfill_streams",
+        "api_request",
+        "refresh_token",
+        "backfill_activities",
+        "daily_report",
+        "weekly_digest",
+        "compute_trends",
+        "DbConn",
+    }
+    violations: list[str] = []
+
+    for function_name, calls in _call_names("src/mcp_strava/cli.py", product_command_names).items():
+        missing_product_boundary = not calls & {
+            "get_daily_brief_facts_service",
+            "get_weekly_digest_facts_service",
+            "list_workouts_service",
+            "get_workout_detail_service",
+            "get_freshness_service",
+        }
+        if missing_product_boundary:
+            violations.append(f"{function_name} does not call a product read service")
+        used_forbidden = sorted(forbidden_calls & calls)
+        if used_forbidden:
+            violations.append(f"{function_name} uses forbidden calls {used_forbidden}")
+
+    assert violations == []
+
+
+def test_legacy_application_report_and_workout_modules_remain_retired() -> None:
+    root = Path(__file__).resolve().parents[1]
+    retired = [
+        root / "src" / "mcp_strava" / "application" / "reports.py",
+        root / "src" / "mcp_strava" / "application" / "workouts.py",
+    ]
+    assert [path for path in retired if path.exists()] == []
+
+
 def test_read_modules_do_not_import_strava_or_refresh() -> None:
     read_modules = [
         "src/mcp_strava/report.py",
