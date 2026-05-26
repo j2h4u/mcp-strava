@@ -568,7 +568,7 @@ class SQLiteRepository:
             where.append("(f.activity_day < ? OR (f.activity_day = ? AND f.activity_id < ?))")
             params.extend([cursor, cursor, cursor])
         sql = f"""
-            SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json
+            SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json, a.detail_json
             FROM activity_metric_facts f
             LEFT JOIN activities a ON a.id = f.activity_id
             WHERE {" AND ".join(where)}
@@ -589,7 +589,7 @@ class SQLiteRepository:
             params.append(metric_version)
         return self.conn.execute(
             f"""
-            SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json
+            SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json, a.detail_json
             FROM activity_metric_facts f
             LEFT JOIN activities a ON a.id = f.activity_id
             WHERE {" AND ".join(where)}

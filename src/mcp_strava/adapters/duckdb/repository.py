@@ -674,7 +674,7 @@ class DuckDBRepository:
             where.append("(f.activity_day < CAST(? AS DATE) OR (f.activity_day = CAST(? AS DATE) AND f.activity_id < ?))")
             params.extend([cursor, cursor, cursor])
         sql = f"""
-            SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json
+            SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json, a.detail_json
             FROM activity_metric_facts f
             LEFT JOIN activities a ON a.id = f.activity_id
             WHERE {" AND ".join(where)}
@@ -695,7 +695,7 @@ class DuckDBRepository:
             params.append(metric_version)
         return self._fetchone(
             f"""
-            SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json
+            SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json, a.detail_json
             FROM activity_metric_facts f
             LEFT JOIN activities a ON a.id = f.activity_id
             WHERE {" AND ".join(where)}

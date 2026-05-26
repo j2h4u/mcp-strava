@@ -139,8 +139,8 @@ def _parse_json_list(value) -> list[str]:
     return [str(item) for item in parsed]
 
 
-def _summary_json(row) -> dict[str, object]:
-    raw = row["summary_json"] if "summary_json" in row.keys() else None
+def _json_object_from_row(row, key: str) -> dict[str, object]:
+    raw = _row_get(row, key)
     if not raw:
         return {}
     try:
@@ -148,6 +148,14 @@ def _summary_json(row) -> dict[str, object]:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _summary_json(row) -> dict[str, object]:
+    return _json_object_from_row(row, "summary_json")
+
+
+def _detail_json(row) -> dict[str, object]:
+    return _json_object_from_row(row, "detail_json")
 
 
 def _kudos_count(summary: dict[str, object]) -> int:
@@ -244,7 +252,30 @@ def _activity_value(row, metric_id: str):
     return round(float(value) * float(scale), 3)
 
 
-def _activity_payload(row, *, kudos_names: list[str] | None = None) -> dict[str, object]:
+def _gear_payload(row, summary: dict[str, object]) -> dict[str, object]:
+    detail = _detail_json(row)
+    gear = detail.get("gear") if isinstance(detail.get("gear"), dict) else {}
+    gear_id = summary.get("gear_id") or detail.get("gear_id") or gear.get("id")
+    distance_m = gear.get("distance") or gear.get("converted_distance")
+    try:
+        gear_distance_km = round(float(distance_m) / 1000.0, 3) if distance_m is not None else None
+    except (TypeError, ValueError):
+        gear_distance_km = None
+    primary = gear.get("primary")
+    return {
+        "gear_id": str(gear_id) if gear_id is not None else None,
+        "gear_name": gear.get("name") or gear.get("nickname"),
+        "gear_distance_km": gear_distance_km,
+        "gear_primary": bool(primary) if primary is not None else None,
+    }
+
+
+def _activity_payload(
+    row,
+    *,
+    kudos_names: list[str] | None = None,
+    include_detail_context: bool = False,
+) -> dict[str, object]:
     summary = _summary_json(row)
     payload = {
         "activity_id": int(row["activity_id"]),
@@ -280,6 +311,8 @@ def _activity_payload(row, *, kudos_names: list[str] | None = None) -> dict[str,
         "kudos_count": _kudos_count(summary),
         "completeness": _fact_status(row),
     }
+    if include_detail_context:
+        payload.update(_gear_payload(row, summary))
     if kudos_names is not None:
         payload["kudos_names"] = kudos_names
     return payload
@@ -443,7 +476,11 @@ def get_workout_detail_service(
                 rationale=_rationale("Workout detail requested from materialized activity facts."),
             )
 
-        data = _activity_payload(row, kudos_names=_kudos_names(repo.kudos_for_activity(resolved_id)))
+        data = _activity_payload(
+            row,
+            kudos_names=_kudos_names(repo.kudos_for_activity(resolved_id)),
+            include_detail_context=True,
+        )
         missing = _parse_json_list(row["missing_reasons_json"])
         stream_derived = [
             data["hr_recovery_median_bpm_per_min"],
