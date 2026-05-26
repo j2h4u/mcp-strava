@@ -965,6 +965,69 @@ def test_aggregate_service_returns_factual_envelope_rows_with_freshness(tmp_path
     _walk_no_forbidden_product_terms(payload)
 
 
+def test_aggregate_service_adds_product_bundle_sections_only_for_scenario_bundles(tmp_path: Path) -> None:
+    from datetime import datetime
+
+    from mcp_strava.application.aggregate_services import (
+        AggregateServiceRequest,
+        get_training_aggregates_service,
+    )
+
+    db_path = _aggregate_fixture(tmp_path / "scenario-bundle-service.duckdb")
+    conn = open_fixture_db(db_path)
+    try:
+        for bundle_id in ("daily_brief", "weekly_digest", "historical_facts"):
+            payload = dc_to_dict(
+                get_training_aggregates_service(
+                    AggregateServiceRequest(
+                        metric_ids=(),
+                        bundle_id=bundle_id,
+                        bucket="all_time",
+                        start_day=None,
+                        end_day_exclusive="2026-05-22",
+                        scope="both",
+                    ),
+                    now=datetime(2026, 5, 21, 9, 0, 0),
+                    signal_first_use=False,
+                    connection=conn,
+                )
+            )
+            assert payload["data"]["rows"]
+            assert payload["data"]["bundle"]["bundle_id"] == bundle_id
+            assert payload["data"]["bundle"]["sections"]
+            completeness = payload["data"]["bundle"]["bundle_completeness"]
+            assert set(completeness) >= {
+                "requested_metrics",
+                "included_metrics",
+                "unavailable_metrics",
+                "skipped_metrics",
+                "scope_incompatible_metrics",
+            }
+            assert set(completeness["requested_metrics"]) == set(metrics_for_aggregate_bundle(bundle_id))
+
+        plain_payload = dc_to_dict(
+            get_training_aggregates_service(
+                AggregateServiceRequest(
+                    metric_ids=(),
+                    bundle_id="sport_efficiency",
+                    bucket="all_time",
+                    start_day="2026-05-05",
+                    end_day_exclusive="2026-06-01",
+                    scope="per_sport",
+                    sport_filter="Run",
+                ),
+                now=datetime(2026, 5, 21, 9, 0, 0),
+                signal_first_use=False,
+                connection=conn,
+            )
+        )
+    finally:
+        conn.close()
+
+    assert "rows" in plain_payload["data"]
+    assert "bundle" not in plain_payload["data"]
+
+
 def test_aggregate_service_validates_product_parameters_before_query_execution() -> None:
     from mcp_strava.application.aggregate_services import (
         AggregateServiceRequest,
