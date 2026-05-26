@@ -64,7 +64,7 @@ Each task was committed atomically:
 1. **Task 1: Add failing product fact bundle service tests** - `0e445bd` (test)
 2. **Task 2: Implement factual bundle services and aggregate response shaping** - `dad7e38` (feat)
 
-**Plan metadata:** pending final docs commit
+**Plan metadata:** `cb72b72` (`docs`)
 
 ## Verification
 
@@ -145,7 +145,7 @@ Ready for Plan 09-03. CLI consolidation can now call shared product factual bund
 ## Self-Check: PASSED
 
 - Verified created files exist on disk: `src/mcp_strava/application/product_facts.py`, `tests/test_product_fact_bundles.py`, and this summary.
-- Verified task commits `0e445bd` and `dad7e38` exist in git history.
+- Verified task commits `0e445bd`, `dad7e38`, and `cb72b72` exist in git history.
 - Verified targeted and full pytest commands passed.
 
 ---
