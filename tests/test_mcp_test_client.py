@@ -13,7 +13,11 @@ from mcp_strava.devtools.mcp_client.client import (
     StdioMcpClient,
     default_warm_latency_calls,
     execute_script_steps,
+    run_live_smoke,
 )
+
+
+EXPECTED_PRODUCT_BUNDLES = ("daily_brief", "weekly_digest", "historical_facts")
 
 
 class FakeWarmScriptClient:
@@ -24,6 +28,51 @@ class FakeWarmScriptClient:
         del arguments
         self.calls.append(name)
         return {"isError": False, "structuredContent": {"data": {"tool": name}, "warnings": []}}
+
+
+class FakeLiveSmokeClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    async def list_tools(self) -> list[dict]:
+        return [{"name": name} for name in sorted(EXPECTED_TOOL_NAMES)]
+
+    async def call_tool(self, name: str, arguments: dict | None = None) -> dict:
+        call_arguments = arguments or {}
+        self.calls.append((name, call_arguments))
+        data: object
+        if name == "list_workouts":
+            data = [{"activity_id": 701, "kudos_count": 2}]
+        elif name == "get_training_aggregates":
+            bundle_id = call_arguments.get("metric_bundle")
+            data = {
+                "rows": [{"metric_id": "trimp", "value": 12.0, "completeness_status": "complete"}],
+                "bundle": {
+                    "bundle_id": bundle_id,
+                    "sections": {
+                        "load_context": {
+                            "rows": [],
+                            "bundle_completeness": {
+                                "requested_metrics": ["trimp"],
+                                "included_metrics": ["trimp"],
+                                "unavailable_metrics": [],
+                                "skipped_metrics": [],
+                                "scope_incompatible_metrics": [],
+                            },
+                        }
+                    },
+                    "bundle_completeness": {
+                        "requested_metrics": ["trimp"],
+                        "included_metrics": ["trimp"],
+                        "unavailable_metrics": [],
+                        "skipped_metrics": [],
+                        "scope_incompatible_metrics": [],
+                    },
+                },
+            }
+        else:
+            data = {"tool": name}
+        return {"isError": False, "structuredContent": {"data": data, "warnings": []}}
 
 
 def _fake_server_command() -> list[str]:
@@ -118,19 +167,34 @@ def test_mcp_test_client_script_can_measure_repeated_warm_samples_for_all_produc
         assert tool_calls.count(name) == 3
 
 
-def test_default_warm_latency_calls_include_training_aggregates() -> None:
+def test_default_warm_latency_calls_include_product_fact_bundle_aggregates() -> None:
     calls = default_warm_latency_calls(workout_id=701, today="2026-05-24")
 
-    aggregate_call = next(call for call in calls if call["name"] == "get_training_aggregates")
+    aggregate_calls = [call for call in calls if call["name"] == "get_training_aggregates"]
 
     assert {call["name"] for call in calls} == EXPECTED_TOOL_NAMES | {"get_training_aggregates"}
-    assert aggregate_call["arguments"] == {
-        "start_date": "2026-04-26",
-        "end_date": "2026-05-24",
-        "bucket": "week",
-        "metric_bundle": "weekly_digest",
-        "scope": "both",
-    }
+    assert [call["arguments"]["metric_bundle"] for call in aggregate_calls] == list(EXPECTED_PRODUCT_BUNDLES)
+    for call in aggregate_calls:
+        arguments = call["arguments"]
+        assert arguments["start_date"]
+        assert arguments["end_date"]
+        assert arguments["scope"] == "both"
+        assert arguments["as_of_day"] == "2026-05-24"
+        assert arguments["window_days"] > 0
+
+
+def test_live_smoke_calls_each_product_bundle_through_training_aggregates() -> None:
+    client = FakeLiveSmokeClient()
+
+    result = asyncio.run(run_live_smoke(client, today="2026-05-24"))
+
+    aggregate_bundle_ids = [
+        arguments.get("metric_bundle")
+        for name, arguments in client.calls
+        if name == "get_training_aggregates"
+    ]
+    assert aggregate_bundle_ids == list(EXPECTED_PRODUCT_BUNDLES)
+    assert result["aggregate_bundles"] == list(EXPECTED_PRODUCT_BUNDLES)
 
 
 def test_mcp_test_client_cli_call_tool(capsys) -> None:

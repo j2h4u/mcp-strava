@@ -28,6 +28,36 @@ EXPECTED_PROMPT_NAMES = (
     "strava_shoe_mileage_watchdog",
 )
 
+EXPECTED_PRODUCT_BUNDLES = ("daily_brief", "weekly_digest", "historical_facts")
+
+FORBIDDEN_PRODUCT_FIELDS = {
+    "sync",
+    "backfill",
+    "raw",
+    "sql",
+    "token",
+    "log",
+    "debug",
+    "admin",
+}
+
+FORBIDDEN_ADVICE_PHRASES = (
+    "you should",
+    "need to",
+    "recommended",
+    "hydrate",
+    "worry",
+    "change behavior",
+)
+
+EXPECTED_COMPLETENESS_KEYS = {
+    "requested_metrics",
+    "included_metrics",
+    "unavailable_metrics",
+    "skipped_metrics",
+    "scope_incompatible_metrics",
+}
+
 
 def _envelope(data: dict, *, unavailable: bool = False) -> ServiceEnvelope:
     return ServiceEnvelope(
@@ -68,6 +98,86 @@ def _schema_property_names(schema: dict) -> set[str]:
     properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
     assert isinstance(properties, dict)
     return set(properties)
+
+
+def _bundle_envelope(bundle_id: str) -> ServiceEnvelope:
+    completeness = {
+        "requested_metrics": ["trimp", "form_zone", "hrr_pct"],
+        "included_metrics": ["trimp"],
+        "unavailable_metrics": [{"metric_id": "form_zone", "reason_code": "data_absent"}],
+        "skipped_metrics": [],
+        "scope_incompatible_metrics": [{"metric_id": "hrr_pct", "reason_code": "scope_incompatible"}],
+    }
+    return _envelope(
+        {
+            "request": {"bundle_id": bundle_id},
+            "rows": [{"metric_id": "trimp", "value": 42.0, "completeness_status": "complete"}],
+            "bundle": {
+                "bundle_id": bundle_id,
+                "sections": {
+                    "current_state": {
+                        "rows": [{"metric_id": "trimp", "value": 42.0}],
+                        "bundle_completeness": completeness,
+                    },
+                    "read_model": {
+                        "facts": {"status": "current"},
+                        "bundle_completeness": {
+                            "requested_metrics": ["fitness"],
+                            "included_metrics": [],
+                            "unavailable_metrics": [{"metric_id": "fitness", "reason_code": "data_absent"}],
+                            "skipped_metrics": [],
+                            "scope_incompatible_metrics": [],
+                        },
+                    },
+                },
+                "bundle_completeness": completeness,
+            },
+        }
+    )
+
+
+def _walk_payload(obj):
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            yield key, value
+            yield from _walk_payload(value)
+    elif isinstance(obj, list):
+        for value in obj:
+            yield from _walk_payload(value)
+
+
+def _assert_no_forbidden_product_surface(payload: dict) -> None:
+    for key, value in _walk_payload(payload):
+        lowered_key = str(key).lower()
+        assert not any(fragment == lowered_key or fragment in lowered_key for fragment in FORBIDDEN_PRODUCT_FIELDS), key
+        if isinstance(value, str):
+            lowered_value = value.lower()
+            assert not any(phrase in lowered_value for phrase in FORBIDDEN_ADVICE_PHRASES), value
+
+
+def _assert_completeness_reason_codes(completeness: dict) -> None:
+    assert EXPECTED_COMPLETENESS_KEYS <= set(completeness)
+    requested = set(completeness["requested_metrics"])
+    for bucket_name in ("unavailable_metrics", "skipped_metrics", "scope_incompatible_metrics"):
+        bucket = completeness[bucket_name]
+        assert isinstance(bucket, list)
+        for item in bucket:
+            assert item["metric_id"] in requested
+            assert item["reason_code"]
+
+
+def _assert_bundle_payload_contract(payload: dict, *, bundle_id: str) -> None:
+    data = payload["data"]
+    assert data["rows"]
+    bundle = data["bundle"]
+    assert bundle["bundle_id"] == bundle_id
+    assert bundle["sections"]
+    _assert_completeness_reason_codes(bundle["bundle_completeness"])
+    for section in bundle["sections"].values():
+        _assert_completeness_reason_codes(section["bundle_completeness"])
+    assert payload["freshness"]
+    assert READ_MODEL_METADATA_KEYS <= set(payload["completeness"]["coverage"]["read_model"])
+    _assert_no_forbidden_product_surface(payload)
 
 
 def test_mcp_tool_allowlist_is_exact() -> None:
@@ -334,6 +444,134 @@ def test_expensive_mcp_tools_use_short_lived_response_cache(monkeypatch) -> None
     assert calls == 1
     assert first == second
     mcp_http._TOOL_RESPONSE_CACHE.clear()
+
+
+def test_training_aggregate_bundle_payloads_keep_rows_sections_metadata_and_reasons(monkeypatch) -> None:
+    from mcp_strava.interfaces import mcp_http
+
+    monkeypatch.setattr(
+        mcp_http,
+        "get_training_aggregates_service",
+        lambda request, **_: _bundle_envelope(request.bundle_id),
+    )
+    mcp_http._TOOL_RESPONSE_CACHE.clear()
+    server = mcp_http.build_mcp_server()
+
+    for bundle_id in EXPECTED_PRODUCT_BUNDLES:
+        _, payload = asyncio.run(
+            server.call_tool(
+                "get_training_aggregates",
+                {
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-25",
+                    "bucket": "all_time",
+                    "metric_bundle": bundle_id,
+                    "scope": "both",
+                    "as_of_day": "2026-05-24",
+                    "window_days": 28,
+                },
+            )
+        )
+        _assert_bundle_payload_contract(payload, bundle_id=bundle_id)
+
+    mcp_http._TOOL_RESPONSE_CACHE.clear()
+
+
+def test_daily_brief_mcp_composition_keeps_workout_facts_on_workout_tools(monkeypatch) -> None:
+    from mcp_strava.interfaces import mcp_http
+
+    monkeypatch.setattr(mcp_http, "get_training_aggregates_service", lambda request, **_: _bundle_envelope(request.bundle_id))
+    monkeypatch.setattr(
+        mcp_http,
+        "list_workouts_service",
+        lambda **_: _envelope({"items": [{"activity_id": 701, "kudos_count": 2}]}),
+    )
+    monkeypatch.setattr(
+        mcp_http,
+        "get_workout_detail_service",
+        lambda workout_id, **_: _envelope({"activity_id": workout_id, "gear_name": "Road Shoe"}),
+    )
+    mcp_http._TOOL_RESPONSE_CACHE.clear()
+    server = mcp_http.build_mcp_server()
+
+    _, aggregate_payload = asyncio.run(
+        server.call_tool(
+            "get_training_aggregates",
+            {
+                "start_date": "2026-05-11",
+                "end_date": "2026-05-25",
+                "bucket": "all_time",
+                "metric_bundle": "daily_brief",
+                "scope": "both",
+                "as_of_day": "2026-05-24",
+                "window_days": 14,
+            },
+        )
+    )
+    _, workouts_payload = asyncio.run(server.call_tool("list_workouts", {"limit": 1}))
+    _, detail_payload = asyncio.run(server.call_tool("get_workout_detail", {"workout_id": 701}))
+
+    aggregate_data = aggregate_payload["data"]
+    assert aggregate_data["rows"]
+    assert "recent_workouts" not in aggregate_data["bundle"]["sections"]
+    assert all("activity_id" not in row for row in aggregate_data["rows"])
+    assert workouts_payload["data"]["items"][0]["activity_id"] == 701
+    assert detail_payload["data"]["gear_name"] == "Road Shoe"
+    assert tuple(tool.name for tool in asyncio.run(server.list_tools())) == EXPECTED_TOOL_NAMES
+    mcp_http._TOOL_RESPONSE_CACHE.clear()
+
+
+def test_training_aggregate_cache_identity_includes_full_product_request(monkeypatch) -> None:
+    from mcp_strava.interfaces import mcp_http
+
+    captured: list[dict] = []
+
+    def capture_cached_call(name: str, arguments: dict, operation):
+        captured.append({"name": name, "arguments": arguments})
+        return mcp_http._envelope_payload(operation())
+
+    monkeypatch.setattr(mcp_http, "_run_cached_logged_tool", capture_cached_call)
+    monkeypatch.setattr(
+        mcp_http,
+        "get_training_aggregates_service",
+        lambda request, **_: _bundle_envelope(request.bundle_id),
+    )
+    server = mcp_http.build_mcp_server()
+
+    asyncio.run(
+        server.call_tool(
+            "get_training_aggregates",
+            {
+                "start_date": "2026-05-01",
+                "end_date": "2026-05-25",
+                "bucket": "week",
+                "metric_bundle": "weekly_digest",
+                "scope": "both",
+                "sports": ["Run"],
+                "include_empty_buckets": True,
+                "as_of_day": "2026-05-24",
+                "window_days": 28,
+            },
+        )
+    )
+
+    assert captured == [
+        {
+            "name": "get_training_aggregates",
+            "arguments": {
+                "end_date": "2026-05-25",
+                "bucket": "week",
+                "start_date": "2026-05-01",
+                "metric_ids": [],
+                "metric_bundle": "weekly_digest",
+                "scope": "both",
+                "sports": ["Run"],
+                "include_empty_buckets": True,
+                "as_of_day": "2026-05-24",
+                "window_days": 28,
+            },
+        }
+    ]
 
 
 def test_get_workout_detail_missing_id_is_unavailable(monkeypatch) -> None:
