@@ -9,10 +9,12 @@ from mcp_strava.adapters.duckdb.connection import open_fixture_db
 from mcp_strava.adapters.duckdb.schema import create_schema
 from mcp_strava.adapters.duckdb.aggregate_queries import (
     AggregateRequest,
+    build_aggregate_query,
     query_training_aggregates,
     validate_aggregate_request,
 )
 from mcp_strava.application.metric_registry import (
+    METRIC_REGISTRY,
     SUPPORTED_AGGREGATE_BUCKETS,
     SUPPORTED_ROLLING_WINDOW_DAYS,
     metrics_for_aggregate_bundle,
@@ -136,6 +138,13 @@ def _insert_activity_fact(
     moving_time_s: int,
     elapsed_time_s: int,
     elevation_gain_m: float,
+    zone4_seconds: int = 40,
+    zone5_seconds: int = 50,
+    cardiac_drift_pct: float | None = 2.5,
+    cardiac_drift_severity: str | None = "stable",
+    cardiac_drift_significant: int = 0,
+    cardiac_drift_quality: str | None = "good",
+    hr_anomaly_count: int = 0,
 ) -> None:
     conn.execute(
         """
@@ -152,9 +161,9 @@ def _insert_activity_fact(
             elapsed_time_s, elevation_gain_m, heartrate_sample_count, stream_sample_count
         ) VALUES (
             ?, CAST(? AS DATE), ?, ?, 1, ?, ?, ?, ?,
-            ?, 10, 20, 30, 40, 50,
+            ?, 10, 20, 30, ?, ?,
             1, 30, 18.0, 24.0, 8.0, 16.0, NULL, ?, ?,
-            ?, ?, 2.5, 'stable', 0, 'good', 65.0, 0,
+            ?, ?, ?, ?, ?, ?, 65.0, ?,
             ?, ?, ?, ?, ?, ?
         )
         """,
@@ -168,10 +177,17 @@ def _insert_activity_fact(
             completeness_status,
             json.dumps(missing_reasons),
             trimp,
+            zone4_seconds,
+            zone5_seconds,
             vertical_ascent_m,
             vertical_duration_h,
             cardiac_cost,
             cardiac_cost - 1 if cardiac_cost is not None else None,
+            cardiac_drift_pct,
+            cardiac_drift_severity,
+            cardiac_drift_significant,
+            cardiac_drift_quality,
+            hr_anomaly_count,
             distance_m,
             moving_time_s,
             elapsed_time_s,
@@ -371,6 +387,92 @@ def _aggregate_fixture(path: Path) -> Path:
         INSERT INTO refresh_state (
             id, last_success_at, last_attempt_at, last_status
         ) VALUES (1, '2026-05-21T13:00:00', '2026-05-21T13:00:00', 'ok')
+        """
+    )
+    conn.close()
+    return path
+
+
+def _phase9_status_fixture(path: Path) -> Path:
+    conn = open_fixture_db(path)
+    create_schema(conn)
+    activities = [
+        (201, "2026-05-11", "Run", 10000.0, 3600, 3700, 100.0, 140.0, 170.0, 100.0, 50, 0, 0, "good"),
+        (202, "2026-05-18", "Run", 7000.0, 2500, 2600, 70.0, 145.0, 172.0, 90.0, 50, 0, 0, "good"),
+        (203, "2026-05-20", "Run", 6000.0, 2200, 2300, 80.0, 155.0, 182.0, 95.0, 360, 4, 1, "good"),
+        (204, "2026-05-19", "Hike", 9000.0, 7200, 7400, 500.0, 135.0, 168.0, 420.0, 50, 0, 0, "fair"),
+        (205, "2026-05-20", "Hike", 8500.0, 7000, 7200, 480.0, 138.0, 170.0, 430.0, 50, 0, 0, "fair"),
+    ]
+    for (
+        activity_id,
+        day,
+        sport_type,
+        distance_m,
+        moving_time_s,
+        elapsed_time_s,
+        elevation_gain_m,
+        avg_hr,
+        max_hr,
+        trimp,
+        zone5_seconds,
+        hr_anomaly_count,
+        cardiac_drift_significant,
+        cardiac_drift_quality,
+    ) in activities:
+        _insert_activity(
+            conn,
+            activity_id=activity_id,
+            day=day,
+            sport_type=sport_type,
+            distance_m=distance_m,
+            moving_time_s=moving_time_s,
+            elapsed_time_s=elapsed_time_s,
+            elevation_gain_m=elevation_gain_m,
+            avg_hr=avg_hr,
+            max_hr=max_hr,
+            kudos_count=1,
+        )
+        _insert_activity_fact(
+            conn,
+            activity_id=activity_id,
+            day=day,
+            sport_type=sport_type,
+            metric_version=1,
+            trimp=trimp,
+            completeness_status="complete",
+            missing_reasons=[],
+            cardiac_cost=45.0,
+            vertical_ascent_m=elevation_gain_m,
+            vertical_duration_h=2.0,
+            heartrate_sample_count=200,
+            stream_sample_count=200,
+            distance_m=distance_m,
+            moving_time_s=moving_time_s,
+            elapsed_time_s=elapsed_time_s,
+            elevation_gain_m=elevation_gain_m,
+            zone5_seconds=zone5_seconds,
+            hr_anomaly_count=hr_anomaly_count,
+            cardiac_drift_significant=cardiac_drift_significant,
+            cardiac_drift_quality=cardiac_drift_quality,
+        )
+    conn.execute(
+        """
+        INSERT INTO read_model_refresh_runs (
+            id, started_at, finished_at, status, metric_version, trigger_reason,
+            activities_considered, activities_materialized, daily_facts_materialized,
+            model_facts_materialized, rolling_facts_materialized,
+            dirty_rows_claimed, dirty_rows_cleared, attempt_count
+        ) VALUES (
+            1, '2026-05-20T12:00:00', '2026-05-20T12:30:00', 'ok', 1, 'test',
+            5, 5, 0, 0, 0, 0, 0, 1
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO refresh_state (
+            id, last_success_at, last_attempt_at, last_status
+        ) VALUES (1, '2026-05-20T13:00:00', '2026-05-20T13:00:00', 'ok')
         """
     )
     conn.close()
@@ -621,6 +723,99 @@ def test_bundles_sport_scope_empty_buckets_and_rolling_windows(tmp_path: Path) -
         ("2026-05-07", None),
     ]
     assert rolling_widths == [f"rolling_{window_days}d" for window_days in EXPECTED_WINDOWS]
+
+
+def test_phase9_product_bundles_handle_mixed_scopes_and_historical_context(tmp_path: Path) -> None:
+    db_path = _aggregate_fixture(tmp_path / "phase9-bundles.duckdb")
+    conn = open_fixture_db(db_path)
+
+    try:
+        for bundle_id in ("daily_brief", "weekly_digest", "historical_facts"):
+            metric_ids = metrics_for_aggregate_bundle(bundle_id)
+            assert set(metric_ids).issubset(METRIC_REGISTRY)
+            assert all(METRIC_REGISTRY[metric_id].aggregate_mode for metric_id in metric_ids)
+            rows = _payloads(
+                query_training_aggregates(
+                    conn,
+                    AggregateRequest(
+                        metric_ids=(),
+                        bundle_id=bundle_id,
+                        bucket="all_time",
+                        start_day=None,
+                        end_day_exclusive="2026-05-22",
+                        scope="both",
+                    ),
+                )
+            )
+            assert rows, bundle_id
+            assert {row["metric_id"] for row in rows}.issuperset(metric_ids)
+
+        historical_rows = _payloads(
+            query_training_aggregates(
+                conn,
+                AggregateRequest(
+                    metric_ids=("activity_streak_days", "rest_streak_days", "last_hike_days_ago"),
+                    bucket="all_time",
+                    start_day=None,
+                    end_day_exclusive="2026-05-22",
+                    scope="global",
+                ),
+            )
+        )
+    finally:
+        conn.close()
+
+    assert {row["metric_id"] for row in historical_rows} == {
+        "activity_streak_days",
+        "rest_streak_days",
+        "last_hike_days_ago",
+    }
+    for metric_id in ("activity_streak_days", "rest_streak_days", "last_hike_days_ago"):
+        row = _row(historical_rows, metric_id)
+        assert row["completeness_status"] != "unavailable"
+        assert row["value"] is not None
+
+    request = AggregateRequest(
+        metric_ids=("activity_streak_days",),
+        bucket="all_time",
+        start_day=None,
+        end_day_exclusive="2026-05-22",
+        scope="global",
+    )
+    query = build_aggregate_query(METRIC_REGISTRY["activity_streak_days"], request)
+    assert "v_historical_context_facts" in query.statement
+    assert "training_model_daily.activity_streak_days" not in query.statement
+
+
+def test_phase9_status_fact_queries_return_fixture_evidence(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.aggregate_queries import query_status_facts
+    from mcp_strava.application.metric_registry import STATUS_FACT_REGISTRY
+
+    db_path = _phase9_status_fixture(tmp_path / "phase9-status.duckdb")
+    conn = open_fixture_db(db_path)
+    try:
+        rows = _payloads(query_status_facts(conn, as_of_day="2026-05-20"))
+    finally:
+        conn.close()
+
+    by_code = {row["code"]: row for row in rows}
+    expected_active = {
+        "excessive_z5_exposure": {"zone5_seconds", "z5_lower_bound_bpm", "activity_id"},
+        "hr_anomaly_burst": {"hr_anomaly_count", "activity_id"},
+        "cardiac_drift_significant_quality": {"cardiac_drift_significant", "cardiac_drift_quality", "activity_id"},
+        "consecutive_high_load_hikes": {"combined_trimp", "hike_days"},
+        "running_volume_jump": {"current_week_distance_km", "previous_week_distance_km", "increase_pct"},
+    }
+    assert set(STATUS_FACT_REGISTRY).issubset(by_code)
+    for code, evidence_keys in expected_active.items():
+        row = by_code[code]
+        assert row["status"] != "unavailable"
+        assert evidence_keys <= set(row["evidence"])
+        assert row["threshold"] == STATUS_FACT_REGISTRY[code].threshold
+        assert row["window"] == STATUS_FACT_REGISTRY[code].window
+        assert row["calculation"] == STATUS_FACT_REGISTRY[code].calculation
+        assert row["completeness"]["status"] == "complete"
+        assert row["materialized_from"] == STATUS_FACT_REGISTRY[code].materialized_from
 
 
 def test_fixed_rolling_metrics_filter_to_their_declared_window(tmp_path: Path) -> None:

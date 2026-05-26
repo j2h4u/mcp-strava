@@ -33,6 +33,10 @@ REQUIRED_METRIC_IDS = {
     "activity_name",
     "kudos_count",
     "kudos_names",
+    "gear_id",
+    "gear_name",
+    "gear_distance_km",
+    "gear_primary",
     "distance_km",
     "moving_time_min",
     "elapsed_time_min",
@@ -134,6 +138,23 @@ EXPECTED_AGGREGATE_BUNDLES = {
     "historical_facts",
 }
 EXPECTED_QUANTILES = ("p25", "median", "p75")
+EXPECTED_STATUS_FACT_CODES = {
+    "stale_mirror_data",
+    "stale_read_model_facts",
+    "missing_hr",
+    "missing_streams",
+    "excessive_z5_exposure",
+    "hr_anomaly_burst",
+    "cardiac_drift_significant_quality",
+    "consecutive_high_load_hikes",
+    "running_volume_jump",
+}
+EXPECTED_GEAR_FACT_METRICS = {
+    "gear_id",
+    "gear_name",
+    "gear_distance_km",
+    "gear_primary",
+}
 ALLOWED_TOOLS = {
     "get_fitness_state",
     "list_workouts",
@@ -456,3 +477,33 @@ def test_kudos_aggregate_excludes_kudos_names():
     assert METRIC_REGISTRY["kudos_names"].aggregate_mode is None
     for metric_ids in AGGREGATE_METRIC_BUNDLES.values():
         assert "kudos_names" not in metric_ids
+
+
+def test_phase9_status_fact_registry_is_machine_readable():
+    from mcp_strava.application.metric_registry import STATUS_FACT_REGISTRY
+
+    assert set(STATUS_FACT_REGISTRY) == EXPECTED_STATUS_FACT_CODES
+    for code, definition in STATUS_FACT_REGISTRY.items():
+        assert definition.code == code
+        assert definition.metric_id in METRIC_REGISTRY
+        assert definition.threshold, code
+        assert definition.window, code
+        assert definition.evidence_keys, code
+        assert definition.completeness_reasons, code
+        assert len(definition.calculation) >= 24, code
+        assert definition.materialized_from, code
+        assert "recommend" not in definition.calculation.lower()
+        assert "should" not in definition.calculation.lower()
+
+
+def test_phase9_gear_facts_are_registered_context_not_aggregate_filters():
+    for metric_id in EXPECTED_GEAR_FACT_METRICS:
+        metric = METRIC_REGISTRY[metric_id]
+        assert metric.aggregate_mode is None
+        assert "get_workout_detail" in metric.exposed_in
+        assert "get_training_aggregates" not in metric.exposed_in
+        assert metric.metric_id not in {
+            bundle_metric
+            for metric_ids in AGGREGATE_METRIC_BUNDLES.values()
+            for bundle_metric in metric_ids
+        }
