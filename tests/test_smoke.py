@@ -18,11 +18,15 @@ def test_imports():
     from mcp_strava.analytics import weekly_digest
     from mcp_strava.application.freshness import get_freshness_service
     from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
+    from mcp_strava.application.metric_services import get_workout_detail_service, list_workouts_service
+    from mcp_strava.application.product_facts import (
+        get_daily_brief_facts_service,
+        get_historical_facts_service,
+        get_weekly_digest_facts_service,
+    )
     import mcp_strava.interfaces.mcp_http as mcp_http
     import mcp_strava.deploy.smoke as deploy_smoke
     import mcp_strava.application.metric_registry as metric_registry
-    from mcp_strava.application.reports import get_daily_report_service, get_weekly_summary_service
-    from mcp_strava.application.workouts import get_recent_workouts_service, get_workout_analytics_service
     from mcp_strava.report import daily_report
     from mcp_strava.sync import backfill_activities, build_refresh_collaborators, sync_activities
     from mcp_strava.trends import compute_trends
@@ -41,10 +45,11 @@ def test_imports():
     assert Config.Plan.Score.TARGET_HIT == 100
     assert Config.Plan.Score.SAFETY_CRITICAL == 30
     import mcp_strava.types as package_types
-    assert get_daily_report_service is not None
-    assert get_weekly_summary_service is not None
-    assert get_recent_workouts_service is not None
-    assert get_workout_analytics_service is not None
+    assert get_daily_brief_facts_service is not None
+    assert get_weekly_digest_facts_service is not None
+    assert get_historical_facts_service is not None
+    assert list_workouts_service is not None
+    assert get_workout_detail_service is not None
     assert get_freshness_service is not None
     assert get_mirror_coverage_service is not None
     assert metric_registry is not None

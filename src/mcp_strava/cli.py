@@ -2,10 +2,9 @@
 
 import sys
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
-from mcp_strava.constants import Config
 from mcp_strava.adapters.duckdb.migrations import (
     CANONICAL_DUCKDB_RUNTIME_PATH,
     DuckDBMigrationError,
@@ -15,20 +14,12 @@ from mcp_strava.adapters.sqlite.migrations import run_migrations, run_preflight
 from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.application.freshness import get_freshness_service
 from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
-from mcp_strava.application.reports import get_daily_report_service, get_weekly_summary_service
-from mcp_strava.application.workouts import get_recent_workouts_service, get_workout_analytics_service
+from mcp_strava.application.metric_services import get_workout_detail_service, list_workouts_service
+from mcp_strava.application.product_facts import get_daily_brief_facts_service, get_weekly_digest_facts_service
 import mcp_strava.refresh.runtime as refresh_runtime
-from mcp_strava.db import (
-    DbConn, refresh_token,
-    api_request, get_daily_trimp_history
-)
+from mcp_strava.db import DbConn, refresh_token
 from mcp_strava.refresh import RefreshPolicy, RefreshSkipped
-from mcp_strava.training import calc_banister, calc_weekly_plan, forward_simulate
-from mcp_strava.analytics import weekly_digest
-from mcp_strava.report import daily_report
-from mcp_strava.types import (
-    parse_strava_activity, parse_strava_athlete, dc_to_dict
-)
+from mcp_strava.types import dc_to_dict
 from mcp_strava.refresh.bootstrap import (
     RealClock,
     RealSleeper,
@@ -38,9 +29,7 @@ from mcp_strava.refresh.bootstrap import (
 )
 from mcp_strava.sync import (
     backfill_activities,
-    sync_activities,
 )
-from mcp_strava.trends import compute_trends
 from mcp_strava.settings import get_settings
 
 backfill_stream_channels = refresh_runtime.run_backfill_stream_channels
@@ -53,59 +42,6 @@ class _DryRunStravaTransport:
 # ═══════════════════════════════════════════════════════════════
 #  CLI Commands
 # ═══════════════════════════════════════════════════════════════
-
-def cmd_activities(args):
-    limit = int(args[0]) if args and args[0].isdigit() else 15
-    with DbConn() as conn:
-        rows = conn.execute("""
-            SELECT id, date, name, sport_type, distance, moving_time, elapsed_time,
-                   total_elevation_gain, summary_json
-            FROM activities ORDER BY date DESC LIMIT ?
-        """, (limit,)).fetchall()
-        result = []
-        for row in rows:
-            raw_summary = json.loads(row['summary_json']) if row['summary_json'] else {}
-            summary = parse_strava_activity(raw_summary) if raw_summary else None
-            trimp_row = conn.execute(f"SELECT {Config.SQL.TRIMP} FROM streams WHERE activity_id=?", (row['id'],)).fetchone()
-            trimp = round(trimp_row['trimp'], 1) if trimp_row and trimp_row['trimp'] else 0
-            act = {
-                'id': row['id'], 'date': row['date'][:10], 'name': row['name'],
-                'sport_type': row['sport_type'],
-                'distance_km': round(row['distance']/1000, 2),
-                'moving_time_min': round(row['moving_time']/60, 1),
-                'trimp': trimp,
-            }
-            if summary:
-                act['avg_hr'] = summary.average_heartrate
-                act['max_hr'] = int(round(summary.max_heartrate)) if summary.max_heartrate else None
-            result.append(act)
-        by_type = {}
-        for a in result:
-            by_type.setdefault(a['sport_type'], []).append(a)
-        weekly = [a for a in result if a['date'] >= (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')]
-        print(json.dumps({
-            'activities': result, 'by_type': by_type,
-            'total_weekly_trimp': round(sum(a['trimp'] for a in weekly), 1),
-            'all_types': list(by_type.keys()),
-        }, indent=2, ensure_ascii=False))
-
-
-def cmd_gear(args):
-    data, _rate = api_request('/athlete')
-    if isinstance(data, dict) and data.get('_rate_limited'):
-        print('{"error": "rate limited"}')
-        return
-    athlete = parse_strava_athlete(data)
-    result = []
-    for s in athlete.shoes:
-        km = round(s.distance/1000, 1)
-        result.append({'id': s.id, 'name': s.name, 'distance_km': km, 'primary': s.primary})
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
-
-def cmd_stats(args):
-    data, _rate = api_request('/athlete/stats')
-    print(json.dumps(data, indent=2))
 
 
 def cmd_sql(args):
@@ -131,28 +67,6 @@ def cmd_sql(args):
 def cmd_refresh(args):
     token = refresh_token()
     print(json.dumps({"status": "ok", "token": token[:10]+"..."}))
-
-
-def cmd_sync(args):
-    full = '--full' in args
-    try:
-        sync_activities(quick=not full)
-    except Exception as e:
-        import traceback
-        print(f"Sync failed: {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        # Try to log the failure — don't crash if DB is unavailable
-        try:
-            from mcp_strava.db import DbConn
-            from datetime import datetime
-            with DbConn() as conn:
-                conn.execute(
-                    "INSERT INTO sync_log (timestamp, status, error) VALUES (?, 'error', ?)",
-                    (datetime.now().isoformat(), str(e)[:500]))
-                conn.commit()
-        except Exception:
-            pass
-        raise SystemExit(1)
 
 
 def cmd_backfill(args):
@@ -232,109 +146,21 @@ def cmd_db_refresh(args):
         raise SystemExit(1)
 
 
-def cmd_backtest(args):
-    """Backtest the weekly planner against historical data."""
-    weeks = int(args[0]) if args else 12
-    with DbConn() as conn:
-        daily_trimp = get_daily_trimp_history(conn)
-    now = datetime.now()
-    today = now.strftime('%Y-%m-%d')
-
-    alpha_fatigue = Config.Model.Banister.ALPHA_FATIGUE
-    alpha_fitness = Config.Model.Banister.ALPHA_FITNESS
-    from datetime import date
-
-    results = []
-    for w in range(1, weeks + 1):
-        monday = now - timedelta(weeks=w)
-        monday_str = monday.strftime('%Y-%m-%d')
-        saturday = monday + timedelta(days=5)
-        saturday_str = saturday.strftime('%Y-%m-%d')
-
-        monday_date = date(monday.year, monday.month, monday.day)
-        days = [(monday + timedelta(days=i)) for i in range(7)]
-        day_strs = [d.strftime('%Y-%m-%d') for d in days]
-
-        # Trimps for this week's Mon-Fri
-        past_trimps = [daily_trimp.get(ds, 0) for ds in day_strs[:5]]
-        # Actual Saturday trimp
-        sat_trimp = daily_trimp.get(saturday_str, 0)
-
-        # Baseline fitness/fatigue on Monday
-        ban_monday = calc_banister(daily_trimp, monday_str)
-        if not ban_monday:
-            continue
-        base_f = ban_monday.fitness
-        base_fa = ban_monday.fatigue
-
-        # Simulate what actually happened Mon-Fri
-        actual_proj = forward_simulate(base_f, base_fa, past_trimps,
-                                       monday_date, alpha_fitness, alpha_fatigue)
-        actual_sat_form = actual_proj[-1].form if actual_proj else 0
-
-        # What the planner would recommend
-        plan = calc_weekly_plan(daily_trimp, monday_str, load_bonus=0)
-        plan_trimps = [d.trimp for d in plan.plan_days] if plan.plan_days else [0]*5
-        plan_proj = forward_simulate(base_f, base_fa, plan_trimps[:5],
-                                     monday_date, alpha_fitness, alpha_fatigue)
-        plan_sat_form = plan_proj[-1].form if plan_proj else 0
-
-        results.append({
-            'week': monday_str,
-            'actual_saturday_form': round(actual_sat_form, 1),
-            'planned_saturday_form': round(plan_sat_form, 1),
-            'actual_trimp': round(sum(past_trimps), 1),
-            'planned_trimp': round(sum(plan_trimps[:5]), 1),
-            'saturday_trimp': round(sat_trimp, 1),
-        })
-
-    if not results:
-        print("Not enough historical data for backtest.")
-        return
-
-    total = len(results)
-    planned_in_target = sum(1 for r in results if -5 <= r['planned_saturday_form'] <= 15)
-    actual_in_target = sum(1 for r in results if -5 <= r['actual_saturday_form'] <= 15)
-    would_be_better = sum(1 for r in results if r['planned_saturday_form'] > r['actual_saturday_form'])
-    plan_errors = [abs(r['planned_saturday_form'] - r['actual_saturday_form']) for r in results]
-    plan_error = round(sum(plan_errors) / len(plan_errors), 1) if plan_errors else 0
-
-    composite_score = round(
-        (planned_in_target / total * 40) +
-        (would_be_better / total * 30) +
-        (max(0, 30 - plan_error * 2)),
-        1
-    )
-
-    print(json.dumps({
-        'composite_score': composite_score,
-        'total_weeks': total,
-        'planned_in_target': f"{planned_in_target}/{total}",
-        'actual_in_target': f"{actual_in_target}/{total}",
-        'would_be_better': f"{would_be_better}/{total}",
-        'avg_error': plan_error,
-        'results': results,
-    }, indent=2, ensure_ascii=False))
-
-
-def cmd_trend(args):
-    weeks = int(args[0]) if args else 52
-    compute_trends(weeks)
-
-
 def cmd_report(args):
     """Daily training report product command."""
     json_output = _pop_json_flag(args)
     if not args or args[0] != "daily":
         _usage_error("Usage: python -m mcp_strava report daily [--json]")
-    envelope = get_daily_report_service()
+    envelope = get_daily_brief_facts_service(as_of_day=_today_day())
     _print_product_envelope(envelope, json_output=json_output, title="Daily Report", renderer=_render_daily_report)
 
 
 def cmd_weekly(args):
     """Weekly summary product command."""
     json_output = _pop_json_flag(args)
-    envelope = get_weekly_summary_service()
+    if args:
+        _usage_error("Usage: python -m mcp_strava weekly [--json]")
+    envelope = get_weekly_digest_facts_service(as_of_day=_today_day())
     _print_product_envelope(envelope, json_output=json_output, title="Weekly Summary", renderer=_render_weekly_summary)
 
 
@@ -342,9 +168,9 @@ def cmd_workouts(args):
     """Recent workouts product command."""
     json_output = _pop_json_flag(args)
     if not args or args[0] != "recent":
-        _usage_error("Usage: python -m mcp_strava workouts recent [--limit N] [--json]")
-    limit = _parse_limit(args[1:], default=15)
-    envelope = get_recent_workouts_service(limit=limit)
+        _usage_error("Usage: python -m mcp_strava workouts recent [--limit N] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--sport SPORT] [--json]")
+    options = _parse_workouts_recent_options(args[1:])
+    envelope = list_workouts_service(**options)
     _print_product_envelope(envelope, json_output=json_output, title="Recent Workouts", renderer=_render_recent_workouts)
 
 
@@ -353,7 +179,7 @@ def cmd_workout(args):
     json_output = _pop_json_flag(args)
     if len(args) < 2 or args[0] != "analyze":
         _usage_error("Usage: python -m mcp_strava workout analyze <id|latest> [--json]")
-    envelope = get_workout_analytics_service(args[1])
+    envelope = get_workout_detail_service(args[1])
     _print_product_envelope(envelope, json_output=json_output, title="Workout Analytics", renderer=_render_workout_analytics)
 
 
@@ -368,6 +194,8 @@ def cmd_freshness(args):
 
 def cmd_strava_raw(args):
     """Raw Strava API call."""
+    from mcp_strava.db import api_request
+
     path = args[0] if args else '/athlete'
     data, _rate = api_request(path)
     print(json.dumps(data, indent=2))
@@ -400,30 +228,6 @@ def cmd_log(args):
         if r['error']:
             parts.append(r['error'][:80])
         print("  ".join(parts))
-
-
-def cmd_kudos(args):
-    """Show recent kudos (likes) grouped by activity."""
-    days = int(args[0]) if args else 30
-    with DbConn() as conn:
-        rows = conn.execute("""
-            SELECT a.date, a.name, a.sport_type,
-                   CAST(json_extract(a.summary_json, '$.kudos_count') AS INTEGER) as total,
-                   k.firstname, k.lastname
-            FROM kudos k
-            JOIN activities a ON a.id = k.activity_id
-            WHERE a.date >= date('now', ?)
-            ORDER BY a.date DESC, k.lastname
-        """, (f'-{days} days',)).fetchall()
-    if not rows:
-        print(f"No kudos synced in last {days} days.")
-        return
-    cur_act = None
-    for r in rows:
-        if r['date'] != cur_act:
-            cur_act = r['date']
-            print(f"\n{r['date']}  {r['name']} ({r['sport_type']})  — {r['total']} kudos")
-        print(f"  {r['firstname']} {r['lastname']}")
 
 
 def _preflight_to_dict(report):
@@ -692,14 +496,39 @@ def _pop_json_flag(args):
     return True
 
 
-def _parse_limit(args, default):
-    if not args:
-        return default
+def _today_day() -> str:
+    return datetime.now().date().isoformat()
+
+
+def _parse_workouts_recent_options(args):
+    options = {
+        "limit": 20,
+        "start_date": None,
+        "end_date": None,
+        "sport": None,
+    }
     if len(args) == 1 and args[0].isdigit():
-        return int(args[0])
-    if len(args) == 2 and args[0] == "--limit" and args[1].isdigit():
-        return int(args[1])
-    _usage_error("Usage: --limit N")
+        options["limit"] = int(args[0])
+        return options
+
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token == "--limit":
+            if index + 1 >= len(args) or not args[index + 1].isdigit():
+                _usage_error("Usage: --limit N")
+            options["limit"] = int(args[index + 1])
+            index += 2
+            continue
+        if token in {"--start-date", "--end-date", "--sport"}:
+            if index + 1 >= len(args):
+                _usage_error("Usage: --start-date YYYY-MM-DD --end-date YYYY-MM-DD --sport SPORT")
+            key = token[2:].replace("-", "_")
+            options[key] = args[index + 1]
+            index += 2
+            continue
+        _usage_error("Usage: python -m mcp_strava workouts recent [--limit N] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--sport SPORT] [--json]")
+    return options
 
 
 def _usage_error(message):
@@ -759,6 +588,10 @@ def _render_metadata(payload):
 
 def _render_daily_report(data):
     data = data or {}
+    if data.get("bundle_id") == "daily_brief":
+        _render_bundle_sections(data)
+        return
+
     print("Status")
     print(f"- today: {data.get('today')}")
     banister = data.get("banister") or {}
@@ -786,6 +619,10 @@ def _render_daily_report(data):
 
 def _render_weekly_summary(data):
     data = data or {}
+    if data.get("bundle_id") == "weekly_digest":
+        _render_bundle_sections(data)
+        return
+
     print("Period")
     for key, value in (data.get("period") or {}).items():
         print(f"- {key}: {value}")
@@ -816,9 +653,10 @@ def _render_recent_workouts(data):
     print("| --- | --- | --- | --- | --- | --- | --- |")
     for row in rows:
         print(
-            f"| {row.get('date')} | {row.get('id')} | {row.get('sport_type')} | "
+            f"| {row.get('activity_date') or row.get('date')} | "
+            f"{row.get('activity_id') or row.get('id')} | {row.get('sport_type')} | "
             f"{row.get('distance_km')} | {row.get('moving_time_min')} | "
-            f"{row.get('trimp')} | {row.get('name')} |"
+            f"{row.get('trimp')} | {row.get('activity_name') or row.get('name')} |"
         )
 
 
@@ -827,16 +665,22 @@ def _render_workout_analytics(data):
     if not data:
         print("Workout not found.")
         return
-    print(f"- id: {data.get('id')}")
-    print(f"- date: {data.get('date')}")
-    print(f"- name: {data.get('name')}")
+    print(f"- id: {data.get('activity_id') or data.get('id')}")
+    print(f"- date: {data.get('activity_date') or data.get('date')}")
+    print(f"- name: {data.get('activity_name') or data.get('name')}")
     print(f"- sport_type: {data.get('sport_type')}")
     print(f"- distance_km: {data.get('distance_km')}")
     print(f"- moving_time_min: {data.get('moving_time_min')}")
     print(f"- trimp: {data.get('trimp')}")
     print(f"- avg_hr: {data.get('avg_hr')}")
     print(f"- max_hr: {data.get('max_hr')}")
-    print(f"- cardiac_drift: {data.get('cardiac_drift')}")
+    print(f"- cardiac_drift_pct: {data.get('cardiac_drift_pct') or data.get('cardiac_drift')}")
+    if data.get("kudos_count") is not None:
+        print(f"- kudos_count: {data.get('kudos_count')}")
+    if data.get("kudos_names"):
+        print(f"- kudos_names: {', '.join(data.get('kudos_names') or [])}")
+    if data.get("gear_id") or data.get("gear_name"):
+        print(f"- gear: {data.get('gear_name') or data.get('gear_id')}")
 
 
 def _render_freshness(data):
@@ -846,6 +690,43 @@ def _render_freshness(data):
             print(f"- {key}: {value}")
     else:
         print("- no additional freshness data")
+
+
+def _render_bundle_sections(data):
+    print(f"Bundle: {data.get('bundle_id')}")
+    if data.get("as_of_day"):
+        print(f"As of: {data.get('as_of_day')}")
+    sections = data.get("sections") or {}
+    if not isinstance(sections, dict) or not sections:
+        print("- no sections")
+        return
+    for section_id, section in sections.items():
+        print()
+        print(str(section_id).replace("_", " ").title())
+        if not isinstance(section, dict):
+            print(f"- {section}")
+            continue
+        metrics = section.get("metrics") or section.get("facts")
+        if isinstance(metrics, dict) and metrics:
+            for key, value in list(metrics.items())[:8]:
+                print(f"- {key}: {value}")
+        rows = section.get("rows")
+        if isinstance(rows, list) and rows:
+            for row in rows[:5]:
+                if isinstance(row, dict):
+                    print(f"- {row.get('metric_id')}: {row.get('value', row.get('completeness_status'))}")
+        items = section.get("items")
+        if isinstance(items, list) and items:
+            for item in items[:5]:
+                if isinstance(item, dict):
+                    label = item.get("activity_name") or item.get("activity_id") or item.get("gear_name") or item
+                    print(f"- {label}")
+        comparison = section.get("comparison")
+        if isinstance(comparison, dict):
+            global_metrics = ((comparison.get("global") or {}).get("metrics") or {})
+            for metric_id, payload in list(global_metrics.items())[:5]:
+                if isinstance(payload, dict):
+                    print(f"- {metric_id}: delta={payload.get('delta')} trend={payload.get('trend_direction')}")
 
 
 def cmd_admin(args):
