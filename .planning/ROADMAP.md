@@ -191,7 +191,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 **Goal:** MCP and CLI product reads expose factual daily, weekly, historical, status, kudos, and supported gear facts from the DuckDB/read-model application layer without adding MCP tools or reviving legacy CLI/recompute paths.
 **Requirements**: APP-01, APP-02, APP-03, APP-04, CLI-01, CLI-02, CLI-03, MCP-01, MCP-02, MCP-03, READMODEL-01, READMODEL-04, PERF-01, TEST-03, TEST-04, TEST-06
 **Depends on:** Phase 8
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 - [ ] `09-01-PLAN.md` — Windowed historical/status fact contracts and bundle-safe registry queries

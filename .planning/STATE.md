@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-26T13:24:12.891Z"
+last_updated: "2026-05-26T13:42:36.304Z"
 last_activity: 2026-05-26
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 43
-  completed_plans: 39
+  completed_plans: 40
   percent: 78
 ---
 
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-24)
 ## Current Position
 
 Phase: 09 (product-factual-bundles-and-cli-read-model-consolidation) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-05-26
 
@@ -83,6 +83,7 @@ Last activity: 2026-05-26
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-06 | 39min | 3 tasks | 5 files |
 | Phase 08-duckdb-primary-storage-aggregate-analytics-surface P08-07 | 12min | 3 tasks | 9 files |
 | Phase 09-product-factual-bundles-and-cli-read-model-consolidation P09-01 | 14 min | 3 tasks | 11 files |
+| Phase 09-product-factual-bundles-and-cli-read-model-consolidation P09-02 | 12 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -153,6 +154,9 @@ Recent decisions affecting current work:
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Expose get_training_aggregates as the sixth and only new product MCP tool. — Implements D-15/D-16 while preserving the product-only MCP allowlist.
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Format compare_periods from two bounded period_comparison aggregate requests with bucket=all_time. — Implements D-23 through D-25 and removes separate comparison row-scanning semantics.
 - [Phase 08-duckdb-primary-storage-aggregate-analytics-surface]: Use aggregate scope=both internally for comparison bundles. — Allows global and per-sport aggregate rows to share one registry-backed comparison path without adding public MCP controls.
+- [Phase 09-product-factual-bundles-and-cli-read-model-consolidation]: Product fact bundles are assembled in application services from existing aggregate, metric, status, and workout-detail services. — Keeps CLI and MCP consumers on the same factual read-model contract without adding MCP tools.
+- [Phase 09-product-factual-bundles-and-cli-read-model-consolidation]: Aggregate service responses preserve rows and add bundle payloads only for daily_brief, weekly_digest, and historical_facts. — Keeps existing aggregate callers compatible while giving scenario bundles product-shaped sections.
+- [Phase 09-product-factual-bundles-and-cli-read-model-consolidation]: Supported gear facts are emitted only from mirrored summary/detail fields with gear_data_not_mirrored completeness when absent. — Preserves the no-Strava-call and no-aggregate-gear-filter boundary.
 
 ### Roadmap Evolution
 
@@ -177,8 +181,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-26T13:24:12.876Z
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-05-26T13:42:36.288Z
+Stopped at: Completed 09-02-PLAN.md
 Resume file: None
 
 ## Quick Tasks Completed
