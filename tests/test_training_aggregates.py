@@ -292,6 +292,42 @@ def _insert_rolling_facts(conn, as_of_day: str = "2026-05-21") -> None:
         )
 
 
+def _insert_sport_rolling_fact(
+    conn,
+    *,
+    as_of_day: str,
+    window_days: int,
+    sport_type: str,
+    median_cardiac_cost: float,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO rolling_period_facts (
+            as_of_day, window_days, scope, sport_type, metric_version,
+            computed_at, completeness_status, missing_reasons_json,
+            activity_count, active_days, rest_days, observed_trimp,
+            effective_trimp, distance_m, moving_time_s, elevation_gain_m,
+            high_zone_seconds, anomaly_count, fitness, fatigue, form, form_zone,
+            acwr_zone, acwr, median_cardiac_cost, median_adjusted_cardiac_cost,
+            median_hr_recovery, median_cardiac_drift_pct
+        ) VALUES (
+            CAST(? AS DATE), ?, 'sport', ?, 1, ?, 'complete', '[]',
+            1, 1, 0, 20.0, 20.0, 5000.0, 1800, 50.0, 30, 0,
+            30.0, 20.0, 10.0, 'fresh', 'sweet_spot', 1.1,
+            ?, ?, 18.0, 2.5
+        )
+        """,
+        [
+            as_of_day,
+            window_days,
+            sport_type,
+            f"{as_of_day}T12:30:00",
+            median_cardiac_cost,
+            median_cardiac_cost,
+        ],
+    )
+
+
 def _aggregate_fixture(path: Path) -> Path:
     conn = open_fixture_db(path)
     create_schema(conn)
@@ -896,6 +932,60 @@ def test_validation_accepts_exact_rolling_window_allowlist() -> None:
                 window_days=window_days,
             )
         )
+
+
+def test_per_sport_rolling_aggregates_use_stored_sport_rows(tmp_path: Path) -> None:
+    db_path = _aggregate_fixture(tmp_path / "rolling-sport-scope.duckdb")
+    conn = open_fixture_db(db_path)
+    _insert_sport_rolling_fact(
+        conn,
+        as_of_day="2026-05-21",
+        window_days=90,
+        sport_type="Run",
+        median_cardiac_cost=44.0,
+    )
+    _insert_sport_rolling_fact(
+        conn,
+        as_of_day="2026-05-21",
+        window_days=90,
+        sport_type="Hike",
+        median_cardiac_cost=77.0,
+    )
+
+    run_rows = _payloads(
+        query_training_aggregates(
+            conn,
+            AggregateRequest(
+                metric_ids=("rolling_median_cc",),
+                bucket="all_time",
+                start_day=None,
+                end_day_exclusive="2026-05-22",
+                scope="per_sport",
+                sport_filter="Run",
+                as_of_day="2026-05-21",
+                window_days=90,
+            ),
+        )
+    )
+    hike_rows = _payloads(
+        query_training_aggregates(
+            conn,
+            AggregateRequest(
+                metric_ids=("rolling_median_cc",),
+                bucket="all_time",
+                start_day=None,
+                end_day_exclusive="2026-05-22",
+                scope="per_sport",
+                sport_filter="Hike",
+                as_of_day="2026-05-21",
+                window_days=90,
+            ),
+        )
+    )
+    conn.close()
+
+    assert [(row["sport_type"], row["value"]) for row in run_rows] == [("Run", 44.0)]
+    assert [(row["sport_type"], row["value"]) for row in hike_rows] == [("Hike", 77.0)]
 
 
 def _walk_no_forbidden_product_terms(obj) -> None:

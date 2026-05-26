@@ -901,8 +901,6 @@ def _bucket_expression(request: AggregateRequest, day_column: str, effective_sta
 
 def _sport_output_expression(request: AggregateRequest) -> str:
     if request.scope == "per_sport":
-        if request.sport_filter is not None:
-            return f"'{request.sport_filter}'"
         return "sport_type"
     return "NULL"
 
@@ -927,7 +925,12 @@ def _where_clause(
         if rolling_window_days is not None:
             where.append("window_days = ?")
             params.append(rolling_window_days)
-    if source in {"daily_load_fact", "training_model_fact", "rolling_period_fact", "historical_fact"}:
+    if source == "rolling_period_fact" and request.scope == "per_sport":
+        where.append("scope = 'sport'")
+        if request.sport_filter is not None:
+            where.append("sport_type = ?")
+            params.append(request.sport_filter)
+    elif source in {"daily_load_fact", "training_model_fact", "rolling_period_fact", "historical_fact"}:
         where.append("scope = 'all'")
         if request.scope == "global":
             where.append("sport_type = 'all'")

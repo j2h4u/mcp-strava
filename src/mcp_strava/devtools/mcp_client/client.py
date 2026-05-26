@@ -403,9 +403,11 @@ async def measure_warm_tool_latency(
 
     tool_results: dict[str, dict[str, Any]] = {}
     exceeded: list[str] = []
+    result_key_counts: dict[str, int] = {}
     for call in normalized_calls:
         name = str(call["name"])
         arguments = dict(call["arguments"])
+        result_key = _latency_result_key(name, arguments, result_key_counts)
         for _ in range(warmup):
             _require_success(name, await client.call_tool(name, arguments))
 
@@ -420,9 +422,11 @@ async def measure_warm_tool_latency(
         max_value = max(timings)
         status = "ok" if p95_value <= p95_ms else "exceeded"
         if status != "ok":
-            exceeded.append(name)
-        tool_results[name] = {
+            exceeded.append(result_key)
+        tool_results[result_key] = {
             "status": status,
+            "tool_name": name,
+            "arguments": arguments,
             "samples": samples,
             "warmup": warmup,
             "p50_ms": round(p50_value, 3),
@@ -634,6 +638,14 @@ def _normalize_latency_calls(raw_calls: Any) -> list[dict[str, Any]]:
             raise ValueError(f"latency call {index} field 'arguments' must be an object")
         normalized.append({"name": name, "arguments": arguments})
     return normalized
+
+
+def _latency_result_key(name: str, arguments: dict[str, Any], counts: dict[str, int]) -> str:
+    metric_bundle = arguments.get("metric_bundle") if name == "get_training_aggregates" else None
+    base = f"{name}:{metric_bundle}" if isinstance(metric_bundle, str) and metric_bundle else name
+    count = counts.get(base, 0) + 1
+    counts[base] = count
+    return base if count == 1 else f"{base}#{count}"
 
 
 def _optional_int(value: Any, *, default: int, field: str) -> int:

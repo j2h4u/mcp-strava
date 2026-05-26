@@ -9,6 +9,7 @@ from mcp_strava.devtools.mcp_client.client import (
     DEFAULT_LATENCY_P95_MS,
     EXPECTED_TOOL_NAMES,
     McpClientError,
+    default_warm_latency_calls,
     measure_warm_tool_latency,
     run_warm_latency_gate,
 )
@@ -92,9 +93,35 @@ def test_measure_warm_tool_latency_fails_when_any_tool_exceeds_p95() -> None:
         asyncio.run(run())
 
 
-def test_default_latency_gate_call_set_covers_all_product_tools() -> None:
-    from mcp_strava.devtools.mcp_client.client import default_warm_latency_calls
+def test_measure_warm_tool_latency_keeps_product_bundle_calls_separate() -> None:
+    calls = default_warm_latency_calls(workout_id=701, today="2026-05-24")
 
+    async def run() -> dict[str, Any]:
+        client = FakeLatencyClient()
+        return await measure_warm_tool_latency(
+            client,
+            calls=calls,
+            warmup=0,
+            samples=1,
+            p95_ms=500,
+        )
+
+    result = asyncio.run(run())
+
+    assert {
+        "get_training_aggregates:daily_brief",
+        "get_training_aggregates:weekly_digest",
+        "get_training_aggregates:historical_facts",
+    } <= set(result["tools"])
+    for key in (
+        "get_training_aggregates:daily_brief",
+        "get_training_aggregates:weekly_digest",
+        "get_training_aggregates:historical_facts",
+    ):
+        assert result["tools"][key]["tool_name"] == "get_training_aggregates"
+
+
+def test_default_latency_gate_call_set_covers_all_product_tools() -> None:
     calls = default_warm_latency_calls(workout_id=701, today="2026-05-24")
 
     assert {call["name"] for call in calls} == EXPECTED_TOOL_NAMES
