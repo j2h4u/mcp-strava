@@ -2,11 +2,11 @@
 
 Local Strava mirror and MCP training-metrics server.
 
-`mcp-strava` keeps Strava activities, streams, kudos, and derived training metrics in a local SQLite database, then exposes read-only MCP tools for agents that need workout facts, period comparisons, and fitness-state projections.
+`mcp-strava` keeps Strava activities, streams, kudos, and derived training metrics in a local DuckDB database, then exposes read-only MCP tools for agents that need workout facts, period comparisons, and fitness-state projections.
 
 ## What It Does
 
-- Mirrors Strava activities and sensor streams into SQLite.
+- Mirrors Strava activities and sensor streams into DuckDB.
 - Materializes read-model facts for fast MCP tool calls.
 - Exposes factual MCP tools only: workouts, workout detail, period comparison, current fitness state, and fitness-state projection.
 - Keeps sync, backfill, SQL, token refresh, and deployment operations below the MCP surface.

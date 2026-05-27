@@ -1,4 +1,4 @@
-"""Pure freshness evaluation over SQLite refresh metadata."""
+"""Pure freshness evaluation over mirror refresh metadata."""
 
 from __future__ import annotations
 

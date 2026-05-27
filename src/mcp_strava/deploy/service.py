@@ -1,14 +1,15 @@
-"""Container service process for MCP HTTP and mirror refresh scheduling."""
+"""Container service process for the single-owner DuckDB MCP runtime.
+
+The runtime is DuckDB-only: one owner process serves MCP HTTP and runs the
+mirror-refresh scheduler in-process. No separate child processes are spawned.
+"""
 
 from __future__ import annotations
 
 import json
 import os
-import signal
 import subprocess
-import sys
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -52,38 +53,9 @@ def _state_path() -> Path:
     return Path(raw_path) if raw_path else _DEFAULT_STATE_PATH
 
 
-def _duckdb_runtime_mode() -> bool:
-    db_path = os.environ.get("MCP_STRAVA_DB_PATH", "")
-    return Path(db_path).suffix.lower() == ".duckdb"
-
-
 def _child_specs() -> list[ChildSpec]:
-    if _duckdb_runtime_mode():
-        return []
-    specs: list[ChildSpec] = []
-    if _refresh_worker_enabled():
-        specs.append(
-            ChildSpec(
-                name="refresh",
-                command=[sys.executable, "-m", "mcp_strava.refresh.worker"],
-            )
-        )
-    specs.append(
-        ChildSpec(
-            name="mcp-http",
-            command=[sys.executable, "-m", "mcp_strava.interfaces.mcp_http"],
-        )
-    )
-    return specs
-
-
-def _start_children(specs: list[ChildSpec]) -> list[ChildProcess]:
-    children: list[ChildProcess] = []
-    for spec in specs:
-        process = subprocess.Popen(spec.command)
-        children.append(ChildProcess(name=spec.name, process=process))
-        _emit("service_child_started", name=spec.name, pid=process.pid)
-    return children
+    """The single-owner DuckDB runtime spawns no child processes."""
+    return []
 
 
 def _write_state(children: list[ChildProcess]) -> None:
@@ -92,33 +64,19 @@ def _write_state(children: list[ChildProcess]) -> None:
     payload = {
         "owner": {
             "pid": os.getpid(),
-            "db_mode": "duckdb-primary" if _duckdb_runtime_mode() else "sqlite-compat",
-            "refresh_scheduler": "in-process" if _duckdb_runtime_mode() and _refresh_worker_enabled() else "disabled",
-            "connection_policy": DUCKDB_OWNER_CONNECTION_POLICY if _duckdb_runtime_mode() else "sqlite-compat",
+            "db_mode": "duckdb-primary",
+            "refresh_scheduler": "in-process" if _refresh_worker_enabled() else "disabled",
+            "connection_policy": DUCKDB_OWNER_CONNECTION_POLICY,
         },
         "children": {
             child.name: {"pid": child.process.pid}
             for child in children
             if child.name != "refresh"
-        }
+        },
     }
     tmp_path = state_path.with_name(f".{state_path.name}.tmp")
     tmp_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
     tmp_path.replace(state_path)
-
-
-def _terminate_children(children: list[ChildProcess], *, timeout_seconds: float = 10.0) -> None:
-    running = [child for child in children if child.process.poll() is None]
-    for child in running:
-        child.process.terminate()
-    deadline = time.monotonic() + timeout_seconds
-    for child in running:
-        remaining = max(0.0, deadline - time.monotonic())
-        try:
-            child.process.wait(timeout=remaining)
-        except subprocess.TimeoutExpired:
-            child.process.kill()
-            child.process.wait()
 
 
 def _remove_state() -> None:
@@ -152,36 +110,7 @@ def _run_duckdb_owner_service() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     del argv
-    if _duckdb_runtime_mode():
-        return _run_duckdb_owner_service()
-
-    stop_requested = False
-
-    def _request_stop(signum, frame) -> None:
-        del frame
-        nonlocal stop_requested
-        stop_requested = True
-        _emit("service_shutdown_requested", signal=signum)
-
-    signal.signal(signal.SIGTERM, _request_stop)
-    signal.signal(signal.SIGINT, _request_stop)
-
-    children = _start_children(_child_specs())
-    _write_state(children)
-    try:
-        while True:
-            if stop_requested:
-                _terminate_children(children)
-                return 0
-            for child in children:
-                returncode = child.process.poll()
-                if returncode is not None:
-                    _emit("service_child_exited", name=child.name, returncode=returncode)
-                    _terminate_children(children)
-                    return returncode if returncode != 0 else 1
-            time.sleep(1)
-    finally:
-        _remove_state()
+    return _run_duckdb_owner_service()
 
 
 if __name__ == "__main__":

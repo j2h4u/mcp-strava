@@ -79,7 +79,7 @@ def test_load_settings_reads_process_environment_when_environ_omitted(
 
 def test_load_settings_environment_overrides() -> None:
     env = {
-        'MCP_STRAVA_DB_PATH': '/tmp/custom/db.sqlite',
+        'MCP_STRAVA_DB_PATH': '/tmp/custom/db.duckdb',
         'MCP_STRAVA_TOKEN_PATH': '/tmp/custom/token.env',
         'MCP_STRAVA_RUNTIME_PROFILE': 'docker',
         'MCP_STRAVA_HTTP_HOST': '0.0.0.0',
@@ -96,7 +96,7 @@ def test_load_settings_environment_overrides() -> None:
 
     settings = load_settings(environ=env, project_root=Path('/tmp/project'))
 
-    assert settings.database_path == Path('/tmp/custom/db.sqlite')
+    assert settings.database_path == Path('/tmp/custom/db.duckdb')
     assert settings.token_path == Path('/tmp/custom/token.env')
     assert settings.runtime_profile == 'docker'
     assert settings.http.host == '0.0.0.0'

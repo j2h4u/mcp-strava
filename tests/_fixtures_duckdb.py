@@ -2,7 +2,7 @@
 
 DuckDB is the only runtime storage. These helpers seed a DuckDB mirror file
 with a deterministic dataset so tests can exercise repository, refresh, load,
-and service behavior without the Strava API or any SQLite path.
+and service behavior without the Strava API.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ def create_empty_fixture_db(db_path: str | Path) -> None:
 def create_fixture_db(db_path: str | Path) -> None:
     """Create a DuckDB mirror file seeded with deterministic activity data.
 
-    Mirrors the historical SQLite test fixture: ``ACTIVITY_COUNT`` daily Run
+    Seeds ``ACTIVITY_COUNT`` daily Run
     activities starting ``BASE_DAY``, each with ``STREAM_POINTS_PER_ACTIVITY``
     stream points carrying heartrate/velocity/altitude/cadence and GPS, plus
     one athlete-zones row, one sync-log row, and one kudos row.

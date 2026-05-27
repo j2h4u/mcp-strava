@@ -36,7 +36,6 @@ OLD_COMMAND_KEYS = {
     "kudos",
     "db-preflight",
     "db-check",
-    "db-migrate",
     "db-refresh",
 }
 
