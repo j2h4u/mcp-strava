@@ -57,8 +57,7 @@ def _zone_seconds(
     """Return (z1, z2, z3, z4, z5) second counts using the given zone bounds.
 
     Uses parameterised integer literals from bounds — identical query structure
-    to the old Config.Zones.BOUNDS path so results are byte-identical for the
-    same bound values.
+    to the legacy SQL so results are byte-identical for the same bound values.
     """
     b = bounds
     row = repo._fetchone(

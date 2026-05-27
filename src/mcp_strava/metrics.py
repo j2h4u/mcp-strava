@@ -3,29 +3,17 @@ vertical speed, and the enrichment wrapper that computes all of them."""
 
 from mcp_strava.constants import Config
 from mcp_strava.db import repository_from_connection
+from mcp_strava.hr_zones import get_zone_model
+from mcp_strava.settings import get_settings
 from mcp_strava.types import (HrRecovery, VerticalSpeed, DecouplingResult,
                                EnrichedActivity, CardiacDriftResult, parse_strava_activity)
 from mcp_strava.cardiac_drift import cardiac_drift as _drift_algo
 import json
 
-
-# Cached HRmax from streams — query once, reuse across enrichment calls.
-# Reset on new connection (module reload or explicit clear).
-_hr_max_cache: float | None = None
-
-
-def _get_hr_max(conn) -> float:
-    """Max heartrate ever observed in streams. Falls back to Config.Athlete.HR_MAX."""
-    global _hr_max_cache
-    if _hr_max_cache is not None:
-        return _hr_max_cache
-    repo = repository_from_connection(conn)
-    hr_max = repo.max_heartrate()
-    if hr_max is not None:
-        _hr_max_cache = float(hr_max)
-    else:
-        _hr_max_cache = float(Config.Athlete.HR_MAX)
-    return _hr_max_cache
+_HR_REST_MISSING_MSG = (
+    "MCP_STRAVA_HR_REST is not set — cannot compute HR zones. "
+    "Set MCP_STRAVA_HR_REST to the athlete's resting heart rate."
+)
 
 
 # ─── Decoupling validity gate ───
@@ -362,15 +350,18 @@ def enrich_activity(conn, act_row):
 
     # Average %HRR: how much of the heart's reserve was used.
     # Uses MEDIAN heartrate from streams (more robust to sensor spikes than mean).
-    # HRmax from streams (live), HRrest from config (Samsung Health).
+    # HRmax from streams (live), HRrest from MCP_STRAVA_HR_REST env setting.
     hrr_pct = None
     median_hr = repo.activity_median_heartrate(_field("id"))
     if median_hr:
-        hr_max = _get_hr_max(conn)
-        hrr_pct = round(
-            (median_hr - Config.Athlete.HR_REST)
-            / (hr_max - Config.Athlete.HR_REST) * 100, 1
-        )
+        athlete = get_settings().athlete
+        hr_rest = athlete.hr_rest
+        if hr_rest is not None:
+            hr_max = repo.max_heartrate()
+            if hr_max is not None and float(hr_max) > hr_rest:
+                hrr_pct = round(
+                    (median_hr - hr_rest) / (float(hr_max) - hr_rest) * 100, 1
+                )
 
     # Start time from summary_json (local time, HH:MM)
     start_time = None
@@ -409,9 +400,18 @@ def check_z5_minutes(conn, activity_id, z5_threshold=None, warn_seconds=300):
     """Safety check: minutes spent in Z5 (≥threshold bpm). Warns if >5 minutes.
     For 50+ athletes, prolonged Z5 is a cardiac risk factor.
     Returns (z5_seconds, warning_reason) or (None, None)."""
-    if z5_threshold is None:
-        z5_threshold = Config.Zones.BOUNDS[-2]  # Z5 lower bound (penultimate element)
     repo = repository_from_connection(conn)
+    if z5_threshold is None:
+        athlete = get_settings().athlete
+        if athlete.hr_rest is None:
+            raise RuntimeError(_HR_REST_MISSING_MSG)
+        hr_max = repo.max_heartrate()
+        if hr_max is None:
+            return 0, None
+        bounds = get_zone_model(athlete.hr_zone_model).zone_bounds(
+            hr_max=int(hr_max), hr_rest=athlete.hr_rest
+        )
+        z5_threshold = bounds[-2]
     z5_sec = repo.activity_z5_seconds(activity_id, z5_threshold)
     if z5_sec == 0:
         return None, None

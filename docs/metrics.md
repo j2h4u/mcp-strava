@@ -104,7 +104,7 @@ Status facts are machine-readable threshold/category facts. They expose code, re
 | hr_recovery_pauses | count | activity | per_sport | sum | context | get_workout_detail, compare_periods | Count of detected rest pauses from HR recovery analysis; pauses are >= Config.Metrics.MIN_PAUSE_SEC with velocity < Config.Thresholds.VEL_STOP. |
 | hr_recovery_total_rest_sec | seconds | activity | per_sport | sum | context | get_workout_detail, compare_periods | Total seconds across detected HR recovery rest pauses. |
 | hr_recovery_worst_bpm_per_min | bpm_per_min | activity | per_sport | min | higher_is_worse | get_workout_detail, compare_periods | Minimum HR drop rate across detected rest pauses, in bpm per minute. |
-| hrr_pct | percent | activity | per_sport | median | lower_is_easier | get_workout_detail, compare_periods | Median activity heartrate normalized to heart-rate reserve: (median_hr - Config.Athlete.HR_REST) / (observed_hr_max - HR_REST) * 100. |
+| hrr_pct | percent | activity | per_sport | median | lower_is_easier | get_workout_detail, compare_periods | (median_hr - athlete_hr_rest) / (observed_hr_max - athlete_hr_rest) * 100, using MCP_STRAVA_HR_REST. |
 | kudos_count | count | activity | both | none | context | list_workouts, get_workout_detail | Strava summary_json.kudos_count for the activity, defaulting to 0 when Strava omitted it. |
 | kudos_names | text_list | activity | both | none | context | get_workout_detail | Names stored from the Strava kudos endpoint for the activity, grouped by activity_id and formatted from firstname and lastname. |
 | last_hike_days_ago | count | period | global | last | lower_is_recent | core-only | Days since the latest mirrored Hike activity. |
@@ -131,7 +131,7 @@ Status facts are machine-readable threshold/category facts. They expose code, re
 | target_date_form | model_units | projection | global | last | higher_is_more | project_fitness_state | The final projected_form value on the requested target_date for a scenario. |
 | time_in_hr_zones_min | minutes | activity | both | distribution | context | get_workout_detail, compare_periods | Counts stream heartrate samples in the five configured HR zones and divides seconds by 60. |
 | total_trimp_14d | trimp | period | global | sum | higher_is_more | get_fitness_state, compare_periods | Sum of effective_trimp over the 14-day rolling window ending at the query day. |
-| trimp | trimp | activity | global | sum | higher_is_more | list_workouts, get_workout_detail, compare_periods | Per-activity TRIMP = sum(seconds in configured HR zones * Config.Zones.COEFF) / 60 using mirrored heartrate samples. |
+| trimp | trimp | activity | global | sum | higher_is_more | list_workouts, get_workout_detail, compare_periods | Per-activity TRIMP = sum(seconds in each HR zone * zone weight) / 60 using the configured HR zone model and athlete resting HR. |
 | vertical_ascent_m | m | activity | both | sum | higher_is_more | get_workout_detail, compare_periods | Sum of positive altitude deltas from the altitude stream. |
 | vertical_duration_h | hours | activity | both | sum | higher_is_more | get_workout_detail, compare_periods | Elapsed stream duration used for vertical speed, computed from the last stream time_offset / 3600. |
 | vertical_speed_m_per_h | m_per_hour | activity | per_sport | median | higher_is_more | get_workout_detail, compare_periods | Positive altitude gain from altitude stream divided by elapsed stream duration in hours. |

@@ -18,7 +18,14 @@ from mcp_strava.application.metric_registry import (
     metrics_for_aggregate_bundle,
 )
 from mcp_strava.constants import ALL_SPORTS, Config, RUNNING_SPORTS
+from mcp_strava.hr_zones import get_zone_model
+from mcp_strava.settings import get_settings
 from mcp_strava.types import MetricDefinition, StatusFact, StatusFactDefinition
+
+_HR_REST_MISSING_MSG = (
+    "MCP_STRAVA_HR_REST is not set — cannot compute HR zones. "
+    "Set MCP_STRAVA_HR_REST to the athlete's resting heart rate."
+)
 
 
 @dataclass(frozen=True)
@@ -283,7 +290,23 @@ def _query_excessive_z5_status(conn, definition: StatusFactDefinition, as_of: da
     if total == 0:
         return _status_fact(definition, "unavailable", {}, ["no_activity_facts"])
     threshold = int(definition.threshold["zone5_seconds"])
-    z5_lower_bound = int(definition.threshold.get("z5_lower_bound_bpm", Config.Zones.BOUNDS[-2]))
+    if "z5_lower_bound_bpm" in definition.threshold:
+        z5_lower_bound = int(definition.threshold["z5_lower_bound_bpm"])
+    else:
+        from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+        _athlete = get_settings().athlete
+        if _athlete.hr_rest is None:
+            raise RuntimeError(_HR_REST_MISSING_MSG)
+        _repo = DuckDBRepository.from_connection(conn)
+        _hr_max = _repo.max_heartrate()
+        if _hr_max is None:
+            # No HR data in DB — no Z5 events are possible; use max int as unreachable threshold.
+            z5_lower_bound = 300
+        else:
+            _bounds = get_zone_model(_athlete.hr_zone_model).zone_bounds(
+                hr_max=int(_hr_max), hr_rest=_athlete.hr_rest
+            )
+            z5_lower_bound = _bounds[-2]
     row = conn.execute(
         """
         SELECT activity_id, activity_day, zone5_seconds
