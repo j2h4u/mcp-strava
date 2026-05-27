@@ -35,6 +35,6 @@ This is a known Strava API limitation (documented in community discussions). The
 
 ## Integration
 
-See `sync.py:_sync_kudos()` — fetches kudos for activities with `kudos_count > 0` in last 30 days that aren't yet synced. Cost: 1 API call per activity with unsynced kudos.
+Kudos sync fetches kudos for activities with `kudos_count > 0` in the last 30 days that aren't yet synced. Cost: 1 API call per activity with unsynced kudos.
 
 First run on May 20, 2026: 13 activities found, all fetched successfully.

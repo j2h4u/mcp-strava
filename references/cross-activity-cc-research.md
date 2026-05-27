@@ -48,7 +48,7 @@ Even after elevation adjustment (coefficient 0.45), Hike CC ≈ 104 vs Run ≈ 6
 
 ## Decision
 
-**Per-sport CC trends.** Each sport type tracked independently with ≥3 activity minimum for valid trend. Combined bonus weighted by activity count per sport. Walk excluded from training metrics entirely (is_training=False).
+**Per-sport CC trends.** Each sport type tracked independently with ≥3 activity minimum for valid trend. Combined bonus weighted by activity count per sport. Walk excluded from training metrics entirely (not counted as training load).
 
 ## Key References
 

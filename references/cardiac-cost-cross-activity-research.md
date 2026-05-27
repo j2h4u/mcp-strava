@@ -63,9 +63,9 @@ treats them as separate activities with different physiological determinants.
 
 ## Practical Implementation (May 2026)
 
-- `calc_progressive_signal()`: CC grouped by `sport_type`, ≥3 activities per sport required
+- Progressive-load signal: CC grouped by sport type, ≥3 activities per sport required
 - Bonuses weighted by activity count per sport
-- Walk excluded from all progressive signal metrics (is_training=False)
+- Walk excluded from all progressive-signal metrics (not counted as training load)
 - Hike CC tracked separately from Run CC
 
 ## Athlete-Specific Data

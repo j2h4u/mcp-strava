@@ -66,15 +66,15 @@ Rationale:
 
 25% is the sweet spot: generous enough to allow normal terrain variation, strict enough to catch structural pace changes. At this threshold, **all of [REDACTED-NAME]'s current activities are excluded from decoupling** — the metric is effectively N/A for his training style.
 
-## Implementation
+## Gating Logic
 
-Three-layer architecture (separation of concerns):
+Decoupling is computed only when pace is steady enough for the metric to be valid:
 
-1. **`_pace_too_variable(velocities) -> bool`** — pure function, CV math only
-2. **`calc_decoupling(rows) -> DecouplingResult`** — pure decoupling math, no gate
-3. **`calc_decoupling_with_gate(conn, activity_id) -> DecouplingResult`** — orchestrates: fetch → gate → calc
+1. First test pace variability (coefficient of variation of velocity).
+2. If CV exceeds the threshold, the activity is gated out — decoupling is reported as **N/A**: explicitly invalid, not zero and not "missing data".
+3. Otherwise compute decoupling normally.
 
-When CV exceeds threshold, `DecouplingResult.decoupling_pct = None` with `pace_too_variable = True`. Downstream consumers (trends, recommendation) already filter out `None` values.
+Downstream consumers (trend and recommendation logic) skip N/A values rather than treating them as zero.
 
 ## Agent Narrative Rule
 
