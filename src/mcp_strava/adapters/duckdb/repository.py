@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 from mcp_strava.adapters.duckdb.connection import duckdb_process_lock, open_expected_mirror_db, open_fixture_db
+from mcp_strava.adapters.duckdb.schema import ensure_provenance_columns
 from mcp_strava.constants import Config, TRAINING_SPORTS
 from mcp_strava.types import (
     ALLOWED_REASON_CODES,
@@ -88,11 +89,23 @@ class DuckDBRepository:
     def from_path(cls, db_path: str | Path, expected_mirror: bool = False) -> "DuckDBRepository":
         path = Path(db_path)
         conn = open_expected_mirror_db(path) if expected_mirror else open_fixture_db(path)
-        return cls(conn=conn)
+        repo = cls(conn=conn)
+        repo._ensure_schema_extensions()
+        return repo
 
     @classmethod
     def from_connection(cls, conn: object) -> "DuckDBRepository":
-        return cls(conn=conn)
+        repo = cls(conn=conn)
+        repo._ensure_schema_extensions()
+        return repo
+
+    def _ensure_schema_extensions(self) -> None:
+        """Additive migration: ensure provenance columns exist on live DB."""
+        try:
+            ensure_provenance_columns(self.conn)
+        except Exception:
+            # Table may not exist yet (fresh DB before create_schema); that is fine.
+            pass
 
     def __enter__(self) -> "DuckDBRepository":
         return self

@@ -186,6 +186,11 @@ CREATE TABLE activity_metric_facts (
     elevation_gain_m DOUBLE,
     heartrate_sample_count BIGINT NOT NULL DEFAULT 0,
     stream_sample_count BIGINT NOT NULL DEFAULT 0,
+    observed_min_hr BIGINT,
+    observed_max_hr BIGINT,
+    hr_zone_model VARCHAR,
+    hr_max_used BIGINT,
+    hr_rest_used BIGINT,
     PRIMARY KEY (activity_id, metric_version)
 );
 
@@ -537,6 +542,20 @@ FROM (
 )
 GROUP BY metric_version;
 """
+
+
+def ensure_provenance_columns(conn) -> None:
+    """Additive migration: add HR provenance columns to activity_metric_facts
+    if they do not already exist. Safe to call on any existing DuckDB file."""
+    alterations = [
+        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS observed_min_hr BIGINT",
+        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS observed_max_hr BIGINT",
+        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS hr_zone_model VARCHAR",
+        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS hr_max_used BIGINT",
+        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS hr_rest_used BIGINT",
+    ]
+    for sql in alterations:
+        conn.execute(sql)
 
 
 def create_aggregate_views(conn) -> None:
