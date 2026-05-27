@@ -22,7 +22,7 @@ Cardiac drift (cardiovascular drift, decoupling, Pa:HR) is defined as an **incre
 3. Heart rate rises to compensate, maintaining cardiac output
 4. **This only happens when workload is constant.** If you slow down, HR drops — that's not drift, it's pacing.
 
-## This Athlete's Data ([REDACTED-NAME], May 2026)
+## This Athlete's Data (May 2026)
 
 Empirical CV of velocity for recent activities:
 
@@ -37,7 +37,7 @@ Empirical CV of velocity for recent activities:
 | 18255614810 | 38.9% | 7.0 | 5.4 | +19.3% |
 | 18217015490 | 37.5% | 6.9 | 6.2 | +0.1% |
 
-**Pattern:** [REDACTED-NAME] runs hard for ~2/3, then walks the last ~1/3. Velocity drops from ~7→~5.5 km/h between halves. CV range: 32-50%. **All exceed 25% threshold.**
+**Pattern:** The athlete runs hard for ~2/3, then walks the last ~1/3. Velocity drops from ~7→~5.5 km/h between halves. CV range: 32-50%. **All exceed 25% threshold.**
 
 ### Hikes
 | Activity | CV | vel₁ (km/h) | vel₂ (km/h) | Decoupling |
@@ -61,10 +61,10 @@ Rationale:
 - Normal steady run on varied terrain: CV 5-12%
 - Normal hike with terrain variation: CV 10-18%
 - Run with walking cooldown (5 min walk at end of 30 min run): CV ~20%
-- Run 2/3 + walk 1/3 ([REDACTED-NAME]'s pattern): CV ~27%
+- Run 2/3 + walk 1/3 (this athlete's pattern): CV ~27%
 - Hike with significant ascent/descent: CV 31-51%
 
-25% is the sweet spot: generous enough to allow normal terrain variation, strict enough to catch structural pace changes. At this threshold, **all of [REDACTED-NAME]'s current activities are excluded from decoupling** — the metric is effectively N/A for his training style.
+25% is the sweet spot: generous enough to allow normal terrain variation, strict enough to catch structural pace changes. At this threshold, **all of this athlete's current activities are excluded from decoupling** — the metric is effectively N/A for this training style.
 
 ## Gating Logic
 

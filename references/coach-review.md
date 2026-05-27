@@ -1,6 +1,6 @@
 # Coaching Review — Training Methodology
 
-*Endurance-coaching panel review of the training-load and readiness methodology for a single masters endurance athlete (born [REDACTED-YEAR], ~51; observed HRmax 191, resting HR 53). Implementation-agnostic: this assesses the training science, not the software.*
+*Endurance-coaching panel review of the training-load and readiness methodology for a single masters endurance athlete (50+; observed HRmax 191, resting HR 53). Implementation-agnostic: this assesses the training science, not the software.*
 
 ## Athlete Context Frames Everything
 

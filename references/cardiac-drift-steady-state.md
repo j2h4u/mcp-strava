@@ -40,7 +40,7 @@ This cascade requires SUSTAINED effort. If you walk instead of run, you're reduc
 | Run then walk | 145 bpm @ 9 km/h | 120 bpm @ 5 km/h | Pace change, NOT drift |
 | Mountain hike | 130 bpm @ 3 km/h (up) | 110 bpm @ 5 km/h (down) | Terrain change, NOT drift |
 
-## This Athlete's Data ([REDACTED-NAME], May 2026)
+## This Athlete's Data (May 2026)
 
 7 recent Night Runs: CV 32-50% (all > 25% threshold)
 8 recent Hikes: CV 31-51% (all > 25% threshold)

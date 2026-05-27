@@ -1,7 +1,7 @@
 # Sports-Medicine Review of the Training-Analytics Methodology
 
 **Reviewer perspective:** sports medicine / exercise physiology, evidence-based.
-**Scope:** physiological soundness of the training-load, readiness, and cardiac-monitoring methodology for a single endurance athlete, male, ~age [REDACTED-AGE] (masters 50+ endurance profile, born [REDACTED-YEAR]), resting HR ~53 bpm, observed HRmax ~191. Mixed running / trail / hiking / walking, training at altitude ([REDACTED-LOCATION], hot continental summers).
+**Scope:** physiological soundness of the training-load, readiness, and cardiac-monitoring methodology for a single male masters endurance athlete (50+), resting HR ~53 bpm, observed HRmax ~191. Mixed running / trail / hiking / walking, training at altitude ([REDACTED-LOCATION], hot continental summers).
 
 This review judges *what* the system computes physiologically — load quantification, the impulse-response model, zones, cardiac drift, HR recovery, cardiac cost, safety flagging, and sport-specific handling — and *whether the methodology is defensible*. It is implementation-agnostic. Several recommendations from the prior (May 2026) review have since been adopted; those are credited below, and the remaining gaps re-prioritized.
 
