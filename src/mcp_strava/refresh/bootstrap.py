@@ -6,7 +6,6 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from mcp_strava.adapters.sqlite.migrations import run_preflight
 from mcp_strava.adapters.strava import (
     FileTokenProvider,
     RateLimitPolicy,
@@ -32,23 +31,12 @@ def _now_iso() -> str:
     return datetime.now().isoformat()
 
 
-def ensure_refresh_schema(preflight_report) -> None:
-    row_counts = getattr(preflight_report, "row_counts", {})
-    if "refresh_state" not in row_counts or "refresh_requests" not in row_counts:
-        raise RuntimeError(
-            "Refresh metadata schema is missing. Run `python -m mcp_strava admin db-migrate` "
-            "before refresh operations."
-        )
-
-
 def ensure_runtime_refresh_schema(settings: Settings) -> None:
-    if settings.database_path.suffix.lower() == ".duckdb":
-        with DbConn() as conn:
-            repo = repository_from_connection(conn)
-            repo.get_refresh_state()
-            repo.pending_refresh_requests()
-        return
-    ensure_refresh_schema(run_preflight(settings.database_path))
+    del settings
+    with DbConn() as conn:
+        repo = repository_from_connection(conn)
+        repo.get_refresh_state()
+        repo.pending_refresh_requests()
 
 
 def record_refresh_misconfigured(settings: Settings | None = None) -> None:

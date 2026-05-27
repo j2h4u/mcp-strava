@@ -6,7 +6,7 @@ import json
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 
-from mcp_strava.adapters.sqlite.repository import CURRENT_METRIC_VERSION
+from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION
 from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
     get_training_aggregates_service,

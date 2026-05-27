@@ -244,7 +244,7 @@ def detect_new_types(sport_types: list) -> list:
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Sport-level efficiency config (for analytics.py)
+#  Sport-level efficiency config
 # ═══════════════════════════════════════════════════════════════════
 
 def build_eff_config() -> Dict[str, list]:

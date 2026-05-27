@@ -1,18 +1,12 @@
-"""Prepare canonical live runtime state under /opt/docker/mcp-strava.
-
-After live cutover, `/opt/docker/mcp-strava/data/strava.db` is canonical for
-the MCP container and live refresh/admin CLI operations. Repository
-`data/strava.db` is only a development snapshot unless commands point to it
-explicitly.
-"""
+"""Prepare canonical live DuckDB runtime state under /opt/docker/mcp-strava."""
 
 from __future__ import annotations
 
 import argparse
 import shutil
+from datetime import datetime
 from pathlib import Path
 
-from mcp_strava.adapters.sqlite.backup import create_timestamped_backup
 from mcp_strava.deploy.preflight import validate_runtime_db
 
 LIVE_TARGET_ROOT = Path("/opt/docker/mcp-strava")
@@ -21,7 +15,7 @@ LIVE_TARGET_ROOT = Path("/opt/docker/mcp-strava")
 def _write_live_env(target_root: Path) -> Path:
     live_env_path = target_root / "live.env"
     lines = [
-        f"MCP_STRAVA_DB_PATH={target_root / 'data' / 'strava.db'}",
+        f"MCP_STRAVA_DB_PATH={target_root / 'data' / 'strava.duckdb'}",
         f"MCP_STRAVA_TOKEN_PATH={target_root / '.env'}",
         "",
     ]
@@ -44,7 +38,7 @@ def prepare_runtime(
     source_db = source_db.resolve()
     target_root = target_root.resolve()
     data_dir = target_root / "data"
-    target_db = (data_dir / "strava.db").resolve()
+    target_db = (data_dir / "strava.duckdb").resolve()
 
     if source_db == target_db:
         raise RuntimeError("Source DB and target DB must differ")
@@ -53,7 +47,11 @@ def prepare_runtime(
     data_dir.mkdir(parents=True, exist_ok=True)
     backup_path: Path | None = None
     if target_db.exists():
-        backup_path = create_timestamped_backup(target_db, backups_dir=data_dir / "backups")
+        backups_dir = data_dir / "backups"
+        backups_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup_path = backups_dir / f"strava-{timestamp}.duckdb"
+        shutil.copy2(target_db, backup_path)
 
     shutil.copy2(source_db, target_db)
     try:
@@ -118,4 +116,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

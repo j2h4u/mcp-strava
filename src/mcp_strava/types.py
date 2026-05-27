@@ -1,10 +1,4 @@
-"""Data contracts — all dataclass definitions for inter-module communication.
-
-Every dict returned from metrics/training/analytics/report is typed here.
-Strava API responses are also described as dataclasses for type safety.
-Import this module instead of passing raw dicts.
-+ dc_to_dict() — serialize dataclass tree to JSON-safe dicts.
-"""
+"""Data contracts shared across Strava mirror, metrics, refresh, and services."""
 
 from __future__ import annotations
 
@@ -268,8 +262,7 @@ def parse_strava_athlete(raw: dict) -> StravaAthlete:
 class HrRecovery:
     """HR recovery analysis from pauses during an activity.
     
-    median_rate is the primary metric (bpm/min). May 2026: bpm_per_min
-    duplicate removed (coach review #10).
+    median_rate is the primary metric (bpm/min).
     """
     pauses_found: int
     total_rest_sec: int
@@ -324,11 +317,7 @@ class CardiacDriftResult:
 
 @dataclass
 class EnrichedActivity:
-    """Full enriched activity with computed metrics.
-    
-    May 2026 cleanup: decoupling_pct, decoupling_result, efficiency_factor removed —
-    decoupling almost always N/A for this athlete, EF replaced by CC in progressive signal.
-    """
+    """Full enriched activity with computed metrics."""
     id: int
     date: str
     name: str
@@ -362,30 +351,6 @@ class BanisterResult:
 
 
 @dataclass
-class ProgressiveSignal:
-    """Whether load should grow, hold, or reduce."""
-    load_bonus: float    # -0.20 .. +0.20
-    signal: str          # 'grow' / 'hold' / 'reduce'
-    ef_trend: Optional[str]
-    cc_trend: Optional[str]              # combined CC trend (for backward compat)
-    cc_trends: dict[str, Optional[str]] = field(default_factory=dict)  # per-sport: {'Run': '↓-5%', 'Hike': None}
-    reasons: list[str] = field(default_factory=list)
-
-
-@dataclass
-class PlanDay:
-    """One day in the weekly plan projection."""
-    date: str
-    weekday: str
-    trimp: float
-    activity: str        # 'rest' / 'easy_run' / 'tempo_run' / 'long_run' / 'walk' etc.
-    form: float
-    form_zone: str
-    is_rest: bool = False
-    is_target: bool = False
-
-
-@dataclass
 class SimDay:
     """One simulated day in a Banister forward projection (pure model output)."""
     date: str
@@ -394,126 +359,6 @@ class SimDay:
     fatigue: float
     form: float
     weekday: str = ""
-
-
-@dataclass
-class WeeklyPlan:
-    """Adaptive weekly plan targeting Saturday peak form."""
-    target_day: str
-    target_weekday: str
-    days_to_target: int
-    current_form: float
-    current_form_zone: str
-    completed_days: list['CompletedDay'] = field(default_factory=list)
-    plan_days: list[PlanDay] = field(default_factory=list)
-    saturday_form: float = 0.0
-    on_track: bool = False
-    post_weekend: list['PostWeekendSim'] = field(default_factory=list)
-    sparkline: list['SparklineBar'] = field(default_factory=list)
-    load_bonus: float = 0.0
-    activity_templates: dict[str, float] = field(default_factory=dict)
-
-
-@dataclass
-class CompletedDay:
-    """A day in the past (Mon-today) with known TRIMP."""
-    date: str
-    weekday: str
-    trimp: float
-    type: str       # 'rest' | 'walk' | 'run' | 'hard'
-    is_past: bool = True
-
-
-@dataclass
-class PostWeekendSim:
-    """Projected Monday form after weekend hiking scenarios."""
-    hikes: int           # 0, 1, or 2
-    monday_form: float
-    note: str
-
-
-@dataclass
-class SparklineBar:
-    """Single bar in centered-on-zero form sparkline."""
-    form: float
-    label: str = ''
-    bar: str = ''     # ASCII bar: ▓▓┃··
-    zone: str = ''    # short zone label: 🟢 🟡 etc.
-
-
-@dataclass
-class BySportBreakdown:
-    """Aggregate metrics for a single sport type in the report window."""
-    count: int = 0
-    trimp: float = 0.0
-    distance_km: float = 0.0
-    time_min: float = 0.0
-    elevation_m: float = 0.0
-
-
-@dataclass
-class AcwrPoint:
-    """ACWR snapshot for a single day."""
-    date: str
-    acwr: float
-    fatigue: float
-    fitness: float
-
-
-@dataclass
-class BanisterPoint:
-    """Banister form/fatigue snapshot for a single day."""
-    date: str
-    form: float
-    fatigue: float
-    form_zone: str
-
-
-# ─── Analytics / Rolling Efficiency ───
-
-
-@dataclass
-class ActivityMetrics:
-    """Per-activity efficiency computed from streams (CC, EF, VO2max)."""
-    date: str
-    sport: str
-    cc: float            # cardiac cost = avg_hr / avg_vel
-    cc_adj: float        # elevation-adjusted cardiac cost
-    bkm: Optional[float] # beats per km
-    ef: Optional[float]  # efficiency factor
-    vo2max_est: Optional[float]
-    dist_km: float
-    time_min: float
-    elev: float
-    epkm: float          # elevation gain per km
-
-
-@dataclass
-class RollingEfficiency:
-    """Median efficiency over a rolling window for one sport.
-    
-    CC-only output (May 2026 cleanup): EF, bkm, and VO2max removed.
-    CC and elevation-adjusted CC remain as cardiac-efficiency metrics.
-    """
-    count: int
-    active_days: int
-    total_km: float
-    total_time_h: float
-    total_elev_m: float
-    median_epkm: Optional[float]
-    median_cc: float
-    median_cc_adj: float
-
-
-@dataclass
-class WeeklyDigest:
-    """Full weekly analytics digest."""
-    period: dict         # today, weekday, data_days, first_activity
-    current_state: dict   # load, efficiency per sport, volume per sport
-    trends: dict          # pct changes
-    yoy: dict             # year-over-year comparisons
-    context: dict         # season, streaks, last hike
-    this_week: list[dict] # activities this week
 
 
 # ─── Repository Contracts ───
@@ -702,7 +547,7 @@ class ReadModelRefreshRun:
 
 @dataclass
 class RepositoryActivityRow:
-    """SQLite activity row exposed by repository methods."""
+    """Activity row exposed by repository methods."""
 
     id: int
     date: str
@@ -769,25 +614,6 @@ class RefreshRequestRow:
     requested_for_day: str
     requested_at: str
     consumed_at: str | None = None
-
-
-@dataclass
-class RepositoryPreflightResult:
-    """Repository-level preflight summary shape."""
-
-    user_version: int
-    row_counts: dict[str, int] = field(default_factory=dict)
-    integrity_result: str = "unknown"
-
-
-@dataclass
-class RepositoryMigrationResult:
-    """Repository-level migration status shape."""
-
-    applied: bool
-    from_version: int
-    to_version: int
-    backup_path: str | None = None
 
 
 @dataclass
@@ -954,53 +780,6 @@ class ExcludedInterpretation:
     field: str
     reason: str
     preserved_metric_ids: list[str]
-
-
-# ─── Report ───
-
-
-@dataclass
-class Recommendation:
-    """Training recommendation for today."""
-    action: str          # 'rest' / 'easy' / 'train'
-    intensity: str       # 'low' / 'normal' / 'high'
-    reasons: list[str] = field(default_factory=list)
-    confidence: str = 'high'
-
-
-@dataclass
-class DailyReport:
-    """Full daily training report."""
-    today: str
-    yesterday: str
-    window_days: int
-    window_start: str
-
-    yesterday_activities: list[EnrichedActivity] = field(default_factory=list)
-    yesterday_trimp: float = 0.0
-
-    activities_14d: list[EnrichedActivity] = field(default_factory=list)
-    daily_trimp_14d: dict[str, float] = field(default_factory=dict)
-    total_trimp_14d: float = 0.0
-    avg_trimp_per_day: float = 0.0
-    active_days: int = 0
-    rest_days: int = 0
-    by_sport: dict[str, BySportBreakdown] = field(default_factory=dict)
-
-    banister: Optional[BanisterResult] = None
-    banister_history: list[BanisterPoint] = field(default_factory=list)
-    weekly_trimp: float = 0.0
-
-    acwr: Optional[float] = None
-    acwr_zone: str = 'unknown'
-    acwr_fatigue: float = 0.0
-    acwr_fitness: float = 0.0
-    acwr_history: list[AcwrPoint] = field(default_factory=list)
-
-    recommendation: Optional[Recommendation] = None
-    progressive_signal: Optional[ProgressiveSignal] = None
-    weekly_plan: Optional[WeeklyPlan] = None
-    safety_warnings: list[str] = field(default_factory=list)  # Z5 alerts, etc.
 
 
 # ─── Helpers ───

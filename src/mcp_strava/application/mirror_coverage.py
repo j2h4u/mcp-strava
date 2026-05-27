@@ -4,18 +4,31 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 
-from mcp_strava.adapters.sqlite.repository import SQLiteRepository
-from mcp_strava.db import DbConn
+from mcp_strava.db import DbConn, repository_from_connection
 
 
 def _stream_columns(conn) -> set[str]:
-    return {row[1] for row in conn.execute("PRAGMA table_info(streams)").fetchall()}
+    rows = conn.execute("PRAGMA table_info('streams')").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def _table_exists(conn, table: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_name = ?
+        LIMIT 1
+        """,
+        [table],
+    ).fetchone()
+    return row is not None
 
 
 def get_mirror_coverage_service(*, connection=None) -> dict:
     conn_context = nullcontext(connection) if connection is not None else DbConn()
     with conn_context as conn:
-        repo = SQLiteRepository.from_connection(conn)
+        repo = repository_from_connection(conn)
         stream_columns = _stream_columns(conn)
         activities_total = int(conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0])
         activities_with_streams = int(
@@ -29,9 +42,7 @@ def get_mirror_coverage_service(*, connection=None) -> dict:
             conn.execute(f"SELECT COUNT(*) FROM streams WHERE {gps_where}").fetchone()[0]
         )
         channel_stats = repo.stream_channel_coverage()
-        has_stream_channels = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stream_channels'"
-        ).fetchone() is not None
+        has_stream_channels = _table_exists(conn, "stream_channels")
         has_values_json_col = "values_json" in stream_columns
 
         if has_stream_channels:

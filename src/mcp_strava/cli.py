@@ -5,26 +5,20 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from mcp_strava.adapters.duckdb.migrations import (
-    CANONICAL_DUCKDB_RUNTIME_PATH,
-    DuckDBMigrationError,
-    run_duckdb_cutover,
-)
-from mcp_strava.adapters.sqlite.migrations import run_migrations, run_preflight
-from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.application.freshness import get_freshness_service
 from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
 from mcp_strava.application.metric_services import get_workout_detail_service, list_workouts_service
 from mcp_strava.application.product_facts import get_daily_brief_facts_service, get_weekly_digest_facts_service
 import mcp_strava.refresh.runtime as refresh_runtime
-from mcp_strava.db import DbConn, refresh_token
+from mcp_strava.db import DbConn, refresh_token, repository_from_connection, repository_from_path
+from mcp_strava.deploy.preflight import validate_runtime_db
 from mcp_strava.refresh import RefreshPolicy, RefreshSkipped
 from mcp_strava.types import dc_to_dict
 from mcp_strava.refresh.bootstrap import (
     RealClock,
     RealSleeper,
     build_refresh_collaborators,
-    ensure_refresh_schema,
+    ensure_runtime_refresh_schema,
     record_refresh_misconfigured,
 )
 from mcp_strava.sync import (
@@ -95,7 +89,7 @@ def cmd_db_refresh(args):
 
     force = "--force" in args
     settings = get_settings()
-    ensure_refresh_schema(run_preflight(settings.database_path))
+    ensure_runtime_refresh_schema(settings)
     try:
         settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
     except RuntimeError:
@@ -114,7 +108,7 @@ def cmd_db_refresh(args):
         )
         raise SystemExit(1)
     with DbConn() as conn:
-        repo = SQLiteRepository.from_connection(conn)
+        repo = repository_from_connection(conn)
         result = refresh_runtime.run_once(
             repo,
             transport,
@@ -231,176 +225,29 @@ def cmd_log(args):
 
 
 def _preflight_to_dict(report):
-    return {
-        "path": str(report.path),
-        "user_version": report.user_version,
-        "row_counts": report.row_counts,
-        "integrity_result": report.integrity_result,
-    }
+    return dict(report)
 
 
 def cmd_db_preflight(args):
     _ = args
-    report = run_preflight(get_settings().database_path)
+    report = validate_runtime_db(get_settings().database_path)
     print(json.dumps({"status": "ok", "preflight": _preflight_to_dict(report)}, indent=2, ensure_ascii=False))
 
 
 def cmd_db_check(args):
     _ = args
-    report = run_preflight(get_settings().database_path)
+    report = validate_runtime_db(get_settings().database_path)
     print(json.dumps({"status": "ok", "check": _preflight_to_dict(report)}, indent=2, ensure_ascii=False))
-
-
-def cmd_db_migrate(args):
-    _ = args
-    db_path = Path(get_settings().database_path)
-    backups_dir = db_path.parent / "backups"
-    before = set(backups_dir.glob("strava-*.db")) if backups_dir.exists() else set()
-    post = run_migrations(db_path)
-    after = set(backups_dir.glob("strava-*.db")) if backups_dir.exists() else set()
-    new_files = sorted(after - before, key=lambda p: p.name)
-    backup_path = new_files[-1] if new_files else (sorted(after, key=lambda p: p.name)[-1] if after else None)
-
-    backup_status = None
-    if backup_path is not None:
-        st = backup_path.stat()
-        backup_status = {
-            "path": str(backup_path),
-            "openable": True,
-            "size_bytes": st.st_size,
-            "mode_octal": oct(st.st_mode & 0o777),
-        }
-
-    print(
-        json.dumps(
-            {
-                "status": "ok",
-                "migration": _preflight_to_dict(post),
-                "backup": backup_status,
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-
-
-def _duckdb_cutover_usage() -> str:
-    return (
-        "Usage: python -m mcp_strava admin duckdb-cutover "
-        "--source-sqlite <path> --target-duckdb <path> --backup-dir <path> "
-        "[--apply --confirm-live-cutover] [--json]\n\n"
-        f"Canonical Docker/runtime DuckDB target: {CANONICAL_DUCKDB_RUNTIME_PATH}\n"
-        "This is a local admin storage cutover command. It creates a pinned SQLite backup, "
-        "migrates from that backup into DuckDB, verifies parity, and reports rollback metadata."
-    )
-
-
-def _pop_required_path_option(args: list[str], option: str) -> Path:
-    if option not in args:
-        _usage_error(_duckdb_cutover_usage())
-    idx = args.index(option)
-    if idx + 1 >= len(args):
-        _usage_error(_duckdb_cutover_usage())
-    value = Path(args[idx + 1])
-    del args[idx : idx + 2]
-    return value
-
-
-def _live_looking_duckdb_target(path: Path) -> bool:
-    rendered = str(path)
-    return rendered == CANONICAL_DUCKDB_RUNTIME_PATH or rendered.startswith("/runtime/")
-
-
-def _cutover_report_to_dict(report) -> dict[str, object]:
-    if hasattr(report, "to_dict"):
-        return report.to_dict()
-    return {
-        "backup_path": str(report.backup_path),
-        "duckdb_path": str(report.duckdb_path),
-        "parity_ok": bool(report.parity_ok),
-        "cast_failures": list(report.cast_failures),
-        "rollback": dict(report.rollback),
-    }
-
-
-def cmd_duckdb_cutover(args):
-    if "--help" in args or "-h" in args:
-        print(_duckdb_cutover_usage())
-        return
-
-    json_output = _pop_json_flag(args)
-    apply = "--apply" in args
-    if apply:
-        args.remove("--apply")
-    confirm_live = "--confirm-live-cutover" in args
-    if confirm_live:
-        args.remove("--confirm-live-cutover")
-
-    source_path = _pop_required_path_option(args, "--source-sqlite")
-    target_path = _pop_required_path_option(args, "--target-duckdb")
-    backup_dir = _pop_required_path_option(args, "--backup-dir")
-    if args:
-        _usage_error(_duckdb_cutover_usage())
-
-    if _live_looking_duckdb_target(target_path) and (not apply or not confirm_live):
-        print(
-            "Refusing live-looking DuckDB cutover target without --apply --confirm-live-cutover.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
-
-    if not apply:
-        payload = {
-            "backup_path": None,
-            "duckdb_path": str(target_path),
-            "parity_ok": False,
-            "cast_failures": [],
-            "rollback": {
-                "sqlite_backup_path": None,
-                "duckdb_path": str(target_path),
-                "instructions": [
-                    "rerun with --apply after stopping writers and confirming the target path",
-                ],
-            },
-            "status": "dry_run",
-        }
-    else:
-        try:
-            report = run_duckdb_cutover(
-                source_sqlite_path=source_path,
-                target_duckdb_path=target_path,
-                backup_dir=backup_dir,
-                now=None,
-                owner="cli-admin",
-            )
-        except DuckDBMigrationError as exc:
-            if exc.report is not None:
-                payload = _cutover_report_to_dict(exc.report)
-                payload["status"] = "failed"
-                payload["error"] = str(exc)
-                print(json.dumps(payload, indent=2, ensure_ascii=False))
-            else:
-                print(json.dumps({"status": "failed", "error": str(exc)}, indent=2, ensure_ascii=False))
-            raise SystemExit(1) from exc
-        payload = _cutover_report_to_dict(report)
-
-    if json_output:
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
-        return
-
-    print("DuckDB Cutover")
-    for key in ("backup_path", "duckdb_path", "parity_ok", "cast_failures", "rollback"):
-        print(f"- {key}: {payload.get(key)}")
 
 
 def cmd_mirror_coverage(args):
     json_output = _pop_json_flag(args)
-    db_path: str | None = None
+    db_path: Path | None = None
     if "--db" in args:
         idx = args.index("--db")
         if idx + 1 >= len(args):
             _usage_error("Usage: python -m mcp_strava admin mirror-coverage [--db <path>] [--json]")
-        db_path = args[idx + 1]
+        db_path = Path(args[idx + 1])
         del args[idx : idx + 2]
     if args:
         _usage_error("Usage: python -m mcp_strava admin mirror-coverage [--db <path>] [--json]")
@@ -408,7 +255,7 @@ def cmd_mirror_coverage(args):
     if db_path is None:
         payload = get_mirror_coverage_service()
     else:
-        with SQLiteRepository.from_path(Path(db_path)) as repo:
+        with repository_from_path(db_path) as repo:
             payload = get_mirror_coverage_service(connection=repo.conn)
 
     if json_output:
@@ -425,7 +272,7 @@ def cmd_backfill_streams(args):
     dry_run = False
     since = None
     limit = None
-    db_path: str | None = None
+    db_path: Path | None = None
 
     index = 0
     while index < len(args):
@@ -449,7 +296,7 @@ def cmd_backfill_streams(args):
         if token == "--db":
             if index + 1 >= len(args):
                 _usage_error("Usage: --db <path>")
-            db_path = args[index + 1]
+            db_path = Path(args[index + 1])
             index += 2
             continue
         _usage_error("Usage: python -m mcp_strava admin backfill-streams [--dry-run] [--since YYYY-MM-DD] [--limit N] [--db <path>] [--json]")
@@ -464,9 +311,9 @@ def cmd_backfill_streams(args):
     if db_path is None:
         conn_context = DbConn()
     else:
-        conn_context = SQLiteRepository.from_path(Path(db_path))
+        conn_context = repository_from_path(db_path)
     with conn_context as conn:
-        repo = SQLiteRepository.from_connection(conn) if db_path is None else conn
+        repo = repository_from_connection(conn) if db_path is None else conn
         result = backfill_stream_channels(
             repo,
             transport,
@@ -588,60 +435,12 @@ def _render_metadata(payload):
 
 def _render_daily_report(data):
     data = data or {}
-    if data.get("bundle_id") == "daily_brief":
-        _render_bundle_sections(data)
-        return
-
-    print("Status")
-    print(f"- today: {data.get('today')}")
-    banister = data.get("banister") or {}
-    if banister:
-        print(f"- form: {banister.get('form')}")
-    recommendation = data.get("recommendation") or {}
-    print()
-    print("Recommendation")
-    if recommendation:
-        action = recommendation.get("action") or recommendation.get("message") or recommendation.get("summary")
-        confidence = recommendation.get("confidence")
-        print(f"- action: {action}")
-        if confidence:
-            print(f"- confidence: {confidence}")
-    else:
-        print("- none")
-    print()
-    print("Activities")
-    activities = data.get("yesterday_activities") or data.get("activities_14d") or []
-    if not activities:
-        print("- none")
-    for item in activities[:10]:
-        print(f"- {item.get('date')} {item.get('name')} {item.get('sport_type')} trimp={item.get('trimp')}")
+    _render_bundle_sections(data)
 
 
 def _render_weekly_summary(data):
     data = data or {}
-    if data.get("bundle_id") == "weekly_digest":
-        _render_bundle_sections(data)
-        return
-
-    print("Period")
-    for key, value in (data.get("period") or {}).items():
-        print(f"- {key}: {value}")
-    print()
-    print("Current State")
-    current = data.get("current_state") or {}
-    if current:
-        for key, value in current.items():
-            print(f"- {key}: {value}")
-    else:
-        print("- none")
-    print()
-    print("Trends")
-    trends = data.get("trends") or {}
-    if trends:
-        for key, value in trends.items():
-            print(f"- {key}: {value}")
-    else:
-        print("- none")
+    _render_bundle_sections(data)
 
 
 def _render_recent_workouts(data):
@@ -734,8 +533,7 @@ def cmd_admin(args):
         print(
             "Usage: python -m mcp_strava admin <command> [args]\n"
             f"Admin commands: {', '.join(ADMIN_COMMANDS)}\n"
-            "backfill: legacy full streams/details backfill\n"
-            "backfill-streams: phase-6 stream channel/metadata backfill",
+            "backfill-streams: stream channel/metadata backfill",
             file=sys.stderr,
         )
         raise SystemExit(1)
@@ -758,7 +556,6 @@ ADMIN_COMMANDS = {
     "mirror-refresh": cmd_db_refresh,
     "mirror-coverage": cmd_mirror_coverage,
     "token-refresh": cmd_refresh,
-    "duckdb-cutover": cmd_duckdb_cutover,
     "backfill": cmd_backfill,
     "backfill-streams": cmd_backfill_streams,
     "sql": cmd_sql,
@@ -766,7 +563,6 @@ ADMIN_COMMANDS = {
     "log": cmd_log,
     "db-preflight": cmd_db_preflight,
     "db-check": cmd_db_check,
-    "db-migrate": cmd_db_migrate,
 }
 
 COMMANDS = {

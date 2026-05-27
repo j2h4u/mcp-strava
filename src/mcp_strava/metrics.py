@@ -1,8 +1,8 @@
 """Per-activity metrics: decoupling, efficiency factor, HR recovery,
 vertical speed, and the enrichment wrapper that computes all of them."""
 
-from mcp_strava.adapters.sqlite.repository import SQLiteRepository
 from mcp_strava.constants import Config
+from mcp_strava.db import repository_from_connection
 from mcp_strava.types import (HrRecovery, VerticalSpeed, DecouplingResult,
                                EnrichedActivity, CardiacDriftResult, parse_strava_activity)
 from mcp_strava.cardiac_drift import cardiac_drift as _drift_algo
@@ -19,7 +19,7 @@ def _get_hr_max(conn) -> float:
     global _hr_max_cache
     if _hr_max_cache is not None:
         return _hr_max_cache
-    repo = SQLiteRepository.from_connection(conn)
+    repo = repository_from_connection(conn)
     hr_max = repo.max_heartrate()
     if hr_max is not None:
         _hr_max_cache = float(hr_max)
@@ -56,7 +56,7 @@ def _decoupling_invalid(velocities):
 
 def _fetch_decoupling_rows(conn, activity_id):
     """Fetch stream rows needed for decoupling (HR + velocity, in motion)."""
-    repo = SQLiteRepository.from_connection(conn)
+    repo = repository_from_connection(conn)
     return repo.stream_hr_velocity_rows(activity_id, Config.Thresholds.VEL_MOVING)
 
 
@@ -132,7 +132,7 @@ def calc_cardiac_drift(conn, activity_id, sport_type=None):
     
     Returns CardiacDriftResult or None if insufficient data.
     """
-    repo = SQLiteRepository.from_connection(conn)
+    repo = repository_from_connection(conn)
     rows = repo.stream_hr_velocity_simple_rows(activity_id, Config.Thresholds.VEL_MOVING)
 
     if len(rows) < Config.Metrics.MIN_STREAM_POINTS:
@@ -182,7 +182,7 @@ def calc_efficiency_factor(conn, activity_id):
     """Efficiency Factor: normalized speed / avg HR.
     Higher = more economical movement. Computed as (distance_m / moving_time_s) / avg_hr.
     """
-    repo = SQLiteRepository.from_connection(conn)
+    repo = repository_from_connection(conn)
     moving_time = repo.activity_moving_time(activity_id)
     if moving_time is None or moving_time < Config.Metrics.MIN_MOVING_TIME:
         return None
@@ -201,10 +201,6 @@ def calc_efficiency_factor(conn, activity_id):
     return ef
 
 
-# NOTE: analytics.py has a bulk EF computation in get_activity_metrics()
-# (JOIN-based, for weekly digest). Same formula, different query pattern.
-
-
 # ─── HR Recovery ───
 
 def calc_hr_recovery(conn, activity_id):
@@ -216,7 +212,7 @@ def calc_hr_recovery(conn, activity_id):
     Returns aggregate stats: best/worst/avg recovery, count of pauses, total rest time.
     Returns None if no pauses found (e.g. continuous run with no stops).
     """
-    repo = SQLiteRepository.from_connection(conn)
+    repo = repository_from_connection(conn)
     rows = repo.stream_hr_velocity_time_rows(activity_id)
     if len(rows) < Config.Metrics.MIN_STREAM_POINTS:
         return None
@@ -310,7 +306,7 @@ def calc_hr_recovery(conn, activity_id):
 
 def calc_vertical_speed(conn, activity_id):
     """Vertical ascent speed in m/h. Only counts ascending segments."""
-    repo = SQLiteRepository.from_connection(conn)
+    repo = repository_from_connection(conn)
     rows = repo.stream_altitude_rows(activity_id)
     if len(rows) < Config.Metrics.MIN_ALT_POINTS:
         return None
@@ -352,7 +348,7 @@ def enrich_activity(conn, act_row):
     summary = parse_strava_activity(raw_summary) if raw_summary else None
 
     # TRIMP
-    repo = SQLiteRepository.from_connection(conn)
+    repo = repository_from_connection(conn)
     trimp = repo.activity_trimp(_field("id"))
 
     # HR Recovery
@@ -415,7 +411,7 @@ def check_z5_minutes(conn, activity_id, z5_threshold=None, warn_seconds=300):
     Returns (z5_seconds, warning_reason) or (None, None)."""
     if z5_threshold is None:
         z5_threshold = Config.Zones.BOUNDS[-2]  # Z5 lower bound (penultimate element)
-    repo = SQLiteRepository.from_connection(conn)
+    repo = repository_from_connection(conn)
     z5_sec = repo.activity_z5_seconds(activity_id, z5_threshold)
     if z5_sec == 0:
         return None, None
@@ -433,7 +429,7 @@ def check_hr_anomalies(conn, activity_id, jump_threshold=30, min_anomalies=3):
     
     Returns (anomaly_count, warning_reason) or (0, None).
     """
-    repo = SQLiteRepository.from_connection(conn)
+    repo = repository_from_connection(conn)
     rows = repo.stream_hr_time_rows(activity_id)
     
     if len(rows) < 2:
