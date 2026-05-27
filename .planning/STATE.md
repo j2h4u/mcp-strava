@@ -191,7 +191,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-05-27
-Stopped at: Quick task 260526-u2h complete (DuckDB-only cleanup; SQLite/cutover removed from source, tests, and docs; 291 tests pass). Phase 08 08-08 performance acceptance still open.
+Stopped at: Quick task 260527-nbq complete — HR zones computed on the fly (isolated swappable model), hardcoded athlete HR constants removed, HRrest required via MCP_STRAVA_HR_REST (fail-fast), per-activity HR provenance persisted; TRIMP byte-identical; 300 tests pass. Phase 08 08-08 performance acceptance still open. Deferred: PII git-history filter (post-merge); reference PII scrub of 4 files.
 Resume file: None
 
 ## Quick Tasks Completed
@@ -206,3 +206,4 @@ Resume file: None
 | 260524-xa9 add metric registry calculation descriptions | 2026-05-25 | `.planning/quick/260524-xa9-add-metric-registry-calculation-descript/260524-xa9-SUMMARY.md` |
 | 260525-ng3 Hermes prompts and metric polish | 2026-05-25 | `.planning/quick/260525-ng3-hermes-prompts-metric-polish/260525-ng3-SUMMARY.md` |
 | 260526-lal centralize materialized analytic fact registry and add drift audit | 2026-05-26 | `.planning/quick/260526-lal-centralize-materialized-analytic-fact-re/260526-lal-SUMMARY.md` |
+| 260527-nbq compute HR zones on the fly and drop hardcoded athlete HR constants | 2026-05-27 | `.planning/quick/260527-nbq-wire-hr-zone-computation-on-the-fly-into/260527-nbq-SUMMARY.md` |
