@@ -119,7 +119,7 @@ Live Docker state is expected under `/opt/docker/mcp-strava`:
 
 | Path | Purpose |
 |---|---|
-| `/opt/docker/mcp-strava/data/strava.db` | SQLite mirror and read-model facts |
+| `/opt/docker/mcp-strava/data/strava.duckdb` | DuckDB mirror and read-model facts |
 | `/opt/docker/mcp-strava/.env` | Strava OAuth credentials |
 | `/opt/docker/mcp-strava/live.env` | Optional operator env overlay |
 

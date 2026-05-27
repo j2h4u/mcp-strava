@@ -24,7 +24,6 @@ Admin/debug commands are local operator workflows and are not part of the MCP su
 | `kudos` | available via workout detail | Likes are retained as `kudos_count` in workout lists/details and `kudos_names` in workout detail, not as a separate CLI command. |
 | `db-preflight` | `admin db-preflight` | Local DB safety check. |
 | `db-check` | `admin db-check` | Local DB safety check alias. |
-| `db-migrate` | `admin db-migrate` | Local DB migration with backup. |
 | `db-refresh` | `admin mirror-refresh` | Local mirror refresh. Separate from `admin token-refresh`. |
 
 ## Product Commands
@@ -48,6 +47,6 @@ python -m mcp_strava admin raw /athlete
 python -m mcp_strava admin log [limit]
 python -m mcp_strava admin db-preflight
 python -m mcp_strava admin db-check
-python -m mcp_strava admin db-migrate
-python -m mcp_strava admin duckdb-cutover --source-sqlite <path> --target-duckdb <path> --backup-dir <path> [--apply --confirm-live-cutover] [--json]
+python -m mcp_strava admin mirror-coverage
+python -m mcp_strava admin backfill-streams [activity-id ...]
 ```
