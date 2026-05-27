@@ -3,8 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.hr_zones import zone_bounds as _zone_bounds
 from mcp_strava.training import calc_banister, calc_banister_series, ewma
 from tests._fixtures_duckdb import create_empty_fixture_db
+
+# Use the canonical historical bounds (hr_rest=53, hr_max=191) for test fixtures.
+_TEST_BOUNDS = _zone_bounds(191, 53)
 
 
 def _insert_activity(conn, activity_id: int, day: str, sport_type: str = "Run") -> None:
@@ -77,7 +81,7 @@ def test_daily_load_contract_statuses_and_phase2_numeric_mapping(tmp_path: Path)
         _insert_stream(repo.conn, 103, 0, 150)
         _insert_stream(repo.conn, 103, 1, 150)
 
-        points = repo.daily_load_points_between(rest_day, observed_day, sport_filter="training")
+        points = repo.daily_load_points_between(rest_day, observed_day, bounds=_TEST_BOUNDS, sport_filter="training")
 
     by_day = {p.date: p for p in points}
     assert by_day[rest_day].status == "REST"
@@ -112,8 +116,8 @@ def test_effective_trimp_series_matches_daily_load_points(tmp_path: Path) -> Non
         _insert_stream(repo.conn, 204, 0, 155)
         _insert_stream(repo.conn, 204, 1, 155)
 
-        points = repo.daily_load_points_between("2026-05-16", "2026-05-20", sport_filter="training")
-        effective_series = repo.effective_trimp_history("2026-05-16", "2026-05-20", sport_filter="training")
+        points = repo.daily_load_points_between("2026-05-16", "2026-05-20", bounds=_TEST_BOUNDS, sport_filter="training")
+        effective_series = repo.effective_trimp_history("2026-05-16", "2026-05-20", bounds=_TEST_BOUNDS, sport_filter="training")
 
     today_str = "2026-05-20"
     effective_from_points = {p.date: p.effective_trimp for p in points}

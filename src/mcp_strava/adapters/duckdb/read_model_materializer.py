@@ -4,9 +4,11 @@ from datetime import date, datetime, timedelta
 import json
 from statistics import median
 
-from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository
+from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository, build_trimp_sql
 from mcp_strava.application.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 from mcp_strava.constants import Config
+from mcp_strava.hr_zones import get_zone_model
+from mcp_strava.settings import Settings, get_settings
 from mcp_strava.training import calc_banister_series
 
 ROLLING_WINDOWS = MATERIALIZED_ROLLING_WINDOW_DAYS
@@ -49,8 +51,16 @@ def _stream_counts(repo: DuckDBRepository, activity_id: int) -> tuple[int, int]:
     return int(row["stream_count"] or 0), int(row["hr_count"] or 0)
 
 
-def _zone_seconds(repo: DuckDBRepository, activity_id: int) -> tuple[int, int, int, int, int]:
-    b = Config.Zones.BOUNDS
+def _zone_seconds(
+    repo: DuckDBRepository, activity_id: int, bounds: list[int]
+) -> tuple[int, int, int, int, int]:
+    """Return (z1, z2, z3, z4, z5) second counts using the given zone bounds.
+
+    Uses parameterised integer literals from bounds — identical query structure
+    to the old Config.Zones.BOUNDS path so results are byte-identical for the
+    same bound values.
+    """
+    b = bounds
     row = repo._fetchone(
         """
         SELECT
@@ -99,7 +109,19 @@ def _median_or_none(values: list[object]) -> float | None:
     return round(float(median(numeric)), 3) if numeric else None
 
 
-def _activity_fact(repo: DuckDBRepository, dirty_row, metric_version: int, computed_at: str) -> dict[str, object]:
+_HR_REST_MISSING_MSG = (
+    "MCP_STRAVA_HR_REST is not set — cannot compute HR zones. "
+    "Set MCP_STRAVA_HR_REST to the athlete's resting heart rate."
+)
+
+
+def _activity_fact(
+    repo: DuckDBRepository,
+    dirty_row,
+    metric_version: int,
+    computed_at: str,
+    settings: Settings,
+) -> dict[str, object]:
     activity_id = int(dirty_row["activity_id"])
     activity = repo.activity_by_id(activity_id)
     if activity is None:
@@ -109,7 +131,32 @@ def _activity_fact(repo: DuckDBRepository, dirty_row, metric_version: int, compu
         raise RuntimeError(f"Dirty activity missing source state: {activity_id}")
 
     stream_count, hr_count = _stream_counts(repo, activity_id)
-    zone1, zone2, zone3, zone4, zone5 = _zone_seconds(repo, activity_id)
+
+    # Validate hr_rest before any zone computation.
+    athlete = settings.athlete
+    if athlete.hr_rest is None:
+        raise RuntimeError(_HR_REST_MISSING_MSG)
+
+    # Running max-HR-to-date for this activity's day.
+    activity_day = str(dirty_row["activity_day"])
+    hr_max_observed = repo.max_heartrate_to_date(activity_day)
+
+    # When no HR samples exist at all (for any activity up to this date),
+    # zones are all zero and TRIMP is 0. No fallback max is fabricated.
+    if hr_max_observed is None or hr_count == 0:
+        zone1 = zone2 = zone3 = zone4 = zone5 = 0
+        trimp_val = 0.0
+        hr_max_used = None
+        bounds = None
+    else:
+        bounds = get_zone_model(athlete.hr_zone_model).zone_bounds(
+            hr_max=int(hr_max_observed), hr_rest=athlete.hr_rest
+        )
+        zone1, zone2, zone3, zone4, zone5 = _zone_seconds(repo, activity_id, bounds)
+        trimp_val = repo.activity_trimp(activity_id, bounds=bounds)
+        hr_max_used = int(hr_max_observed)
+
+    min_hr, max_hr = repo.activity_hr_range(activity_id)
     cc = repo.activity_cc(activity_id, Config.Thresholds.VEL_MOVING)
 
     missing: list[str] = []
@@ -135,7 +182,7 @@ def _activity_fact(repo: DuckDBRepository, dirty_row, metric_version: int, compu
         "computed_at": computed_at,
         "completeness_status": completeness,
         "missing_reasons_json": _json_list(missing),
-        "trimp": repo.activity_trimp(activity_id),
+        "trimp": trimp_val,
         "zone1_seconds": zone1,
         "zone2_seconds": zone2,
         "zone3_seconds": zone3,
@@ -164,6 +211,11 @@ def _activity_fact(repo: DuckDBRepository, dirty_row, metric_version: int, compu
         "elevation_gain_m": activity.total_elevation_gain,
         "heartrate_sample_count": hr_count,
         "stream_sample_count": stream_count,
+        "observed_min_hr": min_hr,
+        "observed_max_hr": max_hr,
+        "hr_zone_model": athlete.hr_zone_model,
+        "hr_max_used": hr_max_used,
+        "hr_rest_used": athlete.hr_rest,
     }
 
 
@@ -182,8 +234,9 @@ def _materialize_daily_facts(
     end_day: str,
     metric_version: int,
     computed_at: str,
+    bounds: list[int],
 ) -> dict[str, float]:
-    points = repo.daily_load_points_between(start_day, end_day)
+    points = repo.daily_load_points_between(start_day, end_day, bounds=bounds)
     daily_trimp: dict[str, float] = {}
     for point in points:
         sums = repo._fetchone(
@@ -385,8 +438,13 @@ def materialize_read_model(
     limit: int | None = None,
     run_id: int | None = None,
     renew_lease=None,
+    settings: Settings | None = None,
 ) -> dict[str, object]:
     del run_id
+    _settings = settings or get_settings()
+    athlete = _settings.athlete
+    if athlete.hr_rest is None:
+        raise RuntimeError(_HR_REST_MISSING_MSG)
     computed_at, today = _now_parts(now)
     dirty_rows = repo.dirty_activity_rows_for_materialization(metric_version, limit=limit)
     if not dirty_rows:
@@ -395,11 +453,25 @@ def materialize_read_model(
     start_day = min(str(row["activity_day"]) for row in dirty_rows)
     end_day = max(today, max(str(row["activity_day"]) for row in dirty_rows))
 
+    # Compute a session-level bounds for daily-fact aggregation (global max at end_day).
+    # Per-activity facts use per-activity running max; this bounds is only used to
+    # aggregate already-computed TRIMP via observed_trimp_history (cross-activity daily sum).
+    global_hr_max = repo.max_heartrate_to_date(end_day)
+    if global_hr_max is None:
+        # No HR data at all — use a sentinel bounds that returns 0 TRIMP for all rows.
+        session_bounds = get_zone_model(athlete.hr_zone_model).zone_bounds(
+            hr_max=athlete.hr_rest + 1, hr_rest=athlete.hr_rest
+        )
+    else:
+        session_bounds = get_zone_model(athlete.hr_zone_model).zone_bounds(
+            hr_max=int(global_hr_max), hr_rest=athlete.hr_rest
+        )
+
     repo.begin()
     try:
         activity_count = 0
         for dirty in dirty_rows:
-            fact = _activity_fact(repo, dirty, metric_version, computed_at)
+            fact = _activity_fact(repo, dirty, metric_version, computed_at, _settings)
             repo.upsert_activity_metric_fact(fact)
             activity_count += 1
             if renew_lease is not None:
@@ -411,6 +483,7 @@ def materialize_read_model(
             end_day=end_day,
             metric_version=metric_version,
             computed_at=computed_at,
+            bounds=session_bounds,
         )
         _materialize_model_facts(
             repo,

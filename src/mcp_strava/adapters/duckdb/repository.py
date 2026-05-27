@@ -1149,6 +1149,7 @@ class DuckDBRepository:
         start_day: str,
         end_day: str,
         *,
+        bounds: list[int],
         sport_filter: str | None = None,
     ) -> list[DailyLoadPoint]:
         daily_activity_counts: dict[str, int] = {}
@@ -1205,6 +1206,7 @@ class DuckDBRepository:
             daily_hr_counts[str(row["day"])] = int(row["c"])
 
         observed_trimp = self.observed_trimp_history(
+            bounds=bounds,
             since_day=start_day,
             until_day=end_day,
             sport_filter=sport_filter,
@@ -1252,11 +1254,14 @@ class DuckDBRepository:
         start_day: str,
         end_day: str,
         *,
+        bounds: list[int],
         sport_filter: str | None = None,
     ) -> dict[str, float]:
         return {
             point.date: point.effective_trimp
-            for point in self.daily_load_points_between(start_day, end_day, sport_filter=sport_filter)
+            for point in self.daily_load_points_between(
+                start_day, end_day, bounds=bounds, sport_filter=sport_filter
+            )
         }
 
     def activity_moving_time(self, activity_id: int) -> int | None:
@@ -1345,6 +1350,46 @@ class DuckDBRepository:
             [activity_id],
         )
         return round(float(row["trimp"]), 1) if row and row["trimp"] is not None else 0.0
+
+    def max_heartrate_to_date(self, activity_day: str) -> int | None:
+        """Return the running max heartrate observed up to and including activity_day.
+
+        Used by the materializer to compute zone bounds for each activity based on
+        observations available at the time of that activity, not the all-time max.
+
+        Returns int or None when no HR samples exist up to that date.
+        """
+        row = self._fetchone(
+            """
+            SELECT MAX(s.heartrate) AS hr_max
+            FROM streams s
+            JOIN activities a ON a.id = s.activity_id
+            WHERE s.heartrate IS NOT NULL
+              AND a.activity_day <= CAST(? AS DATE)
+            """,
+            [activity_day],
+        )
+        return int(row["hr_max"]) if row and row["hr_max"] is not None else None
+
+    def activity_hr_range(self, activity_id: int) -> tuple[int | None, int | None]:
+        """Return (min_hr, max_hr) from stream heartrate samples for an activity.
+
+        Used to persist provenance (observed_min_hr, observed_max_hr) alongside
+        each materialised activity fact.
+
+        Returns (None, None) when the activity has no HR samples.
+        """
+        row = self._fetchone(
+            """
+            SELECT MIN(heartrate) AS min_hr, MAX(heartrate) AS max_hr
+            FROM streams
+            WHERE activity_id = ? AND heartrate IS NOT NULL
+            """,
+            [activity_id],
+        )
+        if row and row["min_hr"] is not None:
+            return int(row["min_hr"]), int(row["max_hr"])
+        return None, None
 
     def activity_cc(self, activity_id: int, min_velocity: float) -> float | None:
         row = self._fetchone(
