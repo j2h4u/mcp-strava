@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import json
-import sqlite3
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -10,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from mcp_strava.adapters.duckdb.connection import open_fixture_db
-from mcp_strava.adapters.sqlite.migrations import run_migrations
+from mcp_strava.adapters.duckdb.schema import create_schema
 from mcp_strava.application.metric_registry import METRIC_REGISTRY, metrics_for_aggregate_bundle
 from mcp_strava.types import (
     CompletenessMetadata,
@@ -64,60 +63,23 @@ def forbid_live_network_and_reset_cache(monkeypatch):
     metrics._hr_max_cache = None
 
 
-def _create_base_db(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
-    conn.executescript(
+def _create_base_db(path: Path):
+    conn = open_fixture_db(path)
+    create_schema(conn)
+    return conn
+
+
+def _set_refresh_state(conn, timestamp: str) -> None:
+    conn.execute(
         """
-        CREATE TABLE activities (
-            id INTEGER PRIMARY KEY,
-            date TEXT, name TEXT, sport_type TEXT,
-            distance REAL, moving_time INTEGER, elapsed_time INTEGER,
-            total_elevation_gain REAL,
-            summary_json TEXT, detail_json TEXT, synced_at TEXT
-        );
-        CREATE TABLE streams (
-            activity_id INTEGER, time_offset INTEGER,
-            heartrate INTEGER, velocity REAL, altitude REAL,
-            cadence INTEGER, lat REAL, lng REAL, grade REAL,
-            gap_speed REAL, gap_distance REAL, is_moving INTEGER, latlng TEXT,
-            PRIMARY KEY (activity_id, time_offset)
-        );
-        CREATE INDEX idx_streams_act ON streams(activity_id);
-        CREATE TABLE athlete_zones (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fetched_at TEXT, zones_json TEXT
-        );
-        CREATE TABLE sync_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            status TEXT NOT NULL,
-            activities_seen INTEGER,
-            activities_new INTEGER,
-            streams_fetched INTEGER,
-            details_fetched INTEGER,
-            api_calls INTEGER,
-            error TEXT,
-            kudos_fetched INTEGER
-        );
-        CREATE TABLE kudos (
-            activity_id INTEGER NOT NULL,
-            firstname TEXT NOT NULL DEFAULT '',
-            lastname TEXT NOT NULL DEFAULT '',
-            fetched_at TEXT NOT NULL,
-            PRIMARY KEY (activity_id, firstname, lastname)
-        );
-        PRAGMA user_version=1;
-        """
+        INSERT INTO refresh_state (id, last_success_at, last_attempt_at, last_status)
+        VALUES (1, ?, ?, 'ok')
+        """,
+        [timestamp, timestamp],
     )
-    conn.commit()
-    conn.close()
-    run_migrations(path)
-    opened = sqlite3.connect(path)
-    opened.row_factory = sqlite3.Row
-    return opened
 
 
-def _insert_activity(conn: sqlite3.Connection, activity_id: int, day: str, *, sport_type: str = "Run", with_hr: bool = True) -> None:
+def _insert_activity(conn, activity_id: int, day: str, *, sport_type: str = "Run", with_hr: bool = True) -> None:
     avg_hr = 145.0 if with_hr else None
     max_hr = 165.0 if with_hr else None
     summary = {
@@ -136,12 +98,13 @@ def _insert_activity(conn: sqlite3.Connection, activity_id: int, day: str, *, sp
     conn.execute(
         """
         INSERT INTO activities (
-            id, date, name, sport_type, distance, moving_time, elapsed_time,
+            id, activity_day, date, name, sport_type, distance, moving_time, elapsed_time,
             total_elevation_gain, summary_json, detail_json, synced_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (
+        [
             activity_id,
+            day,
             f"{day}T07:00:00",
             f"Workout {activity_id}",
             sport_type,
@@ -152,20 +115,23 @@ def _insert_activity(conn: sqlite3.Connection, activity_id: int, day: str, *, sp
             json.dumps(summary),
             None,
             f"{day}T08:00:00",
-        ),
+        ],
     )
 
 
-def _insert_streams(conn: sqlite3.Connection, activity_id: int, *, with_hr: bool = True) -> None:
+def _insert_streams(conn, activity_id: int, *, with_hr: bool = True) -> None:
+    rows = []
     for second in range(130):
-        conn.execute(
-            """
-            INSERT INTO streams (
-                activity_id, time_offset, heartrate, velocity, altitude,
-                cadence, lat, lng, grade, gap_speed, gap_distance, is_moving
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
+        values = {
+            "heartrate": 145 if with_hr else None,
+            "velocity_smooth": 3.0,
+            "altitude": 100.0 + second * 0.01,
+            "cadence": 85,
+            "latlng": [43.2, 76.9],
+            "grade_smooth": 0.0,
+        }
+        rows.append(
+            [
                 activity_id,
                 second,
                 145 if with_hr else None,
@@ -178,30 +144,32 @@ def _insert_streams(conn: sqlite3.Connection, activity_id: int, *, with_hr: bool
                 3.0,
                 float(second),
                 1,
-            ),
+                json.dumps(values),
+            ]
         )
+    conn.executemany(
+        """
+        INSERT INTO streams (
+            activity_id, time_offset, heartrate, velocity, altitude, cadence,
+            lat, lng, grade, gap_speed, gap_distance, is_moving, values_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
 
 
-def _fixture_conn(path: Path) -> sqlite3.Connection:
+def _fixture_conn(path: Path):
     conn = _create_base_db(path)
     _insert_activity(conn, 701, "2026-05-20", sport_type="Run", with_hr=True)
     _insert_streams(conn, 701, with_hr=True)
     _insert_activity(conn, 702, "2026-05-21", sport_type="Run", with_hr=True)
     _insert_streams(conn, 702, with_hr=True)
     _insert_activity(conn, 703, "2026-05-19", sport_type="Hike", with_hr=False)
-    conn.execute(
-        """
-        UPDATE refresh_state
-        SET last_success_at = ?, last_attempt_at = ?, last_status = 'ok'
-        WHERE id = 1
-        """,
-        ("2026-05-21T06:00:00", "2026-05-21T06:00:00"),
-    )
-    conn.commit()
+    _set_refresh_state(conn, "2026-05-21T06:00:00")
     return conn
 
 
-def _fixture_conn_compare(path: Path) -> sqlite3.Connection:
+def _fixture_conn_compare(path: Path):
     conn = _create_base_db(path)
     # Period A: run + hike baseline
     _insert_activity(conn, 801, "2026-05-01", sport_type="Run", with_hr=True)
@@ -217,15 +185,7 @@ def _fixture_conn_compare(path: Path) -> sqlite3.Connection:
     _insert_activity(conn, 813, "2026-05-12", sport_type="Run", with_hr=True)
     _insert_streams(conn, 813, with_hr=True)
     _insert_activity(conn, 814, "2026-05-13", sport_type="Hike", with_hr=False)
-    conn.execute(
-        """
-        UPDATE refresh_state
-        SET last_success_at = ?, last_attempt_at = ?, last_status = 'ok'
-        WHERE id = 1
-        """,
-        ("2026-05-14T06:00:00", "2026-05-14T06:00:00"),
-    )
-    conn.commit()
+    _set_refresh_state(conn, "2026-05-14T06:00:00")
     return conn
 
 

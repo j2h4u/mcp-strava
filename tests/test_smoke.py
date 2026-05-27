@@ -3,19 +3,14 @@
 from datetime import date
 from pathlib import Path
 
-import pytest
-import sqlite3
-
 
 def test_imports():
     """All 14 public symbols import without errors — including new Config paths."""
     from mcp_strava.constants import Config
-    from mcp_strava.types import DailyReport, WeeklyPlan, BanisterResult, DecouplingResult
-    from mcp_strava.types import BySportBreakdown, CompletedDay, PostWeekendSim, SparklineBar
+    from mcp_strava.types import BanisterResult, DecouplingResult
     from mcp_strava.db import DbConn, get_daily_trimp_history
     from mcp_strava.metrics import enrich_activity, calc_decoupling_with_gate, calc_efficiency_factor
-    from mcp_strava.training import calc_banister, calc_weekly_plan, forward_simulate, ewma, trend
-    from mcp_strava.analytics import weekly_digest
+    from mcp_strava.training import calc_banister, forward_simulate, ewma
     from mcp_strava.application.freshness import get_freshness_service
     from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
     from mcp_strava.application.metric_services import get_workout_detail_service, list_workouts_service
@@ -27,9 +22,7 @@ def test_imports():
     import mcp_strava.interfaces.mcp_http as mcp_http
     import mcp_strava.deploy.smoke as deploy_smoke
     import mcp_strava.application.metric_registry as metric_registry
-    from mcp_strava.report import daily_report
     from mcp_strava.sync import backfill_activities, build_refresh_collaborators, sync_activities
-    from mcp_strava.trends import compute_trends
 
     # Verify Config hierarchy
     assert Config.Model.Banister.TAU_FITNESS == 42
@@ -58,34 +51,6 @@ def test_imports():
     expected_suffix = str(Path("src") / "mcp_strava" / "types.py")
     assert str(package_types.__file__).endswith(expected_suffix)
     print("  OK: all imports + Config paths verified")
-
-
-def test_daily_report():
-    """Daily report runs end-to-end: DB → metrics → training → recommendation."""
-    db_path = Path("data/strava.db")
-    if not db_path.exists():
-        pytest.skip("data/strava.db missing; SAFE-04 fail-closed behavior is Phase 2 scope")
-    with sqlite3.connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='activities'"
-        ).fetchone()
-    if row is None:
-        pytest.skip("data/strava.db missing activities table; SAFE-04 fail-closed behavior is Phase 2 scope")
-    from mcp_strava.settings import reset_settings_cache
-    reset_settings_cache()
-    from mcp_strava.report import daily_report
-    report = daily_report()
-    assert report is not None, "daily_report() returned None"
-    assert report.today, "Report missing today"
-    assert report.yesterday, "Report missing yesterday"
-    assert len(report.yesterday_activities) >= 0, "yesterday_activities should be a list"
-    if report.recommendation:
-        assert report.recommendation.confidence in ('low', 'medium', 'high'), \
-            f"Invalid confidence: {report.recommendation.confidence}"
-    print(f"  OK: {report.today}, {len(report.yesterday_activities)} activities, "
-          f"form={report.banister.form if report.banister else 'N/A'}, "
-          f"rec={report.recommendation.action if report.recommendation else 'none'}"
-          f"({report.recommendation.confidence if report.recommendation else ''})")
 
 
 def test_forward_simulate():
@@ -133,88 +98,6 @@ def test_ewma():
     r = ewma({"2026-01-01": 100, "2026-01-03": 50}, tau=7, end_date="2026-01-03")
     assert r["2026-01-03"] < 100, "Should decay from 100 through gap day"
     print("  OK: ewma — empty, single, decay, gaps")
-
-
-def test_form_zone_and_marker():
-    """Form zone and sparkline marker boundary values."""
-    from mcp_strava.training import _form_marker, _form_zone
-
-    assert _form_zone(-31) == 'tired'
-    assert _form_zone(5) == 'normal'
-    assert _form_zone(30) == 'fresh'
-    assert _form_marker(-31) == '🟠'
-    assert _form_marker(5) == '🟢'
-    assert _form_marker(30) == '🔵'
-    print("  OK: form zone and marker boundaries correct")
-
-
-def test_trend():
-    """Trend: <4 values, rising, falling, stable, zero denominator."""
-    from mcp_strava.training import trend
-
-    # Insufficient data
-    assert trend([1, 2, 3]) is None
-    assert trend([]) is None
-
-    # Stable (<10% change)
-    r = trend([10, 10, 10, 10])
-    assert r and r.startswith('→')
-
-    # Rising (>10%)
-    r = trend([10, 10, 15, 15])
-    assert r and r.startswith('↑')
-
-    # Falling (>10%)
-    r = trend([15, 15, 10, 10])
-    assert r and r.startswith('↓')
-
-    # Zero denominator (avg of first half = 0)
-    assert trend([0, 0, 1, 1]) is None
-
-    # Negative values
-    r = trend([-20, -20, -10, -10])
-    assert r and r.startswith('↑'), f"Rising (less negative) should be ↑, got {r}"
-
-    # Near-zero values with tiny shift — should be stable (not ↓-100%)
-    # avg1 = (−4+3)/2 = −0.5, avg2 = (−5+6)/2 = 0.5, diff = 1pp → noise
-    r = trend([-4, 3, -5, 6])
-    assert r == '→0%', f"Near-zero tiny shift should be →0%, got {r}"
-
-    # Near-zero values with genuine shift → floor denominator
-    # avg1 = (−2+2)/2 = 0.0 → returns None (zero denominator guard)
-    # Use avg1 = 3: (−2+8)/2 = 3.0, avg2 = (12+14)/2 = 13.0
-    # abs(3) < 5 → near-zero mode, abs_diff = 10 > 5 → pct = 10/5*100 = 200%
-    r = trend([-2, 8, 12, 14])
-    assert r and r.startswith('↑'), f"Near-zero genuine shift should be ↑, got {r}"
-    print("  OK: trend — edges, rise, fall, stable, zero denom, near-zero clamp")
-
-
-def test_progressive_signal_ignores_stale_cc_trends(monkeypatch):
-    """Progressive CC trends require recent sport-specific data."""
-    import mcp_strava.training as training
-
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.execute("CREATE TABLE activities (id INTEGER PRIMARY KEY, date TEXT, sport_type TEXT)")
-    for activity_id, day in enumerate(("2026-05-09", "2026-05-10", "2026-05-11", "2026-05-12"), start=1):
-        conn.execute(
-            "INSERT INTO activities (id, date, sport_type) VALUES (?, ?, 'Run')",
-            (activity_id, f"{day}T07:00:00"),
-        )
-
-    cc_by_activity = {1: 50.0, 2: 49.0, 3: 48.0, 4: 47.0}
-
-    def fake_efficiency(_conn, activity_id):
-        return 100 / cc_by_activity[activity_id]
-
-    monkeypatch.setattr(training, "calc_efficiency_factor", fake_efficiency)
-    monkeypatch.setattr(training, "calc_hr_recovery", lambda *_args, **_kwargs: None)
-
-    result = training.calc_progressive_signal(conn, {}, today_str="2026-05-25")
-
-    assert result.cc_trends["Run"] is None
-    assert any("нет свежих данных" in reason for reason in result.reasons)
-    assert all("стабилен (None)" not in reason for reason in result.reasons)
 
 
 def test_sim_one_day():
@@ -279,25 +162,6 @@ def test_calc_decoupling():
     assert result is not None
     assert result.decoupling_pct > 0, f"Expected positive decoupling, got {result.decoupling_pct}"
     print(f"  OK: calc_decoupling — pct={result.decoupling_pct}%")
-
-
-def test_median_pct_change():
-    """median and pct_change: empty, odd/even, None/zero edge cases."""
-    from mcp_strava.analytics import median, pct_change
-
-    # median
-    assert median([]) is None
-    assert median([5]) == 5
-    assert median([1, 3]) == 2.0           # even
-    assert median([1, 2, 3]) == 2           # odd
-
-    # pct_change
-    assert pct_change(None, 100) is None    # curr is None
-    assert pct_change(100, None) is None    # prev is None
-    assert pct_change(100, 0) is None       # prev is zero
-    assert pct_change(120, 100) == 20.0     # +20%
-    assert pct_change(80, 100) == -20.0     # -20%
-    print("  OK: median + pct_change — all edge cases")
 
 
 def test_sports_registry():

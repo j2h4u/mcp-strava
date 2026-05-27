@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import subprocess
 import sys
 import tomllib
@@ -52,17 +51,6 @@ def test_found02_dbconn_fails_closed_for_missing_expected_db(tmp_path: Path, mon
         reset_settings_cache()
 
     assert not db_path.exists()
-
-
-def test_found02_explicit_fixture_creation_path_is_available(tmp_path: Path) -> None:
-    db_path = tmp_path / 'fixture-created.db'
-    from mcp_strava.adapters.sqlite.connection import create_empty_mirror
-
-    create_empty_mirror(db_path)
-    assert db_path.exists()
-    with sqlite3.connect(db_path) as conn:
-        row = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone()
-    assert row is None
 
 
 def test_found03_just_test_routes_to_docker_smoke() -> None:

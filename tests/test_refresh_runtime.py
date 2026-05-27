@@ -1,6 +1,5 @@
 import ast
 import json
-import sqlite3
 import urllib.request
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -9,10 +8,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from mcp_strava.adapters.sqlite.migrations import run_migrations
-from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.strava import StravaResponse, StravaUnavailable
 from mcp_strava.adapters.strava.types import StravaRateInfo
+from tests._fixtures_duckdb import create_fixture_db
 
 
 @pytest.fixture(autouse=True)
@@ -93,60 +92,10 @@ class FakeStravaTransport:
         return StravaResponse(data=[], rate_info=StravaRateInfo(), status=200)
 
 
-def _create_fixture_db(path: Path) -> None:
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE activities (
-            id INTEGER PRIMARY KEY,
-            date TEXT, name TEXT, sport_type TEXT,
-            distance REAL, moving_time INTEGER, elapsed_time INTEGER,
-            total_elevation_gain REAL,
-            summary_json TEXT, detail_json TEXT, synced_at TEXT
-        );
-        CREATE TABLE streams (
-            activity_id INTEGER, time_offset INTEGER,
-            heartrate INTEGER, velocity REAL, altitude REAL,
-            cadence INTEGER, lat REAL, lng REAL, grade REAL,
-            gap_speed REAL, gap_distance REAL, is_moving INTEGER, latlng TEXT,
-            PRIMARY KEY (activity_id, time_offset)
-        );
-        CREATE INDEX idx_streams_act ON streams(activity_id);
-        CREATE TABLE athlete_zones (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fetched_at TEXT, zones_json TEXT
-        );
-        CREATE TABLE sync_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            status TEXT NOT NULL,
-            activities_seen INTEGER,
-            activities_new INTEGER,
-            streams_fetched INTEGER,
-            details_fetched INTEGER,
-            api_calls INTEGER,
-            error TEXT,
-            kudos_fetched INTEGER
-        );
-        CREATE TABLE kudos (
-            activity_id INTEGER NOT NULL,
-            firstname TEXT NOT NULL DEFAULT '',
-            lastname TEXT NOT NULL DEFAULT '',
-            fetched_at TEXT NOT NULL,
-            PRIMARY KEY (activity_id, firstname, lastname)
-        );
-        PRAGMA user_version=1;
-        """
-    )
-    conn.commit()
-    conn.close()
-    run_migrations(path)
-
-
-def _repo(tmp_path: Path) -> SQLiteRepository:
-    path = tmp_path / "refresh.db"
-    _create_fixture_db(path)
-    return SQLiteRepository.from_path(path)
+def _repo(tmp_path: Path) -> DuckDBRepository:
+    path = tmp_path / "refresh.duckdb"
+    create_fixture_db(path)
+    return DuckDBRepository.from_path(path)
 
 
 def test_run_once_completes_daily_refresh_per_REFRESH_01_STRAVA_03(tmp_path):
@@ -893,9 +842,9 @@ def test_sync_streams_requests_all_configured_channels_and_writes_projection_met
         )
         fetched = sync_streams(repo, transport, since="2026-05-20")
         stream_rows = repo.activity_stream_rows(500)
-        channel_rows = repo.conn.execute(
+        channel_rows = repo._fetchall(
             "SELECT channel_key, original_size, resolution, series_type, status, error FROM stream_channels WHERE activity_id = 500 ORDER BY channel_key"
-        ).fetchall()
+        )
 
     assert fetched == 1
     stream_call = next(path for path in transport.calls_by_path if path.startswith("/activities/500/streams"))
@@ -986,6 +935,9 @@ def test_unavailable_stream_channels_do_not_create_repeat_backfill_work(tmp_path
             return super().fetch(path)
 
     with _repo(tmp_path) as repo:
+        repo._execute("DELETE FROM streams")
+        repo._execute("DELETE FROM stream_channels")
+        repo._execute("DELETE FROM activities")
         repo.upsert_activity_summary(
             activity_id=500,
             date="2026-05-21T06:00:00Z",

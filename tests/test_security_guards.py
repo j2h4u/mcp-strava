@@ -220,7 +220,6 @@ def test_product_service_registry_excludes_admin_debug_commands() -> None:
         "token-refresh",
         "db-preflight",
         "db-check",
-        "db-migrate",
     }
 
     assert forbidden.isdisjoint(PRODUCT_SERVICES)
@@ -256,20 +255,16 @@ def test_cli_db_refresh_accepts_force_flag_per_D15(monkeypatch, tmp_path: Path) 
         cli,
         "build_refresh_collaborators",
         lambda: (
-            SimpleNamespace(database_path=tmp_path / "strava.db"),
+            SimpleNamespace(database_path=tmp_path / "strava.duckdb"),
             "clock",
             "sleeper",
             "transport",
             "policy",
         ),
     )
-    monkeypatch.setattr(
-        cli,
-        "run_preflight",
-        lambda *_args, **_kwargs: SimpleNamespace(row_counts={"refresh_state": 1, "refresh_requests": 0}),
-    )
+    monkeypatch.setattr(cli, "ensure_runtime_refresh_schema", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "DbConn", FakeDbConn)
-    monkeypatch.setattr(cli.SQLiteRepository, "from_connection", staticmethod(lambda _conn: "repo"))
+    monkeypatch.setattr(cli, "repository_from_connection", lambda _conn: "repo")
     monkeypatch.setattr(cli.refresh_runtime, "run_once", fake_run_once)
 
     cli.cmd_db_refresh(["--force"])
@@ -432,7 +427,6 @@ def test_product_bundle_services_do_not_call_request_time_recompute_or_admin_han
         "cmd_strava_raw",
         "cmd_log",
         "cmd_backfill",
-        "cmd_duckdb_cutover",
         "backfill_activities",
         "sync_activities",
     }
@@ -462,7 +456,6 @@ def test_cli_product_commands_do_not_call_admin_raw_or_recompute_paths() -> None
         "cmd_db_refresh",
         "cmd_strava_raw",
         "cmd_log",
-        "cmd_duckdb_cutover",
         "cmd_mirror_coverage",
         "cmd_backfill_streams",
         "api_request",
@@ -503,9 +496,6 @@ def test_legacy_application_report_and_workout_modules_remain_retired() -> None:
 
 def test_read_modules_do_not_import_strava_or_refresh() -> None:
     read_modules = [
-        "src/mcp_strava/report.py",
-        "src/mcp_strava/analytics.py",
-        "src/mcp_strava/trends.py",
         "src/mcp_strava/training.py",
         "src/mcp_strava/metrics.py",
         "src/mcp_strava/cardiac_drift.py",
@@ -753,17 +743,13 @@ def test_sync_activities_quick_invokes_run_once_with_force_true_per_D15(monkeypa
         )
         return RefreshResult(status="ok", mode=kwargs["mode"], checkpoint_stage="complete")
 
-    monkeypatch.setattr(sync, "get_settings", lambda: SimpleNamespace(database_path=tmp_path / "strava.db"))
-    monkeypatch.setattr(
-        sync,
-        "run_preflight",
-        lambda *_args, **_kwargs: SimpleNamespace(row_counts={"refresh_state": 1, "refresh_requests": 0}),
-    )
+    monkeypatch.setattr(sync, "get_settings", lambda: SimpleNamespace(database_path=tmp_path / "strava.duckdb"))
+    monkeypatch.setattr(sync, "ensure_runtime_refresh_schema", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         sync,
         "build_refresh_collaborators",
         lambda _settings=None: (
-            SimpleNamespace(database_path=tmp_path / "strava.db"),
+            SimpleNamespace(database_path=tmp_path / "strava.duckdb"),
             "clock",
             "sleeper",
             "transport",
@@ -780,22 +766,6 @@ def test_sync_activities_quick_invokes_run_once_with_force_true_per_D15(monkeypa
     assert calls
     assert calls[0]["force"] is True
     assert calls[0]["mode"] == "quick"
-
-
-def test_sync_entrypoints_fail_fast_without_refresh_schema(monkeypatch, tmp_path: Path) -> None:
-    import mcp_strava.sync as sync
-
-    def _unexpected_collaborators(*_args, **_kwargs):
-        raise AssertionError("refresh collaborators must not be built before schema v2 exists")
-
-    monkeypatch.setattr(sync, "get_settings", lambda: SimpleNamespace(database_path=tmp_path / "strava.db"))
-    monkeypatch.setattr(sync, "run_preflight", lambda *_args, **_kwargs: SimpleNamespace(row_counts={}))
-    monkeypatch.setattr(sync, "build_refresh_collaborators", _unexpected_collaborators)
-
-    with pytest.raises(RuntimeError, match="db-migrate"):
-        sync.sync_activities()
-    with pytest.raises(RuntimeError, match="db-migrate"):
-        sync.backfill_activities()
 
 
 def test_default_compose_has_no_public_host_port_binding() -> None:
@@ -836,17 +806,13 @@ def test_backfill_activities_invokes_run_backfill_per_D16(monkeypatch, tmp_path:
         )
         return RefreshResult(status="ok", mode="backfill", checkpoint_stage="complete_backfill")
 
-    monkeypatch.setattr(sync, "get_settings", lambda: SimpleNamespace(database_path=tmp_path / "strava.db"))
-    monkeypatch.setattr(
-        sync,
-        "run_preflight",
-        lambda *_args, **_kwargs: SimpleNamespace(row_counts={"refresh_state": 1, "refresh_requests": 0}),
-    )
+    monkeypatch.setattr(sync, "get_settings", lambda: SimpleNamespace(database_path=tmp_path / "strava.duckdb"))
+    monkeypatch.setattr(sync, "ensure_runtime_refresh_schema", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         sync,
         "build_refresh_collaborators",
         lambda _settings=None: (
-            SimpleNamespace(database_path=tmp_path / "strava.db"),
+            SimpleNamespace(database_path=tmp_path / "strava.duckdb"),
             "clock",
             "sleeper",
             "transport",

@@ -367,10 +367,8 @@ def test_aggregate_query_columns_are_registry_derived():
 
 def test_materializers_use_registry_rolling_windows():
     from mcp_strava.adapters.duckdb.read_model_materializer import ROLLING_WINDOWS as duckdb_windows
-    from mcp_strava.adapters.sqlite.read_model_materializer import ROLLING_WINDOWS as sqlite_windows
 
     assert duckdb_windows == MATERIALIZED_ROLLING_WINDOW_DAYS
-    assert sqlite_windows == MATERIALIZED_ROLLING_WINDOW_DAYS
 
 
 def test_aggregate_exposed_metrics_have_complete_query_metadata():

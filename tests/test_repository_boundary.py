@@ -1,60 +1,10 @@
 import ast
-import sqlite3
 from pathlib import Path
 
 import pytest
 
-from mcp_strava.adapters.sqlite.connection import open_fixture_db
-from mcp_strava.adapters.sqlite.schema import set_user_version
-
-
-def _create_fixture_db(db_path: Path) -> None:
-    conn = sqlite3.connect(db_path)
-    conn.executescript(
-        """
-        CREATE TABLE activities (
-            id INTEGER PRIMARY KEY,
-            date TEXT, name TEXT, sport_type TEXT,
-            distance REAL, moving_time INTEGER, elapsed_time INTEGER,
-            total_elevation_gain REAL,
-            summary_json TEXT, detail_json TEXT, synced_at TEXT
-        );
-        CREATE TABLE streams (
-            activity_id INTEGER, time_offset INTEGER,
-            heartrate INTEGER, velocity REAL, altitude REAL,
-            cadence INTEGER, lat REAL, lng REAL, grade REAL,
-            gap_speed REAL, gap_distance REAL, is_moving INTEGER, latlng TEXT,
-            PRIMARY KEY (activity_id, time_offset)
-        );
-        CREATE INDEX idx_streams_act ON streams(activity_id);
-        CREATE TABLE athlete_zones (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fetched_at TEXT, zones_json TEXT
-        );
-        CREATE TABLE sync_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            status TEXT NOT NULL,
-            activities_seen INTEGER,
-            activities_new INTEGER,
-            streams_fetched INTEGER,
-            details_fetched INTEGER,
-            api_calls INTEGER,
-            error TEXT,
-            kudos_fetched INTEGER
-        );
-        CREATE TABLE kudos (
-            activity_id INTEGER NOT NULL,
-            firstname TEXT NOT NULL DEFAULT '',
-            lastname TEXT NOT NULL DEFAULT '',
-            fetched_at TEXT NOT NULL,
-            PRIMARY KEY (activity_id, firstname, lastname)
-        );
-        """
-    )
-    set_user_version(conn, 1)
-    conn.commit()
-    conn.close()
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from tests._fixtures_duckdb import create_empty_fixture_db, create_fixture_db
 
 
 def _guard_direct_sqlite_boundary() -> list[str]:
@@ -64,10 +14,6 @@ def _guard_direct_sqlite_boundary() -> list[str]:
 
     for py_file in src_root.rglob("*.py"):
         rel = py_file.relative_to(repo_root).as_posix()
-        if rel.startswith("src/mcp_strava/adapters/sqlite/"):
-            continue
-        if rel == "src/mcp_strava/adapters/duckdb/migrations.py":
-            continue
         if rel == "src/mcp_strava/db.py":
             continue
 
@@ -108,9 +54,6 @@ def _guard_direct_sqlite_boundary() -> list[str]:
 def _guard_load_paths_do_not_use_raw_activity_stream_sql() -> list[str]:
     repo_root = Path(__file__).resolve().parents[1]
     files = [
-        repo_root / "src" / "mcp_strava" / "report.py",
-        repo_root / "src" / "mcp_strava" / "analytics.py",
-        repo_root / "src" / "mcp_strava" / "trends.py",
         repo_root / "src" / "mcp_strava" / "metrics.py",
     ]
     violations: list[str] = []
@@ -145,7 +88,7 @@ def _guard_load_paths_do_not_use_raw_activity_stream_sql() -> list[str]:
 def _guard_runtime_does_not_require_streams_latlng_column() -> list[str]:
     repo_root = Path(__file__).resolve().parents[1]
     files = [
-        repo_root / "src" / "mcp_strava" / "adapters" / "sqlite" / "repository.py",
+        repo_root / "src" / "mcp_strava" / "adapters" / "duckdb" / "repository.py",
         repo_root / "src" / "mcp_strava" / "refresh" / "_sync_ops.py",
         repo_root / "src" / "mcp_strava" / "metrics.py",
     ]
@@ -161,25 +104,11 @@ def _guard_runtime_does_not_require_streams_latlng_column() -> list[str]:
     return violations
 
 
-def test_repository_connection_reports_wal_and_busy_timeout(tmp_path: Path) -> None:
-    fixture = tmp_path / "repo.db"
-    _create_fixture_db(fixture)
-
-    with open_fixture_db(fixture) as conn:
-        mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
-        busy = conn.execute("PRAGMA busy_timeout").fetchone()[0]
-
-    assert mode.lower() == "wal"
-    assert int(busy) >= 5000
-
-
 def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_path: Path) -> None:
-    fixture = tmp_path / "repo.db"
-    _create_fixture_db(fixture)
+    fixture = tmp_path / "repo.duckdb"
+    create_empty_fixture_db(fixture)
 
-    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
-
-    with SQLiteRepository.from_path(fixture) as repo:
+    with DuckDBRepository.from_path(fixture) as repo:
         repo.upsert_activity_summary(
             activity_id=1,
             date="2026-05-21T06:00:00Z",
@@ -204,7 +133,8 @@ def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_pat
                     "velocity": 3.5,
                     "altitude": 100.0,
                     "cadence": 85,
-                    "latlng": "[43.2,76.9]",
+                    "lat": 43.2,
+                    "lng": 76.9,
                     "grade": 1.0,
                     "gap_speed": 3.6,
                     "gap_distance": 10.0,
@@ -228,7 +158,8 @@ def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_pat
                         "velocity": 3.5,
                         "altitude": 100.0,
                         "cadence": 85,
-                        "latlng": "[43.2,76.9]",
+                        "lat": 43.2,
+                        "lng": 76.9,
                         "grade": 1.0,
                         "gap_speed": 3.6,
                         "gap_distance": 10.0,
@@ -249,7 +180,8 @@ def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_pat
                     "velocity": 3.5,
                     "altitude": 100.0,
                     "cadence": 85,
-                    "latlng": "[43.2,76.9]",
+                    "lat": 43.2,
+                    "lng": 76.9,
                     "grade": 1.0,
                     "gap_speed": 3.6,
                     "gap_distance": 10.0,
@@ -282,12 +214,10 @@ def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_pat
 
 
 def test_repository_has_stream_channel_coverage_methods(tmp_path: Path) -> None:
-    fixture = tmp_path / "repo.db"
-    _create_fixture_db(fixture)
+    fixture = tmp_path / "repo.duckdb"
+    create_empty_fixture_db(fixture)
 
-    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
-
-    with SQLiteRepository.from_path(fixture) as repo:
+    with DuckDBRepository.from_path(fixture) as repo:
         assert hasattr(repo, "upsert_stream_channel_metadata")
         assert hasattr(repo, "replace_stream_rows_and_channel_metadata")
         assert hasattr(repo, "merge_stream_channel_values")
@@ -297,14 +227,10 @@ def test_repository_has_stream_channel_coverage_methods(tmp_path: Path) -> None:
 def test_replace_stream_rows_and_channel_metadata_stores_null_values_json_when_no_extra_values(
     tmp_path: Path,
 ) -> None:
-    from mcp_strava.adapters.sqlite.migrations import run_migrations
-    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+    fixture = tmp_path / "repo.duckdb"
+    create_empty_fixture_db(fixture)
 
-    fixture = tmp_path / "repo.db"
-    _create_fixture_db(fixture)
-    run_migrations(fixture)
-
-    with SQLiteRepository.from_path(fixture) as repo:
+    with DuckDBRepository.from_path(fixture) as repo:
         repo.upsert_activity_summary(
             activity_id=1,
             date="2026-05-21T06:00:00Z",
@@ -328,7 +254,6 @@ def test_replace_stream_rows_and_channel_metadata_stores_null_values_json_when_n
                     "cadence": 85,
                     "lat": 43.2,
                     "lng": 76.9,
-                    "latlng": "[43.2,76.9]",
                     "grade": 1.0,
                     "gap_speed": 3.6,
                     "gap_distance": 10.0,
@@ -348,8 +273,6 @@ def test_replace_stream_rows_and_channel_metadata_stores_null_values_json_when_n
 
 
 def test_repository_exposes_refresh_methods() -> None:
-    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
-
     expected = {
         "get_refresh_state",
         "acquire_refresh_lease",
@@ -365,12 +288,12 @@ def test_repository_exposes_refresh_methods() -> None:
         "activities_missing_details",
     }
 
-    assert expected <= set(dir(SQLiteRepository))
+    assert expected <= set(dir(DuckDBRepository))
 
 
 def test_repository_boundary_fixtures_do_not_use_live_paths(tmp_path: Path) -> None:
-    fixture = tmp_path / "repo.db"
-    _create_fixture_db(fixture)
+    fixture = tmp_path / "repo.duckdb"
+    create_empty_fixture_db(fixture)
     resolved = fixture.resolve()
     assert "/data/strava.db" not in str(resolved)
     assert "/opt/docker/mcp-strava" not in str(resolved)
@@ -380,20 +303,11 @@ def test_runtime_code_does_not_require_streams_latlng_column() -> None:
     assert _guard_runtime_does_not_require_streams_latlng_column() == []
 
 
-def _create_migrated_fixture(db_path: Path) -> None:
-    from mcp_strava.adapters.sqlite.migrations import run_migrations
-
-    _create_fixture_db(db_path)
-    run_migrations(db_path)
-
-
 def test_acquire_refresh_lease_is_single_writer(tmp_path: Path) -> None:
-    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+    fixture = tmp_path / "repo.duckdb"
+    create_empty_fixture_db(fixture)
 
-    fixture = tmp_path / "repo.db"
-    _create_migrated_fixture(fixture)
-
-    with SQLiteRepository.from_path(fixture) as repo:
+    with DuckDBRepository.from_path(fixture) as repo:
         assert repo.acquire_refresh_lease("owner-a", "2026-05-21T12:10:00Z", "2026-05-21T12:00:00Z")
         assert not repo.acquire_refresh_lease("owner-b", "2026-05-21T12:10:00Z", "2026-05-21T12:00:00Z")
         repo.release_refresh_lease("owner-a")
@@ -401,12 +315,10 @@ def test_acquire_refresh_lease_is_single_writer(tmp_path: Path) -> None:
 
 
 def test_enqueue_refresh_request_is_idempotent_per_D19(tmp_path: Path) -> None:
-    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+    fixture = tmp_path / "repo.duckdb"
+    create_empty_fixture_db(fixture)
 
-    fixture = tmp_path / "repo.db"
-    _create_migrated_fixture(fixture)
-
-    with SQLiteRepository.from_path(fixture) as repo:
+    with DuckDBRepository.from_path(fixture) as repo:
         assert repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
         assert not repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
         assert not repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
@@ -419,13 +331,11 @@ def test_enqueue_refresh_request_is_idempotent_per_D19(tmp_path: Path) -> None:
 def test_mark_refresh_requests_consumed_marks_all_pending_per_D19(tmp_path: Path) -> None:
     from inspect import signature
 
-    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+    fixture = tmp_path / "repo.duckdb"
+    create_empty_fixture_db(fixture)
 
-    fixture = tmp_path / "repo.db"
-    _create_migrated_fixture(fixture)
-
-    assert list(signature(SQLiteRepository.mark_refresh_requests_consumed).parameters) == ["self", "consumed_at"]
-    with SQLiteRepository.from_path(fixture) as repo:
+    assert list(signature(DuckDBRepository.mark_refresh_requests_consumed).parameters) == ["self", "consumed_at"]
+    with DuckDBRepository.from_path(fixture) as repo:
         repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
         repo.enqueue_refresh_request("manual", "2026-05-21")
         repo.enqueue_refresh_request("timer", "2026-05-21")
@@ -435,24 +345,20 @@ def test_mark_refresh_requests_consumed_marks_all_pending_per_D19(tmp_path: Path
 
 
 def test_record_refresh_failure_rejects_unknown_reason_code(tmp_path: Path) -> None:
-    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+    fixture = tmp_path / "repo.duckdb"
+    create_empty_fixture_db(fixture)
 
-    fixture = tmp_path / "repo.db"
-    _create_migrated_fixture(fixture)
-
-    with SQLiteRepository.from_path(fixture) as repo:
+    with DuckDBRepository.from_path(fixture) as repo:
         repo.record_refresh_failure("2026-05-21T12:00:00Z", "rate_limited", "2026-05-21T12:15:00Z")
         with pytest.raises(ValueError):
             repo.record_refresh_failure("2026-05-21T12:00:00Z", "secret-token-leak", None)
 
 
 def test_pending_refresh_requests_and_mark_consumed_roundtrip(tmp_path: Path) -> None:
-    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+    fixture = tmp_path / "repo.duckdb"
+    create_empty_fixture_db(fixture)
 
-    fixture = tmp_path / "repo.db"
-    _create_migrated_fixture(fixture)
-
-    with SQLiteRepository.from_path(fixture) as repo:
+    with DuckDBRepository.from_path(fixture) as repo:
         assert repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
         pending = repo.pending_refresh_requests()
         assert len(pending) == 1
@@ -463,12 +369,10 @@ def test_pending_refresh_requests_and_mark_consumed_roundtrip(tmp_path: Path) ->
 
 
 def test_activities_missing_streams_filters_by_since_per_D16(tmp_path: Path) -> None:
-    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+    fixture = tmp_path / "repo.duckdb"
+    create_empty_fixture_db(fixture)
 
-    fixture = tmp_path / "repo.db"
-    _create_migrated_fixture(fixture)
-
-    with SQLiteRepository.from_path(fixture) as repo:
+    with DuckDBRepository.from_path(fixture) as repo:
         repo.upsert_activity_summary(
             activity_id=101,
             date="2026-05-20T06:00:00Z",
@@ -487,12 +391,10 @@ def test_activities_missing_streams_filters_by_since_per_D16(tmp_path: Path) -> 
 
 
 def test_activities_missing_details_filters_by_since_per_D16(tmp_path: Path) -> None:
-    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
+    fixture = tmp_path / "repo.duckdb"
+    create_empty_fixture_db(fixture)
 
-    fixture = tmp_path / "repo.db"
-    _create_migrated_fixture(fixture)
-
-    with SQLiteRepository.from_path(fixture) as repo:
+    with DuckDBRepository.from_path(fixture) as repo:
         repo.upsert_activity_summary(
             activity_id=101,
             date="2026-05-20T06:00:00Z",
@@ -511,8 +413,8 @@ def test_activities_missing_details_filters_by_since_per_D16(tmp_path: Path) -> 
 
 
 def test_repository_module_does_not_call_strava_network(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    fixture = tmp_path / "repo.db"
-    _create_fixture_db(fixture)
+    fixture = tmp_path / "repo.duckdb"
+    create_empty_fixture_db(fixture)
 
     import mcp_strava.db as legacy_db
 
@@ -522,9 +424,7 @@ def test_repository_module_does_not_call_strava_network(monkeypatch: pytest.Monk
     monkeypatch.setattr(legacy_db, "api_request", _boom)
     monkeypatch.setattr(legacy_db, "refresh_token", _boom)
 
-    from mcp_strava.adapters.sqlite.repository import SQLiteRepository
-
-    with SQLiteRepository.from_path(fixture) as repo:
+    with DuckDBRepository.from_path(fixture) as repo:
         repo.recent_activities(limit=1)
 
 
@@ -542,18 +442,11 @@ def test_runtime_dbconn_and_repository_factory_route_duckdb_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mcp_strava.adapters.duckdb.connection import open_fixture_db
-    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-    from mcp_strava.adapters.duckdb.schema import create_schema
     from mcp_strava.db import DbConn, repository_from_connection
     from mcp_strava.settings import reset_settings_cache
 
     fixture = tmp_path / "strava.duckdb"
-    conn = open_fixture_db(fixture)
-    try:
-        create_schema(conn)
-    finally:
-        conn.close()
+    create_empty_fixture_db(fixture)
 
     monkeypatch.setenv("MCP_STRAVA_DB_PATH", str(fixture))
     reset_settings_cache()
