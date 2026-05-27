@@ -7,9 +7,6 @@ Import what you need::
     threshold = Config.Thresholds.PACE_CV_MAX
 """
 
-from datetime import datetime
-
-
 # ═══════════════════════════════════════════════════════════════
 #  Config — hierarchical constants
 # ═══════════════════════════════════════════════════════════════
@@ -17,15 +14,8 @@ from datetime import datetime
 class Config:
     """All athlete and algorithm parameters in one place."""
 
-    class Athlete:
-        """Athlete profile — not tunable, derived from real data."""
-        DATE_OF_BIRTH = datetime([REDACTED-DOB])  # [REDACTED-NAME], [REDACTED-DOB]
-        HR_MAX = 191                            # Observed max from hike streams
-        HR_REST = 53                            # Samsung Health monthly avg (May 2026)
-
     class Zones:
-        """HR zones for TRIMP calculation (Z0 added for recovery heart rates)."""
-        BOUNDS = [122, 136, 150, 163, 177, 300]   # Z0=recovery(<122), Z1-Z5 Karvonen (HRrest=53, HRmax=191)
+        """HR zones for TRIMP calculation."""
         COEFF  = [0.5, 1, 2, 3, 4, 5]             # Z0 discounted (recovery), Z1-Z5 standard
 
     class Drift:
@@ -132,39 +122,3 @@ SPORT_HIKE     = 'Hike'
 SPORT_TRAILRUN = 'TrailRun'
 
 
-# ═══════════════════════════════════════════════════════════════
-#  Pre-generated TRIMP SQL fragments
-# ═══════════════════════════════════════════════════════════════
-
-def _build_trimp_cases(alias=''):
-    """Build TRIMP SQL CASE expressions from Config.Zones."""
-    b = Config.Zones.BOUNDS
-    c = Config.Zones.COEFF
-    h = alias
-
-    zones = [f"SUM(CASE WHEN {h}heartrate < {b[0]} THEN 1 ELSE 0 END) as z1"]
-    for i in range(1, len(b) - 1):
-        zones.append(f"SUM(CASE WHEN {h}heartrate >= {b[i-1]} AND {h}heartrate < {b[i]} THEN 1 ELSE 0 END) as z{i+1}")
-    zones.append(f"SUM(CASE WHEN {h}heartrate >= {b[-2]} THEN 1 ELSE 0 END) as z{len(b)}")
-
-    parts = [f"SUM(CASE WHEN {h}heartrate < {b[0]} THEN 1 ELSE 0 END) * {c[0]}"]
-    for i in range(1, len(b) - 1):
-        parts.append(f"SUM(CASE WHEN {h}heartrate >= {b[i-1]} AND {h}heartrate < {b[i]} THEN 1 ELSE 0 END) * {c[i]}")
-    parts.append(f"SUM(CASE WHEN {h}heartrate >= {b[-2]} THEN 1 ELSE 0 END) * {c[-1]}")
-
-    trimp = "(" + " +\n                ".join(parts) + ") / 60.0 as trimp"
-    zones_str = ",\n                ".join(zones)
-    return zones_str, trimp
-
-
-ZONES_SQL, TRIMP_SQL   = _build_trimp_cases()
-ZONES_SQL_S, TRIMP_SQL_S = _build_trimp_cases('s.')
-
-# Attach to Config for clean imports
-Config.SQL = type('SQL', (), {
-    'TRIMP': TRIMP_SQL,
-    'ZONES': ZONES_SQL,
-    'TRIMP_S': TRIMP_SQL_S,
-    'ZONES_S': ZONES_SQL_S,
-})()
-del _build_trimp_cases  # no longer needed after module init

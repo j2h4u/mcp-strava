@@ -22,6 +22,57 @@ from mcp_strava.types import (
 )
 
 CURRENT_METRIC_VERSION = 1
+
+
+def build_trimp_sql(bounds: list[int], alias: str = "") -> str:
+    """Build the TRIMP SQL fragment from precomputed integer zone bounds.
+
+    Mirrors the structure of the old _build_trimp_cases() in constants.py so
+    that TRIMP values are byte-identical for the same bounds. Uses
+    Config.Zones.COEFF for zone weights (unchanged).
+
+    Args:
+        bounds: Ordered zone upper bounds list, e.g. [122, 136, 150, 163, 177, 300].
+                Must have at least 2 elements; last element is the cap.
+        alias:  Optional column alias prefix, e.g. "s." to produce "s.heartrate".
+
+    Returns:
+        SQL string ending with "/ 60.0 as trimp".
+    """
+    c = Config.Zones.COEFF
+    h = alias
+    parts = [f"SUM(CASE WHEN {h}heartrate < {bounds[0]} THEN 1 ELSE 0 END) * {c[0]}"]
+    for i in range(1, len(bounds) - 1):
+        parts.append(
+            f"SUM(CASE WHEN {h}heartrate >= {bounds[i-1]} AND {h}heartrate < {bounds[i]} THEN 1 ELSE 0 END) * {c[i]}"
+        )
+    parts.append(f"SUM(CASE WHEN {h}heartrate >= {bounds[-2]} THEN 1 ELSE 0 END) * {c[-1]}")
+    return "(" + " +\n                ".join(parts) + ") / 60.0 as trimp"
+
+
+def build_zones_sql(bounds: list[int], alias: str = "") -> str:
+    """Build the zone-seconds SQL fragment from precomputed integer zone bounds.
+
+    Returns a SQL string with z1..z{n} SUM CASE expressions separated by commas,
+    matching the structure of the old _build_trimp_cases() zones portion.
+
+    Args:
+        bounds: Ordered zone upper bounds list including cap.
+        alias:  Optional column alias prefix, e.g. "s.".
+
+    Returns:
+        SQL string of comma-separated zone SUM expressions.
+    """
+    h = alias
+    zones = [f"SUM(CASE WHEN {h}heartrate < {bounds[0]} THEN 1 ELSE 0 END) as z1"]
+    for i in range(1, len(bounds) - 1):
+        zones.append(
+            f"SUM(CASE WHEN {h}heartrate >= {bounds[i-1]} AND {h}heartrate < {bounds[i]} THEN 1 ELSE 0 END) as z{i+1}"
+        )
+    zones.append(f"SUM(CASE WHEN {h}heartrate >= {bounds[-2]} THEN 1 ELSE 0 END) as z{len(bounds)}")
+    return ",\n                ".join(zones)
+
+
 NON_SEMANTIC_SOURCE_KEYS = frozenset(
     {
         "synced_at",
@@ -1008,10 +1059,18 @@ class DuckDBRepository:
     def observed_trimp_history(
         self,
         *,
+        bounds: list[int],
         since_day: str | None = None,
         until_day: str | None = None,
         sport_filter: str | None = None,
     ) -> dict[str, float]:
+        """Return daily TRIMP history keyed by ISO date string.
+
+        Args:
+            bounds: Precomputed integer zone upper bounds from zone_bounds().
+                    Caller must compute from (running hr_max, hr_rest from settings).
+                    No default — callers must supply bounds explicitly.
+        """
         where = ["s.heartrate IS NOT NULL"]
         params: list[object] = []
         if since_day is not None:
@@ -1026,7 +1085,7 @@ class DuckDBRepository:
             """
             SELECT a.activity_day AS day,
                    """
-            + Config.SQL.TRIMP_S
+            + build_trimp_sql(bounds, alias="s.")
             + """
             FROM activities a
             JOIN streams s ON a.id = s.activity_id
@@ -1272,8 +1331,19 @@ class DuckDBRepository:
             [activity_id],
         )
 
-    def activity_trimp(self, activity_id: int) -> float:
-        row = self._fetchone("SELECT " + Config.SQL.TRIMP + " FROM streams WHERE activity_id = ?", [activity_id])
+    def activity_trimp(self, activity_id: int, *, bounds: list[int]) -> float:
+        """Compute TRIMP for an activity using explicit zone bounds.
+
+        Args:
+            activity_id: The activity to compute TRIMP for.
+            bounds: Precomputed integer zone upper bounds from zone_bounds().
+                    Caller is responsible for obtaining bounds from (hr_max, hr_rest).
+                    No default — callers must compute bounds explicitly.
+        """
+        row = self._fetchone(
+            "SELECT " + build_trimp_sql(bounds) + " FROM streams WHERE activity_id = ?",
+            [activity_id],
+        )
         return round(float(row["trimp"]), 1) if row and row["trimp"] is not None else 0.0
 
     def activity_cc(self, activity_id: int, min_velocity: float) -> float | None:
