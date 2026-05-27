@@ -5,6 +5,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
+from mcp_strava.hr_zones import DEFAULT_MODEL_ID, known_model_ids
+
+
+@dataclass(frozen=True)
+class AthleteSettings:
+    """Athlete heart-rate anchors. ``hr_rest`` has no default — it must be
+    configured by the operator; computations that need it fail fast when unset.
+    ``hr_max`` is observed from the mirror, so it is not configured here."""
+
+    hr_rest: int | None
+    hr_zone_model: str
+
 
 @dataclass(frozen=True)
 class HttpSettings:
@@ -33,6 +45,7 @@ class Settings:
     database_path: Path
     token_path: Path
     runtime_profile: str
+    athlete: AthleteSettings
     http: HttpSettings
     freshness: FreshnessSettings
     refresh: RefreshSettings
@@ -53,6 +66,8 @@ _KEYS = {
     'MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE',
     'MCP_STRAVA_READ_MODEL_BATCH_SIZE',
     'MCP_STRAVA_PROJECT_ROOT',
+    'MCP_STRAVA_HR_REST',
+    'MCP_STRAVA_HR_ZONE_MODEL',
 }
 
 _CacheKey = tuple[tuple[tuple[str, str], ...], str | None, str | None]
@@ -208,6 +223,16 @@ def load_settings(
         'MCP_STRAVA_READ_MODEL_BATCH_SIZE',
     )
 
+    hr_rest_raw = resolve('MCP_STRAVA_HR_REST', '').strip()
+    hr_rest = _parse_int(hr_rest_raw, 'MCP_STRAVA_HR_REST') if hr_rest_raw else None
+    if hr_rest is not None and not (20 <= hr_rest <= 120):
+        raise ValueError('Invalid integer for MCP_STRAVA_HR_REST: out of range')
+    hr_zone_model = resolve('MCP_STRAVA_HR_ZONE_MODEL', DEFAULT_MODEL_ID)
+    if hr_zone_model not in known_model_ids():
+        raise ValueError(
+            f'Unknown MCP_STRAVA_HR_ZONE_MODEL: {hr_zone_model}; known: {known_model_ids()}'
+        )
+
     _validate_ranges(
         http_port,
         warn_age_hours,
@@ -221,6 +246,10 @@ def load_settings(
         database_path=database_path,
         token_path=token_path,
         runtime_profile=runtime_profile,
+        athlete=AthleteSettings(
+            hr_rest=hr_rest,
+            hr_zone_model=hr_zone_model,
+        ),
         http=HttpSettings(
             host=http_host,
             port=http_port,

@@ -243,3 +243,24 @@ def test_load_settings_rejects_warn_age_greater_than_max_age() -> None:
 
     with pytest.raises(ValueError, match='MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS'):
         load_settings(environ=environ, project_root=Path('/tmp/project'))
+
+
+def test_athlete_hr_rest_has_no_default() -> None:
+    settings = load_settings(environ={}, project_root=Path('/tmp/project'))
+    assert settings.athlete.hr_rest is None
+    assert settings.athlete.hr_zone_model == 'karvonen_hrr'
+
+
+def test_athlete_hr_rest_parsed_when_set() -> None:
+    settings = load_settings(environ={'MCP_STRAVA_HR_REST': '53'}, project_root=Path('/tmp/project'))
+    assert settings.athlete.hr_rest == 53
+
+
+def test_athlete_hr_rest_out_of_range_rejected() -> None:
+    with pytest.raises(ValueError, match='MCP_STRAVA_HR_REST'):
+        load_settings(environ={'MCP_STRAVA_HR_REST': '5'}, project_root=Path('/tmp/project'))
+
+
+def test_unknown_hr_zone_model_rejected() -> None:
+    with pytest.raises(ValueError, match='MCP_STRAVA_HR_ZONE_MODEL'):
+        load_settings(environ={'MCP_STRAVA_HR_ZONE_MODEL': 'bogus'}, project_root=Path('/tmp/project'))
