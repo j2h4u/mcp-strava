@@ -595,7 +595,6 @@ def test_refresh_worker_source_uses_storage_neutral_repository_boundary() -> Non
         encoding="utf-8"
     )
 
-    assert "from mcp_strava.adapters.sqlite.repository import SQLiteRepository" not in source
     assert "from mcp_strava.db import DbConn, repository_from_connection" in source
 
 

@@ -7,50 +7,6 @@ from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from tests._fixtures_duckdb import create_empty_fixture_db, create_fixture_db
 
 
-def _guard_direct_sqlite_boundary() -> list[str]:
-    repo_root = Path(__file__).resolve().parents[1]
-    src_root = repo_root / "src" / "mcp_strava"
-    violations: list[str] = []
-
-    for py_file in src_root.rglob("*.py"):
-        rel = py_file.relative_to(repo_root).as_posix()
-        if rel == "src/mcp_strava/db.py":
-            continue
-
-        mod = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
-        sqlite_aliases = set()
-
-        for node in ast.walk(mod):
-            if isinstance(node, ast.Import):
-                for name in node.names:
-                    if name.name == "sqlite3":
-                        sqlite_aliases.add(name.asname or "sqlite3")
-            elif isinstance(node, ast.ImportFrom):
-                if node.module == "sqlite3":
-                    sqlite_aliases.add(node.module)
-            elif isinstance(node, ast.Call):
-                fn = node.func
-                if isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name):
-                    alias = fn.value.id
-                    if alias in sqlite_aliases and fn.attr == "connect":
-                        violations.append(f"{rel}:{node.lineno} direct sqlite connect")
-            elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
-                alias = node.value.id
-                if alias in sqlite_aliases and node.attr == "Connection":
-                    violations.append(f"{rel}:{node.lineno} sqlite Connection reference")
-
-        if rel == "src/mcp_strava/cli.py":
-            tree = mod
-            cmd_sql_ok = False
-            for node in tree.body:
-                if isinstance(node, ast.FunctionDef) and node.name == "cmd_sql":
-                    cmd_sql_ok = True
-            if not cmd_sql_ok:
-                violations.append("src/mcp_strava/cli.py missing cmd_sql allowlist target")
-
-    return violations
-
-
 def _guard_load_paths_do_not_use_raw_activity_stream_sql() -> list[str]:
     repo_root = Path(__file__).resolve().parents[1]
     files = [
@@ -426,11 +382,6 @@ def test_repository_module_does_not_call_strava_network(monkeypatch: pytest.Monk
 
     with DuckDBRepository.from_path(fixture) as repo:
         repo.recent_activities(limit=1)
-
-
-def test_ast_guard_blocks_direct_sqlite_outside_allowlist() -> None:
-    violations = _guard_direct_sqlite_boundary()
-    assert violations == []
 
 
 def test_load_paths_use_repository_instead_of_raw_activity_stream_sql() -> None:
