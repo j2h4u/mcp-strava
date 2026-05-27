@@ -1,0 +1,40 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-05-27T12:48:37.229Z",
+  "context": "default",
+  "phase": "08",
+  "phase_name": "duckdb-primary-storage-aggregate-analytics-surface",
+  "phase_dir": ".planning/phases/08-duckdb-primary-storage-aggregate-analytics-surface",
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "DuckDB-only cleanup (quick 260526-u2h): remove SQLite adapter/cutover from source, tests, docs", "status": "done"},
+    {"id": 2, "name": "Remove residual SQLite traces: service.py dual-mode, freshness docstring, README, AGENTS.md", "status": "done"},
+    {"id": 3, "name": "Remove SQLite-reappearance detector tests + gitignore patterns; rewrite SKILL.md to agent-facing; purge legacy references/ notes; regenerate coach/sports-medicine reviews via expert panel", "status": "done"},
+    {"id": 4, "name": "HR zones on the fly (quick 260527-nbq): isolated hr_zones model, MCP_STRAVA_HR_REST/HR_ZONE_MODEL settings, runtime zone computation from max-HR-to-date + config HRrest, per-activity HR provenance columns, removed Config.Athlete/Zones.BOUNDS/SQL", "status": "done", "commit": "1d06439"},
+    {"id": 5, "name": "Scrub athlete name/DOB/age PII from 4 references domain reviews", "status": "done", "commit": "31fff2e"}
+  ],
+  "remaining_tasks": [
+    {"id": 6, "name": "git-history PII filter (filter-repo --replace-text) to purge name/DOB from baseline commit + all history on main", "status": "deferred", "defer_until": "after this branch merges to main (one branch)"},
+    {"id": 7, "name": "Phase 08 plan 08-08 performance acceptance: just mcp-read-model-perf 20 2 100 (100ms p95 gate) previously failed", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "Phase 08 08-08 100ms p95 perf gate previously failed (get_fitness_state 100.07ms, list_workouts 118.11ms, get_workout_detail 131.93ms); milestone v1.1 not honestly complete until closed", "type": "technical", "workaround": "none yet"}
+  ],
+  "human_actions_pending": [
+    {"action": "Set MCP_STRAVA_HR_REST in the live/runtime env (.env or /opt/docker/mcp-strava/.env)", "context": "HR_REST now has NO default; zone/TRIMP computation fail-fasts if unset. Tests set it to 53 via tests/conftest.py autouse, but the live runtime must set it explicitly (operator's true resting HR; current value was 53).", "blocking": true},
+    {"action": "Decide timing of git-history PII filter", "context": "Name/DOB still live in git history (baseline commit 354dcb9 + on main). Deferred to post-merge by user decision.", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "HR zones computed on the fly via an isolated swappable model (hr_zones.py, Karvonen now)", "rationale": "Future-proof: replace zone method (e.g. threshold-based) without touching load math; model identifier persisted on facts so old data is never retroactively recomputed", "phase": "08"},
+    {"decision": "HRmax = running max observed HR up to and including each activity's date; HRrest from config only (no default, fail-fast)", "rationale": "Stable historical TRIMP (no retroactive drift from a new max), no athlete physiology hardcoded in algorithm code (alienable service)", "phase": "08"},
+    {"decision": "NO hidden defaults anywhere (rejected planner's _DEFAULT_BOUNDS/_FALLBACK_HR_MAX=191/literal 177)", "rationale": "User zero-tolerance for hardcoded athlete constants / hidden fallbacks; fail loud instead", "phase": "08"},
+    {"decision": "git-history PII filter deferred to post-merge", "rationale": "PII is in baseline commit + on main; rewriting once after consolidation is cleaner than filtering two branches now", "phase": "08"},
+    {"decision": "references/ treated as historical archive; linkedin-post-notes.md left untracked/untouched", "rationale": "Personal draft where SQLite/age is the intended comparison content; user said do not touch", "phase": "08"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Recommended order when resuming: (1) merge feat/phase-8-duckdb-primary-storage to main; (2) run the git-history PII filter (git filter-repo --replace-text) on the consolidated history; (3) tackle the Phase 08 08-08 100ms p95 perf gate via `just mcp-read-model-perf 20 2 100`.",
+  "context_notes": "Long session: DuckDB-only cleanup, then a multi-stage HR-zone refactor delivered as quick task 260527-nbq (7 commits cc1513d..1d06439), then reference PII scrub (31fff2e). Full suite GREEN at 300 passed. TRIMP verified byte-identical (Karvonen 50/60/70/80/90 %HRR from 53/191 reproduces [122,136,150,163,177,300]). Fail-fast on unset HR_REST verified at materializer/metrics/aggregate_queries. Working tree clean except untracked references/linkedin-post-notes.md (intentional). Branch not pushed."
+}
