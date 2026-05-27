@@ -190,8 +190,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-26T15:34:00.000Z
-Stopped at: Phase 09 complete; Phase 08 08-08 performance acceptance still open
+Last session: 2026-05-27
+Stopped at: Quick task 260526-u2h complete (DuckDB-only cleanup; SQLite/cutover removed from source, tests, and docs; 291 tests pass). Phase 08 08-08 performance acceptance still open.
 Resume file: None
 
 ## Quick Tasks Completed
