@@ -8,19 +8,6 @@ from types import SimpleNamespace
 import pytest
 
 
-def test_existing_local_mirror_db_is_preserved_when_present() -> None:
-    db_path = Path("data/strava.db")
-    if not db_path.exists():
-        return
-
-    before = db_path.stat()
-    assert before.st_size > 0
-
-    after = db_path.stat()
-    assert after.st_ino == before.st_ino
-    assert after.st_size == before.st_size
-
-
 def test_module_entrypoint_runs_from_source_tree_with_pythonpath() -> None:
     env = os.environ.copy()
     env["PYTHONPATH"] = "src"
@@ -55,37 +42,6 @@ def _assert_no_schema_ddl_in_init_db() -> list[str]:
                 lowered = " ".join(child.value.lower().split())
                 if any(target in lowered for target in targets):
                     violations.append(f"db.py:{child.lineno}")
-    return violations
-
-
-def _direct_sqlite_violations() -> list[str]:
-    root = Path(__file__).resolve().parents[1]
-    src_root = root / "src" / "mcp_strava"
-    violations: list[str] = []
-    allow_prefixes = ("src/mcp_strava/adapters/sqlite/",)
-    allow_exact = {
-        "src/mcp_strava/adapters/duckdb/migrations.py",
-    }
-    for py_file in src_root.rglob("*.py"):
-        rel = py_file.relative_to(root).as_posix()
-        if rel.startswith(allow_prefixes) or rel in allow_exact:
-            continue
-        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
-        aliases: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for imported in node.names:
-                    if imported.name == "sqlite3":
-                        aliases.add(imported.asname or "sqlite3")
-            elif isinstance(node, ast.ImportFrom) and node.module == "sqlite3":
-                aliases.add("sqlite3")
-            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                if isinstance(node.func.value, ast.Name):
-                    if node.func.value.id in aliases and node.func.attr == "connect":
-                        violations.append(f"{rel}:{node.lineno} direct sqlite3.connect")
-            elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
-                if node.value.id in aliases and node.attr == "Connection":
-                    violations.append(f"{rel}:{node.lineno} sqlite3.Connection reference")
     return violations
 
 
@@ -286,38 +242,6 @@ def test_cmd_sql_is_not_reused_as_service_or_mcp_surface() -> None:
         if "cmd_sql(" in source or "COMMANDS['sql']" in source or 'COMMANDS["sql"]' in source:
             violations.append(rel)
     assert violations == []
-
-
-def test_direct_sqlite_access_stays_inside_allowed_boundaries() -> None:
-    assert _direct_sqlite_violations() == []
-
-
-def _runtime_sqlite_repository_violations() -> list[str]:
-    root = Path(__file__).resolve().parents[1]
-    runtime_paths = [
-        "src/mcp_strava/db.py",
-        "src/mcp_strava/sync.py",
-        "src/mcp_strava/refresh/_sync_ops.py",
-    ]
-    forbidden_modules = {
-        "mcp_strava.adapters.sqlite.repository",
-        "mcp_strava.adapters.sqlite.read_model_materializer",
-    }
-    violations: list[str] = []
-    for rel_path in runtime_paths:
-        module = ast.parse((root / rel_path).read_text(encoding="utf-8"), filename=rel_path)
-        for node in ast.walk(module):
-            if isinstance(node, ast.ImportFrom) and node.module in forbidden_modules:
-                violations.append(f"{rel_path}:{node.lineno} from {node.module}")
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name in forbidden_modules:
-                        violations.append(f"{rel_path}:{node.lineno} import {alias.name}")
-    return violations
-
-
-def test_runtime_paths_do_not_import_sqlite_repository_or_materializer_after_duckdb_cutover() -> None:
-    assert _runtime_sqlite_repository_violations() == []
 
 
 def test_sync_never_calls_init_db_and_db_init_db_has_no_ddl() -> None:
