@@ -1,0 +1,55 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-05-28T14:32:34.000Z",
+  "context": "default",
+  "phase": null,
+  "phase_name": null,
+  "phase_dir": null,
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "Close Phase 08-08 perf gate (ReadConn + _read_model_enabled memo)", "status": "done", "commit": "58c7304"},
+    {"id": 2, "name": "HR_REST landmine fix: runtime.env + env_file + eager owner-startup guard", "status": "done", "commit": "35ba755"},
+    {"id": 3, "name": "Docs reorg into docs/{tech,sport,private} + skills/, delete code-duplicate docs (metrics.md, cli.md), kill 4 cargo doc-content tests", "status": "done", "commit": "5455ecf"},
+    {"id": 4, "name": "Remove dead z5/hr-anomaly coaching helpers (Russian strings + Samsung Health PII-adjacent code)", "status": "done", "commit": "5621d24"},
+    {"id": 5, "name": "PII git-history filter via filter-repo (2 passes: regex \\bMaxim\\b worked, Cyrillic literal needed; verified 0 hits, uv.lock + Maximize survived)", "status": "done", "commit": "(history rewritten)"},
+    {"id": 6, "name": "Retire HANDOFF.json and .continue-here.md from 2026-05-27 (every item completed)", "status": "done", "commit": "c831d73"},
+    {"id": 7, "name": "Fold read_model_status into single fact-table pass (LIST FILTER + MAX in one query)", "status": "done", "commit": "d9ed14b"},
+    {"id": 8, "name": "Investigate weekly_digest: verdict — doing its job (bucket=week vs all_time is real work, not inefficiency)", "status": "done"},
+    {"id": 9, "name": "Diagnose DB bloat 765→83 MB on EXPORT/IMPORT; root cause = DuckDB ART-index dead-space + Phase 8 migration aftermath (one-time event)", "status": "done"}
+  ],
+  "remaining_tasks": [
+    {"id": 10, "name": "Verify whether DuckDB ATTACH ... (READ_ONLY) works against a live writer (15 min evidence-gathering — could narrow scope)", "status": "not_started"},
+    {"id": 11, "name": "Wrapper script (just admin <cmd> or admin.sh): compose stop -> run admin -> start; plus better lock-conflict error in DbConn", "status": "not_started"},
+    {"id": 12, "name": "Merge admin backfill + admin backfill-streams into one 'admin catchup' command (rename internals: run_backfill -> run_catchup, run_backfill_stream_channels -> _fetch_missing_stream_channels); delete admin mirror-refresh (refresh worker already handles it)", "status": "not_started"},
+    {"id": 13, "name": "New maintenance/compact.py module; admin compact CLI command; auto-compact at end of admin catchup", "status": "not_started"}
+  ],
+  "blockers": [
+    {
+      "description": "Post-Phase-8 regression: admin CLI commands (backfill, backfill-streams, sql, mirror-refresh, mirror-coverage) cannot open the DB while the owner is running. DuckDB takes an exclusive file lock. Empirically verified — docker exec inside the same container still gets 'Conflicting lock is held in PID 1'. None of these commands have actually worked since the 2026-05-25 DuckDB cutover. User has not noticed because operation is through MCP.",
+      "type": "technical",
+      "workaround": "Stop container -> run admin -> start container. Kaizen verdict: ship this as a wrapper script (Option D) rather than build IPC for ~5 admin events per year."
+    }
+  ],
+  "human_actions_pending": [
+    {
+      "action": "Choose execution scope for next session: (a)+(b) lock-error+wrapper as a small fix, OR full (a)+(b)+(c)+(d) including compact and catchup merge",
+      "context": "Context budget ran out before implementation. Kaizen panel verdict is fully captured in this session's chat and below.",
+      "blocking": false
+    }
+  ],
+  "decisions": [
+    {"decision": "Don't build IPC / live admin transport; ship Option D (wrapper that does compose stop -> admin <cmd> -> start) instead", "rationale": "5 operator events per year on a box where the operator has root. Building admin HTTP/socket transport + pause/resume protocol + atomic-swap dance is textbook over-engineering. Kaizen verdict, agrees with user pushback on operator-workflow framing all day."},
+    {"decision": "Compact runs against a stopped owner (not live)", "rationale": "Stopping the owner makes compact strictly simpler — no pause/resume protocol, no in-flight MCP request draining, no atomic-swap-with-open-file edge cases. Stop+start sidesteps every hard problem."},
+    {"decision": "Merge admin backfill + admin backfill-streams into 'admin catchup'; delete admin mirror-refresh", "rationale": "Two backfill commands distinguish 'missing rows' vs 'missing channels of existing rows' — real data-engineering distinction but irrelevant to a single user who runs this once a year. mirror-refresh is a footgun (refresh worker already runs in-process)."},
+    {"decision": "Internal naming: run_backfill -> run_catchup OK; run_backfill_stream_channels -> _fetch_missing_stream_channels (NOT 'enrich' — that's data-warehouse jargon)", "rationale": "Kaizen called out 'enrich' as obscuring jargon. Internal phase names should be plain English: '_fetch_missing_activities' + '_fetch_missing_stream_channels' as the two phases inside run_catchup."},
+    {"decision": "Stage enum values (STREAMS_BACKFILL, DETAILS_BACKFILL, etc.) stay as-is", "rationale": "They're persisted as strings in refresh_state.checkpoint_stage. Renaming = migration, ratio-cost too high for cosmetics."},
+    {"decision": "DB bloat is a one-time aftermath of the 2026-05-25 Phase 8 SQLite->DuckDB migration, NOT an ongoing problem", "rationale": "read_model_refresh_runs timeline shows the bulk was 25 May (601 activities re-materialized + 13 backfill-channel passes of 25 acts each). Day-in-day-out since: 1 activity per refresh. Steady-state bloat is negligible. The 680 MB sits there until something triggers compact."},
+    {"decision": "weekly_digest is not slower because of inefficiency; it does more work by design (bucket=week => time_bucket() per row + GROUP BY N buckets vs bucket=all_time => constant bucket, 1 group). p95 ~75 ms passes the 100 ms gate with margin. Leave it.", "rationale": "Profile-confirmed via cProfile + per-bundle wall-clock. No fix needed — would require pre-materializing weekly buckets (structural change)."}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Start with task 10 (verify ATTACH READ_ONLY against live writer — 15 min). If it works, scope shrinks: admin sql and admin mirror-coverage can stay live without any transport work, and only catchup/compact/token-refresh need the stop+start wrapper.",
+  "context_notes": "Long session. Throughline: ruthlessly cut cargo (operator-workflow framings, code-duplicate docs, dead Russian zombie code with coaching strings, doc-content tests asserting substring presence, runbook prose duplicating Justfile recipes). User pushed back hard on every reflexive 'enterprise pattern' suggestion — and was right every time. Kaizen panel (pragmatic agent) at the end validated this stance against my own architecture-reflex on the IPC question. The single-user install-and-forget mental model is the design constraint that should be applied earlier next time. Session ran past context budget right at the implementation handoff for admin CLI refactor."
+}
