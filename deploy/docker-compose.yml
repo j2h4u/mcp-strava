@@ -19,6 +19,10 @@ services:
       MCP_STRAVA_REFRESH_INTERVAL_SECONDS: "3600"
       MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE: "50"
       MCP_STRAVA_READ_MODEL_BATCH_SIZE: "25"
+    # Athlete physiology (MCP_STRAVA_HR_REST) lives in this untracked host file,
+    # never inline here — keeps the repo free of hardcoded athlete constants.
+    env_file:
+      - /opt/docker/mcp-strava/runtime.env
     volumes:
       - /opt/docker/mcp-strava:/runtime
     expose: ["8080"]

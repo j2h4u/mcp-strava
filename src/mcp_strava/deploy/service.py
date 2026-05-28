@@ -85,7 +85,31 @@ def _remove_state() -> None:
         path.unlink()
 
 
+def _require_hr_config_for_worker() -> None:
+    """Fail fast at startup if the refresh worker is enabled but HR_REST is unset.
+
+    The in-process refresh worker materializes read-model facts, which computes
+    HR zones and therefore requires MCP_STRAVA_HR_REST. Without this eager check
+    the owner process starts healthy and only fails later, on the first refresh
+    pass — a latent landmine on a headless runtime. A read-only deployment that
+    disables the worker does not need HR_REST and is not blocked.
+    """
+    if not _refresh_worker_enabled():
+        return
+    from mcp_strava.settings import get_settings
+
+    if get_settings().athlete.hr_rest is None:
+        _emit("service_startup_aborted", reason="hr_rest_unset")
+        raise RuntimeError(
+            "MCP_STRAVA_HR_REST is not set — the in-process refresh worker "
+            "cannot compute HR zones. Set MCP_STRAVA_HR_REST to the athlete's "
+            "resting heart rate, or disable MCP_STRAVA_REFRESH_WORKER_ENABLED "
+            "for a read-only runtime."
+        )
+
+
 def _run_duckdb_owner_service() -> int:
+    _require_hr_config_for_worker()
     stop_event = threading.Event()
     refresh_thread: threading.Thread | None = None
     if _refresh_worker_enabled():
