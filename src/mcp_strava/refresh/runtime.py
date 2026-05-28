@@ -64,8 +64,8 @@ def run_once(
             return RefreshSkipped("refresh_delayed")
         if is_active_backfill_stage(state.checkpoint_stage):
             if state.checkpoint_stage == Stage.STREAM_CHANNELS_BACKFILL.value:
-                raise RuntimeError("incompatible checkpoint - stream-channel backfill in progress, run admin backfill-streams")
-            raise RuntimeError("incompatible checkpoint - backfill in progress, run run_backfill")
+                raise RuntimeError("incompatible checkpoint - stream-channel backfill in progress, run admin catchup")
+            raise RuntimeError("incompatible checkpoint - backfill in progress, run run_catchup")
         if (
             not force
             and state.checkpoint_stage == Stage.COMPLETE.value
@@ -128,7 +128,7 @@ def run_once(
         repo.release_refresh_lease(owner)
 
 
-def run_backfill(
+def run_catchup(
     repo,
     transport,
     policy: RefreshPolicy,
@@ -148,7 +148,7 @@ def run_backfill(
         if state.backoff_until and state.backoff_until > now_iso:
             return RefreshSkipped("refresh_delayed")
         if is_stream_channel_backfill_stage(state.checkpoint_stage):
-            raise RuntimeError("incompatible checkpoint - stream-channel backfill must resume via backfill-streams")
+            raise RuntimeError("incompatible checkpoint - stream-channel backfill must resume via admin catchup")
         start_index = _backfill_start_index(state.checkpoint_stage)
         repo.record_refresh_attempt(now_iso)
         streams_fetched = 0
@@ -186,7 +186,7 @@ def run_backfill(
         repo.release_refresh_lease(owner)
 
 
-def run_backfill_stream_channels(
+def run_stream_channel_catchup(
     repo,
     transport,
     policy: RefreshPolicy,

@@ -297,7 +297,7 @@ def test_materialization_lost_lease_fails_closed(monkeypatch, tmp_path):
 
 
 def test_run_backfill_skips_summaries_and_kudos_per_D16(tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, Stage, run_backfill
+    from mcp_strava.refresh import RefreshPolicy, Stage, run_catchup
 
     clock = FakeClock()
     transport = FakeStravaTransport()
@@ -314,7 +314,7 @@ def test_run_backfill_skips_summaries_and_kudos_per_D16(tmp_path):
             summary_json="{}",
             synced_at="2026-05-21T07:00:00Z",
         )
-        result = run_backfill(repo, transport, RefreshPolicy(), clock, FakeSleeper(clock), since="2026-05-20")
+        result = run_catchup(repo, transport, RefreshPolicy(), clock, FakeSleeper(clock), since="2026-05-20")
         state = repo.get_refresh_state()
 
     assert result.status == "ok"
@@ -325,7 +325,7 @@ def test_run_backfill_skips_summaries_and_kudos_per_D16(tmp_path):
 
 
 def test_run_backfill_materializes_after_source_changing_work(monkeypatch, tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, run_backfill
+    from mcp_strava.refresh import RefreshPolicy, run_catchup
     from mcp_strava.refresh import _sync_ops
 
     order: list[str] = []
@@ -339,14 +339,14 @@ def test_run_backfill_materializes_after_source_changing_work(monkeypatch, tmp_p
     )
 
     with _repo(tmp_path) as repo:
-        result = run_backfill(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper(), since="2026-05-20")
+        result = run_catchup(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper(), since="2026-05-20")
 
     assert result.status == "ok"
     assert order == ["streams_backfill", "details_backfill", "read_model_materialize"]
 
 
 def test_run_backfill_failure_preserves_backfill_checkpoint_per_D16(tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, Stage, run_backfill
+    from mcp_strava.refresh import RefreshPolicy, Stage, run_catchup
 
     clock = FakeClock()
     with _repo(tmp_path) as repo:
@@ -362,7 +362,7 @@ def test_run_backfill_failure_preserves_backfill_checkpoint_per_D16(tmp_path):
             summary_json="{}",
             synced_at="2026-05-21T07:00:00Z",
         )
-        result = run_backfill(
+        result = run_catchup(
             repo,
             FakeStravaTransport({"/streams": StravaUnavailable("rate_limited")}),
             RefreshPolicy(),
@@ -377,7 +377,7 @@ def test_run_backfill_failure_preserves_backfill_checkpoint_per_D16(tmp_path):
 
 
 def test_stream_channel_backfill_materializes_after_source_changing_work(monkeypatch, tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, run_backfill_stream_channels
+    from mcp_strava.refresh import RefreshPolicy, run_stream_channel_catchup
     from mcp_strava.refresh import _sync_ops
 
     order: list[str] = []
@@ -414,7 +414,7 @@ def test_stream_channel_backfill_materializes_after_source_changing_work(monkeyp
     )
 
     with _repo(tmp_path) as repo:
-        result = run_backfill_stream_channels(
+        result = run_stream_channel_catchup(
             repo,
             FakeStravaTransport(),
             RefreshPolicy(),
@@ -427,7 +427,7 @@ def test_stream_channel_backfill_materializes_after_source_changing_work(monkeyp
 
 
 def test_run_once_after_complete_backfill_starts_daily_refresh_per_D16(tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, run_backfill, run_once
+    from mcp_strava.refresh import RefreshPolicy, run_catchup, run_once
 
     clock = FakeClock()
     with _repo(tmp_path) as repo:
@@ -443,7 +443,7 @@ def test_run_once_after_complete_backfill_starts_daily_refresh_per_D16(tmp_path)
             summary_json="{}",
             synced_at="2026-05-21T07:00:00Z",
         )
-        assert run_backfill(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock)).status == "ok"
+        assert run_catchup(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock)).status == "ok"
         daily_transport = FakeStravaTransport()
         result = run_once(repo, daily_transport, RefreshPolicy(), clock, FakeSleeper(clock))
 
@@ -916,7 +916,7 @@ def test_sync_streams_records_missing_requested_channels_without_failure(tmp_pat
 
 
 def test_unavailable_stream_channels_do_not_create_repeat_backfill_work(tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, run_backfill_stream_channels
+    from mcp_strava.refresh import RefreshPolicy, run_stream_channel_catchup
     from mcp_strava.refresh._sync_ops import sync_streams
 
     class PartialStreamsTransport(FakeStravaTransport):
@@ -950,7 +950,7 @@ def test_unavailable_stream_channels_do_not_create_repeat_backfill_work(tmp_path
             synced_at="2026-05-21T07:00:00Z",
         )
         assert sync_streams(repo, PartialStreamsTransport(), since="2026-05-20") == 1
-        result = run_backfill_stream_channels(
+        result = run_stream_channel_catchup(
             repo,
             FakeStravaTransport(),
             RefreshPolicy(),
@@ -964,7 +964,7 @@ def test_unavailable_stream_channels_do_not_create_repeat_backfill_work(tmp_path
 
 
 def test_stream_channel_backfill_dry_run_reports_remaining_work_without_transport_calls(tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, run_backfill_stream_channels
+    from mcp_strava.refresh import RefreshPolicy, run_stream_channel_catchup
 
     transport = FakeStravaTransport()
     with _repo(tmp_path) as repo:
@@ -999,7 +999,7 @@ def test_stream_channel_backfill_dry_run_reports_remaining_work_without_transpor
                 }
             ],
         )
-        result = run_backfill_stream_channels(
+        result = run_stream_channel_catchup(
             repo,
             transport,
             RefreshPolicy(),
@@ -1024,21 +1024,21 @@ def test_run_once_rejects_active_stream_channel_backfill_checkpoint(tmp_path):
 
     with _repo(tmp_path) as repo:
         repo.set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, "500")
-        with pytest.raises(RuntimeError, match="admin backfill-streams"):
+        with pytest.raises(RuntimeError, match="admin catchup"):
             run_once(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper())
 
 
-def test_legacy_run_backfill_rejects_stream_channel_backfill_checkpoint(tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, Stage, run_backfill
+def test_run_catchup_rejects_stream_channel_backfill_checkpoint(tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, Stage, run_catchup
 
     with _repo(tmp_path) as repo:
         repo.set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, "500")
-        with pytest.raises(RuntimeError, match="backfill-streams"):
-            run_backfill(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper())
+        with pytest.raises(RuntimeError, match="admin catchup"):
+            run_catchup(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper())
 
 
 def test_stream_channel_backfill_uses_only_streams_endpoint(tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, run_backfill_stream_channels
+    from mcp_strava.refresh import RefreshPolicy, run_stream_channel_catchup
 
     class StreamsOnlyTransport(FakeStravaTransport):
         def fetch(self, path: str) -> StravaResponse:
@@ -1094,7 +1094,7 @@ def test_stream_channel_backfill_uses_only_streams_endpoint(tmp_path):
                 }
             ],
         )
-        result = run_backfill_stream_channels(repo, transport, RefreshPolicy(), FakeClock(), FakeSleeper())
+        result = run_stream_channel_catchup(repo, transport, RefreshPolicy(), FakeClock(), FakeSleeper())
 
     assert result["status"] in {"ok", "delayed"}
     assert any(path.startswith("/activities/500/streams") for path in transport.calls_by_path)
@@ -1103,7 +1103,7 @@ def test_stream_channel_backfill_uses_only_streams_endpoint(tmp_path):
 
 
 def test_stream_channel_backfill_renews_long_lease_during_progress(tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, run_backfill_stream_channels
+    from mcp_strava.refresh import RefreshPolicy, run_stream_channel_catchup
 
     clock = FakeClock()
 
@@ -1161,7 +1161,7 @@ def test_stream_channel_backfill_renews_long_lease_during_progress(tmp_path):
             return original_renew(owner, expires_at)
 
         repo.renew_refresh_lease = record_renewal  # type: ignore[method-assign]
-        result = run_backfill_stream_channels(
+        result = run_stream_channel_catchup(
             repo,
             WaitingStreamsTransport(),
             RefreshPolicy(lease_duration_seconds=10),
@@ -1178,7 +1178,7 @@ def test_stream_channel_backfill_renews_long_lease_during_progress(tmp_path):
 
 
 def test_stream_channel_backfill_rate_limit_keeps_checkpoint_and_rows(tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, Stage, run_backfill_stream_channels
+    from mcp_strava.refresh import RefreshPolicy, Stage, run_stream_channel_catchup
 
     with _repo(tmp_path) as repo:
         repo.upsert_activity_summary(
@@ -1212,7 +1212,7 @@ def test_stream_channel_backfill_rate_limit_keeps_checkpoint_and_rows(tmp_path):
                 }
             ],
         )
-        result = run_backfill_stream_channels(
+        result = run_stream_channel_catchup(
             repo,
             FakeStravaTransport({"/streams": StravaUnavailable("rate_limited")}),
             RefreshPolicy(),

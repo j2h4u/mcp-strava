@@ -155,8 +155,11 @@ def test_cli_includes_namespaced_admin_refresh_commands() -> None:
     import mcp_strava.cli as cli
 
     assert "admin" in _command_registry_names()
-    assert "mirror-refresh" in cli.ADMIN_COMMANDS
+    assert "catchup" in cli.ADMIN_COMMANDS
     assert "token-refresh" in cli.ADMIN_COMMANDS
+    assert "mirror-refresh" not in cli.ADMIN_COMMANDS
+    assert "backfill" not in cli.ADMIN_COMMANDS
+    assert "backfill-streams" not in cli.ADMIN_COMMANDS
     assert "sync" not in cli.ADMIN_COMMANDS
     assert "refresh" not in cli.ADMIN_COMMANDS
 
@@ -179,56 +182,6 @@ def test_product_service_registry_excludes_admin_debug_commands() -> None:
     }
 
     assert forbidden.isdisjoint(PRODUCT_SERVICES)
-
-
-def test_cli_db_refresh_accepts_force_flag_per_D15(monkeypatch, tmp_path: Path) -> None:
-    import mcp_strava.cli as cli
-    from mcp_strava.refresh.runtime import RefreshResult
-
-    calls: list[dict] = []
-
-    class FakeDbConn:
-        def __enter__(self):
-            return object()
-
-        def __exit__(self, exc_type, exc, tb) -> None:
-            return None
-
-    def fake_run_once(repo, transport, policy, clock, sleeper, **kwargs):
-        calls.append(
-            {
-                "repo": repo,
-                "transport": transport,
-                "policy": policy,
-                "clock": clock,
-                "sleeper": sleeper,
-                **kwargs,
-            }
-        )
-        return RefreshResult(status="ok", mode=kwargs["mode"], checkpoint_stage="complete")
-
-    monkeypatch.setattr(
-        cli,
-        "build_refresh_collaborators",
-        lambda: (
-            SimpleNamespace(database_path=tmp_path / "strava.duckdb"),
-            "clock",
-            "sleeper",
-            "transport",
-            "policy",
-        ),
-    )
-    monkeypatch.setattr(cli, "ensure_runtime_refresh_schema", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(cli, "DbConn", FakeDbConn)
-    monkeypatch.setattr(cli, "repository_from_connection", lambda _conn: "repo")
-    monkeypatch.setattr(cli.refresh_runtime, "run_once", fake_run_once)
-
-    cli.cmd_db_refresh(["--force"])
-
-    assert "--force" in _source_text("src/mcp_strava/cli.py")
-    assert calls
-    assert calls[0]["force"] is True
-    assert calls[0]["mode"] == "daily"
 
 
 def test_cmd_sql_is_not_reused_as_service_or_mcp_surface() -> None:
@@ -697,7 +650,7 @@ def test_default_compose_has_no_public_host_port_binding() -> None:
     assert 'ports: ["0.0.0.0' not in text
 
 
-def test_backfill_activities_invokes_run_backfill_per_D16(monkeypatch, tmp_path: Path) -> None:
+def test_backfill_activities_invokes_run_catchup_per_D16(monkeypatch, tmp_path: Path) -> None:
     import mcp_strava.sync as sync
     from mcp_strava.refresh.runtime import RefreshResult
 
@@ -713,7 +666,7 @@ def test_backfill_activities_invokes_run_backfill_per_D16(monkeypatch, tmp_path:
     def fake_run_once(*_args, **_kwargs):
         raise AssertionError("backfill_activities must not call run_once")
 
-    def fake_run_backfill(repo, transport, policy, clock, sleeper, **kwargs):
+    def fake_run_catchup(repo, transport, policy, clock, sleeper, **kwargs):
         calls.append(
             {
                 "repo": repo,
@@ -742,7 +695,7 @@ def test_backfill_activities_invokes_run_backfill_per_D16(monkeypatch, tmp_path:
     monkeypatch.setattr(sync, "DbConn", FakeDbConn)
     monkeypatch.setattr(sync.DuckDBRepository, "from_connection", staticmethod(lambda _conn: "repo"))
     monkeypatch.setattr(sync.refresh_runtime, "run_once", fake_run_once)
-    monkeypatch.setattr(sync.refresh_runtime, "run_backfill", fake_run_backfill)
+    monkeypatch.setattr(sync.refresh_runtime, "run_catchup", fake_run_catchup)
 
     result = sync.backfill_activities(since="2024-01-01")
 

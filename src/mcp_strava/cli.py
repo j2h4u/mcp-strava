@@ -2,6 +2,7 @@
 
 import sys
 import json
+from dataclasses import is_dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -19,15 +20,13 @@ from mcp_strava.refresh.bootstrap import (
     RealClock,
     RealSleeper,
     build_refresh_collaborators,
-    ensure_runtime_refresh_schema,
-    record_refresh_misconfigured,
 )
 from mcp_strava.sync import (
     backfill_activities,
 )
 from mcp_strava.settings import get_settings
 
-backfill_stream_channels = refresh_runtime.run_backfill_stream_channels
+backfill_stream_channels = refresh_runtime.run_stream_channel_catchup
 
 
 class _DryRunStravaTransport:
@@ -62,83 +61,6 @@ def cmd_sql(args):
 def cmd_refresh(args):
     token = refresh_token()
     print(json.dumps({"status": "ok", "token": token[:10]+"..."}))
-
-
-def cmd_backfill(args):
-    try:
-        since = args[0] if args else None
-        backfill_activities(since=since)
-    except Exception as e:
-        import traceback
-        print(f"Backfill failed: {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        raise SystemExit(1)
-
-
-def cmd_db_refresh(args):
-    if "--help" in args or "-h" in args:
-        print(
-            "Usage: python -m mcp_strava admin mirror-refresh [--force]\n\n"
-            "--force  Run a mid-day refresh; bypasses daily idempotency but honours lease/backoff."
-        )
-        return
-
-    unknown = [arg for arg in args if arg != "--force"]
-    if unknown:
-        print(f"Unknown db-refresh option: {unknown[0]}", file=sys.stderr)
-        raise SystemExit(1)
-
-    force = "--force" in args
-    settings = get_settings()
-    ensure_runtime_refresh_schema(settings)
-    try:
-        settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
-    except RuntimeError:
-        record_refresh_misconfigured(settings)
-        print(
-            json.dumps(
-                {
-                    "status": "failed",
-                    "reason": "refresh_misconfigured",
-                    "checkpoint_stage": None,
-                    "forced": force,
-                },
-                indent=2,
-                ensure_ascii=False,
-            )
-        )
-        raise SystemExit(1)
-    with DbConn() as conn:
-        repo = repository_from_connection(conn)
-        result = refresh_runtime.run_once(
-            repo,
-            transport,
-            refresh_policy,
-            clock,
-            sleeper,
-            force=force,
-            mode="daily",
-        )
-
-    if isinstance(result, RefreshSkipped):
-        payload = {
-            "status": "skipped",
-            "reason": result.reason,
-            "checkpoint_stage": None,
-            "forced": force,
-        }
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
-        raise SystemExit(2)
-
-    payload = {
-        "status": result.status,
-        "reason": result.reason,
-        "checkpoint_stage": result.checkpoint_stage,
-        "forced": force,
-    }
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
-    if result.status == "failed":
-        raise SystemExit(1)
 
 
 def cmd_report(args):
@@ -268,7 +190,41 @@ def cmd_mirror_coverage(args):
         print(f"- {key}: {payload.get(key)}")
 
 
-def cmd_backfill_streams(args):
+_CATCHUP_USAGE = (
+    "Usage: python -m mcp_strava admin catchup "
+    "[--since YYYY-MM-DD] [--limit N] [--dry-run] [--db <path>] [--json]"
+)
+
+
+def _phase_payload(result) -> dict:
+    """Normalise a refresh-runtime result (dataclass or dict) to a plain dict."""
+    if isinstance(result, RefreshSkipped):
+        return {"status": "skipped", "reason": result.reason}
+    if is_dataclass(result):
+        return dc_to_dict(result)
+    return result
+
+
+def _print_catchup(payload: dict, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    print("Catchup")
+    for section in ("activities", "stream_channels"):
+        print(f"- {section}:")
+        for key, value in payload[section].items():
+            print(f"    {key}: {value}")
+    print(f"- status: {payload['status']}")
+
+
+def cmd_catchup(args):
+    """Fetch missing activities, then missing stream channels, in one pass.
+
+    Replaces the former ``backfill`` + ``backfill-streams`` admin commands.
+    ``--dry-run`` previews the stream-channel phase only; activity backfill has
+    no preview mode and is skipped under ``--dry-run``. ``--db`` is a dry-run
+    fixture affordance and is rejected without ``--dry-run``.
+    """
     json_output = _pop_json_flag(args)
     dry_run = False
     since = None
@@ -284,7 +240,7 @@ def cmd_backfill_streams(args):
             continue
         if token == "--since":
             if index + 1 >= len(args):
-                _usage_error("Usage: python -m mcp_strava admin backfill-streams [--dry-run] [--since YYYY-MM-DD] [--limit N] [--db <path>] [--json]")
+                _usage_error(_CATCHUP_USAGE)
             since = args[index + 1]
             index += 2
             continue
@@ -300,22 +256,44 @@ def cmd_backfill_streams(args):
             db_path = Path(args[index + 1])
             index += 2
             continue
-        _usage_error("Usage: python -m mcp_strava admin backfill-streams [--dry-run] [--since YYYY-MM-DD] [--limit N] [--db <path>] [--json]")
+        _usage_error(_CATCHUP_USAGE)
+
+    if db_path is not None and not dry_run:
+        _usage_error("--db is only valid together with --dry-run")
 
     if dry_run:
         clock = RealClock()
         sleeper = RealSleeper()
         transport = _DryRunStravaTransport()
         refresh_policy = RefreshPolicy()
-    else:
-        _settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
-    if db_path is None:
-        conn_context = DbConn()
-    else:
-        conn_context = repository_from_path(db_path)
-    with conn_context as conn:
-        repo = repository_from_connection(conn) if db_path is None else conn
-        result = backfill_stream_channels(
+        conn_context = DbConn() if db_path is None else repository_from_path(db_path)
+        with conn_context as conn:
+            repo = repository_from_connection(conn) if db_path is None else conn
+            stream_result = backfill_stream_channels(
+                repo,
+                transport,
+                refresh_policy,
+                clock,
+                sleeper,
+                since=since,
+                limit=limit,
+                dry_run=True,
+            )
+        payload = {
+            "status": "ok",
+            "dry_run": True,
+            "activities": {"status": "skipped", "reason": "activity_backfill_has_no_dry_run"},
+            "stream_channels": _phase_payload(stream_result),
+        }
+        _print_catchup(payload, json_output)
+        return
+
+    activities_result = backfill_activities(since=since)
+
+    _settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
+    with DbConn() as conn:
+        repo = repository_from_connection(conn)
+        stream_result = backfill_stream_channels(
             repo,
             transport,
             refresh_policy,
@@ -323,18 +301,27 @@ def cmd_backfill_streams(args):
             sleeper,
             since=since,
             limit=limit,
-            dry_run=dry_run,
+            dry_run=False,
         )
-    if isinstance(result, RefreshSkipped):
-        payload = {"status": "skipped", "reason": result.reason, "mode": "backfill_stream_channels"}
+
+    activities_payload = _phase_payload(activities_result)
+    stream_payload = _phase_payload(stream_result)
+    statuses = {activities_payload.get("status"), stream_payload.get("status")}
+    if "failed" in statuses:
+        overall = "failed"
+    elif statuses == {"skipped"}:
+        overall = "skipped"
     else:
-        payload = result
-    if json_output:
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
-    else:
-        print("Backfill Streams")
-        for key, value in payload.items():
-            print(f"- {key}: {value}")
+        overall = "ok"
+
+    payload = {
+        "status": overall,
+        "activities": activities_payload,
+        "stream_channels": stream_payload,
+    }
+    _print_catchup(payload, json_output)
+    if overall == "failed":
+        raise SystemExit(1)
 
 
 def _pop_json_flag(args):
@@ -534,7 +521,7 @@ def cmd_admin(args):
         print(
             "Usage: python -m mcp_strava admin <command> [args]\n"
             f"Admin commands: {', '.join(ADMIN_COMMANDS)}\n"
-            "backfill-streams: stream channel/metadata backfill",
+            "catchup: fetch missing activities + stream channels in one pass",
             file=sys.stderr,
         )
         raise SystemExit(1)
@@ -565,11 +552,9 @@ def cmd_admin(args):
 # ═══════════════════════════════════════════════════════════════
 
 ADMIN_COMMANDS = {
-    "mirror-refresh": cmd_db_refresh,
     "mirror-coverage": cmd_mirror_coverage,
     "token-refresh": cmd_refresh,
-    "backfill": cmd_backfill,
-    "backfill-streams": cmd_backfill_streams,
+    "catchup": cmd_catchup,
     "sql": cmd_sql,
     "raw": cmd_strava_raw,
     "log": cmd_log,

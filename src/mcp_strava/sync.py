@@ -48,7 +48,7 @@ def backfill_activities(since: str | None = None):
     _, clock, sleeper, transport, refresh_policy = build_refresh_collaborators(settings)
     with DbConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
-        return refresh_runtime.run_backfill(
+        return refresh_runtime.run_catchup(
             repo,
             transport,
             refresh_policy,

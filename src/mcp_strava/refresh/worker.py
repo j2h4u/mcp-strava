@@ -76,7 +76,7 @@ def _materialize_dirty_read_model(batch_size: int) -> int:
 
 
 def _run_stream_channel_backfill(repo, transport, refresh_policy, clock, sleeper):
-    return refresh_runtime.run_backfill_stream_channels(
+    return refresh_runtime.run_stream_channel_catchup(
         repo,
         transport,
         refresh_policy,

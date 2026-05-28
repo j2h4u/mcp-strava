@@ -20,11 +20,9 @@ from mcp_strava.types import (
 
 
 ADMIN_COMMANDS = {
-    "mirror-refresh",
     "mirror-coverage",
     "token-refresh",
-    "backfill",
-    "backfill-streams",
+    "catchup",
     "sql",
     "raw",
     "log",
@@ -324,9 +322,12 @@ def test_admin_commands_are_namespaced_and_distinct(monkeypatch: pytest.MonkeyPa
     from mcp_strava.application.registry import PRODUCT_SERVICES
 
     assert set(cli.ADMIN_COMMANDS) == ADMIN_COMMANDS
-    assert "mirror-refresh" in cli.ADMIN_COMMANDS
+    assert "catchup" in cli.ADMIN_COMMANDS
     assert "mirror-coverage" in cli.ADMIN_COMMANDS
     assert "token-refresh" in cli.ADMIN_COMMANDS
+    assert "mirror-refresh" not in cli.ADMIN_COMMANDS
+    assert "backfill" not in cli.ADMIN_COMMANDS
+    assert "backfill-streams" not in cli.ADMIN_COMMANDS
     assert "duckdb-cutover" not in cli.ADMIN_COMMANDS
     assert "db-migrate" not in cli.ADMIN_COMMANDS
     assert "sync" not in cli.COMMANDS
@@ -383,7 +384,7 @@ def test_admin_mirror_coverage_json_output(tmp_path: Path, monkeypatch: pytest.M
     assert "refresh_token" not in rendered.lower()
 
 
-def test_admin_backfill_streams_dry_run_json_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_admin_catchup_dry_run_json_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     import mcp_strava.cli as cli
 
     def fake_backfill(*_args, **kwargs):
@@ -399,21 +400,28 @@ def test_admin_backfill_streams_dry_run_json_fields(tmp_path: Path, monkeypatch:
             "checkpoint_stage": "stream_channels_backfill",
         }
 
+    def fail_backfill_activities(*_args, **_kwargs):
+        raise AssertionError("dry-run catchup must not run activity backfill")
+
     def fail_build_refresh_collaborators():
         raise AssertionError("dry-run must not require Strava credentials")
 
     monkeypatch.setattr(cli, "backfill_stream_channels", fake_backfill, raising=False)
+    monkeypatch.setattr(cli, "backfill_activities", fail_backfill_activities, raising=False)
     monkeypatch.setattr(cli, "build_refresh_collaborators", fail_build_refresh_collaborators, raising=False)
     fixture = tmp_path / "coverage.duckdb"
     create_fixture_db(fixture)
     monkeypatch.setattr(
         sys,
         "argv",
-        ["mcp_strava", "admin", "backfill-streams", "--db", str(fixture), "--dry-run", "--json"],
+        ["mcp_strava", "admin", "catchup", "--db", str(fixture), "--dry-run", "--json"],
     )
     cli.main()
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "ok"
+    assert payload["dry_run"] is True
+    assert payload["activities"]["status"] == "skipped"
+    stream = payload["stream_channels"]
     for key in (
         "mode",
         "activities_considered",
@@ -423,7 +431,7 @@ def test_admin_backfill_streams_dry_run_json_fields(tmp_path: Path, monkeypatch:
         "estimated_api_calls",
         "checkpoint_stage",
     ):
-        assert key in payload
+        assert key in stream
 
 
 def test_product_cli_handlers_do_not_call_legacy_or_admin_runtime_directly() -> None:
