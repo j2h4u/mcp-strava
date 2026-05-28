@@ -23,6 +23,26 @@ import duckdb
 from mcp_strava.adapters.duckdb.connection import MirrorDbLocked
 
 
+_SIZE_UNITS = ("B", "KB", "MB", "GB", "TB", "PB")
+
+
+def humanize_bytes(num: int) -> str:
+    """Render a byte count with a unit scaled to its magnitude (1024-based).
+
+    Matches what ``du -h`` / ``ls -lh`` show, e.g. 0 -> "0 B", 102_400 ->
+    "100.0 KB", 765_000_000 -> "729.6 MB". Negative inputs keep their sign.
+    """
+    sign = "-" if num < 0 else ""
+    value = float(abs(num))
+    for unit in _SIZE_UNITS:
+        if value < 1024 or unit == _SIZE_UNITS[-1]:
+            if unit == "B":
+                return f"{sign}{int(value)} {unit}"
+            return f"{sign}{value:.1f} {unit}"
+        value /= 1024
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 def _sql_path(path: Path) -> str:
     """Render a path as a single-quoted SQL string literal."""
     return str(path).replace("'", "''")
@@ -80,11 +100,12 @@ def compact_database(db_path: str | Path, *, backup: bool = True) -> dict:
     _wal_sidecar(source).unlink(missing_ok=True)
 
     size_after = source.stat().st_size
+    reclaimed = size_before - size_after
     return {
         "status": "ok",
         "db_path": str(source),
-        "size_before_bytes": size_before,
-        "size_after_bytes": size_after,
-        "reclaimed_bytes": size_before - size_after,
+        "size_before": humanize_bytes(size_before),
+        "size_after": humanize_bytes(size_after),
+        "reclaimed": humanize_bytes(reclaimed),
         "backup_path": str(backup_path) if backup_path is not None else None,
     }

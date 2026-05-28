@@ -11,7 +11,26 @@ import pytest
 from tests._fixtures_duckdb import ACTIVITY_COUNT, create_fixture_db
 
 from mcp_strava.adapters.duckdb.connection import MirrorDbLocked
-from mcp_strava.maintenance.compact import compact_database
+from mcp_strava.maintenance.compact import compact_database, humanize_bytes
+
+
+@pytest.mark.parametrize(
+    ("num", "expected"),
+    [
+        (0, "0 B"),
+        (512, "512 B"),
+        (1023, "1023 B"),
+        (1024, "1.0 KB"),
+        (102_400, "100.0 KB"),
+        (1024 * 1024, "1.0 MB"),
+        (765_000_000, "729.6 MB"),
+        (5 * 1024**3, "5.0 GB"),
+        (3 * 1024**4, "3.0 TB"),
+        (-1024, "-1.0 KB"),
+    ],
+)
+def test_humanize_bytes_scales_unit_to_magnitude(num: int, expected: str) -> None:
+    assert humanize_bytes(num) == expected
 
 
 def _activity_count(db_path: Path) -> int:
@@ -31,7 +50,7 @@ def test_compact_preserves_data_and_keeps_backup(tmp_path: Path) -> None:
 
     assert result["status"] == "ok"
     assert result["db_path"] == str(db)
-    for key in ("size_before_bytes", "size_after_bytes", "reclaimed_bytes", "backup_path"):
+    for key in ("size_before", "size_after", "reclaimed", "backup_path"):
         assert key in result
     # Data survives the rewrite-and-swap.
     assert _activity_count(db) == ACTIVITY_COUNT
@@ -114,9 +133,9 @@ def test_admin_compact_cli_invokes_compact_database(
         return {
             "status": "ok",
             "db_path": str(db_path),
-            "size_before_bytes": 1000,
-            "size_after_bytes": 400,
-            "reclaimed_bytes": 600,
+            "size_before": "1.0 KB",
+            "size_after": "400 B",
+            "reclaimed": "624 B",
             "backup_path": None,
         }
 
@@ -128,5 +147,5 @@ def test_admin_compact_cli_invokes_compact_database(
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "ok"
-    assert payload["reclaimed_bytes"] == 600
+    assert payload["reclaimed"] == "624 B"
     assert calls == [{"db_path": db, "backup": False}]
