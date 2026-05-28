@@ -110,10 +110,23 @@ def get_freshness_service(
     signal_first_use: bool = True,
     connection=None,
 ) -> ServiceEnvelope:
-    """Return local mirror freshness in the shared service envelope."""
+    """Report how fresh the local Strava mirror is, as a standalone envelope.
+
+    Answers "how stale is our local copy": last successful refresh time + age,
+    last activity time + age, a freshness_state label (fresh/aging/stale/
+    refresh_delayed/refresh_failed), whether a first-use-of-day refresh was just
+    enqueued, and the last error/backoff. The same data is embedded as the
+    ``freshness`` field of every product tool's envelope via
+    ``build_freshness_metadata``; this service exposes only that status on its
+    own. Reached from the ``freshness`` CLI command / capability registry, not
+    from the six MCP product tools.
+    """
     checked_at = now or datetime.now()
     settings = get_settings()
     policy = RefreshPolicy.from_settings(settings)
+    # DbConn (open-per-call), not ReadConn: this is a CLI/registry read on a
+    # one-shot process, so connection reuse buys nothing. The reused thread-local
+    # ReadConn is reserved for the long-lived MCP server read tools.
     conn_context = nullcontext(connection) if connection is not None else DbConn()
 
     with conn_context as conn:

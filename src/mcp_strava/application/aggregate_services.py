@@ -12,7 +12,7 @@ from mcp_strava.adapters.duckdb.aggregate_queries import (
     validate_aggregate_request,
 )
 from mcp_strava.application.freshness import build_freshness_metadata
-from mcp_strava.db import DbConn, repository_from_connection
+from mcp_strava.db import ReadConn, repository_from_connection
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
 from mcp_strava.types import (
@@ -63,7 +63,7 @@ def get_training_aggregates_service(
     metric_definitions = validate_aggregate_request(query_request)
     checked_at = now or datetime.now()
     policy = RefreshPolicy.from_settings(get_settings())
-    conn_context = nullcontext(connection) if connection is not None else DbConn()
+    conn_context = nullcontext(connection) if connection is not None else ReadConn()
 
     with conn_context as conn:
         repo = repository_from_connection(conn)

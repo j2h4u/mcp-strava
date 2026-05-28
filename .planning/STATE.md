@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full-Fidelity Strava Mirror
 status: executing
-last_updated: "2026-05-26T15:33:52.862Z"
-last_activity: 2026-05-26 -- Phase 09 complete; Phase 08 08-08 perf gate remains open
+last_updated: "2026-05-27T00:00:00.000Z"
+last_activity: 2026-05-27 -- Phase 08 08-08 closed; 100 ms p95 gate passes with margin
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 43
-  completed_plans: 42
-  percent: 89
+  completed_plans: 43
+  percent: 100
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 ## Current Position
 
-Phase: 08 (duckdb-primary-storage-aggregate-analytics-surface) — EXECUTING
+Phase: 08 (duckdb-primary-storage-aggregate-analytics-surface) — COMPLETE
 Plan: 8 of 8
-Status: Phase 08 final acceptance pending
-Last activity: 2026-05-26 -- Phase 09 complete; Phase 08 08-08 100 ms p95 gate failed
+Status: Phase 08 final acceptance passed; milestone v1.1 honestly complete
+Last activity: 2026-05-27 -- Phase 08 08-08 closed; 100 ms p95 gate passes with margin
 
 ## Performance Metrics
 
@@ -178,7 +178,9 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 08 plan 08-08 still lacks a SUMMARY and final acceptance because `just mcp-read-model-perf 20 2 100` failed on 2026-05-26: `get_fitness_state` p95 100.074 ms, `list_workouts` p95 118.106 ms, and `get_workout_detail` p95 131.927 ms. Phase 09 is complete, but the milestone is not honestly complete until this performance gate is fixed and 08-08 is closed.
+- RESOLVED (2026-05-27): Phase 08 08-08 100 ms p95 gate. Root cause was per-call DuckDB connection churn (~28 ms) + a duplicate read-model schema check. Fixed with thread-local read-connection reuse + per-instance memoization of `_read_model_enabled`. After Docker rebuild the gate passes with margin (formerly-failing tools now p95 34–50 ms vs the 100/118/132 ms failures); full suite 301 passed; 08-08-SUMMARY.md written.
+- Deferred (non-blocking): `get_training_aggregates:weekly_digest` is the heaviest remaining tool (~77–81 ms p95). Next lever is the `read_model_status` envelope recompute per read (4× `SELECT DISTINCT metric_version`) — a cache-window-vs-liveness design call, not a regression.
+- Deferred (non-blocking, carried): git-history PII filter (name/DOB in baseline commit + on main); planned post-merge per prior decision.
 
 ## Deferred Items
 
@@ -191,7 +193,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-05-27
-Stopped at: Quick task 260527-nbq complete — HR zones computed on the fly (isolated swappable model), hardcoded athlete HR constants removed, HRrest required via MCP_STRAVA_HR_REST (fail-fast), per-activity HR provenance persisted; TRIMP byte-identical; 300 tests pass. Phase 08 08-08 performance acceptance still open. Deferred: PII git-history filter (post-merge); reference PII scrub of 4 files.
+Stopped at: Phase 08 08-08 closed. Diagnosed the 100 ms p95 failure to per-call DuckDB connection churn + duplicate schema check; implemented thread-local read-connection reuse (`ReadConn` in db.py, wired into metric/aggregate/product_facts read paths) + per-repo memoization of `_read_model_enabled`; added conftest reset fixture and a call-count regression test. Full suite 301 passed; Docker rebuilt/recreated; `just mcp-read-model-perf 20 2 100`, `just mcp-smoke-full`, and the Py3.14/duckdb check all green with margin. 08-08-SUMMARY.md written. Changes NOT yet committed (branch feat/phase-8-duckdb-primary-storage, not pushed). Deferred: weekly_digest read_model_status envelope optimization; git-history PII filter (post-merge).
 Resume file: None
 
 ## Quick Tasks Completed

@@ -355,6 +355,60 @@ def test_list_workouts_service_respects_filters_and_returns_compact_rows(tmp_pat
     _walk_no_forbidden_keys(payload)
 
 
+def test_read_path_reuses_connection_and_checks_schema_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Structural guard for the warm-latency optimization (Phase 08-08).
+
+    A product read on the runtime path (connection=None) must open exactly one
+    DuckDB connection and reuse it on subsequent reads, and must derive the
+    read-model schema-existence fact once per call, not twice. These call-count
+    assertions lock in the win without relying on a flaky wall-clock gate.
+    """
+    import mcp_strava.db as db
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.application.metric_services import list_workouts_service
+
+    _block_legacy_recompute(monkeypatch)
+
+    # Build a read-model fixture DB on disk, then release it so the runtime
+    # ReadConn path opens it exactly as production does.
+    repo = _repo_with_facts(tmp_path / "reuse.db")
+    repo.close()
+    db_path = str(tmp_path / "reuse.db")
+    monkeypatch.setattr(db, "_db_path", lambda: db_path)
+
+    open_calls = {"n": 0}
+    real_open = db.open_expected_mirror_db
+
+    def _counting_open(path, *args, **kwargs):
+        open_calls["n"] += 1
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(db, "open_expected_mirror_db", _counting_open)
+
+    schema_checks = {"n": 0}
+    real_table_exists = DuckDBRepository._table_exists
+
+    def _counting_table_exists(self, table):
+        if table == "activity_source_state":
+            schema_checks["n"] += 1
+        return real_table_exists(self, table)
+
+    monkeypatch.setattr(DuckDBRepository, "_table_exists", _counting_table_exists)
+
+    db.reset_thread_connections()
+    try:
+        list_workouts_service(limit=2, signal_first_use=False)
+        assert open_calls["n"] == 1  # one connection opened on first read
+        assert schema_checks["n"] == 1  # memoized per call: once, not twice
+
+        list_workouts_service(limit=2, signal_first_use=False)
+        assert open_calls["n"] == 1  # connection reused, no second open
+    finally:
+        db.reset_thread_connections()
+
+
 def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reasons(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from mcp_strava.application.metric_services import get_workout_detail_service
 

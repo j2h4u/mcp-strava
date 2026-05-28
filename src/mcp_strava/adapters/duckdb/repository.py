@@ -135,6 +135,7 @@ class DuckDBRepository:
     conn: object
     _transaction_depth: int = field(default=0, init=False, repr=False)
     _transaction_lock_held: bool = field(default=False, init=False, repr=False)
+    _read_model_enabled_cache: bool | None = field(default=None, init=False, repr=False)
 
     @classmethod
     def from_path(cls, db_path: str | Path, expected_mirror: bool = False) -> "DuckDBRepository":
@@ -279,7 +280,14 @@ class DuckDBRepository:
 
     # Read-model invalidation
     def _read_model_enabled(self) -> bool:
-        return self._table_exists("activity_source_state")
+        # Memoized per repository instance (one per read call): the read-model
+        # schema is immutable within a repo's lifetime — migrations own DDL and
+        # read paths never create/drop tables — so the information_schema lookup
+        # is derived once instead of repeatedly (read_model_status alone asks
+        # twice). Read repos are short-lived, so there is no staleness window.
+        if self._read_model_enabled_cache is None:
+            self._read_model_enabled_cache = self._table_exists("activity_source_state")
+        return self._read_model_enabled_cache
 
     def _read_activity_source_components(self, activity_id: int) -> dict[str, object] | None:
         activity = self._fetchone(

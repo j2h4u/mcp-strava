@@ -31,3 +31,18 @@ def reset_settings():
     reset_settings_cache()
     yield
     reset_settings_cache()
+
+
+@pytest.fixture(autouse=True)
+def reset_read_connections():
+    """Close thread-local read connections around each test.
+
+    Read services reuse a connection per (thread, db path). Tests use a fresh
+    tmp_path DB each, so a cached connection from a prior test must not leak
+    into the next. Tests passing an explicit ``connection=`` are unaffected.
+    """
+    from mcp_strava.db import reset_thread_connections
+
+    reset_thread_connections()
+    yield
+    reset_thread_connections()

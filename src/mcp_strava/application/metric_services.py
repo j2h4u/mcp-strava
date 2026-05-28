@@ -14,7 +14,7 @@ from mcp_strava.application.aggregate_services import (
 from mcp_strava.application.freshness import build_freshness_metadata
 from mcp_strava.application.metric_registry import METRIC_REGISTRY
 from mcp_strava.constants import Config
-from mcp_strava.db import DbConn, repository_from_connection
+from mcp_strava.db import ReadConn, repository_from_connection
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
 from mcp_strava.training import forward_simulate
@@ -109,7 +109,7 @@ def _project_fitness_state_metrics(model, rolling: dict[int, object]) -> dict[st
 
 
 def _connection_context(connection):
-    return nullcontext(connection) if connection is not None else DbConn()
+    return nullcontext(connection) if connection is not None else ReadConn()
 
 
 def _policy() -> RefreshPolicy:

@@ -27,7 +27,7 @@ from mcp_strava.application.metric_services import (
     get_workout_detail_service,
     list_workouts_service,
 )
-from mcp_strava.db import DbConn
+from mcp_strava.db import ReadConn
 from mcp_strava.types import (
     CompletenessMetadata,
     ServiceEnvelope,
@@ -380,7 +380,7 @@ def format_aggregate_product_bundle(
 
 
 def _connection_context(connection):
-    return nullcontext(connection) if connection is not None else DbConn()
+    return nullcontext(connection) if connection is not None else ReadConn()
 
 
 def _parse_day(value: str) -> date:
