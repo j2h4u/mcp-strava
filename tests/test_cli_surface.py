@@ -23,6 +23,7 @@ ADMIN_COMMANDS = {
     "mirror-coverage",
     "token-refresh",
     "catchup",
+    "compact",
     "sql",
     "raw",
     "log",

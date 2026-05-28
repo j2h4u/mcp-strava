@@ -14,6 +14,7 @@ from mcp_strava.application.product_facts import get_daily_brief_facts_service, 
 import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.db import DbConn, refresh_token, repository_from_connection, repository_from_path
 from mcp_strava.deploy.preflight import validate_runtime_db
+from mcp_strava.maintenance.compact import compact_database
 from mcp_strava.refresh import RefreshPolicy, RefreshSkipped
 from mcp_strava.types import dc_to_dict
 from mcp_strava.refresh.bootstrap import (
@@ -516,6 +517,30 @@ def _render_bundle_sections(data):
                     print(f"- {metric_id}: delta={payload.get('delta')} trend={payload.get('trend_direction')}")
 
 
+def cmd_compact(args):
+    """Reclaim disk space by rewriting the DuckDB mirror into a fresh file.
+
+    Must run against a stopped owner (use ``just admin compact``); a pre-compact
+    backup is kept unless ``--no-backup`` is given.
+    """
+    json_output = _pop_json_flag(args)
+    backup = True
+    for token in args:
+        if token == "--no-backup":
+            backup = False
+            continue
+        _usage_error("Usage: python -m mcp_strava admin compact [--no-backup] [--json]")
+
+    result = compact_database(get_settings().database_path, backup=backup)
+
+    if json_output:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+    print("Compact")
+    for key, value in result.items():
+        print(f"- {key}: {value}")
+
+
 def cmd_admin(args):
     if not args or args[0] in {"--help", "-h"}:
         print(
@@ -555,6 +580,7 @@ ADMIN_COMMANDS = {
     "mirror-coverage": cmd_mirror_coverage,
     "token-refresh": cmd_refresh,
     "catchup": cmd_catchup,
+    "compact": cmd_compact,
     "sql": cmd_sql,
     "raw": cmd_strava_raw,
     "log": cmd_log,
