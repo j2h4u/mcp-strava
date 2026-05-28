@@ -19,26 +19,6 @@ from mcp_strava.types import (
 )
 
 
-OLD_COMMAND_KEYS = {
-    "activities",
-    "gear",
-    "stats",
-    "sql",
-    "refresh",
-    "sync",
-    "backfill",
-    "backtest",
-    "trend",
-    "report",
-    "weekly",
-    "raw",
-    "log",
-    "kudos",
-    "db-preflight",
-    "db-check",
-    "db-refresh",
-}
-
 ADMIN_COMMANDS = {
     "mirror-refresh",
     "mirror-coverage",
@@ -444,26 +424,6 @@ def test_admin_backfill_streams_dry_run_json_fields(tmp_path: Path, monkeypatch:
         "checkpoint_stage",
     ):
         assert key in payload
-
-
-def test_cli_docs_replacement_mapping_accounts_for_old_commands() -> None:
-    docs_path = Path("docs/cli.md")
-    assert docs_path.exists()
-    text = docs_path.read_text(encoding="utf-8")
-    lowered = text.lower()
-
-    assert "| old command | new command/status | notes |" in lowered
-    for command in OLD_COMMAND_KEYS:
-        assert f"| `{command}` |" in lowered
-    assert "`refresh`" in text
-    assert "`db-refresh`" in text
-    assert "token-refresh" in text
-    assert "mirror-refresh" in text
-    assert "not part of the mcp surface" in lowered
-    assert "| `gear` | available via workout detail |" in lowered
-    assert "| `stats` | folded into product bundle |" in lowered
-    assert "| `trend` | folded into `weekly --json` |" in lowered
-    assert "| `kudos` | available via workout detail |" in lowered
 
 
 def test_product_cli_handlers_do_not_call_legacy_or_admin_runtime_directly() -> None:

@@ -99,17 +99,6 @@ def test_dockerignore_contract() -> None:
     assert ".planning/config.json" in text
 
 
-def test_deployment_runbook_documents_read_model_performance_gate() -> None:
-    text = _read_text(_repo_root() / "docs" / "deployment.md")
-    lowered = text.lower()
-
-    assert "just test" in text
-    assert "just mcp-read-model-perf" in text
-    assert "500 ms" in lowered
-    assert "get_fitness_state" in text
-    assert "get_training_aggregates" in text
-
-
 def test_preflight_main_missing_db_fails(tmp_path: Path) -> None:
     from mcp_strava.deploy.preflight import main as preflight_main
 

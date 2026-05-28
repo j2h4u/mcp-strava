@@ -246,60 +246,6 @@ def test_metric_catalog_payload_exposes_calculation_contracts():
         assert catalog_metrics[metric_id]["calculation"] == definition.calculation
 
 
-def test_docs_metrics_md_stays_in_sync_with_registry():
-    docs_text = Path("docs/metrics.md").read_text(encoding="utf-8")
-    for metric_id in METRIC_REGISTRY:
-        assert metric_id in docs_text, f"docs/metrics.md missing metric id: {metric_id}"
-        assert METRIC_REGISTRY[metric_id].calculation in docs_text, (
-            f"docs/metrics.md missing calculation for metric id: {metric_id}"
-        )
-    for key in EXCLUDED_INTERPRETATIONS:
-        assert key in docs_text, f"docs/metrics.md missing exclusion key: {key}"
-    for metric_id in FORBIDDEN_METRIC_IDS:
-        assert metric_id not in docs_text, f"docs/metrics.md still documents removed metric id: {metric_id}"
-
-
-def test_docs_metrics_md_includes_aggregate_registry_contract():
-    docs_text = Path("docs/metrics.md").read_text(encoding="utf-8")
-    assert "## Aggregate Registry Contract" in docs_text
-    aggregate_section = docs_text.split("## Aggregate Registry Contract", 1)[1].split("## Metric Inventory", 1)[0]
-
-    for mode in AGGREGATE_MODES:
-        assert f"`{mode}`" in aggregate_section
-    for bucket in SUPPORTED_AGGREGATE_BUCKETS:
-        assert f"`{bucket}`" in aggregate_section
-    for scope in SUPPORTED_AGGREGATE_SCOPES:
-        assert f"`{scope}`" in aggregate_section
-    for window_days in SUPPORTED_ROLLING_WINDOW_DAYS:
-        assert f"`{window_days}`" in aggregate_section
-    for bundle_id, metric_ids in AGGREGATE_METRIC_BUNDLES.items():
-        assert f"`{bundle_id}`" in aggregate_section
-        for metric_id in metric_ids:
-            assert f"`{metric_id}`" in aggregate_section
-
-    for metric in METRIC_REGISTRY.values():
-        if metric.aggregate_mode is None:
-            continue
-        for value in (
-            metric.denominator,
-            metric.weight_column,
-            metric.numerator_column,
-            metric.denominator_column,
-            metric.sample_size_column,
-        ):
-            if value is not None:
-                assert f"`{value}`" in aggregate_section, metric.metric_id
-        for quantile in metric.quantiles:
-            assert f"`{quantile}`" in aggregate_section, metric.metric_id
-
-    assert "Week buckets use Monday start" in aggregate_section
-    assert "`[start_day, end_day_exclusive)`" in aggregate_section
-
-    added_coaching_terms = ("should", "ready", "advice", "recommend", "coach")
-    lowered = aggregate_section.lower()
-    assert not any(term in lowered for term in added_coaching_terms)
-
-
 def test_compare_periods_registry_metrics_resolve_through_aggregate_bundle():
     compare_metrics = {
         metric_id

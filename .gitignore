@@ -48,3 +48,6 @@ data/**/*.duckdb-*
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Personal review docs and drafts — host-local only.
+docs/private/
