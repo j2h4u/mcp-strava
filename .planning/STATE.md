@@ -1,10 +1,11 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: Full-Fidelity Strava Mirror
-status: executing
-last_updated: "2026-05-27T00:00:00.000Z"
-last_activity: 2026-05-27 -- Phase 08 08-08 closed; 100 ms p95 gate passes with margin
+milestone_name: milestone
+status: completed
+stopped_at: post-milestone admin-CLI cleanup queue (10-13) fully closed (2026-05-28)
+last_updated: "2026-05-28T18:45:00.000Z"
+last_activity: 2026-05-28 -- admin CLI cleanup tasks 12 (catchup merge + runtime renames) and 13 (admin compact) shipped; 307 passed
 progress:
   total_phases: 9
   completed_phases: 9
@@ -193,9 +194,17 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27
-Stopped at: Phase 08 08-08 closed. Diagnosed the 100 ms p95 failure to per-call DuckDB connection churn + duplicate schema check; implemented thread-local read-connection reuse (`ReadConn` in db.py, wired into metric/aggregate/product_facts read paths) + per-repo memoization of `_read_model_enabled`; added conftest reset fixture and a call-count regression test. Full suite 301 passed; Docker rebuilt/recreated; `just mcp-read-model-perf 20 2 100`, `just mcp-smoke-full`, and the Py3.14/duckdb check all green with margin. 08-08-SUMMARY.md written. Changes NOT yet committed (branch feat/phase-8-duckdb-primary-storage, not pushed). Deferred: weekly_digest read_model_status envelope optimization; git-history PII filter (post-merge).
-Resume file: None
+Last session: 2026-05-28T18:45:00.000Z
+Stopped at: post-milestone admin-CLI cleanup queue (tasks 10-13) fully closed
+Resume file: None (HANDOFF.json + .continue-here.md retired — queue done)
+
+### Post-milestone admin-CLI cleanup (tasks 10-13) — CLOSED 2026-05-28
+
+- Task 10 (spike): ATTACH READ_ONLY does NOT bypass DuckDB's cross-process writer lock — confirmed.
+- Task 11 (commit 3b38f59): friendly `MirrorDbLocked` error + `just admin <cmd>` wrapper.
+- Task 12 (commit 9f11af5): merged `admin backfill` + `admin backfill-streams` -> `admin catchup`; removed `admin mirror-refresh` (daily refresh is worker-owned). Renamed runtime fns `run_backfill -> run_catchup`, `run_backfill_stream_channels -> run_stream_channel_catchup` (kept public — the refresh worker calls the stream variant). Persisted Stage enum strings unchanged.
+- Task 13 (commit 3571eba): `admin compact` reclaims DuckDB disk via `COPY FROM DATABASE` + atomic swap + pre-compact backup. Deliberately NOT auto-invoked from catchup — fetching (network) and compaction (disk) are orthogonal; catchup inserts rows and creates no reclaimable dead space. The 764 MB bloat is one-time Phase-8 migration aftermath; run `just admin compact` once to shrink it.
+- Full suite: 307 passed.
 
 ## Quick Tasks Completed
 
