@@ -591,25 +591,6 @@ class DuckDBRepository:
         return int(payload["id"])
 
     # Read-model fact queries
-    def _read_model_metadata_versions(self, metric_version: int | None = None) -> list[int]:
-        if not self._read_model_enabled():
-            return []
-        params: list[object] = []
-        where = ""
-        if metric_version is not None:
-            where = "WHERE metric_version = ?"
-            params.append(metric_version)
-        versions: set[int] = set()
-        for table in (
-            "activity_metric_facts",
-            "daily_load_facts",
-            "training_model_daily",
-            "rolling_period_facts",
-        ):
-            rows = self._fetchall(f"SELECT DISTINCT metric_version FROM {table} {where}", params)
-            versions.update(int(row["metric_version"]) for row in rows if row["metric_version"] is not None)
-        return sorted(versions)
-
     def read_model_status(self, metric_version: int | None = None) -> dict[str, object]:
         if not self._read_model_enabled():
             return {
@@ -645,9 +626,18 @@ class DuckDBRepository:
             + metric_sql,
             params,
         )
-        last_fact = self._fetchone(
+        # Single pass over the four fact tables: MAX(computed_at) and the set
+        # of distinct metric_versions present, in one round-trip. The previous
+        # implementation scanned the same union twice (one MAX query plus four
+        # separate DISTINCT scans inside a helper), which dominated
+        # weekly_digest latency.
+        facts_summary = self._fetchone(
             """
-            SELECT MAX(computed_at) AS last_materialized_at FROM (
+            SELECT
+                MAX(computed_at) AS last_materialized_at,
+                LIST(DISTINCT metric_version ORDER BY metric_version)
+                    FILTER (WHERE metric_version IS NOT NULL) AS metric_versions_present
+            FROM (
                 SELECT computed_at, metric_version FROM activity_metric_facts
                 UNION ALL
                 SELECT computed_at, metric_version FROM daily_load_facts
@@ -655,7 +645,7 @@ class DuckDBRepository:
                 SELECT computed_at, metric_version FROM training_model_daily
                 UNION ALL
                 SELECT computed_at, metric_version FROM rolling_period_facts
-            )
+            ) all_facts
             WHERE 1=1
             """
             + metric_sql,
@@ -666,9 +656,12 @@ class DuckDBRepository:
         last_materialized_at = None
         if run and run["last_materialized_at"]:
             last_materialized_at = str(run["last_materialized_at"])
-        elif last_fact and last_fact["last_materialized_at"]:
-            last_materialized_at = str(last_fact["last_materialized_at"])
-        versions = self._read_model_metadata_versions(metric_version)
+        elif facts_summary and facts_summary["last_materialized_at"]:
+            last_materialized_at = str(facts_summary["last_materialized_at"])
+        raw_versions = facts_summary["metric_versions_present"] if facts_summary else None
+        versions: list[int] = (
+            sorted(int(v) for v in raw_versions) if raw_versions else []
+        )
 
         status = "current"
         stale_reason = None
