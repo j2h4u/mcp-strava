@@ -108,3 +108,45 @@ def test_standalone_refresh_worker_refuses_live_duckdb_runtime(
     captured = capsys.readouterr()
     assert rc != 0
     assert "owner process" in captured.err
+
+
+def test_open_mirror_translates_duckdb_lock_to_mirror_db_locked(tmp_path, monkeypatch):
+    import duckdb
+
+    from mcp_strava.adapters.duckdb import connection as conn_module
+
+    db_path = tmp_path / "strava.duckdb"
+    db_path.write_bytes(b"")
+
+    def _raise_lock(*_args, **_kwargs):
+        raise duckdb.IOException(
+            f'IO Error: Could not set lock on file "{db_path}": '
+            "Conflicting lock is held in /usr/local/bin/python3.14 (PID 1)."
+        )
+
+    monkeypatch.setattr(conn_module.duckdb, "connect", _raise_lock)
+
+    with pytest.raises(conn_module.MirrorDbLocked) as excinfo:
+        conn_module.open_expected_mirror_db(db_path)
+
+    message = str(excinfo.value)
+    assert str(db_path) in message
+    assert isinstance(excinfo.value.__cause__, duckdb.IOException)
+
+
+def test_admin_dispatch_prints_lock_hint_and_exits_2(monkeypatch, capsys):
+    from mcp_strava import cli
+    from mcp_strava.adapters.duckdb.connection import MirrorDbLocked
+
+    def _raise_locked(_args):
+        raise MirrorDbLocked("DuckDB mirror is locked by another process: /runtime/data/strava.duckdb")
+
+    monkeypatch.setitem(cli.ADMIN_COMMANDS, "mirror-coverage", _raise_locked)
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.cmd_admin(["mirror-coverage"])
+
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "locked by another process" in err
+    assert "just admin mirror-coverage" in err

@@ -5,6 +5,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from mcp_strava.adapters.duckdb.connection import MirrorDbLocked
 from mcp_strava.application.freshness import get_freshness_service
 from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
 from mcp_strava.application.metric_services import get_workout_detail_service, list_workouts_service
@@ -545,7 +546,18 @@ def cmd_admin(args):
             file=sys.stderr,
         )
         raise SystemExit(1)
-    handler(args[1:])
+    try:
+        handler(args[1:])
+    except MirrorDbLocked as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        print(
+            "hint: the running MCP container holds an exclusive DuckDB lock.\n"
+            "      stop the owner before running admin commands, e.g.:\n"
+            "        just admin " + command + " " + " ".join(args[1:]) + "\n"
+            "      (stops the container, runs the command, restarts it)",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
 
 
 # ═══════════════════════════════════════════════════════════════
