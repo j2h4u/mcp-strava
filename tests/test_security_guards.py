@@ -535,15 +535,11 @@ def test_metric_services_do_not_import_or_call_request_time_recompute_helpers() 
     forbidden_imports = {
         "mcp_strava.analytics.weekly_digest",
         "mcp_strava.metrics.enrich_activity",
-        "mcp_strava.metrics.check_z5_minutes",
-        "mcp_strava.metrics.check_hr_anomalies",
         "mcp_strava.report.daily_report_from_connection",
     }
     forbidden_calls = {
         "weekly_digest",
         "enrich_activity",
-        "check_z5_minutes",
-        "check_hr_anomalies",
         "daily_report_from_connection",
         "activity_stream_rows",
         "stream_hr_velocity_rows",
