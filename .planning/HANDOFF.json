@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-05-29T09:50:07.000Z",
+  "context": "default",
+  "phase": null,
+  "phase_name": "post-v1.1 admin-CLI cleanup + DuckDB ART-index incident",
+  "phase_dir": null,
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 12, "name": "Merge admin backfill+backfill-streams into `admin catchup`; rename run_backfill->run_catchup, run_backfill_stream_channels->run_stream_channel_catchup; remove admin mirror-refresh", "status": "done", "commit": "9f11af5"},
+    {"id": 13, "name": "`admin compact` (COPY FROM DATABASE rebuild + atomic swap + backup); human-readable size output; NO auto-compact in catchup", "status": "done", "commit": "3571eba/fdffbd7"},
+    {"id": 14, "name": "Docs: periodic compaction runbook + refreshed ADMIN_COMMANDS list", "status": "done", "commit": "cd5319d"},
+    {"id": 15, "name": "Observability: per-cycle mirror_storage indicator (free_blocks + delta, every cycle incl. idle) + refresh_ok carries activity/stream/detail counts", "status": "done", "commit": "5bf21a4/c4eed2e"},
+    {"id": 16, "name": "PROTECTED VERIFIED BACKUP of Strava data created (read-only, ~/backups/mcp-strava-safe/)", "status": "done", "commit": "(no code change)"}
+  ],
+  "remaining_tasks": [
+    {"id": 17, "name": "DECIDE + execute remediation for broken refresh (DuckDB ART-index corruption). Options: (a) compact prod to unbreak + watch via observability for recurrence; (b) durable fix = remove ART index/PK on hot tables; (c) wait for unreleased DuckDB fix #21986", "status": "not_started"},
+    {"id": 18, "name": "P1 observability for refresh HEALTH: healthcheck must fail on staleness (last_success_at age > 2x interval); write refresh failures to sync_log; Grafana alert on refresh_worker_error + staleness", "status": "not_started"},
+    {"id": 19, "name": "P2 disk bloat: compaction cadence (have `admin compact` + indicator); least urgent", "status": "not_started"},
+    {"id": 20, "name": "Tech debt: test suite 321 tests/~3min, ONE test test_repository_methods_cover_activity_stream_zone_kudos_and_synclog = 52s (28%); consider pytest-xdist + fix that test", "status": "not_started"},
+    {"id": 21, "name": "Optional: move safe backup offsite / into Borg (single SSD on server; .duckdb not in borg)", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "PROD refresh BROKEN since ~09:17 Almaty 2026-05-29 by DuckDB ART-index corruption on activities table for activity 18694535582 ('Failed to delete all rows from index. Only deleted 0 out of 1 rows' -> DB invalidated). Mirror stale ~6h+. READS STILL WORK. Pre-existing — broke ~4h before this session started, NOT caused by our restarts.", "type": "technical", "workaround": "Compaction (COPY FROM DATABASE) rebuilds clean index and fixes it (proven), but re-corrupted within ~30min after a compact -> recurring trigger (DuckDB corrupts index on transaction RevertCommit)."}
+  ],
+  "human_actions_pending": [
+    {"action": "Choose remediation path for broken refresh", "context": "Upgrade ruled out empirically (1.5.3, 1.5.4.dev2, 1.6.0.dev12 all FATAL). Compaction fixes the index but may not hold. Durable = remove ART index (also fixes bloat).", "blocking": true},
+    {"action": "Decide whether to push the safe backup offsite/Borg", "context": "Data took ~2 days to fetch under Strava rate limits; currently only on the same SSD as prod.", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "Tasks 12+13 shipped: admin catchup (merged backfill cmds), admin compact (COPY FROM DATABASE). NO auto-compact in catchup — orthogonal ops.", "rationale": "User decision after analysis.", "phase": "post-v1.1"},
+    {"decision": "DuckDB upgrade does NOT fix the ART fatal — ruled out by testing 1.5.3 / 1.5.4.dev2 / 1.6.0.dev12 against a snapshot; all FATAL on the failing upsert.", "rationale": "1.5.3 is latest stable; fixes for this RevertCommit index-corruption are in unreleased DuckDB PR #21986.", "phase": "post-v1.1"},
+    {"decision": "Root cause of BOTH the refresh fatal AND the disk bloat = ART indexes (PRIMARY KEY) on hot tables.", "rationale": "Empirically: corrupt index -> fatal; compaction rebuilds clean -> works. Bloat = ART blocks not reclaimed.", "phase": "post-v1.1"},
+    {"decision": "Created protected read-only backup at ~/backups/mcp-strava-safe/ (strava-clean-...duckdb verified: 604 activities, 2,684,891 streams, survives upsert; + strava-raw-...duckdb).", "rationale": "Data-preservation hard constraint; ~2 days to refetch. MUST NOT delete until normal function restored.", "phase": "post-v1.1"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Get user decision on remediation (task 17): compact prod to unbreak refresh + watch via the new observability for recurrence, vs durable ART-index removal. BEFORE any destructive op, verify the safe backup at ~/backups/mcp-strava-safe/ is intact. Do NOT delete that backup.",
+  "context_notes": "Long investigation session. Mirror DATA is intact (only the ART index is corrupt; reads work). The expensive 2.68M-row stream data is safe + backed up. Methodological lesson this session: I repeatedly asserted plausible-but-wrong root causes (reopen amplification, fact-table churn, summary churn) that the USER correctly refuted via timeline/evidence; only the from-compacted-baseline experiments + version A/B test were decisive. Resuming agent: form hypothesis -> run the decisive measurement BEFORE concluding; start growth experiments from a COMPACTED (free=0) copy; minimize prod restarts; grep logs for errors/fatals first."
+}
