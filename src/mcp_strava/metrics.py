@@ -123,13 +123,20 @@ def calc_hr_recovery(rows):
             pause_dur = pause_end - pause_start
 
             if pause_dur >= MIN_PAUSE_SEC:
-                # Get HR at start of pause (avg of first 5s)
-                start_times = all_times[pause_start_idx:pause_start_idx+5]
+                end_idx = j - 1
+                # Restrict both HR windows to the pause itself. Slicing the
+                # global timeline for the start window could reach past
+                # pause_end into moving rows when a pause is shorter than 5
+                # samples (only possible via gaps), biasing hr_start toward the
+                # moving HR and corrupting the drop (see WR-02).
+                pause_window = all_times[pause_start_idx:end_idx + 1]
+
+                # Get HR at start of pause (avg of first 5s within the pause)
+                start_times = pause_window[:5]
                 hr_start = sum(by_time[t]['heartrate'] for t in start_times) / len(start_times)
 
-                # Get HR at end of pause (avg of last 5s)
-                end_idx = j - 1
-                end_times = all_times[max(0, end_idx-4):end_idx+1]
+                # Get HR at end of pause (avg of last 5s within the pause)
+                end_times = pause_window[-5:]
                 hr_end = sum(by_time[t]['heartrate'] for t in end_times) / len(end_times)
 
                 drop = round(hr_start - hr_end, 1)
