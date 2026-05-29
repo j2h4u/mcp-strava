@@ -244,7 +244,16 @@ Plans:
 **Goal:** Finish the deferred 2026-05-25 decision (quick task 260525-jpo): make `metrics.py` a pure domain module and wire its compute into the read-model materializer so the registered-but-empty metrics (hr_recovery, vertical_speed, cardiac_drift, hrr_pct + rolling medians) are actually computed instead of stored as null/0 — closing the last open PROJECT.md requirement (core/domain separation) and fixing a latent product bug. Full context: see this phase's CONTEXT.md.
 **Requirements**: Core/domain separation (PROJECT.md Active); fix unmaterialized registered metrics (260525-jpo preserve-and-fix)
 **Depends on:** Phase 9
-**Plans:** 0 plans
+**Plans:** 4 plans
+
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 10 to break down)
+**Wave 1**
+- [ ] 10-01-PLAN.md — Extract pure metric functions in metrics.py (calc_hr_recovery/vertical_speed/cardiac_drift/hrr_pct), remove the mcp_strava.db import (TDD)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 10-02-PLAN.md — Extend the import-boundary guard to forbid storage/adapter imports from domain modules
+- [ ] 10-03-PLAN.md — Wire the pure functions into read_model_materializer._activity_fact so the 13 empty columns are computed (TDD)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 10-04-PLAN.md — Delete dead db.py::get_daily_trimp_history and repair stale tests (test_smoke.py)
