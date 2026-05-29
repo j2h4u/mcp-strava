@@ -72,6 +72,131 @@ def test_calc_hr_recovery():
     print(f"  OK: calc_hr_recovery — pauses={result.pauses_found}, rest={result.total_rest_sec}s")
 
 
+def test_calc_hr_recovery_dedups_then_rechecks_guard():
+    """calc_hr_recovery de-duplicates time_offset and re-checks the sufficiency guard.
+
+    Regression for WR-01: rows are keyed by time_offset (collapsing duplicates).
+    If the raw row count passes the MIN_STREAM_POINTS guard but the *de-duplicated*
+    count does not, the function must re-fire the guard and return None — not run
+    the pause math over fewer points than the first guard validated, and not crash.
+    """
+    MIN = Config.Metrics.MIN_STREAM_POINTS
+    STOP = Config.Thresholds.VEL_STOP
+
+    # Raw count >= MIN (passes first guard) but only MIN-1 UNIQUE offsets after
+    # de-dup (must fail the re-check). Crucially the fixture CONTAINS a real pause:
+    # without the re-check, the pause math would run over MIN-1 points and return a
+    # (statistically invalid) HrRecovery. The WR-01 re-check is the only thing that
+    # turns this into None — so a None result proves the re-check fired.
+    unique_count = MIN - 1                       # 119 unique offsets (< MIN=120)
+    moving_part = unique_count - 39              # 80 moving offsets
+    dupy = []
+    for off in range(moving_part):
+        for _ in range(2):                       # duplicate each offset -> raw >= MIN
+            dupy.append({'time_offset': off, 'heartrate': 160, 'velocity': 3.0})
+    for k in range(39):                          # 39s pause (>= MIN_PAUSE_SEC) within unique set
+        off = moving_part + k
+        for _ in range(2):
+            dupy.append({'time_offset': off, 'heartrate': max(130, 160 - k), 'velocity': STOP - 0.01})
+    assert len(dupy) >= MIN, "fixture must pass the raw-length guard"
+    assert len({r['time_offset'] for r in dupy}) == unique_count < MIN
+    assert calc_hr_recovery(dupy) is None, (
+        "must return None when de-duplicated offsets fall below MIN_STREAM_POINTS "
+        "(the re-check must fire even though a pause is present)"
+    )
+
+    # Duplicates present but enough UNIQUE offsets AND a real pause: must still
+    # compute without crashing (dict-keying picks one row per offset).
+    moving = [{'time_offset': i, 'heartrate': 160, 'velocity': 3.0} for i in range(MIN)]
+    pause = [
+        {'time_offset': MIN + i, 'heartrate': max(130, 160 - i), 'velocity': STOP - 0.01}
+        for i in range(Config.Metrics.MIN_PAUSE_SEC + 10)
+    ]
+    with_dups = moving + moving[:20] + pause  # 20 duplicate offsets, unique still >= MIN
+    result = calc_hr_recovery(with_dups)
+    assert result is not None, "duplicates with sufficient unique offsets must still compute"
+    assert result.pauses_found >= 1
+    print(f"  OK: calc_hr_recovery WR-01 — dedup re-check + duplicate-tolerant path")
+
+
+def test_calc_hr_recovery_start_window_confined_to_pause():
+    """calc_hr_recovery's start-HR window never bleeds into post-pause moving rows.
+
+    Regression for WR-02: the start window is sliced from pause_window
+    (all_times[pause_start_idx:end_idx+1]), so the first-5s average is taken over
+    pause samples only. A pause immediately followed by HIGH-HR moving rows must
+    not pull hr_start upward. Sentinel HR=250 on the post-pause rows makes any
+    contamination obvious in the resulting rate.
+    """
+    MIN = Config.Metrics.MIN_STREAM_POINTS
+    STOP = Config.Thresholds.VEL_STOP
+
+    moving = [{'time_offset': i, 'heartrate': 160, 'velocity': 3.0} for i in range(MIN)]
+    # 40s contiguous pause (offsets MIN..MIN+39): HR 158 at start window, 123 at end window.
+    pause = []
+    for i in range(40):
+        if i < 5:
+            hr = 158               # first-5 window
+        elif i >= 35:
+            hr = 123               # last-5 window
+        else:
+            hr = 140               # middle (ignored by start/end avgs)
+        pause.append({'time_offset': MIN + i, 'heartrate': hr, 'velocity': STOP - 0.01})
+    # Post-pause moving rows with sentinel HR that MUST NOT enter the start window.
+    post = [{'time_offset': MIN + 40 + i, 'heartrate': 250, 'velocity': 3.0} for i in range(20)]
+
+    result = calc_hr_recovery(moving + pause + post)
+    assert result is not None
+    assert result.pauses_found == 1
+    # drop = 158 - 123 = 35; sampled_rest_sec = len(pause_window) = 40; rate = 35/(40/60) = 52.5
+    assert result.median_rate == 52.5, (
+        f"start window must be pause-confined (drop≈35 → rate 52.5); got {result.median_rate}. "
+        "A higher value means the HR=250 post-pause rows leaked into hr_start."
+    )
+    print(f"  OK: calc_hr_recovery WR-02 — start window confined to pause (rate={result.median_rate})")
+
+
+def test_calc_hr_recovery_rate_uses_sampled_rest_seconds():
+    """calc_hr_recovery divides the HR drop by sampled rest seconds, not wall-clock span.
+
+    Regression for WR-05: the inner loop tolerates gaps up to 3s, so the wall-clock
+    pause_dur over-counts real rest seconds. The rate denominator is
+    len(pause_window) (the count of actually-sampled points), not pause_dur.
+
+    Fixture: a pause sampled every 2s (gaps within the 3s tolerance). 16 points
+    span 120..150 → wall-clock pause_dur = 30s but only 16 sampled seconds.
+    drop = 150 - 120 = 30.
+      new (correct): 30 / (16/60) = 112.5 bpm/min
+      old (buggy):   30 / (30/60) =  60.0 bpm/min
+    """
+    MIN = Config.Metrics.MIN_STREAM_POINTS
+
+    moving = [{'time_offset': i, 'heartrate': 150, 'velocity': 3.0} for i in range(MIN)]
+    # Pause sampled every 2s: offsets 120,122,...,150 → 16 points, spans 30s.
+    pause = []
+    offsets = list(range(MIN, MIN + 31, 2))  # 120,122,...,150 = 16 points
+    assert len(offsets) == 16
+    for k, off in enumerate(offsets):
+        if k < 5:
+            hr = 150               # first-5 window avg = 150
+        elif k >= 11:
+            hr = 120               # last-5 window avg = 120
+        else:
+            hr = 135               # middle
+        pause.append({'time_offset': off, 'heartrate': hr, 'velocity': 0.0})
+    # Terminate the pause with a moving row 1s later (gap 1 <= 3, but velocity breaks it).
+    post = [{'time_offset': MIN + 31 + i, 'heartrate': 140, 'velocity': 3.0} for i in range(10)]
+
+    result = calc_hr_recovery(moving + pause + post)
+    assert result is not None
+    assert result.pauses_found == 1
+    assert result.median_rate == 112.5, (
+        f"rate must use sampled rest seconds (16 → 112.5), not wall-clock 30s (→ 60.0); "
+        f"got {result.median_rate}"
+    )
+    print(f"  OK: calc_hr_recovery WR-05 — sampled-seconds denominator (rate={result.median_rate})")
+
+
 # ─── calc_vertical_speed ───
 
 def test_calc_vertical_speed():
