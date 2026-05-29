@@ -136,7 +136,8 @@ touch `conn`/`repo`.
 - `calc_vertical_speed(conn, activity_id)` → `repo.stream_altitude_rows(activity_id)` then ascent sum.
   Pure form: `calc_vertical_speed(rows)`.
 - `calc_cardiac_drift(conn, activity_id, sport_type)` → `repo.stream_hr_velocity_simple_rows(activity_id,
-  VEL_MOVING)` then Jenks via `cardiac_drift._drift_algo`. Pure form: `calc_cardiac_drift(rows, sport_type)`.
+  VEL_MOVING)` then Jenks via `cardiac_drift._drift_algo`. Pure form: `calc_cardiac_drift(rows, sport_type=None)`
+  (canonical signature — `sport_type` defaults to `None`; the only caller always passes `activity.sport_type`).
   (Note: it already imports `from mcp_strava.cardiac_drift import cardiac_drift` — a domain module, allowed.)
 - `hrr_pct` is computed INLINE inside `enrich_activity` (lines 354–364), not in a standalone function.
   Extract it as new pure `calc_hrr_pct(median_hr, hr_rest, hr_max) -> float | None`.
@@ -170,7 +171,9 @@ touch `conn`/`repo`.
 
 ## Verified Default Columns to Populate (`_activity_fact`, lines 190–205)
 
-These 13 columns currently hold hardcoded defaults and must be replaced with computed values:
+These 14 columns currently hold hardcoded defaults and must be replaced with computed values (the
+count is 14, not 13 — `cardiac_drift_significant` defaults to `0` and is handled specially via
+`1 if .is_significant else 0`, not a direct field read, but it IS one of the hardcoded defaults to wire):
 
 | Column | Default now | Source (pure fn → field) |
 |--------|-------------|--------------------------|
