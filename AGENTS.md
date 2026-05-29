@@ -152,7 +152,7 @@ Strava API ──► refresh/ + sync.py ──► DuckDB mirror (data/strava.duc
 ## Layers
 - Purpose: expose user-facing commands and format results.
 - Location: `src/mcp_strava/cli.py`
-- Contains: product handlers (`cmd_report`, `cmd_weekly`, `cmd_workouts`, `cmd_workout`, `cmd_freshness`) and `cmd_admin` dispatching `ADMIN_COMMANDS` (`mirror-refresh`, `mirror-coverage`, `token-refresh`, `backfill`, `backfill-streams`, `sql`, `raw`, `log`, `db-preflight`, `db-check`)
+- Contains: product handlers (`cmd_report`, `cmd_weekly`, `cmd_workouts`, `cmd_workout`, `cmd_freshness`) and `cmd_admin` dispatching `ADMIN_COMMANDS` (`mirror-coverage`, `token-refresh`, `catchup`, `compact`, `sql`, `raw`, `log`, `db-preflight`, `db-check`)
 - Depends on: `application/`, `db.py`, `sync.py`, `refresh/`, `types.py`
 - Used by: direct CLI invocation
 - Purpose: request-time orchestration and freshness gating.

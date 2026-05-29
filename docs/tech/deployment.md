@@ -59,6 +59,34 @@ If the rollback restart itself fails:
 4. Restore a previous timestamped backup, or escalate to manual recovery.
    No further writes until the operator decides.
 
+## Periodic Maintenance: DuckDB Compaction
+
+DuckDB never shrinks its storage file in place. Deletes and row replacements
+(read-model re-materialization, migrations, backfills that supersede rows) leave
+dead space the file keeps at its high-water mark; `CHECKPOINT` only merges
+heavily-deleted row groups. So the mirror file drifts larger than the live data
+warrants and never recovers on its own.
+
+**Run compaction occasionally** — there is no schedule and no automation. Do it
+when the file is noticeably larger than the data justifies (check
+`ls -lh /opt/docker/mcp-strava/data/strava.duckdb`), or after a large one-off
+rewrite. For reference, the one-time Phase-8 SQLite→DuckDB migration left the
+file at ~764 MB; a single compaction brought it to ~84 MB.
+
+```bash
+just admin compact            # keeps a timestamped pre-compact backup
+just admin compact --no-backup  # skip the backup (disk-constrained)
+```
+
+`admin compact` rewrites the whole database into a fresh file via
+`COPY FROM DATABASE`, then swaps it in atomically (`os.replace`) and reports how
+much was reclaimed. The `just admin` wrapper stops the owner first (DuckDB holds
+an exclusive writer lock) and restarts it afterwards, even on failure.
+
+Unless `--no-backup` is given, a `strava.pre-compact-<timestamp>.duckdb` copy is
+left in the data directory. **Verify the service is healthy and serving (e.g.
+`just mcp-smoke-full`) before deleting the backup.**
+
 ## Invariant: Never Leak Secrets
 
 `/opt/docker/mcp-strava/.env` and related token files must never be printed in
