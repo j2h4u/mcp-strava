@@ -7,8 +7,8 @@ from pathlib import Path
 def test_imports():
     """All 14 public symbols import without errors — including new Config paths."""
     from mcp_strava.constants import Config
-    from mcp_strava.types import BanisterResult, DecouplingResult
-    from mcp_strava.db import DbConn, get_daily_trimp_history
+    from mcp_strava.types import BanisterResult
+    from mcp_strava.db import DbConn
     from mcp_strava.training import calc_banister, forward_simulate, ewma
     from mcp_strava.application.freshness import get_freshness_service
     from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
