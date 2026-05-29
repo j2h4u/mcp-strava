@@ -10,10 +10,10 @@ from mcp_strava.settings import (
 )
 
 __all__ = [
-    'FreshnessSettings',
-    'HttpSettings',
-    'Settings',
-    'get_settings',
-    'load_settings',
-    'reset_settings_cache',
+    "FreshnessSettings",
+    "HttpSettings",
+    "Settings",
+    "get_settings",
+    "load_settings",
+    "reset_settings_cache",
 ]

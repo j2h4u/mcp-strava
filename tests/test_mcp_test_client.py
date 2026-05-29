@@ -16,7 +16,6 @@ from mcp_strava.devtools.mcp_client.client import (
     run_live_smoke,
 )
 
-
 EXPECTED_PRODUCT_BUNDLES = ("daily_brief", "weekly_digest", "historical_facts")
 
 
@@ -189,9 +188,7 @@ def test_live_smoke_calls_each_product_bundle_through_training_aggregates() -> N
     result = asyncio.run(run_live_smoke(client, today="2026-05-24"))
 
     aggregate_bundle_ids = [
-        arguments.get("metric_bundle")
-        for name, arguments in client.calls
-        if name == "get_training_aggregates"
+        arguments.get("metric_bundle") for name, arguments in client.calls if name == "get_training_aggregates"
     ]
     assert aggregate_bundle_ids == list(EXPECTED_PRODUCT_BUNDLES)
     assert result["aggregate_bundles"] == list(EXPECTED_PRODUCT_BUNDLES)

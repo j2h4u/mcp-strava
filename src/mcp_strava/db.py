@@ -31,6 +31,7 @@ def _open_storage_connection(path: str | Path):
 
 # --- DB ---
 
+
 class DbConn:
     """Context manager for primary storage connections — auto-closes on exit."""
 
@@ -106,7 +107,6 @@ def reset_thread_connections() -> None:
     connections.clear()
 
 
-
 def init_db(conn):
     # Runtime paths do not run schema-changing DDL; migration owns schema creation.
     del conn
@@ -124,6 +124,7 @@ def repository_from_path(db_path: str | Path, *, expected_mirror: bool = False):
 
 # --- Auth ---
 
+
 class _RealClock:
     def now(self) -> float:
         return datetime.now().timestamp()
@@ -132,6 +133,7 @@ class _RealClock:
 class _RealSleeper:
     def sleep(self, seconds: float) -> None:
         import time
+
         time.sleep(seconds)
 
 
@@ -158,10 +160,7 @@ class _CompatTokenProvider:
             required = ("STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET")
             missing = [key for key in required if not values.get(key)]
             if missing:
-                raise RuntimeError(
-                    f"Missing env vars for Strava auth: {', '.join(missing)}. "
-                    f"Check {self._token_path}"
-                )
+                raise RuntimeError(f"Missing env vars for Strava auth: {', '.join(missing)}. Check {self._token_path}")
             refresh_transport = TokenRefreshTransport(
                 client_id=values["STRAVA_CLIENT_ID"],
                 client_secret=values["STRAVA_CLIENT_SECRET"],
@@ -220,6 +219,7 @@ def api_request(path, token=None):
 
 # --- HR Zones ---
 
+
 def get_zones():
     """Get cached zones or fetch from Strava."""
     with DbConn() as conn:
@@ -227,11 +227,9 @@ def get_zones():
         zones_json = repo.latest_athlete_zones()
         if zones_json is not None:
             return json.loads(zones_json)
-    data, _rate_info = api_request('/athlete/zones')
-    zones = [{'min': z['min'], 'max': z['max'] if z['max'] != -1 else 300}
-             for z in data['heart_rate']['zones']]
+    data, _rate_info = api_request("/athlete/zones")
+    zones = [{"min": z["min"], "max": z["max"] if z["max"] != -1 else 300} for z in data["heart_rate"]["zones"]]
     with DbConn() as conn:
         repo = repository_from_connection(conn)
         repo.insert_athlete_zones(datetime.now().isoformat(), json.dumps(zones))
     return zones
-

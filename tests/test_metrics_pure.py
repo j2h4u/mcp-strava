@@ -5,37 +5,34 @@ All tests use plain dict rows — no database connection, no repository.
 
 from mcp_strava.constants import Config
 from mcp_strava.metrics import (
-    calc_hr_recovery,
-    calc_vertical_speed,
     calc_cardiac_drift,
+    calc_hr_recovery,
     calc_hrr_pct,
+    calc_vertical_speed,
 )
-
 
 # ─── Helpers ───
 
+
 def _make_hr_vel_time_rows(n, velocity=3.0, heartrate=140, time_offset_start=0):
     """Build n stream rows with {time_offset, heartrate, velocity}."""
-    return [
-        {'time_offset': time_offset_start + i, 'heartrate': heartrate, 'velocity': velocity}
-        for i in range(n)
-    ]
+    return [{"time_offset": time_offset_start + i, "heartrate": heartrate, "velocity": velocity} for i in range(n)]
 
 
 def _make_altitude_rows(n, altitude_start=100.0, ascent_per_step=1.0, time_offset_start=0):
     """Build n stream rows with {time_offset, altitude}."""
     return [
-        {'time_offset': time_offset_start + i * 10, 'altitude': altitude_start + i * ascent_per_step}
-        for i in range(n)
+        {"time_offset": time_offset_start + i * 10, "altitude": altitude_start + i * ascent_per_step} for i in range(n)
     ]
 
 
 def _make_hr_vel_rows(n, velocity=3.0, heartrate=140):
     """Build n stream rows with {heartrate, velocity} (no time_offset)."""
-    return [{'heartrate': heartrate, 'velocity': velocity} for _ in range(n)]
+    return [{"heartrate": heartrate, "velocity": velocity} for _ in range(n)]
 
 
 # ─── calc_hr_recovery ───
+
 
 def test_calc_hr_recovery():
     """calc_hr_recovery(rows): None guards and pause detection."""
@@ -51,14 +48,14 @@ def test_calc_hr_recovery():
     # HR drops during the pause (simulates recovery)
     MIN = Config.Metrics.MIN_STREAM_POINTS
     STOP = Config.Thresholds.VEL_STOP
-    moving = [{'time_offset': i, 'heartrate': 160, 'velocity': 3.0} for i in range(MIN)]
+    moving = [{"time_offset": i, "heartrate": 160, "velocity": 3.0} for i in range(MIN)]
     # pause: 40 consecutive rows at velocity < VEL_STOP; HR starts at 160 and drops to 130
     pause_len = Config.Metrics.MIN_PAUSE_SEC + 10  # 40s > 30s minimum
     pause = [
         {
-            'time_offset': MIN + i,
-            'heartrate': max(130, 160 - i),  # drops from 160 towards 130
-            'velocity': STOP - 0.01,         # below stop threshold
+            "time_offset": MIN + i,
+            "heartrate": max(130, 160 - i),  # drops from 160 towards 130
+            "velocity": STOP - 0.01,  # below stop threshold
         }
         for i in range(pause_len)
     ]
@@ -88,18 +85,18 @@ def test_calc_hr_recovery_dedups_then_rechecks_guard():
     # without the re-check, the pause math would run over MIN-1 points and return a
     # (statistically invalid) HrRecovery. The WR-01 re-check is the only thing that
     # turns this into None — so a None result proves the re-check fired.
-    unique_count = MIN - 1                       # 119 unique offsets (< MIN=120)
-    moving_part = unique_count - 39              # 80 moving offsets
+    unique_count = MIN - 1  # 119 unique offsets (< MIN=120)
+    moving_part = unique_count - 39  # 80 moving offsets
     dupy = []
     for off in range(moving_part):
-        for _ in range(2):                       # duplicate each offset -> raw >= MIN
-            dupy.append({'time_offset': off, 'heartrate': 160, 'velocity': 3.0})
-    for k in range(39):                          # 39s pause (>= MIN_PAUSE_SEC) within unique set
+        for _ in range(2):  # duplicate each offset -> raw >= MIN
+            dupy.append({"time_offset": off, "heartrate": 160, "velocity": 3.0})
+    for k in range(39):  # 39s pause (>= MIN_PAUSE_SEC) within unique set
         off = moving_part + k
         for _ in range(2):
-            dupy.append({'time_offset': off, 'heartrate': max(130, 160 - k), 'velocity': STOP - 0.01})
+            dupy.append({"time_offset": off, "heartrate": max(130, 160 - k), "velocity": STOP - 0.01})
     assert len(dupy) >= MIN, "fixture must pass the raw-length guard"
-    assert len({r['time_offset'] for r in dupy}) == unique_count < MIN
+    assert len({r["time_offset"] for r in dupy}) == unique_count < MIN
     assert calc_hr_recovery(dupy) is None, (
         "must return None when de-duplicated offsets fall below MIN_STREAM_POINTS "
         "(the re-check must fire even though a pause is present)"
@@ -107,16 +104,16 @@ def test_calc_hr_recovery_dedups_then_rechecks_guard():
 
     # Duplicates present but enough UNIQUE offsets AND a real pause: must still
     # compute without crashing (dict-keying picks one row per offset).
-    moving = [{'time_offset': i, 'heartrate': 160, 'velocity': 3.0} for i in range(MIN)]
+    moving = [{"time_offset": i, "heartrate": 160, "velocity": 3.0} for i in range(MIN)]
     pause = [
-        {'time_offset': MIN + i, 'heartrate': max(130, 160 - i), 'velocity': STOP - 0.01}
+        {"time_offset": MIN + i, "heartrate": max(130, 160 - i), "velocity": STOP - 0.01}
         for i in range(Config.Metrics.MIN_PAUSE_SEC + 10)
     ]
     with_dups = moving + moving[:20] + pause  # 20 duplicate offsets, unique still >= MIN
     result = calc_hr_recovery(with_dups)
     assert result is not None, "duplicates with sufficient unique offsets must still compute"
     assert result.pauses_found >= 1
-    print(f"  OK: calc_hr_recovery WR-01 — dedup re-check + duplicate-tolerant path")
+    print("  OK: calc_hr_recovery WR-01 — dedup re-check + duplicate-tolerant path")
 
 
 def test_calc_hr_recovery_start_window_confined_to_pause():
@@ -131,19 +128,19 @@ def test_calc_hr_recovery_start_window_confined_to_pause():
     MIN = Config.Metrics.MIN_STREAM_POINTS
     STOP = Config.Thresholds.VEL_STOP
 
-    moving = [{'time_offset': i, 'heartrate': 160, 'velocity': 3.0} for i in range(MIN)]
+    moving = [{"time_offset": i, "heartrate": 160, "velocity": 3.0} for i in range(MIN)]
     # 40s contiguous pause (offsets MIN..MIN+39): HR 158 at start window, 123 at end window.
     pause = []
     for i in range(40):
         if i < 5:
-            hr = 158               # first-5 window
+            hr = 158  # first-5 window
         elif i >= 35:
-            hr = 123               # last-5 window
+            hr = 123  # last-5 window
         else:
-            hr = 140               # middle (ignored by start/end avgs)
-        pause.append({'time_offset': MIN + i, 'heartrate': hr, 'velocity': STOP - 0.01})
+            hr = 140  # middle (ignored by start/end avgs)
+        pause.append({"time_offset": MIN + i, "heartrate": hr, "velocity": STOP - 0.01})
     # Post-pause moving rows with sentinel HR that MUST NOT enter the start window.
-    post = [{'time_offset': MIN + 40 + i, 'heartrate': 250, 'velocity': 3.0} for i in range(20)]
+    post = [{"time_offset": MIN + 40 + i, "heartrate": 250, "velocity": 3.0} for i in range(20)]
 
     result = calc_hr_recovery(moving + pause + post)
     assert result is not None
@@ -171,33 +168,33 @@ def test_calc_hr_recovery_rate_uses_sampled_rest_seconds():
     """
     MIN = Config.Metrics.MIN_STREAM_POINTS
 
-    moving = [{'time_offset': i, 'heartrate': 150, 'velocity': 3.0} for i in range(MIN)]
+    moving = [{"time_offset": i, "heartrate": 150, "velocity": 3.0} for i in range(MIN)]
     # Pause sampled every 2s: offsets 120,122,...,150 → 16 points, spans 30s.
     pause = []
     offsets = list(range(MIN, MIN + 31, 2))  # 120,122,...,150 = 16 points
     assert len(offsets) == 16
     for k, off in enumerate(offsets):
         if k < 5:
-            hr = 150               # first-5 window avg = 150
+            hr = 150  # first-5 window avg = 150
         elif k >= 11:
-            hr = 120               # last-5 window avg = 120
+            hr = 120  # last-5 window avg = 120
         else:
-            hr = 135               # middle
-        pause.append({'time_offset': off, 'heartrate': hr, 'velocity': 0.0})
+            hr = 135  # middle
+        pause.append({"time_offset": off, "heartrate": hr, "velocity": 0.0})
     # Terminate the pause with a moving row 1s later (gap 1 <= 3, but velocity breaks it).
-    post = [{'time_offset': MIN + 31 + i, 'heartrate': 140, 'velocity': 3.0} for i in range(10)]
+    post = [{"time_offset": MIN + 31 + i, "heartrate": 140, "velocity": 3.0} for i in range(10)]
 
     result = calc_hr_recovery(moving + pause + post)
     assert result is not None
     assert result.pauses_found == 1
     assert result.median_rate == 112.5, (
-        f"rate must use sampled rest seconds (16 → 112.5), not wall-clock 30s (→ 60.0); "
-        f"got {result.median_rate}"
+        f"rate must use sampled rest seconds (16 → 112.5), not wall-clock 30s (→ 60.0); got {result.median_rate}"
     )
     print(f"  OK: calc_hr_recovery WR-05 — sampled-seconds denominator (rate={result.median_rate})")
 
 
 # ─── calc_vertical_speed ───
+
 
 def test_calc_vertical_speed():
     """calc_vertical_speed(rows): None guards and ascending return."""
@@ -207,10 +204,7 @@ def test_calc_vertical_speed():
 
     # Duration too short (< 0.05 hours = < 3 min)
     # 60 rows at 1s intervals = 1 min elapsed (time_offset 0..590)
-    rows_short_time = [
-        {'time_offset': i, 'altitude': 100.0 + i}
-        for i in range(Config.Metrics.MIN_ALT_POINTS)
-    ]
+    rows_short_time = [{"time_offset": i, "altitude": 100.0 + i} for i in range(Config.Metrics.MIN_ALT_POINTS)]
     # last time_offset = MIN_ALT_POINTS - 1 seconds; for MIN_ALT_POINTS=60 → 59s → 0.016h < 0.05
     assert calc_vertical_speed(rows_short_time) is None, "Should return None when duration < 0.05h"
 
@@ -239,11 +233,8 @@ def test_calc_vertical_speed_nonzero_leading_offset():
     """
     n = Config.Metrics.MIN_ALT_POINTS + 10
     # Spread n rows evenly across the 1800..3600 window (10s spacing), each +2.0 m.
-    rows = [
-        {'time_offset': 1800 + i * 10, 'altitude': 100.0 + i * 2.0}
-        for i in range(n)
-    ]
-    span_sec = rows[-1]['time_offset'] - rows[0]['time_offset']
+    rows = [{"time_offset": 1800 + i * 10, "altitude": 100.0 + i * 2.0} for i in range(n)]
+    span_sec = rows[-1]["time_offset"] - rows[0]["time_offset"]
     elapsed_hours = span_sec / 3600
     total_ascent = (n - 1) * 2.0
     expected_vmh = round(total_ascent / elapsed_hours, 0)
@@ -254,18 +245,16 @@ def test_calc_vertical_speed_nonzero_leading_offset():
     # absolute offset including the 1800s lead-in), which inflates the
     # denominator and roughly halves vmh.
     assert result.duration_hours == round(elapsed_hours, 2), (
-        f"duration_hours must be the elapsed span {round(elapsed_hours, 2)}h, "
-        f"got {result.duration_hours}h"
+        f"duration_hours must be the elapsed span {round(elapsed_hours, 2)}h, got {result.duration_hours}h"
     )
     assert result.vmh == int(expected_vmh), (
-        f"vmh must be computed over the elapsed span: expected {int(expected_vmh)}, "
-        f"got {result.vmh}"
+        f"vmh must be computed over the elapsed span: expected {int(expected_vmh)}, got {result.vmh}"
     )
-    print(f"  OK: calc_vertical_speed nonzero-offset — vmh={result.vmh}, "
-          f"duration={result.duration_hours}h")
+    print(f"  OK: calc_vertical_speed nonzero-offset — vmh={result.vmh}, duration={result.duration_hours}h")
 
 
 # ─── calc_cardiac_drift ───
+
 
 def test_calc_cardiac_drift():
     """calc_cardiac_drift(rows, sport_type=None): None guards and result shape."""
@@ -278,17 +267,18 @@ def test_calc_cardiac_drift():
     result = calc_cardiac_drift(rows_ok)
     assert result is not None, "Should return CardiacDriftResult for sufficient data"
     # Result fields must be present (values may vary based on algorithm)
-    assert hasattr(result, 'drift_pct')
-    assert hasattr(result, 'is_significant')
-    assert hasattr(result, 'quality')
+    assert hasattr(result, "drift_pct")
+    assert hasattr(result, "is_significant")
+    assert hasattr(result, "quality")
 
     # sport_type kwarg accepted — does not crash
-    result2 = calc_cardiac_drift(rows_ok, sport_type='Run')
+    result2 = calc_cardiac_drift(rows_ok, sport_type="Run")
     assert result2 is not None
     print(f"  OK: calc_cardiac_drift — drift_pct={result.drift_pct}, quality={result.quality}")
 
 
 # ─── calc_hrr_pct ───
+
 
 def test_calc_hrr_pct():
     """calc_hrr_pct(median_hr, hr_rest, hr_max): None guards and formula."""
@@ -310,4 +300,4 @@ def test_calc_hrr_pct():
     low = calc_hrr_pct(80, 50, 200)  # (80-50)/(200-50)*100 = 30/150*100 = 20.0
     assert low == 20.0, f"Expected 20.0, got {low}"
 
-    print(f"  OK: calc_hrr_pct — 66.7 confirmed, None guards pass")
+    print("  OK: calc_hrr_pct — 66.7 confirmed, None guards pass")

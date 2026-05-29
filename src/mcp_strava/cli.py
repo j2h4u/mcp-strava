@@ -1,31 +1,31 @@
 """Strava CLI — thin dispatcher on top of mcp_strava modules."""
 
-import sys
 import json
+import sys
 from dataclasses import is_dataclass
 from datetime import datetime
 from pathlib import Path
 
+import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.duckdb.connection import MirrorDbLocked
 from mcp_strava.application.freshness import get_freshness_service
-from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
 from mcp_strava.application.metric_services import get_workout_detail_service, list_workouts_service
+from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
 from mcp_strava.application.product_facts import get_daily_brief_facts_service, get_weekly_digest_facts_service
-import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.db import DbConn, refresh_token, repository_from_connection, repository_from_path
 from mcp_strava.deploy.preflight import validate_runtime_db
 from mcp_strava.maintenance.compact import compact_database
 from mcp_strava.refresh import RefreshPolicy, RefreshSkipped
-from mcp_strava.types import dc_to_dict
 from mcp_strava.refresh.bootstrap import (
     RealClock,
     RealSleeper,
     build_refresh_collaborators,
 )
+from mcp_strava.settings import get_settings
 from mcp_strava.sync import (
     backfill_activities,
 )
-from mcp_strava.settings import get_settings
+from mcp_strava.types import dc_to_dict
 
 backfill_stream_channels = refresh_runtime.run_stream_channel_catchup
 
@@ -34,15 +34,16 @@ class _DryRunStravaTransport:
     def fetch(self, path: str):
         raise RuntimeError(f"Dry-run stream backfill must not call Strava API: {path}")
 
+
 # ═══════════════════════════════════════════════════════════════
 #  CLI Commands
 # ═══════════════════════════════════════════════════════════════
 
 
 def cmd_sql(args):
-    query = ' '.join(args) if args else ''
+    query = " ".join(args) if args else ""
     if not query:
-        print("Usage: sql \"SELECT ...\"", file=sys.stderr)
+        print('Usage: sql "SELECT ..."', file=sys.stderr)
         return
     with DbConn() as conn:
         try:
@@ -52,7 +53,7 @@ def cmd_sql(args):
                 return
             cols = rows[0].keys()
             header = "| " + " | ".join(cols) + " |"
-            sep = "| " + " | ".join(["---"]*len(cols)) + " |"
+            sep = "| " + " | ".join(["---"] * len(cols)) + " |"
             body = ["| " + " | ".join(str(r[c]) for c in cols) + " |" for r in rows]
             print("\n".join([header, sep] + body))
         except Exception as e:
@@ -61,7 +62,7 @@ def cmd_sql(args):
 
 def cmd_refresh(args):
     token = refresh_token()
-    print(json.dumps({"status": "ok", "token": token[:10]+"..."}))
+    print(json.dumps({"status": "ok", "token": token[:10] + "..."}))
 
 
 def cmd_report(args):
@@ -86,10 +87,14 @@ def cmd_workouts(args):
     """Recent workouts product command."""
     json_output = _pop_json_flag(args)
     if not args or args[0] != "recent":
-        _usage_error("Usage: python -m mcp_strava workouts recent [--limit N] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--sport SPORT] [--json]")
+        _usage_error(
+            "Usage: python -m mcp_strava workouts recent [--limit N] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--sport SPORT] [--json]"
+        )
     options = _parse_workouts_recent_options(args[1:])
     envelope = list_workouts_service(**options)
-    _print_product_envelope(envelope, json_output=json_output, title="Recent Workouts", renderer=_render_recent_workouts)
+    _print_product_envelope(
+        envelope, json_output=json_output, title="Recent Workouts", renderer=_render_recent_workouts
+    )
 
 
 def cmd_workout(args):
@@ -98,7 +103,9 @@ def cmd_workout(args):
     if len(args) < 2 or args[0] != "analyze":
         _usage_error("Usage: python -m mcp_strava workout analyze <id|latest> [--json]")
     envelope = get_workout_detail_service(args[1])
-    _print_product_envelope(envelope, json_output=json_output, title="Workout Analytics", renderer=_render_workout_analytics)
+    _print_product_envelope(
+        envelope, json_output=json_output, title="Workout Analytics", renderer=_render_workout_analytics
+    )
 
 
 def cmd_freshness(args):
@@ -114,7 +121,7 @@ def cmd_strava_raw(args):
     """Raw Strava API call."""
     from mcp_strava.db import api_request
 
-    path = args[0] if args else '/athlete'
+    path = args[0] if args else "/athlete"
     data, _rate = api_request(path)
     print(json.dumps(data, indent=2))
 
@@ -126,25 +133,26 @@ def cmd_log(args):
         rows = conn.execute(
             "SELECT timestamp, status, activities_seen, activities_new, "
             "streams_fetched, details_fetched, kudos_fetched, api_calls, error "
-            "FROM sync_log ORDER BY id DESC LIMIT ?", (limit,)
+            "FROM sync_log ORDER BY id DESC LIMIT ?",
+            (limit,),
         ).fetchall()
     if not rows:
         print("No sync log entries yet.")
         return
     for r in rows:
-        ok = "✓" if r['status'] == 'ok' else "✗"
+        ok = "✓" if r["status"] == "ok" else "✗"
         parts = [f"{r['timestamp'][:19]} {ok}"]
-        if r['activities_new']:
+        if r["activities_new"]:
             parts.append(f"+{r['activities_new']} new")
-        if r['streams_fetched']:
+        if r["streams_fetched"]:
             parts.append(f"{r['streams_fetched']} streams")
-        if r['details_fetched']:
+        if r["details_fetched"]:
             parts.append(f"{r['details_fetched']} details")
-        if r['kudos_fetched']:
+        if r["kudos_fetched"]:
             parts.append(f"{r['kudos_fetched']} kudos")
         parts.append(f"{r['api_calls'] or 0} calls")
-        if r['error']:
-            parts.append(r['error'][:80])
+        if r["error"]:
+            parts.append(r["error"][:80])
         print("  ".join(parts))
 
 
@@ -187,13 +195,20 @@ def cmd_mirror_coverage(args):
         return
 
     print("Mirror Coverage")
-    for key in ("status", "activities_total", "activities_with_streams", "stream_points", "gps_points", "channels", "backfill_needed"):
+    for key in (
+        "status",
+        "activities_total",
+        "activities_with_streams",
+        "stream_points",
+        "gps_points",
+        "channels",
+        "backfill_needed",
+    ):
         print(f"- {key}: {payload.get(key)}")
 
 
 _CATCHUP_USAGE = (
-    "Usage: python -m mcp_strava admin catchup "
-    "[--since YYYY-MM-DD] [--limit N] [--dry-run] [--db <path>] [--json]"
+    "Usage: python -m mcp_strava admin catchup [--since YYYY-MM-DD] [--limit N] [--dry-run] [--db <path>] [--json]"
 )
 
 
@@ -363,7 +378,9 @@ def _parse_workouts_recent_options(args):
             options[key] = args[index + 1]
             index += 2
             continue
-        _usage_error("Usage: python -m mcp_strava workouts recent [--limit N] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--sport SPORT] [--json]")
+        _usage_error(
+            "Usage: python -m mcp_strava workouts recent [--limit N] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--sport SPORT] [--json]"
+        )
     return options
 
 
@@ -511,7 +528,7 @@ def _render_bundle_sections(data):
                     print(f"- {label}")
         comparison = section.get("comparison")
         if isinstance(comparison, dict):
-            global_metrics = ((comparison.get("global") or {}).get("metrics") or {})
+            global_metrics = (comparison.get("global") or {}).get("metrics") or {}
             for metric_id, payload in list(global_metrics.items())[:5]:
                 if isinstance(payload, dict):
                     print(f"- {metric_id}: delta={payload.get('delta')} trend={payload.get('trend_direction')}")
@@ -611,5 +628,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

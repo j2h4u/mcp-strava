@@ -10,10 +10,10 @@ for system python3 environments without numpy.
 
 import math
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # JENKS NATURAL BREAKS — pure Python DP
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def _ss_matrix_py(x):
     """Precompute sum-of-squared-deviations matrix SS[i][j] for sorted x.
@@ -38,7 +38,7 @@ def _ss_matrix_py(x):
 
 def jenks_breaks(x, k):
     """Jenks Natural Breaks for 1D sorted list x into k classes.
-    
+
     Returns (boundaries, sdcm, sdam, gvf).
     Pure Python DP: O(k·n²) time.
     """
@@ -49,7 +49,7 @@ def jenks_breaks(x, k):
         k = n
 
     ss = _ss_matrix_py(x)
-    INF = float('inf')
+    INF = float("inf")
     D = [[INF] * (n + 1) for _ in range(k + 1)]
     B = [[0] * (n + 1) for _ in range(k + 1)]
 
@@ -126,6 +126,7 @@ def auto_jenks(x, max_k=6, gvf_threshold=0.85, gvf_gain_min=0.03, min_cluster_si
 # HELPERS — pure Python
 # ═══════════════════════════════════════════════════════════════════════
 
+
 def _median(vals):
     """Median of a sorted list."""
     n = len(vals)
@@ -193,6 +194,7 @@ def _filter_hr_outliers(heartrate, cluster_labels, n_clusters, outlier_iqr_mult=
 # MAIN ALGORITHM
 # ═══════════════════════════════════════════════════════════════════════
 
+
 def cardiac_drift(
     heartrate,
     velocity,
@@ -206,14 +208,14 @@ def cardiac_drift(
     max_points=600,
 ):
     """Intra-activity cardiac drift via Jenks pace clustering.
-    
+
     Args:
         heartrate: iterable of HR values (bpm)
         velocity: iterable of velocity values (m/s)
         max_points: subsample evenly if N exceeds this (keeps Jenks O(n²) fast).
             Default 600 → ~250K SS entries, ~1.5M DP ops → sub-second pure Python.
         All other params: see docstring in numpy version.
-    
+
     Returns:
         dict with drift_weighted_pct, is_significant, severity, etc.
     """
@@ -224,11 +226,16 @@ def cardiac_drift(
 
     if n < 120:
         return {
-            'drift_weighted_pct': None, 'drift_consistency': None,
-            'is_significant': False, 'severity': 'stable', 'quality': 'low',
-            'error': 'Too few data points (<120)',
-            'n_clusters': 0, 'gvf': 0.0,
-            'cluster_details': [], 'diagnostic': {}
+            "drift_weighted_pct": None,
+            "drift_consistency": None,
+            "is_significant": False,
+            "severity": "stable",
+            "quality": "low",
+            "error": "Too few data points (<120)",
+            "n_clusters": 0,
+            "gvf": 0.0,
+            "cluster_details": [],
+            "diagnostic": {},
         }
 
     if time_offset is None:
@@ -257,8 +264,7 @@ def cardiac_drift(
     vel_sorted = [item[0] for item in vel_with_idx]
 
     boundaries, k_opt, gvf, k_results = auto_jenks(
-        vel_sorted, max_k=max_k, gvf_threshold=gvf_threshold,
-        gvf_gain_min=0.03, min_cluster_size=min_cluster_pts
+        vel_sorted, max_k=max_k, gvf_threshold=gvf_threshold, gvf_gain_min=0.03, min_cluster_size=min_cluster_pts
     )
 
     # Map sorted indices back to original timeline
@@ -329,26 +335,32 @@ def cardiac_drift(
         weight = sum(vel_mask)
 
         cluster_drifts.append((drift_pct, weight))
-        cluster_details.append({
-            'cluster_id': c,
-            'velocity_min': round(min(cluster_vel), 3),
-            'velocity_max': round(max(cluster_vel), 3),
-            'velocity_median': round(_median(sorted(cluster_vel)), 3),
-            'n_segments': len(segs),
-            'total_duration_s': weight,
-            'early_hr': round(early_hr, 1),
-            'late_hr': round(late_hr, 1),
-            'drift_pct': round(drift_pct, 2),
-        })
+        cluster_details.append(
+            {
+                "cluster_id": c,
+                "velocity_min": round(min(cluster_vel), 3),
+                "velocity_max": round(max(cluster_vel), 3),
+                "velocity_median": round(_median(sorted(cluster_vel)), 3),
+                "n_segments": len(segs),
+                "total_duration_s": weight,
+                "early_hr": round(early_hr, 1),
+                "late_hr": round(late_hr, 1),
+                "drift_pct": round(drift_pct, 2),
+            }
+        )
 
     if len(cluster_drifts) == 0:
         return {
-            'drift_weighted_pct': None, 'drift_consistency': None,
-            'is_significant': False, 'severity': 'stable', 'quality': 'low',
-            'error': 'No clusters with ≥2 segments',
-            'n_clusters': k_opt, 'gvf': round(gvf, 4),
-            'cluster_details': cluster_details,
-            'diagnostic': {'k_results': k_results}
+            "drift_weighted_pct": None,
+            "drift_consistency": None,
+            "is_significant": False,
+            "severity": "stable",
+            "quality": "low",
+            "error": "No clusters with ≥2 segments",
+            "n_clusters": k_opt,
+            "gvf": round(gvf, 4),
+            "cluster_details": cluster_details,
+            "diagnostic": {"k_results": k_results},
         }
 
     # ── Step 5: Aggregate ──
@@ -362,43 +374,43 @@ def cardiac_drift(
     # Quality level: based on total effective duration across all valid clusters
     total_dur_s = sum(sum(e - s for s, e, _ in segs) for segs in segments_by_cluster) * subsample_step
     if total_dur_s >= 600:
-        quality = 'good'       # ≥10 min of clustered data
+        quality = "good"  # ≥10 min of clustered data
     elif total_dur_s >= 300:
-        quality = 'fair'       # ≥5 min
+        quality = "fair"  # ≥5 min
     else:
-        quality = 'low'        # <5 min — too noisy
+        quality = "low"  # <5 min — too noisy
 
     # Severity: only positive drift matters for fatigue detection.
     # Negative drift = warmup effect (HR settles from cold start to steady state).
     if drift_weighted_pct <= 0:
-        severity = 'stable'
+        severity = "stable"
         is_significant = False
     else:
         ad = drift_weighted_pct
         if ad < 3:
-            severity = 'stable'
+            severity = "stable"
         elif ad < 5:
-            severity = 'borderline'
+            severity = "borderline"
         elif ad < 8:
-            severity = 'moderate'
+            severity = "moderate"
         elif ad < 12:
-            severity = 'significant'
+            severity = "significant"
         else:
-            severity = 'severe'
+            severity = "severe"
         is_significant = (ad >= drift_threshold_pct) and (drift_consistency >= 0.6)
 
     return {
-        'drift_weighted_pct': round(drift_weighted_pct, 2),
-        'drift_consistency': round(drift_consistency, 2),
-        'is_significant': bool(is_significant),
-        'severity': severity,
-        'quality': quality,
-        'n_clusters': k_opt,
-        'gvf': round(gvf, 4),
-        'cluster_details': cluster_details,
-        'diagnostic': {
-            'k_results': [(int(k), round(float(g), 4), int(s)) for k, g, s in k_results],
-            'n_total_points': n,
-            'n_filtered_points': sum(1 for i in range(n) if hr_filtered[i] != hr[i]),
-        }
+        "drift_weighted_pct": round(drift_weighted_pct, 2),
+        "drift_consistency": round(drift_consistency, 2),
+        "is_significant": bool(is_significant),
+        "severity": severity,
+        "quality": quality,
+        "n_clusters": k_opt,
+        "gvf": round(gvf, 4),
+        "cluster_details": cluster_details,
+        "diagnostic": {
+            "k_results": [(int(k), round(float(g), 4), int(s)) for k, g, s in k_results],
+            "n_total_points": n,
+            "n_filtered_points": sum(1 for i in range(n) if hr_filtered[i] != hr[i]),
+        },
     }

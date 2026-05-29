@@ -31,16 +31,12 @@ def get_mirror_coverage_service(*, connection=None) -> dict:
         repo = repository_from_connection(conn)
         stream_columns = _stream_columns(conn)
         activities_total = int(conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0])
-        activities_with_streams = int(
-            conn.execute("SELECT COUNT(DISTINCT activity_id) FROM streams").fetchone()[0]
-        )
+        activities_with_streams = int(conn.execute("SELECT COUNT(DISTINCT activity_id) FROM streams").fetchone()[0])
         stream_points = int(conn.execute("SELECT COUNT(*) FROM streams").fetchone()[0])
         gps_where = "lat IS NOT NULL AND lng IS NOT NULL"
         if "latlng" in stream_columns:
             gps_where = f"({gps_where}) OR latlng IS NOT NULL"
-        gps_points = int(
-            conn.execute(f"SELECT COUNT(*) FROM streams WHERE {gps_where}").fetchone()[0]
-        )
+        gps_points = int(conn.execute(f"SELECT COUNT(*) FROM streams WHERE {gps_where}").fetchone()[0])
         channel_stats = repo.stream_channel_coverage()
         has_stream_channels = _table_exists(conn, "stream_channels")
         has_values_json_col = "values_json" in stream_columns
@@ -92,9 +88,7 @@ def get_mirror_coverage_service(*, connection=None) -> dict:
         "unavailable": channel_stats["unavailable_channels"],
         "error": channel_stats["error_channels"],
     }
-    backfill_needed = (activities_with_streams > 0) and (
-        missing_metadata > 0 or missing_extra_values > 0
-    )
+    backfill_needed = (activities_with_streams > 0) and (missing_metadata > 0 or missing_extra_values > 0)
 
     return {
         "status": "ok",

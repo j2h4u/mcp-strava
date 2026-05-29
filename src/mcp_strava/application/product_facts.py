@@ -36,7 +36,6 @@ from mcp_strava.types import (
     dc_to_dict,
 )
 
-
 PRODUCT_FACT_BUNDLES = frozenset({"daily_brief", "weekly_digest", "historical_facts"})
 GEAR_METRIC_IDS = ("gear_id", "gear_name", "gear_distance_km", "gear_primary")
 
@@ -132,10 +131,21 @@ def get_daily_brief_facts_service(
     sections = {
         "current_state": _section(
             requested=("fitness", "fatigue", "form", "form_zone", "acwr", "acwr_zone"),
-            metrics=_pick_metrics(_dict_data(fitness_payload), ("fitness", "fatigue", "form", "form_zone", "acwr", "acwr_zone")),
+            metrics=_pick_metrics(
+                _dict_data(fitness_payload), ("fitness", "fatigue", "form", "form_zone", "acwr", "acwr_zone")
+            ),
         ),
         "recent_workouts": _section(
-            requested=("activity_id", "activity_date", "sport_type", "distance_km", "moving_time_min", "elevation_m", "trimp", "kudos_count"),
+            requested=(
+                "activity_id",
+                "activity_date",
+                "sport_type",
+                "distance_km",
+                "moving_time_min",
+                "elevation_m",
+                "trimp",
+                "kudos_count",
+            ),
             items=_data_list(recent_payload),
         ),
         "daily_load_14d": _section(
@@ -147,9 +157,32 @@ def get_daily_brief_facts_service(
             rows=_rows(by_sport_payload),
         ),
         "model_context": _section(
-            requested=("fitness", "fatigue", "form", "form_zone", "acwr", "acwr_zone", "weekly_trimp", "total_trimp_14d", "avg_trimp_per_day"),
+            requested=(
+                "fitness",
+                "fatigue",
+                "form",
+                "form_zone",
+                "acwr",
+                "acwr_zone",
+                "weekly_trimp",
+                "total_trimp_14d",
+                "avg_trimp_per_day",
+            ),
             metrics={
-                **_pick_metrics(_dict_data(fitness_payload), ("fitness", "fatigue", "form", "form_zone", "acwr", "acwr_zone", "weekly_trimp", "total_trimp_14d", "avg_trimp_per_day")),
+                **_pick_metrics(
+                    _dict_data(fitness_payload),
+                    (
+                        "fitness",
+                        "fatigue",
+                        "form",
+                        "form_zone",
+                        "acwr",
+                        "acwr_zone",
+                        "weekly_trimp",
+                        "total_trimp_14d",
+                        "avg_trimp_per_day",
+                    ),
+                ),
                 **_pick_metrics(bundle_metric_values, ("weekly_trimp", "total_trimp_14d", "avg_trimp_per_day")),
             },
         ),
@@ -174,7 +207,9 @@ def get_daily_brief_facts_service(
         requested_metrics=tuple(metrics_for_aggregate_bundle("daily_brief")),
         rows=_rows(bundle_payload),
     )
-    return _service_envelope(data, fitness, [recent, gear_candidates, bundle_rows, daily_load, by_sport], read_model, requested)
+    return _service_envelope(
+        data, fitness, [recent, gear_candidates, bundle_rows, daily_load, by_sport], read_model, requested
+    )
 
 
 def get_weekly_digest_facts_service(
@@ -239,14 +274,33 @@ def get_weekly_digest_facts_service(
         ),
         "efficiency": _section(
             requested=("avg_hr", "max_hr", "cardiac_cost", "cardiac_cost_adjusted", "cardiac_drift_pct", "hrr_pct"),
-            rows=_filter_rows(rows, {"avg_hr", "max_hr", "cardiac_cost", "cardiac_cost_adjusted", "cardiac_drift_pct", "hrr_pct"}),
+            rows=_filter_rows(
+                rows, {"avg_hr", "max_hr", "cardiac_cost", "cardiac_cost_adjusted", "cardiac_drift_pct", "hrr_pct"}
+            ),
         ),
         "by_sport": _section(
-            requested=("distance_km", "moving_time_min", "elevation_m", "avg_hr", "max_hr", "cardiac_cost", "cardiac_drift_pct"),
+            requested=(
+                "distance_km",
+                "moving_time_min",
+                "elevation_m",
+                "avg_hr",
+                "max_hr",
+                "cardiac_cost",
+                "cardiac_drift_pct",
+            ),
             rows=[row for row in rows if row.get("scope") == "per_sport"],
         ),
         "current_week_activities": _section(
-            requested=("activity_id", "activity_date", "sport_type", "distance_km", "moving_time_min", "elevation_m", "trimp", "kudos_count"),
+            requested=(
+                "activity_id",
+                "activity_date",
+                "sport_type",
+                "distance_km",
+                "moving_time_min",
+                "elevation_m",
+                "trimp",
+                "kudos_count",
+            ),
             items=_data_list(current_payload),
         ),
         "period_trends": _section(
@@ -267,7 +321,9 @@ def get_weekly_digest_facts_service(
         requested_metrics=tuple(metrics_for_aggregate_bundle("weekly_digest")),
         rows=rows,
     )
-    return _service_envelope(data, weekly, [current_week, trends], read_model, set(metrics_for_aggregate_bundle("weekly_digest")))
+    return _service_envelope(
+        data, weekly, [current_week, trends], read_model, set(metrics_for_aggregate_bundle("weekly_digest"))
+    )
 
 
 def get_historical_facts_service(
@@ -345,7 +401,14 @@ def format_aggregate_product_bundle(
     section_specs = {
         "daily_brief": {
             "current_state": ("fitness", "fatigue", "form", "form_zone", "acwr", "acwr_zone"),
-            "load_context": ("weekly_trimp", "total_trimp_14d", "avg_trimp_per_day", "active_days", "rest_days", "daily_avg_trimp_7d"),
+            "load_context": (
+                "weekly_trimp",
+                "total_trimp_14d",
+                "avg_trimp_per_day",
+                "active_days",
+                "rest_days",
+                "daily_avg_trimp_7d",
+            ),
             "efficiency_context": ("rolling_median_cc", "rolling_median_hr_recovery"),
             "social_context": ("kudos_count",),
         },
@@ -431,7 +494,11 @@ def _metric_values(rows: list[dict[str, object]]) -> dict[str, object]:
 
 
 def _pick_metrics(values: dict[str, object], metric_ids: tuple[str, ...]) -> dict[str, object]:
-    return {metric_id: values[metric_id] for metric_id in metric_ids if metric_id in values and values[metric_id] is not None}
+    return {
+        metric_id: values[metric_id]
+        for metric_id in metric_ids
+        if metric_id in values and values[metric_id] is not None
+    }
 
 
 def _normalise_status_fact(item) -> dict[str, object]:
@@ -481,11 +548,10 @@ def _supported_gear_section(
         if any(value is not None for value in gear.values()):
             items.append({"activity_id": int(activity_id), **gear})
 
-    included = tuple(metric_id for metric_id in GEAR_METRIC_IDS if any(item.get(metric_id) is not None for item in items))
-    skipped = () if included else tuple(
-        _reason(metric_id, "gear_data_not_mirrored")
-        for metric_id in GEAR_METRIC_IDS
+    included = tuple(
+        metric_id for metric_id in GEAR_METRIC_IDS if any(item.get(metric_id) is not None for item in items)
     )
+    skipped = () if included else tuple(_reason(metric_id, "gear_data_not_mirrored") for metric_id in GEAR_METRIC_IDS)
     return {
         "items": items,
         "bundle_completeness": _bundle_completeness(
@@ -554,7 +620,9 @@ def _included_metrics(
                 included.add(str(metric_id))
     for payload in (metrics, facts):
         if payload:
-            included.update(metric_id for metric_id, value in payload.items() if metric_id in requested_set and value is not None)
+            included.update(
+                metric_id for metric_id, value in payload.items() if metric_id in requested_set and value is not None
+            )
     if items:
         for item in items:
             included.update(metric_id for metric_id in requested_set if item.get(metric_id) is not None)
@@ -648,11 +716,7 @@ def _service_envelope(
     read_model: dict[str, object],
     requested_metrics: set[str],
 ) -> ServiceEnvelope:
-    section_statuses = [
-        _section_status(section)
-        for section in data["sections"].values()
-        if isinstance(section, dict)
-    ]
+    section_statuses = [_section_status(section) for section in data["sections"].values() if isinstance(section, dict)]
     missing = sorted(_missing_reasons(data))
     coverage = {
         "read_model": read_model,

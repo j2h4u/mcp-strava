@@ -96,6 +96,7 @@ ROLLING_FACTS = {
     "volume_28d": (28, "activity_count", 1.0),
 }
 
+
 def _project_fitness_state_metrics(model, rolling: dict[int, object]) -> dict[str, object]:
     data: dict[str, object] = {}
     if model is not None:
@@ -162,7 +163,7 @@ def _kudos_count(summary: dict[str, object]) -> int:
     value = summary.get("kudos_count")
     try:
         return int(value) if value is not None else 0
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0
 
 
@@ -185,7 +186,9 @@ def _read_model_status(repo) -> dict[str, object]:
     return repo.read_model_status(metric_version=CURRENT_METRIC_VERSION)
 
 
-def _coverage_with_read_model(read_model: dict[str, object], extra: dict[str, object] | None = None) -> dict[str, object]:
+def _coverage_with_read_model(
+    read_model: dict[str, object], extra: dict[str, object] | None = None
+) -> dict[str, object]:
     coverage = dict(extra or {})
     coverage["read_model"] = read_model
     return coverage
@@ -227,10 +230,7 @@ def _row_get(row, key: str, default=None):
 
 
 def _zone_minutes(row) -> list[float]:
-    return [
-        round(float(row[f"zone{idx}_seconds"] or 0) / 60, 3)
-        for idx in range(1, 6)
-    ]
+    return [round(float(row[f"zone{idx}_seconds"] or 0) / 60, 3) for idx in range(1, 6)]
 
 
 def _activity_value(row, metric_id: str):
@@ -259,7 +259,7 @@ def _gear_payload(row, summary: dict[str, object]) -> dict[str, object]:
     distance_m = gear.get("distance") or gear.get("converted_distance")
     try:
         gear_distance_km = round(float(distance_m) / 1000.0, 3) if distance_m is not None else None
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         gear_distance_km = None
     primary = gear.get("primary")
     return {
@@ -414,7 +414,11 @@ def list_workouts_service(
             missing=[],
             coverage=_coverage_with_read_model(
                 read_model,
-                {"count": len(data), "limit": limit, "filters": {"start_date": start_date, "end_date": end_date, "sport": sport}},
+                {
+                    "count": len(data),
+                    "limit": limit,
+                    "filters": {"start_date": start_date, "end_date": end_date, "sport": sport},
+                },
             ),
         )
 
@@ -460,7 +464,11 @@ def get_workout_detail_service(
         freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         resolved_id = repo.latest_activity_id() if activity_id == "latest" else int(activity_id)
-        row = repo.fetch_activity_metric_fact(resolved_id, metric_version=CURRENT_METRIC_VERSION) if resolved_id is not None else None
+        row = (
+            repo.fetch_activity_metric_fact(resolved_id, metric_version=CURRENT_METRIC_VERSION)
+            if resolved_id is not None
+            else None
+        )
 
         if row is None:
             completeness = CompletenessMetadata(
@@ -472,7 +480,11 @@ def get_workout_detail_service(
                 data=None,
                 freshness=freshness,
                 completeness=completeness,
-                warnings=[ServiceWarning(code="workout_not_found", severity="warning", message="Requested workout was not found.")],
+                warnings=[
+                    ServiceWarning(
+                        code="workout_not_found", severity="warning", message="Requested workout was not found."
+                    )
+                ],
                 rationale=_rationale("Workout detail requested from materialized activity facts."),
             )
 
@@ -613,7 +625,14 @@ def _distribution_delta(
     total_b = sum(float(value or 0.0) for value in buckets_b.values())
     overlap = None
     if total_a > 0 and total_b > 0:
-        overlap = round((sum(min(float(buckets_a.get(key) or 0.0), float(buckets_b.get(key) or 0.0)) for key in keys) / max(total_a, total_b)) * 100, 2)
+        overlap = round(
+            (
+                sum(min(float(buckets_a.get(key) or 0.0), float(buckets_b.get(key) or 0.0)) for key in keys)
+                / max(total_a, total_b)
+            )
+            * 100,
+            2,
+        )
     return deltas, delta_pct, overlap
 
 
@@ -643,7 +662,11 @@ def _compare_aggregate_pair(row_a: dict[str, object] | None, row_b: dict[str, ob
     value_a = period_a.get("value")
     value_b = period_b.get("value")
     delta = round(float(value_a) - float(value_b), 3) if _is_number(value_a) and _is_number(value_b) else None
-    delta_pct = round((delta / float(value_b)) * 100, 2) if _is_number(delta) and _is_number(value_b) and float(value_b) != 0 else None
+    delta_pct = (
+        round((delta / float(value_b)) * 100, 2)
+        if _is_number(delta) and _is_number(value_b) and float(value_b) != 0
+        else None
+    )
     trend = "unavailable"
     if _is_number(delta):
         trend = "flat" if abs(float(delta)) < 1e-9 else ("up" if float(delta) > 0 else "down")
@@ -717,7 +740,9 @@ def compare_periods_service(
     global_section = {"scope_filter": "sport" if sport else "all", "metrics": {}}
     per_sport_section: dict[str, dict[str, object]] = {}
     for scope, sport_name, metric_id in keys:
-        comparison = _compare_aggregate_pair(period_a_by_key.get((scope, sport_name, metric_id)), period_b_by_key.get((scope, sport_name, metric_id)))
+        comparison = _compare_aggregate_pair(
+            period_a_by_key.get((scope, sport_name, metric_id)), period_b_by_key.get((scope, sport_name, metric_id))
+        )
         if scope == "per_sport":
             if sport is not None and sport_name != sport:
                 continue
@@ -737,7 +762,9 @@ def compare_periods_service(
     }
     read_model = period_a_envelope.completeness.coverage.get("read_model", {})
     period_b_read_model = period_b_envelope.completeness.coverage.get("read_model", {})
-    comparison_missing = sorted(set(period_a_envelope.completeness.missing) | set(period_b_envelope.completeness.missing))
+    comparison_missing = sorted(
+        set(period_a_envelope.completeness.missing) | set(period_b_envelope.completeness.missing)
+    )
     comparison_status = _comparison_completeness_status(
         period_a_envelope.completeness.status,
         period_b_envelope.completeness.status,
@@ -761,7 +788,9 @@ def compare_periods_service(
         freshness=period_a_envelope.freshness,
         completeness=completeness,
         warnings=_dedupe_warnings([*period_a_envelope.warnings, *period_b_envelope.warnings]),
-        rationale=_rationale("Period comparison formats two bounded all-time aggregate requests over prepared local metric facts."),
+        rationale=_rationale(
+            "Period comparison formats two bounded all-time aggregate requests over prepared local metric facts."
+        ),
     )
 
 
@@ -769,7 +798,9 @@ def _dedupe_warnings(warnings: list[ServiceWarning]) -> list[ServiceWarning]:
     deduped: list[ServiceWarning] = []
     seen: set[tuple[str, str, str, str | None, str | None]] = set()
     for warning in warnings:
-        evidence_key = json.dumps(warning.evidence, sort_keys=True, default=str) if warning.evidence is not None else None
+        evidence_key = (
+            json.dumps(warning.evidence, sort_keys=True, default=str) if warning.evidence is not None else None
+        )
         key = (warning.code, warning.severity, warning.message, warning.field, evidence_key)
         if key in seen:
             continue
@@ -843,7 +874,10 @@ def _scenario_trimps(
         return [0.0 for _ in days], {"template_source": "rest_zero_load"}
     if scenario == "easy":
         easy_value = float(getattr(Config.Plan, "TRIMP_EASY", 80))
-        return [easy_value for _ in days], {"template_source": "config_plan_constants", "activity_template_trimp": easy_value}
+        return [easy_value for _ in days], {
+            "template_source": "config_plan_constants",
+            "activity_template_trimp": easy_value,
+        }
     if scenario == "maintain":
         lookback_start = (today_day - timedelta(days=27)).isoformat()
         lookback = {k: v for k, v in history_daily_trimp.items() if lookback_start <= k <= today_day.isoformat()}
@@ -859,7 +893,9 @@ def _scenario_trimps(
 
 
 def _daily_trimp_history(repo, start_day: str, end_day: str) -> dict[str, float]:
-    rows = repo.fetch_daily_load_facts(start_day, _next_day(end_day), scope="all", metric_version=CURRENT_METRIC_VERSION)
+    rows = repo.fetch_daily_load_facts(
+        start_day, _next_day(end_day), scope="all", metric_version=CURRENT_METRIC_VERSION
+    )
     return {row["day"]: float(row["effective_trimp"] or 0.0) for row in rows}
 
 

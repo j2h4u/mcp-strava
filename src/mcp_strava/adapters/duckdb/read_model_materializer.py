@@ -1,14 +1,14 @@
 """Offline materialization for DuckDB read-model facts."""
 
-from datetime import date, datetime, timedelta
 import json
+from datetime import date, datetime, timedelta
 from statistics import median
 
 from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository, build_trimp_sql
 from mcp_strava.application.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 from mcp_strava.constants import Config
 from mcp_strava.hr_zones import get_zone_model
-from mcp_strava.metrics import calc_hr_recovery, calc_vertical_speed, calc_cardiac_drift, calc_hrr_pct
+from mcp_strava.metrics import calc_cardiac_drift, calc_hr_recovery, calc_hrr_pct, calc_vertical_speed
 from mcp_strava.settings import Settings, get_settings
 from mcp_strava.training import calc_banister_series
 
@@ -111,9 +111,7 @@ def _activity_fact(
         hr_max_used = None
         bounds = None
     else:
-        bounds = get_zone_model(athlete.hr_zone_model).zone_bounds(
-            hr_max=int(hr_max_observed), hr_rest=athlete.hr_rest
-        )
+        bounds = get_zone_model(athlete.hr_zone_model).zone_bounds(hr_max=int(hr_max_observed), hr_rest=athlete.hr_rest)
         zone1, zone2, zone3, zone4, zone5 = repo.zone_seconds_for_activity(activity_id, bounds)
         trimp_val = repo.activity_trimp(activity_id, bounds=bounds)
         hr_max_used = int(hr_max_observed)
@@ -332,7 +330,9 @@ def _materialize_rolling_facts(
                 "acwr_zone": model["acwr_zone"] if model else None,
                 "acwr": model["acwr"] if model else None,
                 "median_cardiac_cost": _median_or_none([item["cardiac_cost"] for item in metric_rows]),
-                "median_adjusted_cardiac_cost": _median_or_none([item["adjusted_cardiac_cost"] for item in metric_rows]),
+                "median_adjusted_cardiac_cost": _median_or_none(
+                    [item["adjusted_cardiac_cost"] for item in metric_rows]
+                ),
                 "median_hr_recovery": _median_or_none([item["hr_recovery_median_rate"] for item in metric_rows]),
                 "median_cardiac_drift_pct": _median_or_none([item["cardiac_drift_pct"] for item in metric_rows]),
             }

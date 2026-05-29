@@ -81,7 +81,7 @@ def test_duckdb_repository_serializes_transactions_and_reads(monkeypatch) -> Non
         def release(self) -> None:
             events.append("lock_release")
 
-        def __enter__(self) -> "FakeLock":
+        def __enter__(self) -> FakeLock:
             self.acquire()
             return self
 

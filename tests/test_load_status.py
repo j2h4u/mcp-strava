@@ -116,8 +116,12 @@ def test_effective_trimp_series_matches_daily_load_points(tmp_path: Path) -> Non
         _insert_stream(repo.conn, 204, 0, 155)
         _insert_stream(repo.conn, 204, 1, 155)
 
-        points = repo.daily_load_points_between("2026-05-16", "2026-05-20", bounds=_TEST_BOUNDS, sport_filter="training")
-        effective_series = repo.effective_trimp_history("2026-05-16", "2026-05-20", bounds=_TEST_BOUNDS, sport_filter="training")
+        points = repo.daily_load_points_between(
+            "2026-05-16", "2026-05-20", bounds=_TEST_BOUNDS, sport_filter="training"
+        )
+        effective_series = repo.effective_trimp_history(
+            "2026-05-16", "2026-05-20", bounds=_TEST_BOUNDS, sport_filter="training"
+        )
 
     today_str = "2026-05-20"
     effective_from_points = {p.date: p.effective_trimp for p in points}

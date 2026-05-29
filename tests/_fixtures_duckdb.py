@@ -129,7 +129,18 @@ def create_fixture_db(db_path: str | Path) -> None:
                 streams_fetched, details_fetched, api_calls, error, kudos_fetched
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            [1, "2026-02-12T08:00:00Z", "ok", ACTIVITY_COUNT, ACTIVITY_COUNT, ACTIVITY_COUNT, ACTIVITY_COUNT, 5, None, 0],
+            [
+                1,
+                "2026-02-12T08:00:00Z",
+                "ok",
+                ACTIVITY_COUNT,
+                ACTIVITY_COUNT,
+                ACTIVITY_COUNT,
+                ACTIVITY_COUNT,
+                5,
+                None,
+                0,
+            ],
         )
         conn.execute(
             "INSERT INTO kudos (activity_id, firstname, lastname, fetched_at) VALUES (?, ?, ?, ?)",

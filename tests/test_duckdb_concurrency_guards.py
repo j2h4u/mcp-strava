@@ -101,7 +101,9 @@ def test_standalone_refresh_worker_refuses_live_duckdb_runtime(
 
     monkeypatch.setenv("MCP_STRAVA_RUNTIME_PROFILE", "container")
     monkeypatch.setenv("MCP_STRAVA_DB_PATH", "/runtime/data/strava.duckdb")
-    monkeypatch.setattr(worker, "run_pending_once", lambda **_kwargs: pytest.fail("standalone worker must refuse first"))
+    monkeypatch.setattr(
+        worker, "run_pending_once", lambda **_kwargs: pytest.fail("standalone worker must refuse first")
+    )
 
     rc = worker.main(["--once"])
 

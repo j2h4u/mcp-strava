@@ -14,11 +14,14 @@ from threading import Event
 import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION
 from mcp_strava.db import DbConn, repository_from_connection
-from mcp_strava.refresh import RefreshSkipped, Stage
-from mcp_strava.refresh import _sync_ops, health
-from mcp_strava.refresh.bootstrap import build_refresh_collaborators, ensure_runtime_refresh_schema, record_refresh_misconfigured
-from mcp_strava.refresh.policy import RefreshPolicy, refresh_interval_elapsed
 from mcp_strava.maintenance.compact import storage_stats
+from mcp_strava.refresh import RefreshSkipped, Stage, _sync_ops, health
+from mcp_strava.refresh.bootstrap import (
+    build_refresh_collaborators,
+    ensure_runtime_refresh_schema,
+    record_refresh_misconfigured,
+)
+from mcp_strava.refresh.policy import RefreshPolicy, refresh_interval_elapsed
 from mcp_strava.settings import get_settings
 
 
@@ -264,10 +267,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     settings = get_settings()
-    if settings.database_path.suffix.lower() == ".duckdb" and settings.runtime_profile in {"container", "docker", "live"}:
+    if settings.database_path.suffix.lower() == ".duckdb" and settings.runtime_profile in {
+        "container",
+        "docker",
+        "live",
+    }:
         print(
-            "standalone refresh worker is disabled for live DuckDB runtime; "
-            "use the mcp-strava owner process",
+            "standalone refresh worker is disabled for live DuckDB runtime; use the mcp-strava owner process",
             file=sys.stderr,
         )
         return 1

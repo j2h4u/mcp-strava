@@ -15,7 +15,6 @@ from mcp_strava.application.metric_registry import (
 from mcp_strava.types import ServiceEnvelope, dc_to_dict
 from tests.test_training_aggregates import _aggregate_fixture, _phase9_status_fixture
 
-
 ALLOWED_BUNDLE_REASON_CODES = {
     "scope_incompatible",
     "unsupported_window",
@@ -363,9 +362,5 @@ def test_supported_gear_facts_use_only_mirrored_detail_fields(tmp_path: Path) ->
         conn.close()
     no_gear_section = no_gear["data"]["sections"]["supported_gear"]
     assert no_gear_section["items"] == []
-    skipped_reasons = {
-        item["reason_code"]
-        for item in no_gear_section["bundle_completeness"]["skipped_metrics"]
-    }
+    skipped_reasons = {item["reason_code"] for item in no_gear_section["bundle_completeness"]["skipped_metrics"]}
     assert "gear_data_not_mirrored" in skipped_reasons
-

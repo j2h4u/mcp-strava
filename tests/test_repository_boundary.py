@@ -31,7 +31,9 @@ def _guard_load_paths_do_not_use_raw_activity_stream_sql() -> list[str]:
                 sql_literal = first.value
             elif isinstance(first, ast.JoinedStr):
                 sql_literal = "".join(
-                    part.value for part in first.values if isinstance(part, ast.Constant) and isinstance(part.value, str)
+                    part.value
+                    for part in first.values
+                    if isinstance(part, ast.Constant) and isinstance(part.value, str)
                 )
             if not sql_literal:
                 continue
@@ -205,9 +207,7 @@ def test_replace_stream_rows_and_channel_metadata_stores_null_values_json_when_n
             metadata=[],
         )
 
-        row = repo.conn.execute(
-            "SELECT values_json FROM streams WHERE activity_id = 1 AND time_offset = 0"
-        ).fetchone()
+        row = repo.conn.execute("SELECT values_json FROM streams WHERE activity_id = 1 AND time_offset = 0").fetchone()
 
     assert row is not None
     assert row[0] is None

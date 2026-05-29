@@ -90,7 +90,9 @@ class FakeTokenRefreshTransport:
         )
 
 
-def _write_token_file(path: Path, *, access: str = "access-old", refresh: str = "refresh-old", expires: int = 0) -> None:
+def _write_token_file(
+    path: Path, *, access: str = "access-old", refresh: str = "refresh-old", expires: int = 0
+) -> None:
     path.write_text(
         "\n".join(
             [

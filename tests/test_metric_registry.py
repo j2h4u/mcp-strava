@@ -10,21 +10,20 @@ from mcp_strava.application.metric_registry import (
     AGGREGATE_METRIC_BUNDLES,
     AGGREGATE_MODES,
     EXCLUDED_INTERPRETATIONS,
-    MCP_TOOL_IDS,
-    METRIC_REGISTRY,
     MATERIALIZED_FACT_COLUMN_REGISTRY,
     MATERIALIZED_FACT_TABLES,
     MATERIALIZED_ROLLING_WINDOW_DAYS,
+    MCP_TOOL_IDS,
+    METRIC_REGISTRY,
     SUPPORTED_AGGREGATE_BUCKETS,
     SUPPORTED_AGGREGATE_SCOPES,
     SUPPORTED_ROLLING_WINDOW_DAYS,
     aggregate_query_allowed_columns,
-    metric_catalog_payload,
     materialized_fact_column_names,
+    metric_catalog_payload,
     metrics_for_aggregate_bundle,
     metrics_for_tool,
 )
-
 
 REQUIRED_METRIC_IDS = {
     "activity_id",
@@ -408,11 +407,7 @@ def test_aggregate_registry_does_not_create_pseudo_metric_ids_for_math_variants(
         "_p75",
         "_last_state",
     )
-    offenders = [
-        metric_id
-        for metric_id in METRIC_REGISTRY
-        if metric_id.endswith(forbidden_suffixes)
-    ]
+    offenders = [metric_id for metric_id in METRIC_REGISTRY if metric_id.endswith(forbidden_suffixes)]
     assert not offenders
 
 
@@ -447,7 +442,5 @@ def test_phase9_gear_facts_are_registered_context_not_aggregate_filters():
         assert "get_workout_detail" in metric.exposed_in
         assert "get_training_aggregates" not in metric.exposed_in
         assert metric.metric_id not in {
-            bundle_metric
-            for metric_ids in AGGREGATE_METRIC_BUNDLES.values()
-            for bundle_metric in metric_ids
+            bundle_metric for metric_ids in AGGREGATE_METRIC_BUNDLES.values() for bundle_metric in metric_ids
         }

@@ -52,7 +52,7 @@ class TokenRefreshTransport:
                 if attempt == 2:
                     raise StravaUnavailable("token_unavailable") from exc
                 self.sleeper.sleep(delays[attempt])
-            except (urllib.error.URLError, OSError, socket.timeout) as exc:
+            except (TimeoutError, urllib.error.URLError, OSError) as exc:
                 if attempt == 2:
                     raise StravaUnavailable("token_unavailable") from exc
                 self.sleeper.sleep(delays[attempt])

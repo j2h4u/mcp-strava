@@ -6,22 +6,22 @@ from pathlib import Path
 
 def test_imports():
     """All 14 public symbols import without errors — including new Config paths."""
-    from mcp_strava.constants import Config
-    from mcp_strava.types import BanisterResult
-    from mcp_strava.db import DbConn
-    from mcp_strava.training import calc_banister, forward_simulate, ewma
+    import mcp_strava.application.metric_registry as metric_registry
+    import mcp_strava.deploy.smoke as deploy_smoke
+    import mcp_strava.interfaces.mcp_http as mcp_http
     from mcp_strava.application.freshness import get_freshness_service
-    from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
     from mcp_strava.application.metric_services import get_workout_detail_service, list_workouts_service
+    from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
     from mcp_strava.application.product_facts import (
         get_daily_brief_facts_service,
         get_historical_facts_service,
         get_weekly_digest_facts_service,
     )
-    import mcp_strava.interfaces.mcp_http as mcp_http
-    import mcp_strava.deploy.smoke as deploy_smoke
-    import mcp_strava.application.metric_registry as metric_registry
+    from mcp_strava.constants import Config
+    from mcp_strava.db import DbConn
     from mcp_strava.sync import backfill_activities, build_refresh_collaborators, sync_activities
+    from mcp_strava.training import calc_banister, ewma, forward_simulate
+    from mcp_strava.types import BanisterResult
 
     # Verify Config hierarchy
     assert Config.Model.Banister.TAU_FITNESS == 42
@@ -37,6 +37,7 @@ def test_imports():
     assert Config.Plan.Score.TARGET_HIT == 100
     assert Config.Plan.Score.SAFETY_CRITICAL == 30
     import mcp_strava.types as package_types
+
     assert get_daily_brief_facts_service is not None
     assert get_weekly_digest_facts_service is not None
     assert get_historical_facts_service is not None
@@ -54,14 +55,13 @@ def test_imports():
 
 def test_forward_simulate():
     """Pure function: Banister simulation produces expected shape (SimDay dataclasses)."""
-    from mcp_strava.training import forward_simulate
     from mcp_strava.constants import Config
+    from mcp_strava.training import forward_simulate
 
     alpha_fatigue = 1 - pow(0.5, 1.0 / Config.Model.Banister.TAU_FATIGUE)
     alpha_fitness = 1 - pow(0.5, 1.0 / Config.Model.Banister.TAU_FITNESS)
 
-    result = forward_simulate(50.0, 25.0, [30, 0, 50, 0, 20],
-                              date(2026, 5, 4), alpha_fitness, alpha_fatigue)
+    result = forward_simulate(50.0, 25.0, [30, 0, 50, 0, 20], date(2026, 5, 4), alpha_fitness, alpha_fatigue)
 
     assert len(result) == 5
     for day in result:
@@ -76,6 +76,7 @@ def test_forward_simulate():
 
 
 # ─── Pure function unit tests ───
+
 
 def test_ewma():
     """EWMA: empty, single value, decay behavior."""
@@ -113,8 +114,9 @@ def test_sim_one_day():
     # Both move toward 50, but fatigue moves faster
     fitness_move = abs(f - 100.0)
     fatigue_move = abs(fa - 100.0)
-    assert fatigue_move > fitness_move, \
+    assert fatigue_move > fitness_move, (
         f"Fatigue ({fatigue_move:.2f}) should move more than fitness ({fitness_move:.2f})"
+    )
 
     # Rounding: result has 1 decimal
     assert f == round(f, 1)
@@ -124,34 +126,34 @@ def test_sim_one_day():
 
 def test_sports_registry():
     """Sports registry: known types classify correctly, unknown types detected."""
-    from mcp_strava.sports import is_training, is_running, get_eff_windows, detect_new_types
+    from mcp_strava.sports import detect_new_types, get_eff_windows, is_running, is_training
 
     # Known training types
-    assert is_training('Run') is True
-    assert is_training('Hike') is True
-    assert is_training('TrailRun') is True
+    assert is_training("Run") is True
+    assert is_training("Hike") is True
+    assert is_training("TrailRun") is True
 
     # Non-training (not sustained cardio)
-    assert is_training('Workout') is True   # generic workout = training per registry
-    assert is_training('Walk') is False     # excluded from training metrics
+    assert is_training("Workout") is True  # generic workout = training per registry
+    assert is_training("Walk") is False  # excluded from training metrics
 
     # Running biomechanics
-    assert is_running('Run') is True
-    assert is_running('TrailRun') is True
-    assert is_running('VirtualRun') is True
-    assert is_running('Hike') is False
+    assert is_running("Run") is True
+    assert is_running("TrailRun") is True
+    assert is_running("VirtualRun") is True
+    assert is_running("Hike") is False
 
     # Efficiency windows (returned as tuple)
-    assert get_eff_windows('Run') == (7, 28, 90)
-    assert get_eff_windows('Walk') == (7, 28)
-    assert get_eff_windows('Workout') == (7, 28)
+    assert get_eff_windows("Run") == (7, 28, 90)
+    assert get_eff_windows("Walk") == (7, 28)
+    assert get_eff_windows("Workout") == (7, 28)
 
     # Unknown type detection — returns [(sport_type, count), ...]
-    unknown = detect_new_types(['Run', 'Hike', 'FlyingSquirrel'])
+    unknown = detect_new_types(["Run", "Hike", "FlyingSquirrel"])
     assert len(unknown) == 1
-    assert unknown[0][0] == 'FlyingSquirrel'
+    assert unknown[0][0] == "FlyingSquirrel"
 
-    unknown2 = detect_new_types(['Run', 'Hike', 'Walk'])
+    unknown2 = detect_new_types(["Run", "Hike", "Walk"])
     assert len(unknown2) == 0
     print("  OK: sports_registry — training, running, eff_windows, detect_new")
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 
 
 class RefreshReason(StrEnum):
@@ -57,13 +58,11 @@ class RefreshedTokens:
 
 
 class Clock(Protocol):
-    def now(self) -> float:
-        ...
+    def now(self) -> float: ...
 
 
 class Sleeper(Protocol):
-    def sleep(self, seconds: float) -> None:
-        ...
+    def sleep(self, seconds: float) -> None: ...
 
 
 Headers = Mapping[str, str]

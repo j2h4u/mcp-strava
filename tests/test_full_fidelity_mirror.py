@@ -66,9 +66,22 @@ def test_replace_stream_rows_and_channel_metadata_is_atomic(tmp_path: Path) -> N
         _seed_activity(repo)
         repo.insert_stream_rows_chunked(
             10,
-            [{"time_offset": 4, "heartrate": 155, "velocity": 3.3, "altitude": 505.0, "cadence": 84,
-              "lat": 43.2, "lng": 76.9, "grade": 1.0, "gap_speed": 3.2,
-              "gap_distance": 21.0, "is_moving": 1, "values_json": None}],
+            [
+                {
+                    "time_offset": 4,
+                    "heartrate": 155,
+                    "velocity": 3.3,
+                    "altitude": 505.0,
+                    "cadence": 84,
+                    "lat": 43.2,
+                    "lng": 76.9,
+                    "grade": 1.0,
+                    "gap_speed": 3.2,
+                    "gap_distance": 21.0,
+                    "is_moving": 1,
+                    "values_json": None,
+                }
+            ],
         )
 
         class BoomRepo(DuckDBRepository):
@@ -79,11 +92,34 @@ def test_replace_stream_rows_and_channel_metadata_is_atomic(tmp_path: Path) -> N
         with pytest.raises(RuntimeError):
             failing_repo.replace_stream_rows_and_channel_metadata(
                 10,
-                rows=[{"time_offset": 9, "heartrate": 160, "velocity": 3.9, "altitude": 520.0, "cadence": 90,
-                       "lat": 43.22, "lng": 76.93, "grade": 1.2, "gap_speed": 3.8,
-                       "gap_distance": 30.0, "is_moving": 1, "values_json": None}],
-                metadata=[{"channel_key": "heartrate", "original_size": 1, "resolution": "high", "series_type": "distance",
-                           "fetched_at": "2026-05-01T08:00:00Z", "batch_id": None, "status": "available", "error": None}],
+                rows=[
+                    {
+                        "time_offset": 9,
+                        "heartrate": 160,
+                        "velocity": 3.9,
+                        "altitude": 520.0,
+                        "cadence": 90,
+                        "lat": 43.22,
+                        "lng": 76.93,
+                        "grade": 1.2,
+                        "gap_speed": 3.8,
+                        "gap_distance": 30.0,
+                        "is_moving": 1,
+                        "values_json": None,
+                    }
+                ],
+                metadata=[
+                    {
+                        "channel_key": "heartrate",
+                        "original_size": 1,
+                        "resolution": "high",
+                        "series_type": "distance",
+                        "fetched_at": "2026-05-01T08:00:00Z",
+                        "batch_id": None,
+                        "status": "available",
+                        "error": None,
+                    }
+                ],
                 chunk_size=100,
             )
 

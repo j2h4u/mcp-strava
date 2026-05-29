@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 from calendar import monthrange
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Callable
+from typing import Any
 
 from mcp_strava.adapters.duckdb.read_model_materializer import (
     materialize_read_model as materialize_duckdb_read_model,
@@ -13,7 +14,6 @@ from mcp_strava.adapters.duckdb.read_model_materializer import (
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository, summary_payload_changed
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.types import parse_strava_activity, parse_strava_stream_channels
-
 
 STREAM_KEYS = (
     "time",
@@ -235,7 +235,9 @@ def sync_streams(
         repo.set_checkpoint(checkpoint_stage.value, str(activity.id))
         response = transport.fetch(f"/activities/{activity.id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
         if isinstance(response.data, dict):
-            _insert_streams(repo, activity.id, response.data, fetched_at=datetime.now(UTC).replace(tzinfo=None).isoformat())
+            _insert_streams(
+                repo, activity.id, response.data, fetched_at=datetime.now(UTC).replace(tzinfo=None).isoformat()
+            )
             fetched += 1
     return fetched
 

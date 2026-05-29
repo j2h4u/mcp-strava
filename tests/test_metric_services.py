@@ -208,7 +208,7 @@ def _walk_no_cyrillic_or_coaching_text(obj) -> None:
         for item in obj:
             _walk_no_cyrillic_or_coaching_text(item)
     elif isinstance(obj, str):
-        assert not any("\u0400" <= ch <= "\u04FF" for ch in obj)
+        assert not any("\u0400" <= ch <= "\u04ff" for ch in obj)
         lowered = obj.lower()
         assert not any(marker in lowered for marker in coaching_markers)
 
@@ -258,7 +258,9 @@ def _block_legacy_recompute(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.setattr(metric_services, name, _blocked, raising=False)
 
 
-def test_get_fitness_state_service_returns_metric_bundle_envelope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_fitness_state_service_returns_metric_bundle_envelope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from mcp_strava.application.metric_services import get_fitness_state_service
 
     _block_legacy_recompute(monkeypatch)
@@ -306,7 +308,9 @@ def test_get_fitness_state_service_returns_metric_bundle_envelope(tmp_path: Path
     _walk_no_cyrillic_or_coaching_text(payload["data"])
 
 
-def test_list_workouts_service_respects_filters_and_returns_compact_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_list_workouts_service_respects_filters_and_returns_compact_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from mcp_strava.application.metric_services import list_workouts_service
 
     _block_legacy_recompute(monkeypatch)
@@ -353,9 +357,7 @@ def test_list_workouts_service_respects_filters_and_returns_compact_rows(tmp_pat
     _walk_no_forbidden_keys(payload)
 
 
-def test_read_path_reuses_connection_and_checks_schema_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_read_path_reuses_connection_and_checks_schema_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Structural guard for the warm-latency optimization (Phase 08-08).
 
     A product read on the runtime path (connection=None) must open exactly one
@@ -407,7 +409,9 @@ def test_read_path_reuses_connection_and_checks_schema_once(
         db.reset_thread_connections()
 
 
-def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reasons(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reasons(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from mcp_strava.application.metric_services import get_workout_detail_service
 
     _block_legacy_recompute(monkeypatch)
@@ -456,14 +460,21 @@ def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reaso
     assert set(partial_payload["completeness"]["missing"]) & {"missing_hr", "missing_streams", "metric_unavailable"}
 
     for warning in full_payload["warnings"] + partial_payload["warnings"]:
-        assert warning["code"] in SAFETY_WARNING_CODES | {"mirror_stale", "missing_hr", "missing_streams", "metric_unavailable"}
+        assert warning["code"] in SAFETY_WARNING_CODES | {
+            "mirror_stale",
+            "missing_hr",
+            "missing_streams",
+            "metric_unavailable",
+        }
         if warning["code"] in SAFETY_WARNING_CODES:
             evidence = warning.get("evidence") or {}
             if evidence:
                 assert isinstance(evidence, dict)
 
 
-def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_compare_periods_service_includes_global_and_per_sport_comparisons(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from mcp_strava.application.metric_services import compare_periods_service
 
     _block_legacy_recompute(monkeypatch)
@@ -518,7 +529,16 @@ def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_p
         assert metric_id in global_metrics or any(metric_id in values["metrics"] for values in per_sport.values())
 
     scalar_record = global_metrics["trimp"]
-    for field in ("period_a", "period_b", "delta", "delta_pct", "trend_direction", "sample_size", "coverage", "missing_reasons"):
+    for field in (
+        "period_a",
+        "period_b",
+        "delta",
+        "delta_pct",
+        "trend_direction",
+        "sample_size",
+        "coverage",
+        "missing_reasons",
+    ):
         assert field in scalar_record
     assert scalar_record["trend_direction"] in {"up", "down", "flat", "unavailable"}
 
@@ -677,7 +697,9 @@ def test_compare_periods_service_delegates_to_bounded_all_time_aggregates(monkey
     assert [warning["code"] for warning in payload["warnings"]] == ["aggregate_rows_incomplete"]
 
 
-def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from mcp_strava.application.metric_services import compare_periods_service
 
     _block_legacy_recompute(monkeypatch)
@@ -705,7 +727,9 @@ def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_
     assert trimp["period_b"]["sample_size"] == 1
 
 
-def test_project_fitness_state_service_supports_standard_scenarios(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_project_fitness_state_service_supports_standard_scenarios(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from mcp_strava.application.metric_services import project_fitness_state_service
 
     _block_legacy_recompute(monkeypatch)

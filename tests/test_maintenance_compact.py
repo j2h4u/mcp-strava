@@ -8,15 +8,20 @@ from types import SimpleNamespace
 import duckdb
 import pytest
 
-from tests._fixtures_duckdb import ACTIVITY_COUNT, create_fixture_db
-
 from mcp_strava.adapters.duckdb.connection import MirrorDbLocked
 from mcp_strava.maintenance.compact import compact_database, humanize_bytes, storage_stats
-
+from tests._fixtures_duckdb import ACTIVITY_COUNT, create_fixture_db
 
 _DB_SIZE_COLUMNS = (
-    "database_name", "database_size", "block_size", "total_blocks",
-    "used_blocks", "free_blocks", "wal_size", "memory_usage", "memory_limit",
+    "database_name",
+    "database_size",
+    "block_size",
+    "total_blocks",
+    "used_blocks",
+    "free_blocks",
+    "wal_size",
+    "memory_usage",
+    "memory_limit",
 )
 
 
@@ -25,8 +30,15 @@ class _FakeDbSizeConn:
 
     def __init__(self, *, block_size: int, total_blocks: int, free_blocks: int) -> None:
         self._row = (
-            "mirror", "n/a", block_size, total_blocks,
-            total_blocks - free_blocks, free_blocks, "0 bytes", "0 bytes", "0 bytes",
+            "mirror",
+            "n/a",
+            block_size,
+            total_blocks,
+            total_blocks - free_blocks,
+            free_blocks,
+            "0 bytes",
+            "0 bytes",
+            "0 bytes",
         )
         self.description = [(name,) for name in _DB_SIZE_COLUMNS]
 
@@ -114,9 +126,7 @@ def test_compact_missing_mirror_raises(tmp_path: Path) -> None:
         compact_database(tmp_path / "absent.duckdb")
 
 
-def test_compact_translates_conflicting_lock_to_mirror_locked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_compact_translates_conflicting_lock_to_mirror_locked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # A real running owner holds a cross-process writer lock; DuckDB surfaces
     # that as an IOException "Conflicting lock ... in PID N" (verified in task
     # 11). That condition can't be reproduced in-process, so inject the exact

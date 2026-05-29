@@ -1,9 +1,9 @@
 """Typed runtime settings for mcp_strava."""
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 from mcp_strava.hr_zones import DEFAULT_MODEL_ID, known_model_ids
 
@@ -52,41 +52,41 @@ class Settings:
 
 
 _KEYS = {
-    'MCP_STRAVA_DB_PATH',
-    'MCP_STRAVA_TOKEN_PATH',
-    'MCP_STRAVA_RUNTIME_PROFILE',
-    'MCP_STRAVA_HTTP_HOST',
-    'MCP_STRAVA_HTTP_PORT',
-    'MCP_STRAVA_ALLOW_CONTAINER_BIND',
-    'MCP_STRAVA_ALLOWED_HOSTS',
-    'MCP_STRAVA_ALLOWED_ORIGINS',
-    'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS',
-    'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS',
-    'MCP_STRAVA_REFRESH_INTERVAL_SECONDS',
-    'MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE',
-    'MCP_STRAVA_READ_MODEL_BATCH_SIZE',
-    'MCP_STRAVA_PROJECT_ROOT',
-    'MCP_STRAVA_HR_REST',
-    'MCP_STRAVA_HR_ZONE_MODEL',
+    "MCP_STRAVA_DB_PATH",
+    "MCP_STRAVA_TOKEN_PATH",
+    "MCP_STRAVA_RUNTIME_PROFILE",
+    "MCP_STRAVA_HTTP_HOST",
+    "MCP_STRAVA_HTTP_PORT",
+    "MCP_STRAVA_ALLOW_CONTAINER_BIND",
+    "MCP_STRAVA_ALLOWED_HOSTS",
+    "MCP_STRAVA_ALLOWED_ORIGINS",
+    "MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS",
+    "MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS",
+    "MCP_STRAVA_REFRESH_INTERVAL_SECONDS",
+    "MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE",
+    "MCP_STRAVA_READ_MODEL_BATCH_SIZE",
+    "MCP_STRAVA_PROJECT_ROOT",
+    "MCP_STRAVA_HR_REST",
+    "MCP_STRAVA_HR_ZONE_MODEL",
 }
 
 _CacheKey = tuple[tuple[tuple[str, str], ...], str | None, str | None]
 
 _CACHED_SETTINGS: dict[_CacheKey, Settings] = {}
-CANONICAL_DUCKDB_RUNTIME_PATH = Path('/runtime/data/strava.duckdb')
+CANONICAL_DUCKDB_RUNTIME_PATH = Path("/runtime/data/strava.duckdb")
 
 
 def _read_env_file(env_file: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if not env_file.exists():
         return values
-    for raw_line in env_file.read_text(encoding='utf-8').splitlines():
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
         stripped = raw_line.lstrip()
-        if not stripped or stripped.startswith('#'):
+        if not stripped or stripped.startswith("#"):
             continue
-        if '=' not in raw_line:
+        if "=" not in raw_line:
             continue
-        key, value = raw_line.split('=', 1)
+        key, value = raw_line.split("=", 1)
         key = key.strip()
         if key in _KEYS:
             values[key] = value
@@ -97,7 +97,7 @@ def _parse_int(raw: str, key: str) -> int:
     try:
         return int(raw)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f'Invalid integer for {key}: {raw}') from exc
+        raise ValueError(f"Invalid integer for {key}: {raw}") from exc
 
 
 def _validate_ranges(
@@ -109,37 +109,37 @@ def _validate_ranges(
     read_model_batch_size: int,
 ) -> None:
     if http_port < 1 or http_port > 65535:
-        raise ValueError('Invalid integer for MCP_STRAVA_HTTP_PORT: out of range')
+        raise ValueError("Invalid integer for MCP_STRAVA_HTTP_PORT: out of range")
     if warn_age_hours < 0:
-        raise ValueError('Invalid integer for MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS: out of range')
+        raise ValueError("Invalid integer for MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS: out of range")
     if max_age_hours < 0:
-        raise ValueError('Invalid integer for MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS: out of range')
+        raise ValueError("Invalid integer for MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS: out of range")
     if warn_age_hours > max_age_hours:
         raise ValueError(
-            'Invalid freshness settings: MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS '
-            'must be <= MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS'
+            "Invalid freshness settings: MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS "
+            "must be <= MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS"
         )
     if refresh_interval_seconds < 60:
-        raise ValueError('Invalid integer for MCP_STRAVA_REFRESH_INTERVAL_SECONDS: out of range')
+        raise ValueError("Invalid integer for MCP_STRAVA_REFRESH_INTERVAL_SECONDS: out of range")
     if stream_backfill_batch_size < 1:
-        raise ValueError('Invalid integer for MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE: out of range')
+        raise ValueError("Invalid integer for MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE: out of range")
     if read_model_batch_size < 1:
-        raise ValueError('Invalid integer for MCP_STRAVA_READ_MODEL_BATCH_SIZE: out of range')
+        raise ValueError("Invalid integer for MCP_STRAVA_READ_MODEL_BATCH_SIZE: out of range")
 
 
 def _parse_bool(raw: str) -> bool:
-    return raw.strip().lower() in {'1', 'true', 'yes'}
+    return raw.strip().lower() in {"1", "true", "yes"}
 
 
 def _parse_csv(raw: str) -> tuple[str, ...]:
-    values = tuple(part.strip() for part in raw.split(',') if part.strip())
+    values = tuple(part.strip() for part in raw.split(",") if part.strip())
     return values
 
 
 def _default_database_path(root: Path, runtime_profile: str) -> Path:
-    if runtime_profile in {'docker', 'container', 'live'}:
+    if runtime_profile in {"docker", "container", "live"}:
         return CANONICAL_DUCKDB_RUNTIME_PATH
-    return root / 'data' / 'strava.duckdb'
+    return root / "data" / "strava.duckdb"
 
 
 def _resolve_project_root(
@@ -149,9 +149,9 @@ def _resolve_project_root(
 ) -> Path:
     if project_root is not None:
         return Path(project_root)
-    if env_root := env_map.get('MCP_STRAVA_PROJECT_ROOT'):
+    if env_root := env_map.get("MCP_STRAVA_PROJECT_ROOT"):
         return Path(env_root)
-    if file_root := file_values.get('MCP_STRAVA_PROJECT_ROOT'):
+    if file_root := file_values.get("MCP_STRAVA_PROJECT_ROOT"):
         return Path(file_root)
     return Path.cwd()
 
@@ -177,7 +177,7 @@ def load_settings(
     env_map = dict(os.environ if environ is None else environ)
     explicit_file_values = _read_env_file(Path(env_file)) if env_file is not None else {}
     root = _resolve_project_root(env_map, explicit_file_values, project_root)
-    compat_env_path = Path(env_file) if env_file is not None else (root / '.env')
+    compat_env_path = Path(env_file) if env_file is not None else (root / ".env")
 
     file_values = explicit_file_values if env_file is not None else _read_env_file(compat_env_path)
 
@@ -188,50 +188,48 @@ def load_settings(
             return file_values[key]
         return default
 
-    runtime_profile = resolve('MCP_STRAVA_RUNTIME_PROFILE', 'local')
-    database_path = Path(resolve('MCP_STRAVA_DB_PATH', str(_default_database_path(root, runtime_profile))))
-    token_path = Path(resolve('MCP_STRAVA_TOKEN_PATH', str(root / '.env')))
+    runtime_profile = resolve("MCP_STRAVA_RUNTIME_PROFILE", "local")
+    database_path = Path(resolve("MCP_STRAVA_DB_PATH", str(_default_database_path(root, runtime_profile))))
+    token_path = Path(resolve("MCP_STRAVA_TOKEN_PATH", str(root / ".env")))
 
-    http_host = resolve('MCP_STRAVA_HTTP_HOST', '127.0.0.1')
-    http_port = _parse_int(resolve('MCP_STRAVA_HTTP_PORT', '8000'), 'MCP_STRAVA_HTTP_PORT')
-    allow_container_bind = _parse_bool(resolve('MCP_STRAVA_ALLOW_CONTAINER_BIND', 'false'))
-    allowed_hosts = _parse_csv(resolve('MCP_STRAVA_ALLOWED_HOSTS', '127.0.0.1,localhost,mcp-strava'))
+    http_host = resolve("MCP_STRAVA_HTTP_HOST", "127.0.0.1")
+    http_port = _parse_int(resolve("MCP_STRAVA_HTTP_PORT", "8000"), "MCP_STRAVA_HTTP_PORT")
+    allow_container_bind = _parse_bool(resolve("MCP_STRAVA_ALLOW_CONTAINER_BIND", "false"))
+    allowed_hosts = _parse_csv(resolve("MCP_STRAVA_ALLOWED_HOSTS", "127.0.0.1,localhost,mcp-strava"))
     allowed_origins = _parse_csv(
         resolve(
-            'MCP_STRAVA_ALLOWED_ORIGINS',
-            'http://127.0.0.1,http://localhost,http://[::1]',
+            "MCP_STRAVA_ALLOWED_ORIGINS",
+            "http://127.0.0.1,http://localhost,http://[::1]",
         )
     )
     warn_age_hours = _parse_int(
-        resolve('MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS', '12'),
-        'MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS',
+        resolve("MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS", "12"),
+        "MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS",
     )
     max_age_hours = _parse_int(
-        resolve('MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS', '24'),
-        'MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS',
+        resolve("MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS", "24"),
+        "MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS",
     )
     refresh_interval_seconds = _parse_int(
-        resolve('MCP_STRAVA_REFRESH_INTERVAL_SECONDS', '3600'),
-        'MCP_STRAVA_REFRESH_INTERVAL_SECONDS',
+        resolve("MCP_STRAVA_REFRESH_INTERVAL_SECONDS", "3600"),
+        "MCP_STRAVA_REFRESH_INTERVAL_SECONDS",
     )
     stream_backfill_batch_size = _parse_int(
-        resolve('MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE', '50'),
-        'MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE',
+        resolve("MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE", "50"),
+        "MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE",
     )
     read_model_batch_size = _parse_int(
-        resolve('MCP_STRAVA_READ_MODEL_BATCH_SIZE', '25'),
-        'MCP_STRAVA_READ_MODEL_BATCH_SIZE',
+        resolve("MCP_STRAVA_READ_MODEL_BATCH_SIZE", "25"),
+        "MCP_STRAVA_READ_MODEL_BATCH_SIZE",
     )
 
-    hr_rest_raw = resolve('MCP_STRAVA_HR_REST', '').strip()
-    hr_rest = _parse_int(hr_rest_raw, 'MCP_STRAVA_HR_REST') if hr_rest_raw else None
+    hr_rest_raw = resolve("MCP_STRAVA_HR_REST", "").strip()
+    hr_rest = _parse_int(hr_rest_raw, "MCP_STRAVA_HR_REST") if hr_rest_raw else None
     if hr_rest is not None and not (20 <= hr_rest <= 120):
-        raise ValueError('Invalid integer for MCP_STRAVA_HR_REST: out of range')
-    hr_zone_model = resolve('MCP_STRAVA_HR_ZONE_MODEL', DEFAULT_MODEL_ID)
+        raise ValueError("Invalid integer for MCP_STRAVA_HR_REST: out of range")
+    hr_zone_model = resolve("MCP_STRAVA_HR_ZONE_MODEL", DEFAULT_MODEL_ID)
     if hr_zone_model not in known_model_ids():
-        raise ValueError(
-            f'Unknown MCP_STRAVA_HR_ZONE_MODEL: {hr_zone_model}; known: {known_model_ids()}'
-        )
+        raise ValueError(f"Unknown MCP_STRAVA_HR_ZONE_MODEL: {hr_zone_model}; known: {known_model_ids()}")
 
     _validate_ranges(
         http_port,

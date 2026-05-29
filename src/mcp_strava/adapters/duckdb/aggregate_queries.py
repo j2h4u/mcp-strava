@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from datetime import date, timedelta
 import calendar
 import json
+from dataclasses import dataclass, field, replace
+from datetime import date, timedelta
 from typing import Any
 
 from mcp_strava.adapters.duckdb.schema import create_aggregate_views
@@ -17,7 +17,7 @@ from mcp_strava.application.metric_registry import (
     aggregate_query_allowed_columns,
     metrics_for_aggregate_bundle,
 )
-from mcp_strava.constants import ALL_SPORTS, Config, RUNNING_SPORTS
+from mcp_strava.constants import ALL_SPORTS, RUNNING_SPORTS, Config
 from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.settings import get_settings
 from mcp_strava.types import MetricDefinition, StatusFact, StatusFactDefinition
@@ -163,10 +163,7 @@ def query_training_aggregates(conn, request: AggregateRequest) -> list[Aggregate
 def query_status_facts(conn, *, as_of_day: str) -> list[StatusFact]:
     create_aggregate_views(conn)
     as_of = _parse_day(as_of_day, "as_of_day")
-    return [
-        _query_status_fact(conn, definition, as_of)
-        for definition in STATUS_FACT_REGISTRY.values()
-    ]
+    return [_query_status_fact(conn, definition, as_of) for definition in STATUS_FACT_REGISTRY.values()]
 
 
 def _query_status_fact(conn, definition: StatusFactDefinition, as_of: date) -> StatusFact:
@@ -294,6 +291,7 @@ def _query_excessive_z5_status(conn, definition: StatusFactDefinition, as_of: da
         z5_lower_bound = int(definition.threshold["z5_lower_bound_bpm"])
     else:
         from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
         _athlete = get_settings().athlete
         if _athlete.hr_rest is None:
             raise RuntimeError(_HR_REST_MISSING_MSG)
@@ -303,9 +301,7 @@ def _query_excessive_z5_status(conn, definition: StatusFactDefinition, as_of: da
             # No HR data in DB — no Z5 events are possible; use max int as unreachable threshold.
             z5_lower_bound = 300
         else:
-            _bounds = get_zone_model(_athlete.hr_zone_model).zone_bounds(
-                hr_max=int(_hr_max), hr_rest=_athlete.hr_rest
-            )
+            _bounds = get_zone_model(_athlete.hr_zone_model).zone_bounds(hr_max=int(_hr_max), hr_rest=_athlete.hr_rest)
             z5_lower_bound = _bounds[-2]
     row = conn.execute(
         """
@@ -440,8 +436,13 @@ def _query_running_volume_jump_status(conn, definition: StatusFactDefinition, as
           AND activity_day >= CAST(? AS DATE)
           AND activity_day < CAST(? AS DATE)
     """
-    previous = float(conn.execute(query, [*running_sports, previous_start.isoformat(), previous_end.isoformat()]).fetchone()[0] or 0.0)
-    current = float(conn.execute(query, [*running_sports, current_start.isoformat(), current_end.isoformat()]).fetchone()[0] or 0.0)
+    previous = float(
+        conn.execute(query, [*running_sports, previous_start.isoformat(), previous_end.isoformat()]).fetchone()[0]
+        or 0.0
+    )
+    current = float(
+        conn.execute(query, [*running_sports, current_start.isoformat(), current_end.isoformat()]).fetchone()[0] or 0.0
+    )
     if previous <= 0:
         return _status_fact(
             definition,
@@ -464,7 +465,9 @@ def _query_running_volume_jump_status(conn, definition: StatusFactDefinition, as
         "current_week_start": current_start.isoformat(),
         "previous_week_start": previous_start.isoformat(),
     }
-    return _status_fact(definition, "active" if increase_pct >= float(definition.threshold["caution_pct"]) else "inactive", evidence)
+    return _status_fact(
+        definition, "active" if increase_pct >= float(definition.threshold["caution_pct"]) else "inactive", evidence
+    )
 
 
 def _status_fact(
@@ -560,7 +563,11 @@ def _validate_metric_scope(metric: MetricDefinition, scope: str) -> None:
 def _validate_metric_rolling_window(metric: MetricDefinition, request: AggregateRequest) -> None:
     if metric.aggregate_source != "rolling_period_fact":
         return
-    if request.window_days is not None and metric.fixed_rolling_window and request.window_days != metric.rolling_window_days:
+    if (
+        request.window_days is not None
+        and metric.fixed_rolling_window
+        and request.window_days != metric.rolling_window_days
+    ):
         raise ValueError(f"Metric {metric.metric_id} requires rolling window {metric.rolling_window_days}")
     if request.window_days is None and metric.rolling_window_days is None:
         raise ValueError(f"Metric {metric.metric_id} requires window_days")
@@ -895,10 +902,7 @@ def _query_hr_zone_distribution(
     """
     rows = []
     for row in _rows(conn.execute(statement, params)):
-        row["distribution"] = {
-            f"z{idx}": float(row[f"z{idx}"] or 0.0)
-            for idx in range(1, 6)
-        }
+        row["distribution"] = {f"z{idx}": float(row[f"z{idx}"] or 0.0) for idx in range(1, 6)}
         rows.append(_aggregate_row_from_group(metric, request, effective_start, effective_end, row))
     return rows
 
@@ -1126,7 +1130,11 @@ def _completeness_status(
         return "unavailable"
     if distribution is None and value is None:
         return "unavailable"
-    if excluded_count > 0 or null_count > 0 or any(str(status) != "complete" for status in statuses if status is not None):
+    if (
+        excluded_count > 0
+        or null_count > 0
+        or any(str(status) != "complete" for status in statuses if status is not None)
+    ):
         return "partial"
     return "complete"
 
@@ -1185,7 +1193,15 @@ def _with_empty_rows(
     while current < effective_end:
         key = (current.isoformat(), sport_type)
         if key not in existing:
-            additions.append(_empty_row(metric, request, current, _date_from_iso(_bucket_end(current.isoformat(), request, effective_end)), sport_type))
+            additions.append(
+                _empty_row(
+                    metric,
+                    request,
+                    current,
+                    _date_from_iso(_bucket_end(current.isoformat(), request, effective_end)),
+                    sport_type,
+                )
+            )
         current = _next_bucket(current, request.bucket)
     return sorted([*rows, *additions], key=lambda row: (row.bucket_start, row.metric_id, row.sport_type or ""))
 

@@ -12,7 +12,6 @@ from mcp_strava.types import (
 )
 from tests.test_read_model_queries import READ_MODEL_METADATA_KEYS
 
-
 EXPECTED_TOOL_NAMES = (
     "get_fitness_state",
     "list_workouts",
@@ -371,7 +370,15 @@ def test_mcp_tools_have_annotations_and_structured_output(monkeypatch) -> None:
         ("get_fitness_state", {}),
         ("list_workouts", {}),
         ("get_workout_detail", {"workout_id": 10}),
-        ("compare_periods", {"period_a_start": "2026-05-01", "period_a_end": "2026-05-07", "period_b_start": "2026-04-24", "period_b_end": "2026-04-30"}),
+        (
+            "compare_periods",
+            {
+                "period_a_start": "2026-05-01",
+                "period_a_end": "2026-05-07",
+                "period_b_start": "2026-04-24",
+                "period_b_end": "2026-04-30",
+            },
+        ),
         ("project_fitness_state", {"target_date": "2026-05-30", "scenarios": ["rest"]}),
         (
             "get_training_aggregates",
@@ -480,7 +487,9 @@ def test_training_aggregate_bundle_payloads_keep_rows_sections_metadata_and_reas
 def test_daily_brief_mcp_composition_keeps_workout_facts_on_workout_tools(monkeypatch) -> None:
     from mcp_strava.interfaces import mcp_http
 
-    monkeypatch.setattr(mcp_http, "get_training_aggregates_service", lambda request, **_: _bundle_envelope(request.bundle_id))
+    monkeypatch.setattr(
+        mcp_http, "get_training_aggregates_service", lambda request, **_: _bundle_envelope(request.bundle_id)
+    )
     monkeypatch.setattr(
         mcp_http,
         "list_workouts_service",

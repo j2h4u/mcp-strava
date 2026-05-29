@@ -74,9 +74,7 @@ def get_zone_model(identifier: str) -> HRZoneModel:
     try:
         return _MODELS[identifier]
     except KeyError:
-        raise ValueError(
-            f"Unknown HR zone model {identifier!r}; known models: {known_model_ids()}"
-        ) from None
+        raise ValueError(f"Unknown HR zone model {identifier!r}; known models: {known_model_ids()}") from None
 
 
 def zone_bounds(hr_max: int, hr_rest: int, *, model_id: str = DEFAULT_MODEL_ID) -> list[int]:

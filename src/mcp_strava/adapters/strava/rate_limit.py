@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 from mcp_strava.adapters.strava.types import StravaRateInfo
 
@@ -15,15 +15,15 @@ class RateLimitDecision:
     reason: str | None = None
 
     @classmethod
-    def proceed(cls) -> "RateLimitDecision":
+    def proceed(cls) -> RateLimitDecision:
         return cls(status="proceed")
 
     @classmethod
-    def wait(cls, timestamp: float) -> "RateLimitDecision":
+    def wait(cls, timestamp: float) -> RateLimitDecision:
         return cls(status="wait", wait_until=timestamp)
 
     @classmethod
-    def exhausted(cls, reason: str) -> "RateLimitDecision":
+    def exhausted(cls, reason: str) -> RateLimitDecision:
         return cls(status="exhausted", reason=reason)
 
 

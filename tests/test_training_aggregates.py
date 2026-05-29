@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from mcp_strava.adapters.duckdb.connection import open_fixture_db
-from mcp_strava.adapters.duckdb.schema import create_schema
 from mcp_strava.adapters.duckdb.aggregate_queries import (
     AggregateRequest,
     build_aggregate_query,
     query_training_aggregates,
     validate_aggregate_request,
 )
+from mcp_strava.adapters.duckdb.connection import open_fixture_db
+from mcp_strava.adapters.duckdb.schema import create_schema
 from mcp_strava.application.metric_registry import (
     METRIC_REGISTRY,
     SUPPORTED_AGGREGATE_BUCKETS,
@@ -20,7 +20,6 @@ from mcp_strava.application.metric_registry import (
     metrics_for_aggregate_bundle,
 )
 from mcp_strava.types import dc_to_dict
-
 
 EXPECTED_BUCKETS = ("day", "week", "month", "year", "all_time")
 EXPECTED_WINDOWS = (7, 14, 28, 42, 90)
@@ -332,11 +331,111 @@ def _aggregate_fixture(path: Path) -> Path:
     conn = open_fixture_db(path)
     create_schema(conn)
     activities = [
-        (101, "2026-05-05", "Run", 10000.0, 3600, 3700, 100.0, 140.0, 170.0, 2, 1, 100.0, "complete", [], 40.0, 200.0, 1.0, 100, 100),
-        (102, "2026-05-12", "Run", 5000.0, 1800, 1900, 50.0, 160.0, 180.0, 0, 1, 80.0, "partial", ["missing_streams"], 50.0, 300.0, 2.0, 300, 0),
-        (103, "2026-05-13", "Run", 6000.0, 2000, 2100, 200.0, 150.0, 175.0, 1, 2, 70.0, "complete", [], 60.0, 100.0, 1.0, 200, 200),
-        (104, "2026-05-20", "Hike", 8000.0, 7200, 7500, 500.0, None, None, 3, 1, 60.0, "partial", ["missing_hr"], None, 500.0, 2.0, 0, 0),
-        (105, "2026-06-01", "Run", 9999.0, 999, 999, 9.0, 190.0, 200.0, 9, 1, 999.0, "complete", [], 99.0, 99.0, 1.0, 99, 99),
+        (
+            101,
+            "2026-05-05",
+            "Run",
+            10000.0,
+            3600,
+            3700,
+            100.0,
+            140.0,
+            170.0,
+            2,
+            1,
+            100.0,
+            "complete",
+            [],
+            40.0,
+            200.0,
+            1.0,
+            100,
+            100,
+        ),
+        (
+            102,
+            "2026-05-12",
+            "Run",
+            5000.0,
+            1800,
+            1900,
+            50.0,
+            160.0,
+            180.0,
+            0,
+            1,
+            80.0,
+            "partial",
+            ["missing_streams"],
+            50.0,
+            300.0,
+            2.0,
+            300,
+            0,
+        ),
+        (
+            103,
+            "2026-05-13",
+            "Run",
+            6000.0,
+            2000,
+            2100,
+            200.0,
+            150.0,
+            175.0,
+            1,
+            2,
+            70.0,
+            "complete",
+            [],
+            60.0,
+            100.0,
+            1.0,
+            200,
+            200,
+        ),
+        (
+            104,
+            "2026-05-20",
+            "Hike",
+            8000.0,
+            7200,
+            7500,
+            500.0,
+            None,
+            None,
+            3,
+            1,
+            60.0,
+            "partial",
+            ["missing_hr"],
+            None,
+            500.0,
+            2.0,
+            0,
+            0,
+        ),
+        (
+            105,
+            "2026-06-01",
+            "Run",
+            9999.0,
+            999,
+            999,
+            9.0,
+            190.0,
+            200.0,
+            9,
+            1,
+            999.0,
+            "complete",
+            [],
+            99.0,
+            99.0,
+            1.0,
+            99,
+            99,
+        ),
     ]
     for (
         activity_id,
@@ -897,11 +996,35 @@ def test_product_parameter_rejections_happen_before_query_execution(tmp_path: Pa
 
     invalid_requests = [
         AggregateRequest(metric_ids=("trimp",), bucket="hour", start_day="2026-05-01", end_day_exclusive="2026-06-01"),
-        AggregateRequest(metric_ids=("does_not_exist",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01"),
-        AggregateRequest(metric_ids=(), bundle_id="gear_efficiency", bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01"),
-        AggregateRequest(metric_ids=("trimp",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01", scope="gear"),
-        AggregateRequest(metric_ids=("avg_hr",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01", scope="per_sport", sport_filter="Unicycle"),
-        AggregateRequest(metric_ids=("volume_7d",), bucket="all_time", start_day=None, end_day_exclusive="2026-05-22", as_of_day="2026-05-21", window_days=13),
+        AggregateRequest(
+            metric_ids=("does_not_exist",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01"
+        ),
+        AggregateRequest(
+            metric_ids=(),
+            bundle_id="gear_efficiency",
+            bucket="day",
+            start_day="2026-05-01",
+            end_day_exclusive="2026-06-01",
+        ),
+        AggregateRequest(
+            metric_ids=("trimp",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01", scope="gear"
+        ),
+        AggregateRequest(
+            metric_ids=("avg_hr",),
+            bucket="day",
+            start_day="2026-05-01",
+            end_day_exclusive="2026-06-01",
+            scope="per_sport",
+            sport_filter="Unicycle",
+        ),
+        AggregateRequest(
+            metric_ids=("volume_7d",),
+            bucket="all_time",
+            start_day=None,
+            end_day_exclusive="2026-05-22",
+            as_of_day="2026-05-21",
+            window_days=13,
+        ),
     ]
     for request in invalid_requests:
         with pytest.raises(ValueError):
@@ -1129,12 +1252,38 @@ def test_aggregate_service_validates_product_parameters_before_query_execution()
             raise AssertionError("query execution should not happen for invalid product parameters")
 
     invalid_requests = [
-        AggregateServiceRequest(metric_ids=("trimp",), bucket="hour", start_day="2026-05-01", end_day_exclusive="2026-06-01"),
-        AggregateServiceRequest(metric_ids=("missing_metric",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01"),
-        AggregateServiceRequest(metric_ids=(), bundle_id="gear_efficiency", bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01"),
-        AggregateServiceRequest(metric_ids=("trimp",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01", scope="gear"),
-        AggregateServiceRequest(metric_ids=("avg_hr",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01", scope="per_sport", sport_filter="Unicycle"),
-        AggregateServiceRequest(metric_ids=("volume_7d",), bucket="all_time", start_day=None, end_day_exclusive="2026-05-22", as_of_day="2026-05-21", window_days=13),
+        AggregateServiceRequest(
+            metric_ids=("trimp",), bucket="hour", start_day="2026-05-01", end_day_exclusive="2026-06-01"
+        ),
+        AggregateServiceRequest(
+            metric_ids=("missing_metric",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01"
+        ),
+        AggregateServiceRequest(
+            metric_ids=(),
+            bundle_id="gear_efficiency",
+            bucket="day",
+            start_day="2026-05-01",
+            end_day_exclusive="2026-06-01",
+        ),
+        AggregateServiceRequest(
+            metric_ids=("trimp",), bucket="day", start_day="2026-05-01", end_day_exclusive="2026-06-01", scope="gear"
+        ),
+        AggregateServiceRequest(
+            metric_ids=("avg_hr",),
+            bucket="day",
+            start_day="2026-05-01",
+            end_day_exclusive="2026-06-01",
+            scope="per_sport",
+            sport_filter="Unicycle",
+        ),
+        AggregateServiceRequest(
+            metric_ids=("volume_7d",),
+            bucket="all_time",
+            start_day=None,
+            end_day_exclusive="2026-05-22",
+            as_of_day="2026-05-21",
+            window_days=13,
+        ),
     ]
     for request in invalid_requests:
         with pytest.raises(ValueError):

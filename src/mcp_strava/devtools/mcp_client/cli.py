@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from mcp_strava.devtools.mcp_client.client import (
-    DEFAULT_TIMEOUT_SECONDS,
     DEFAULT_LATENCY_P95_MS,
     DEFAULT_LATENCY_SAMPLES,
     DEFAULT_LATENCY_WARMUP,
+    DEFAULT_TIMEOUT_SECONDS,
     HttpMcpClient,
     McpClientError,
     StdioMcpClient,
@@ -56,7 +56,9 @@ def build_parser() -> argparse.ArgumentParser:
     perf.add_argument("--samples", type=int, default=DEFAULT_LATENCY_SAMPLES)
     perf.add_argument("--warmup", type=int, default=DEFAULT_LATENCY_WARMUP)
     perf.add_argument("--p95-ms", type=float, default=DEFAULT_LATENCY_P95_MS)
-    perf.add_argument("--workout-id", type=int, help="Use a known workout id instead of resolving one via list_workouts.")
+    perf.add_argument(
+        "--workout-id", type=int, help="Use a known workout id instead of resolving one via list_workouts."
+    )
     _add_common_arguments(perf)
     _add_http_arguments(perf)
 

@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION
 from mcp_strava.adapters.strava import StravaUnavailable
 from mcp_strava.refresh import _sync_ops
 from mcp_strava.refresh.checkpoints import Stage, is_active_backfill_stage, is_stream_channel_backfill_stage
 from mcp_strava.refresh.policy import RefreshPolicy, refresh_interval_elapsed
-
 
 _DAILY_STAGE_ORDER = (
     Stage.SUMMARIES,
@@ -351,7 +350,7 @@ def _lease_renewer(repo, clock, owner: str, lease_seconds: int):
 
 
 def _now_dt(clock) -> datetime:
-    return datetime.fromtimestamp(float(clock.now()), tz=timezone.utc).replace(tzinfo=None)
+    return datetime.fromtimestamp(float(clock.now()), tz=UTC).replace(tzinfo=None)
 
 
 def _now_iso(clock) -> str:

@@ -21,7 +21,7 @@ class RefreshPolicy:
     stream_backfill_batch_size: int = 50
 
     @classmethod
-    def from_settings(cls, settings: Settings) -> "RefreshPolicy":
+    def from_settings(cls, settings: Settings) -> RefreshPolicy:
         return cls(
             warn_age_hours=settings.freshness.warn_age_hours,
             max_age_hours=settings.freshness.max_age_hours,

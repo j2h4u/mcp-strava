@@ -76,7 +76,7 @@ class StravaTransport:
                 if attempts >= 3:
                     break
                 self.sleeper.sleep([1, 5, 30][attempts - 1])
-            except (urllib.error.URLError, OSError, socket.timeout) as exc:
+            except (TimeoutError, urllib.error.URLError, OSError):
                 last_reason = "network_unstable"
                 attempts += 1
                 if attempts >= 3:
@@ -109,5 +109,5 @@ class StravaTransport:
             retry_after = headers.get("Retry-After")
         try:
             return int(retry_after) + 1 if retry_after is not None else 15
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return 15

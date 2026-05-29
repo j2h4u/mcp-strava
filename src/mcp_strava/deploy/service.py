@@ -68,11 +68,7 @@ def _write_state(children: list[ChildProcess]) -> None:
             "refresh_scheduler": "in-process" if _refresh_worker_enabled() else "disabled",
             "connection_policy": DUCKDB_OWNER_CONNECTION_POLICY,
         },
-        "children": {
-            child.name: {"pid": child.process.pid}
-            for child in children
-            if child.name != "refresh"
-        },
+        "children": {child.name: {"pid": child.process.pid} for child in children if child.name != "refresh"},
     }
     tmp_path = state_path.with_name(f".{state_path.name}.tmp")
     tmp_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")

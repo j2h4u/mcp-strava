@@ -4,12 +4,12 @@ All functions take pre-fetched plain dict rows and return dataclasses or None.
 No storage imports — callers are responsible for fetching rows via the repository.
 """
 
-from mcp_strava.constants import Config
-from mcp_strava.types import HrRecovery, VerticalSpeed, CardiacDriftResult
 from mcp_strava.cardiac_drift import cardiac_drift as _drift_algo
-
+from mcp_strava.constants import Config
+from mcp_strava.types import CardiacDriftResult, HrRecovery, VerticalSpeed
 
 # ─── Intra-Activity Cardiac Drift ───
+
 
 def calc_cardiac_drift(rows, sport_type=None):
     """Pure: Intra-activity cardiac drift using Jenks pace clustering.
@@ -23,15 +23,14 @@ def calc_cardiac_drift(rows, sport_type=None):
     if len(rows) < Config.Metrics.MIN_STREAM_POINTS:
         return None
 
-    hr = [r['heartrate'] for r in rows]
-    vel = [r['velocity'] for r in rows]
+    hr = [r["heartrate"] for r in rows]
+    vel = [r["velocity"] for r in rows]
 
-    threshold = Config.Drift.THRESHOLD_BY_SPORT.get(
-        sport_type or '', Config.Drift.THRESHOLD_DEFAULT
-    )
+    threshold = Config.Drift.THRESHOLD_BY_SPORT.get(sport_type or "", Config.Drift.THRESHOLD_DEFAULT)
 
     result = _drift_algo(
-        heartrate=hr, velocity=vel,
+        heartrate=hr,
+        velocity=vel,
         min_cluster_size=Config.Drift.MIN_CLUSTER_SIZE,
         min_segment_duration=Config.Drift.MIN_SEGMENT_DURATION,
         drift_threshold_pct=threshold,
@@ -40,28 +39,32 @@ def calc_cardiac_drift(rows, sport_type=None):
         gvf_threshold=Config.Drift.GVF_THRESHOLD,
     )
 
-    if result.get('error'):
+    if result.get("error"):
         return CardiacDriftResult(
-            drift_pct=None, severity=None, quality='low',
-            is_significant=False, n_clusters=result.get('n_clusters', 0),
-            gvf=result.get('gvf', 0.0),
-            cluster_count=len(result.get('cluster_details', [])),
-            error=result['error'],
+            drift_pct=None,
+            severity=None,
+            quality="low",
+            is_significant=False,
+            n_clusters=result.get("n_clusters", 0),
+            gvf=result.get("gvf", 0.0),
+            cluster_count=len(result.get("cluster_details", [])),
+            error=result["error"],
         )
 
     return CardiacDriftResult(
-        drift_pct=result['drift_weighted_pct'],
-        severity=result['severity'],
-        quality=result.get('quality', 'low'),
-        is_significant=result['is_significant'],
-        n_clusters=result['n_clusters'],
-        gvf=result['gvf'],
-        cluster_count=len(result.get('cluster_details', [])),
+        drift_pct=result["drift_weighted_pct"],
+        severity=result["severity"],
+        quality=result.get("quality", "low"),
+        is_significant=result["is_significant"],
+        n_clusters=result["n_clusters"],
+        gvf=result["gvf"],
+        cluster_count=len(result.get("cluster_details", [])),
         error=None,
     )
 
 
 # ─── HR Recovery ───
+
 
 def calc_hr_recovery(rows):
     """Pure: HR recovery over pre-fetched stream rows ({time_offset, heartrate, velocity}).
@@ -90,7 +93,7 @@ def calc_hr_recovery(rows):
     # any duplicate-offset rows, so re-validate the sufficiency guard against the
     # de-duplicated count — otherwise the pause math would run over fewer points
     # than the len(rows) guard validated.
-    by_time = {r['time_offset']: r for r in rows}
+    by_time = {r["time_offset"]: r for r in rows}
     all_times = sorted(by_time.keys())
     if len(all_times) < Config.Metrics.MIN_STREAM_POINTS:
         return None
@@ -101,7 +104,7 @@ def calc_hr_recovery(rows):
     while i < len(all_times):
         t = all_times[i]
         r = by_time[t]
-        v = r['velocity'] or 0
+        v = r["velocity"] or 0
 
         if v < STOP_VEL:
             # Start of potential pause — find how long it lasts
@@ -112,14 +115,14 @@ def calc_hr_recovery(rows):
                 t2 = all_times[j]
                 r2 = by_time[t2]
                 # Allow small gaps (up to 3s) between consecutive data points
-                if t2 - all_times[j-1] > 3:
+                if t2 - all_times[j - 1] > 3:
                     break
-                v2 = r2['velocity'] or 0
+                v2 = r2["velocity"] or 0
                 if v2 >= STOP_VEL:
                     break
                 j += 1
 
-            pause_end = all_times[j-1]
+            pause_end = all_times[j - 1]
             pause_dur = pause_end - pause_start
 
             if pause_dur >= MIN_PAUSE_SEC:
@@ -129,15 +132,15 @@ def calc_hr_recovery(rows):
                 # pause_end into moving rows when a pause is shorter than 5
                 # samples (only possible via gaps), biasing hr_start toward the
                 # moving HR and corrupting the drop (see WR-02).
-                pause_window = all_times[pause_start_idx:end_idx + 1]
+                pause_window = all_times[pause_start_idx : end_idx + 1]
 
                 # Get HR at start of pause (avg of first 5s within the pause)
                 start_times = pause_window[:5]
-                hr_start = sum(by_time[t]['heartrate'] for t in start_times) / len(start_times)
+                hr_start = sum(by_time[t]["heartrate"] for t in start_times) / len(start_times)
 
                 # Get HR at end of pause (avg of last 5s within the pause)
                 end_times = pause_window[-5:]
-                hr_end = sum(by_time[t]['heartrate'] for t in end_times) / len(end_times)
+                hr_end = sum(by_time[t]["heartrate"] for t in end_times) / len(end_times)
 
                 drop = round(hr_start - hr_end, 1)
                 # Rate (bpm/min) is divided by the count of actually-sampled rest
@@ -148,14 +151,16 @@ def calc_hr_recovery(rows):
                 sampled_rest_sec = len(pause_window)
                 rate = round(drop / (sampled_rest_sec / 60), 1) if sampled_rest_sec > 0 else 0
 
-                pauses.append({
-                    'time': pause_start,
-                    'duration': pause_dur,
-                    'hr_start': round(hr_start),
-                    'hr_end': round(hr_end),
-                    'drop': drop,
-                    'rate': rate,  # bpm/min
-                })
+                pauses.append(
+                    {
+                        "time": pause_start,
+                        "duration": pause_dur,
+                        "hr_start": round(hr_start),
+                        "hr_end": round(hr_end),
+                        "drop": drop,
+                        "rate": rate,  # bpm/min
+                    }
+                )
 
             i = j  # skip past this pause
         else:
@@ -168,12 +173,12 @@ def calc_hr_recovery(rows):
     # rate-bearing subset. Today rate is always numeric, but keeping the filter
     # and the best/worst selection in sync prevents a future nullable rate from
     # making max()/min() raise on None while rates silently excluded it (WR-06).
-    rated = [p for p in pauses if p['rate'] is not None]
-    rates = sorted(p['rate'] for p in rated)
-    total_rest = sum(p['duration'] for p in pauses)
+    rated = [p for p in pauses if p["rate"] is not None]
+    rates = sorted(p["rate"] for p in rated)
+    total_rest = sum(p["duration"] for p in pauses)
 
-    best = max(rated, key=lambda p: p['rate']) if rated else None
-    worst = min(rated, key=lambda p: p['rate']) if rated else None
+    best = max(rated, key=lambda p: p["rate"]) if rated else None
+    worst = min(rated, key=lambda p: p["rate"]) if rated else None
 
     # Median (robust to outliers from short/noisy pauses)
     n = len(rates)
@@ -185,13 +190,14 @@ def calc_hr_recovery(rows):
         pauses_found=len(pauses),
         total_rest_sec=total_rest,
         median_rate=median,
-        best_rate=best['rate'] if best else None,
-        worst_rate=worst['rate'] if worst else None,
+        best_rate=best["rate"] if best else None,
+        worst_rate=worst["rate"] if worst else None,
         avg_rate=round(sum(rates) / len(rates), 1) if rates else None,
     )
 
 
 # ─── Vertical Speed ───
+
 
 def calc_vertical_speed(rows):
     """Pure: Vertical ascent speed in m/h from pre-fetched altitude rows ({time_offset, altitude}).
@@ -204,7 +210,7 @@ def calc_vertical_speed(rows):
 
     total_ascent = 0
     for i in range(1, len(rows)):
-        diff = rows[i]['altitude'] - rows[i-1]['altitude']
+        diff = rows[i]["altitude"] - rows[i - 1]["altitude"]
         if diff > 0:
             total_ascent += diff
 
@@ -215,7 +221,7 @@ def calc_vertical_speed(rows):
     # the absolute last offset would inflate the denominator and understate vmh.
     # Pauses within the span are part of the climbing effort, so the full span is
     # the right denominator.
-    elapsed_sec = rows[-1]['time_offset'] - rows[0]['time_offset']
+    elapsed_sec = rows[-1]["time_offset"] - rows[0]["time_offset"]
     duration_hours = elapsed_sec / 3600
     if duration_hours < 0.05:  # < 3 min
         return None
@@ -229,6 +235,7 @@ def calc_vertical_speed(rows):
 
 
 # ─── %HRR ───
+
 
 def calc_hrr_pct(median_hr, hr_rest, hr_max):
     """Pure: Average %HRR (Heart Rate Reserve percentage).

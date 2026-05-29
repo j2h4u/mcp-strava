@@ -1,2 +1,1 @@
 """HTTP MCP interface package."""
-

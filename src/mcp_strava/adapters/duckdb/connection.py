@@ -21,9 +21,7 @@ def _connect_or_translate_lock(path: Path, *, read_only: bool):
         return duckdb.connect(database=str(path), read_only=read_only)
     except duckdb.IOException as exc:
         if "Conflicting lock" in str(exc):
-            raise MirrorDbLocked(
-                f"DuckDB mirror is locked by another process: {path}"
-            ) from exc
+            raise MirrorDbLocked(f"DuckDB mirror is locked by another process: {path}") from exc
         raise
 
 

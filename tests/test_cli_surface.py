@@ -8,8 +8,6 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from tests._fixtures_duckdb import create_fixture_db
-
 from mcp_strava.types import (
     CompletenessMetadata,
     FreshnessMetadata,
@@ -17,7 +15,7 @@ from mcp_strava.types import (
     ServiceRationale,
     ServiceWarning,
 )
-
+from tests._fixtures_duckdb import create_fixture_db
 
 ADMIN_COMMANDS = {
     "mirror-coverage",
@@ -87,9 +85,7 @@ def _install_product_service_spies(monkeypatch: pytest.MonkeyPatch) -> dict[str,
                 "as_of_day": kwargs.get("as_of_day"),
                 "sections": {
                     "current_state": {"metrics": {"fitness": 42.0, "form": -3.0}},
-                    "supported_gear": {
-                        "items": [{"activity_id": 702, "gear_id": "g1", "gear_name": "Tempo Shoe"}]
-                    },
+                    "supported_gear": {"items": [{"activity_id": 702, "gear_id": "g1", "gear_name": "Tempo Shoe"}]},
                 },
                 "bundle_completeness": {"requested_metrics": ["fitness"], "included_metrics": ["fitness"]},
             }
@@ -352,7 +348,9 @@ def test_duckdb_cutover_is_absent_from_mcp_and_product_surfaces() -> None:
     assert "duckdb-cutover" not in rendered_instructions
 
 
-def test_admin_mirror_coverage_json_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_admin_mirror_coverage_json_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     import mcp_strava.cli as cli
 
     fixture = tmp_path / "coverage.duckdb"
@@ -385,7 +383,9 @@ def test_admin_mirror_coverage_json_output(tmp_path: Path, monkeypatch: pytest.M
     assert "refresh_token" not in rendered.lower()
 
 
-def test_admin_catchup_dry_run_json_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_admin_catchup_dry_run_json_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     import mcp_strava.cli as cli
 
     def fake_backfill(*_args, **kwargs):

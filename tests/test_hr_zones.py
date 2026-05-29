@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import pytest
 import duckdb
+import pytest
 
 from mcp_strava.hr_zones import (
     DEFAULT_MODEL_ID,
@@ -46,9 +46,11 @@ def test_known_model_ids_includes_karvonen() -> None:
 
 # ── Task 2 additions ──────────────────────────────────────────────────────────
 
+
 def test_build_trimp_sql_identity() -> None:
     """build_trimp_sql(bounds) produces the expected SQL structure."""
     from mcp_strava.adapters.duckdb.repository import build_trimp_sql
+
     sql = build_trimp_sql([122, 136, 150, 163, 177, 300])
     assert "/ 60.0 as trimp" in sql
     assert "122" in sql
@@ -60,6 +62,7 @@ def test_build_trimp_sql_identity() -> None:
 def test_build_trimp_sql_alias() -> None:
     """build_trimp_sql with alias='s.' prefixes column references."""
     from mcp_strava.adapters.duckdb.repository import build_trimp_sql
+
     sql_plain = build_trimp_sql([122, 136, 150, 163, 177, 300], alias="")
     sql_s = build_trimp_sql([122, 136, 150, 163, 177, 300], alias="s.")
     assert "s.heartrate" in sql_s
@@ -93,8 +96,8 @@ def test_trimp_regression() -> None:
         which is >= 177. Heartrate=160 falls into range 150..163 (z4, coeff=3).
         Reference: 10 rows * coeff 3 = 30 seconds-weighted / 60 = 0.5 TRIMP.
     """
-    from mcp_strava.adapters.duckdb.schema import create_schema
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.adapters.duckdb.schema import create_schema
 
     conn = duckdb.connect()
     create_schema(conn)

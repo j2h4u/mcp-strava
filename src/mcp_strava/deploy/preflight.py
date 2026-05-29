@@ -22,15 +22,18 @@ REQUIRED_RUNTIME_TABLES: tuple[str, ...] = (
 
 
 def _duckdb_table_exists(conn, table: str) -> bool:
-    return conn.execute(
-        """
+    return (
+        conn.execute(
+            """
         SELECT 1
         FROM information_schema.tables
         WHERE table_name = ?
         LIMIT 1
         """,
-        [table],
-    ).fetchone() is not None
+            [table],
+        ).fetchone()
+        is not None
+    )
 
 
 def _duckdb_read_model_readiness(conn) -> dict[str, object]:

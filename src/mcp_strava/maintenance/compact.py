@@ -15,13 +15,12 @@ from __future__ import annotations
 
 import os
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 import duckdb
 
 from mcp_strava.adapters.duckdb.connection import MirrorDbLocked
-
 
 _SIZE_UNITS = ("B", "KB", "MB", "GB", "TB", "PB")
 
@@ -111,7 +110,7 @@ def compact_database(db_path: str | Path, *, backup: bool = True) -> dict:
         raise RuntimeError(f"Expected DuckDB mirror does not exist: {source}")
 
     size_before = source.stat().st_size
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     target = source.with_name(f"{source.stem}.compact-{timestamp}.duckdb")
 
     coordinator = duckdb.connect()  # in-memory; just drives the copy
@@ -126,9 +125,7 @@ def compact_database(db_path: str | Path, *, backup: bool = True) -> dict:
             target.unlink(missing_ok=True)
             _wal_sidecar(target).unlink(missing_ok=True)
             if "Conflicting lock" in str(exc):
-                raise MirrorDbLocked(
-                    f"DuckDB mirror is locked by another process: {source}"
-                ) from exc
+                raise MirrorDbLocked(f"DuckDB mirror is locked by another process: {source}") from exc
             raise
     finally:
         coordinator.close()

@@ -1,7 +1,7 @@
 import json
 import urllib.request
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,7 +33,7 @@ class FakeClock:
         self.value += seconds
 
     def iso(self) -> str:
-        return datetime.fromtimestamp(self.value, tz=timezone.utc).replace(tzinfo=None).isoformat()
+        return datetime.fromtimestamp(self.value, tz=UTC).replace(tzinfo=None).isoformat()
 
 
 class FakeSleeper:
@@ -88,7 +88,9 @@ class FakeStravaTransport:
         if path.startswith("/activities/500/kudos"):
             return StravaResponse(data=[], rate_info=StravaRateInfo(), status=200)
         if path.startswith("/activities/500"):
-            return StravaResponse(data={"id": 500, "name": "Morning Run", "resource_state": 3}, rate_info=StravaRateInfo(), status=200)
+            return StravaResponse(
+                data={"id": 500, "name": "Morning Run", "resource_state": 3}, rate_info=StravaRateInfo(), status=200
+            )
         return StravaResponse(data=[], rate_info=StravaRateInfo(), status=200)
 
 
@@ -189,9 +191,15 @@ def test_run_once_skips_until_refresh_interval_then_re_runs_per_D06_D15(tmp_path
         forced = run_once(repo, transport, policy, clock, FakeSleeper(clock), force=True, mode="quick")
 
     assert periodic.status == "ok"
-    assert transport.calls_by_path["/athlete/activities?per_page=100&page=1"] > calls_before_periodic["/athlete/activities?per_page=100&page=1"]
+    assert (
+        transport.calls_by_path["/athlete/activities?per_page=100&page=1"]
+        > calls_before_periodic["/athlete/activities?per_page=100&page=1"]
+    )
     assert forced.status == "ok"
-    assert transport.calls_by_path["/athlete/activities?per_page=100&page=1"] > calls_before_force["/athlete/activities?per_page=100&page=1"]
+    assert (
+        transport.calls_by_path["/athlete/activities?per_page=100&page=1"]
+        > calls_before_force["/athlete/activities?per_page=100&page=1"]
+    )
 
 
 def test_run_once_force_still_honors_lease_and_backoff_per_D15(tmp_path):
@@ -272,8 +280,7 @@ def test_read_model_materialization_checkpoint_stage_participates_in_routing() -
 
 
 def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch, tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, run_once
-    from mcp_strava.refresh import _sync_ops
+    from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_once
 
     clock = FakeClock()
     order: list[str] = []
@@ -302,8 +309,7 @@ def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch,
 
 
 def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch, tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, Stage, run_once
-    from mcp_strava.refresh import _sync_ops
+    from mcp_strava.refresh import RefreshPolicy, Stage, _sync_ops, run_once
 
     clock = FakeClock()
     order: list[str] = []
@@ -329,8 +335,7 @@ def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch
 
 
 def test_materialization_lost_lease_fails_closed(monkeypatch, tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, run_once
-    from mcp_strava.refresh import _sync_ops
+    from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_once
 
     monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *_args, **_kwargs: (0, 0))
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: 0)
@@ -379,8 +384,7 @@ def test_run_backfill_skips_summaries_and_kudos_per_D16(tmp_path):
 
 
 def test_run_backfill_materializes_after_source_changing_work(monkeypatch, tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, run_catchup
-    from mcp_strava.refresh import _sync_ops
+    from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_catchup
 
     order: list[str] = []
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams_backfill") or 1)
@@ -393,7 +397,9 @@ def test_run_backfill_materializes_after_source_changing_work(monkeypatch, tmp_p
     )
 
     with _repo(tmp_path) as repo:
-        result = run_catchup(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper(), since="2026-05-20")
+        result = run_catchup(
+            repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper(), since="2026-05-20"
+        )
 
     assert result.status == "ok"
     assert order == ["streams_backfill", "details_backfill", "read_model_materialize"]
@@ -431,8 +437,7 @@ def test_run_backfill_failure_preserves_backfill_checkpoint_per_D16(tmp_path):
 
 
 def test_stream_channel_backfill_materializes_after_source_changing_work(monkeypatch, tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, run_stream_channel_catchup
-    from mcp_strava.refresh import _sync_ops
+    from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_stream_channel_catchup
 
     order: list[str] = []
     monkeypatch.setattr(
@@ -450,15 +455,17 @@ def test_stream_channel_backfill_materializes_after_source_changing_work(monkeyp
     monkeypatch.setattr(
         _sync_ops,
         "sync_stream_channels_backfill",
-        lambda *_args, **_kwargs: order.append("stream_channels_backfill")
-        or {
-            "activities_considered": 1,
-            "activities_to_backfill": 1,
-            "missing_channels": {"watts": 1},
-            "metadata_missing": 1,
-            "estimated_api_calls": 1,
-            "completed": 1,
-        },
+        lambda *_args, **_kwargs: (
+            order.append("stream_channels_backfill")
+            or {
+                "activities_considered": 1,
+                "activities_to_backfill": 1,
+                "missing_channels": {"watts": 1},
+                "metadata_missing": 1,
+                "estimated_api_calls": 1,
+                "completed": 1,
+            }
+        ),
     )
     monkeypatch.setattr(
         _sync_ops,
@@ -532,9 +539,15 @@ def test_enqueue_refresh_request_if_stale_is_idempotent_per_D04_REFRESH_02(tmp_p
     now = datetime(2026, 5, 21, 12, 0, 0)
     with _repo(tmp_path) as repo:
         repo.record_refresh_success("2026-05-20T11:00:00")
-        assert enqueue_refresh_request_if_stale(repo, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21")
-        assert not enqueue_refresh_request_if_stale(repo, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21")
-        assert not enqueue_refresh_request_if_stale(repo, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21")
+        assert enqueue_refresh_request_if_stale(
+            repo, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21"
+        )
+        assert not enqueue_refresh_request_if_stale(
+            repo, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21"
+        )
+        assert not enqueue_refresh_request_if_stale(
+            repo, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21"
+        )
         assert len(repo.pending_refresh_requests()) == 1
 
 
@@ -645,8 +658,7 @@ def test_worker_logs_exception_message_and_traceback(monkeypatch, capsys):
 
 
 def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_path):
-    from mcp_strava.refresh import Stage
-    from mcp_strava.refresh import worker
+    from mcp_strava.refresh import Stage, worker
 
     calls = []
     backfill_calls = []
@@ -724,8 +736,7 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
 
 
 def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypatch, tmp_path):
-    from mcp_strava.refresh import Stage
-    from mcp_strava.refresh import worker
+    from mcp_strava.refresh import Stage, worker
 
     backfill_calls = []
     settings = SimpleNamespace(
@@ -778,7 +789,9 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
         "build_refresh_collaborators",
         lambda _settings: (_settings, object(), object(), object(), worker.RefreshPolicy.from_settings(settings)),
     )
-    monkeypatch.setattr(worker.refresh_runtime, "run_once", lambda *_args, **_kwargs: pytest.fail("regular refresh must not run"))
+    monkeypatch.setattr(
+        worker.refresh_runtime, "run_once", lambda *_args, **_kwargs: pytest.fail("regular refresh must not run")
+    )
     monkeypatch.setattr(worker, "_run_stream_channel_backfill", fake_stream_backfill)
 
     assert worker.run_pending_once(emit_idle=False) == 0
@@ -786,8 +799,7 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
 
 
 def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
-    from mcp_strava.refresh import Stage
-    from mcp_strava.refresh import worker
+    from mcp_strava.refresh import Stage, worker
 
     settings = SimpleNamespace(
         database_path=tmp_path / "refresh.db",
@@ -875,19 +887,74 @@ def test_sync_streams_requests_all_configured_channels_and_writes_projection_met
                 return StravaResponse(
                     data={
                         "time": {"data": [0, 1], "original_size": 2, "resolution": "high", "series_type": "distance"},
-                        "distance": {"data": [0.0, 11.2], "original_size": 2, "resolution": "high", "series_type": "distance"},
-                        "heartrate": {"data": [140, 141], "original_size": 2, "resolution": "high", "series_type": "distance"},
-                        "velocity_smooth": {"data": [3.0, 3.1], "original_size": 2, "resolution": "high", "series_type": "distance"},
-                        "altitude": {"data": [501.0, 502.0], "original_size": 2, "resolution": "high", "series_type": "distance"},
-                        "cadence": {"data": [84, 85], "original_size": 2, "resolution": "high", "series_type": "distance"},
-                        "latlng": {"data": [[43.21, 76.91], [43.22, 76.92]], "original_size": 2, "resolution": "high", "series_type": "distance"},
-                        "grade_smooth": {"data": [1.1, 1.2], "original_size": 2, "resolution": "high", "series_type": "distance"},
-                        "grade_adjusted_speed": {"data": [3.05, 3.15], "original_size": 2, "resolution": "high", "series_type": "distance"},
-                        "grade_adjusted_distance": {"data": [0.0, 10.9], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "distance": {
+                            "data": [0.0, 11.2],
+                            "original_size": 2,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
+                        "heartrate": {
+                            "data": [140, 141],
+                            "original_size": 2,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
+                        "velocity_smooth": {
+                            "data": [3.0, 3.1],
+                            "original_size": 2,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
+                        "altitude": {
+                            "data": [501.0, 502.0],
+                            "original_size": 2,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
+                        "cadence": {
+                            "data": [84, 85],
+                            "original_size": 2,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
+                        "latlng": {
+                            "data": [[43.21, 76.91], [43.22, 76.92]],
+                            "original_size": 2,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
+                        "grade_smooth": {
+                            "data": [1.1, 1.2],
+                            "original_size": 2,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
+                        "grade_adjusted_speed": {
+                            "data": [3.05, 3.15],
+                            "original_size": 2,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
+                        "grade_adjusted_distance": {
+                            "data": [0.0, 10.9],
+                            "original_size": 2,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
                         "moving": {"data": [1, 1], "original_size": 2, "resolution": "high", "series_type": "distance"},
-                        "watts": {"data": [220, 230], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "watts": {
+                            "data": [220, 230],
+                            "original_size": 2,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
                         "temp": {"data": [20, 21], "original_size": 2, "resolution": "high", "series_type": "distance"},
-                        "unknown_future_key": {"data": ["a", "b"], "original_size": 2, "resolution": "high", "series_type": "distance"},
+                        "unknown_future_key": {
+                            "data": ["a", "b"],
+                            "original_size": 2,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
                     },
                     rate_info=StravaRateInfo(),
                     status=200,
@@ -955,7 +1022,12 @@ def test_sync_streams_records_missing_requested_channels_without_failure(tmp_pat
                 return StravaResponse(
                     data={
                         "time": {"data": [0], "original_size": 1, "resolution": "high", "series_type": "distance"},
-                        "heartrate": {"data": [142], "original_size": 1, "resolution": "high", "series_type": "distance"},
+                        "heartrate": {
+                            "data": [142],
+                            "original_size": 1,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
                     },
                     rate_info=StravaRateInfo(),
                     status=200,
@@ -995,7 +1067,12 @@ def test_unavailable_stream_channels_do_not_create_repeat_backfill_work(tmp_path
                 return StravaResponse(
                     data={
                         "time": {"data": [0], "original_size": 1, "resolution": "high", "series_type": "distance"},
-                        "heartrate": {"data": [142], "original_size": 1, "resolution": "high", "series_type": "distance"},
+                        "heartrate": {
+                            "data": [142],
+                            "original_size": 1,
+                            "resolution": "high",
+                            "series_type": "distance",
+                        },
                     },
                     rate_info=StravaRateInfo(),
                     status=200,
@@ -1242,7 +1319,9 @@ def test_stream_channel_backfill_renews_long_lease_during_progress(tmp_path):
     assert len(renewals) >= 2
     first = datetime.fromisoformat(renewals[0])
     last = datetime.fromisoformat(renewals[-1])
-    assert (first - datetime.fromtimestamp(1_716_206_400.0, tz=timezone.utc).replace(tzinfo=None)).total_seconds() == 1800
+    assert (
+        first - datetime.fromtimestamp(1_716_206_400.0, tz=UTC).replace(tzinfo=None)
+    ).total_seconds() == 1800
     assert (last - first).total_seconds() >= 901
 
 

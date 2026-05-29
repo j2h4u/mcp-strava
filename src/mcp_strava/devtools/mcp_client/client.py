@@ -207,7 +207,9 @@ def load_script_steps(script_path: Path) -> list[dict[str, Any]]:
     return normalized_steps
 
 
-async def execute_script_steps(client: StdioMcpClient | HttpMcpClient, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+async def execute_script_steps(
+    client: StdioMcpClient | HttpMcpClient, steps: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for index, step in enumerate(steps, start=1):
         action = step.get("action")
@@ -455,7 +457,9 @@ async def run_live_smoke(
     fitness = _require_success("get_fitness_state", await client.call_tool("get_fitness_state", {}))
     workouts = _require_success("list_workouts", await client.call_tool("list_workouts", {"limit": 3}))
     workout_id = _extract_first_workout_id(workouts)
-    detail = _require_success("get_workout_detail", await client.call_tool("get_workout_detail", {"workout_id": workout_id}))
+    detail = _require_success(
+        "get_workout_detail", await client.call_tool("get_workout_detail", {"workout_id": workout_id})
+    )
 
     today_date = _coerce_day(today)
     comparison = _require_success(
@@ -492,10 +496,7 @@ async def run_live_smoke(
         "get_workout_detail": detail,
         "compare_periods": comparison,
         "project_fitness_state": projection,
-        **{
-            f"get_training_aggregates:{bundle_id}": payload
-            for bundle_id, payload in aggregate_payloads.items()
-        },
+        **{f"get_training_aggregates:{bundle_id}": payload for bundle_id, payload in aggregate_payloads.items()},
     }
     return {
         "status": "ok",
@@ -504,10 +505,11 @@ async def run_live_smoke(
         "called": sorted(payloads.keys()),
         "aggregate_bundles": list(aggregate_payloads),
         "workout_id": workout_id,
-        "data_shapes": {name: _data_shape(payload.get("structuredContent", {}).get("data")) for name, payload in payloads.items()},
+        "data_shapes": {
+            name: _data_shape(payload.get("structuredContent", {}).get("data")) for name, payload in payloads.items()
+        },
         "warnings": {
-            name: len(payload.get("structuredContent", {}).get("warnings") or [])
-            for name, payload in payloads.items()
+            name: len(payload.get("structuredContent", {}).get("warnings") or []) for name, payload in payloads.items()
         },
     }
 
@@ -598,9 +600,7 @@ def _assert_call_tool_expectations(*, index: int, result: Any, expect: dict[str,
             raise ValueError(f"script step {index} field 'expect.is_error' must be a boolean")
         actual_is_error = result.get("isError")
         if actual_is_error != expected_is_error:
-            raise McpClientError(
-                f"script step {index} expected isError={expected_is_error!r}, got {actual_is_error!r}"
-            )
+            raise McpClientError(f"script step {index} expected isError={expected_is_error!r}, got {actual_is_error!r}")
 
 
 def _assert_latency_expectations(*, index: int, result: Any, expect: dict[str, Any]) -> None:

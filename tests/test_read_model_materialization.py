@@ -86,9 +86,7 @@ def test_duckdb_materializer_writes_fact_tiers_and_clears_dirty_rows(tmp_path: P
         daily_facts = repo.fetch_daily_load_facts("2026-05-21", "2026-05-22", scope="all")
         model_fact = repo.fetch_latest_training_model_day(1, as_of_day="2026-05-24")
         rolling = repo.fetch_rolling_period_facts("2026-05-24", 7, scope="all")
-        run_count = repo.conn.execute(
-            "SELECT COUNT(*) FROM read_model_refresh_runs WHERE status = 'ok'"
-        ).fetchone()[0]
+        run_count = repo.conn.execute("SELECT COUNT(*) FROM read_model_refresh_runs WHERE status = 'ok'").fetchone()[0]
         dirty = repo.dirty_activity_rows(activity_id=920)
 
     assert result["status"] == "ok"
@@ -243,7 +241,7 @@ def _seed_dirty_activity_no_hr(
         rows.append(
             {
                 "time_offset": idx * 10,
-                "heartrate": None,   # ← no HR
+                "heartrate": None,  # ← no HR
                 "velocity": 3.0 + ((idx % 4) * 0.02),
                 "altitude": 300.0 + idx * 0.3,  # ascending
                 "cadence": 80,

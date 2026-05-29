@@ -1,7 +1,7 @@
+import ast
 import os
 import subprocess
 import sys
-import ast
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -651,7 +651,7 @@ def test_default_compose_has_no_public_host_port_binding() -> None:
     if not compose.exists():
         pytest.fail("deploy/docker-compose.yml must exist")
     text = compose.read_text(encoding="utf-8")
-    assert '0.0.0.0:' not in text
+    assert "0.0.0.0:" not in text
     assert 'ports: ["0.0.0.0' not in text
 
 

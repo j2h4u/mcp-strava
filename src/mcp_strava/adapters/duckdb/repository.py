@@ -1,15 +1,15 @@
 """DuckDB repository boundary for primary Strava mirror storage."""
 
-from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
 import hashlib
 import json
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, timezone
 from pathlib import Path
-from typing import Iterable
 
 from mcp_strava.adapters.duckdb.connection import duckdb_process_lock, open_expected_mirror_db, open_fixture_db
 from mcp_strava.adapters.duckdb.schema import ensure_provenance_columns
-from mcp_strava.constants import Config, TRAINING_SPORTS
+from mcp_strava.constants import TRAINING_SPORTS, Config
 from mcp_strava.types import (
     ALLOWED_REASON_CODES,
     DailyLoadPoint,
@@ -44,7 +44,7 @@ def build_trimp_sql(bounds: list[int], alias: str = "") -> str:
     parts = [f"SUM(CASE WHEN {h}heartrate < {bounds[0]} THEN 1 ELSE 0 END) * {c[0]}"]
     for i in range(1, len(bounds) - 1):
         parts.append(
-            f"SUM(CASE WHEN {h}heartrate >= {bounds[i-1]} AND {h}heartrate < {bounds[i]} THEN 1 ELSE 0 END) * {c[i]}"
+            f"SUM(CASE WHEN {h}heartrate >= {bounds[i - 1]} AND {h}heartrate < {bounds[i]} THEN 1 ELSE 0 END) * {c[i]}"
         )
     parts.append(f"SUM(CASE WHEN {h}heartrate >= {bounds[-2]} THEN 1 ELSE 0 END) * {c[-1]}")
     return "(" + " +\n                ".join(parts) + ") / 60.0 as trimp"
@@ -67,7 +67,7 @@ def build_zones_sql(bounds: list[int], alias: str = "") -> str:
     zones = [f"SUM(CASE WHEN {h}heartrate < {bounds[0]} THEN 1 ELSE 0 END) as z1"]
     for i in range(1, len(bounds) - 1):
         zones.append(
-            f"SUM(CASE WHEN {h}heartrate >= {bounds[i-1]} AND {h}heartrate < {bounds[i]} THEN 1 ELSE 0 END) as z{i+1}"
+            f"SUM(CASE WHEN {h}heartrate >= {bounds[i - 1]} AND {h}heartrate < {bounds[i]} THEN 1 ELSE 0 END) as z{i + 1}"
         )
     zones.append(f"SUM(CASE WHEN {h}heartrate >= {bounds[-2]} THEN 1 ELSE 0 END) as z{len(bounds)}")
     return ",\n                ".join(zones)
@@ -159,7 +159,7 @@ class DuckDBRepository:
     _read_model_enabled_cache: bool | None = field(default=None, init=False, repr=False)
 
     @classmethod
-    def from_path(cls, db_path: str | Path, expected_mirror: bool = False) -> "DuckDBRepository":
+    def from_path(cls, db_path: str | Path, expected_mirror: bool = False) -> DuckDBRepository:
         path = Path(db_path)
         conn = open_expected_mirror_db(path) if expected_mirror else open_fixture_db(path)
         repo = cls(conn=conn)
@@ -167,7 +167,7 @@ class DuckDBRepository:
         return repo
 
     @classmethod
-    def from_connection(cls, conn: object) -> "DuckDBRepository":
+    def from_connection(cls, conn: object) -> DuckDBRepository:
         repo = cls(conn=conn)
         repo._ensure_schema_extensions()
         return repo
@@ -180,7 +180,7 @@ class DuckDBRepository:
             # Table may not exist yet (fresh DB before create_schema); that is fine.
             pass
 
-    def __enter__(self) -> "DuckDBRepository":
+    def __enter__(self) -> DuckDBRepository:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -297,7 +297,7 @@ class DuckDBRepository:
         return int(value or 1)
 
     def _now_iso(self) -> str:
-        return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        return datetime.now(UTC).replace(tzinfo=None).isoformat()
 
     # Read-model invalidation
     def _read_model_enabled(self) -> bool:
@@ -463,7 +463,9 @@ class DuckDBRepository:
             [activity_id, activity_day, metric_version, source_revision, reason, queued_at],
         )
 
-    def dirty_activity_rows(self, metric_version: int | None = None, activity_id: int | None = None) -> list[dict[str, object]]:
+    def dirty_activity_rows(
+        self, metric_version: int | None = None, activity_id: int | None = None
+    ) -> list[dict[str, object]]:
         where: list[str] = []
         params: list[object] = []
         if metric_version is not None:
@@ -680,9 +682,7 @@ class DuckDBRepository:
         elif facts_summary and facts_summary["last_materialized_at"]:
             last_materialized_at = str(facts_summary["last_materialized_at"])
         raw_versions = facts_summary["metric_versions_present"] if facts_summary else None
-        versions: list[int] = (
-            sorted(int(v) for v in raw_versions) if raw_versions else []
-        )
+        versions: list[int] = sorted(int(v) for v in raw_versions) if raw_versions else []
 
         status = "current"
         stale_reason = None
@@ -757,7 +757,9 @@ class DuckDBRepository:
             where.append("f.metric_version = ?")
             params.append(metric_version)
         if cursor is not None:
-            where.append("(f.activity_day < CAST(? AS DATE) OR (f.activity_day = CAST(? AS DATE) AND f.activity_id < ?))")
+            where.append(
+                "(f.activity_day < CAST(? AS DATE) OR (f.activity_day = CAST(? AS DATE) AND f.activity_id < ?))"
+            )
             params.extend([cursor, cursor, cursor])
         sql = f"""
             SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json, a.detail_json
@@ -771,7 +773,9 @@ class DuckDBRepository:
             params.append(limit)
         return self._fetchall(sql, params)
 
-    def fetch_activity_metric_fact(self, activity_id: int, metric_version: int | None = None) -> dict[str, object] | None:
+    def fetch_activity_metric_fact(
+        self, activity_id: int, metric_version: int | None = None
+    ) -> dict[str, object] | None:
         if not self._read_model_enabled():
             return None
         where = ["f.activity_id = ?"]
@@ -960,10 +964,13 @@ class DuckDBRepository:
         return [self._to_activity_row(row) for row in rows]
 
     def daily_activity_presence(self, day: str) -> bool:
-        return self._fetchone(
-            "SELECT 1 FROM activities WHERE activity_day = CAST(? AS DATE) LIMIT 1",
-            [day],
-        ) is not None
+        return (
+            self._fetchone(
+                "SELECT 1 FROM activities WHERE activity_day = CAST(? AS DATE) LIMIT 1",
+                [day],
+            )
+            is not None
+        )
 
     def first_activity_day(self, sport_filter: str | None = None) -> str | None:
         sport_sql, sport_params = self._sport_where_clause(sport_filter)
@@ -1122,7 +1129,9 @@ class DuckDBRepository:
         return {str(row["day"]): round(float(row["trimp"]), 1) for row in rows}
 
     def daily_load_status(self, day: str) -> RepositoryDailyLoadStatus:
-        activity_count = int(self._scalar("SELECT COUNT(*) FROM activities WHERE activity_day = CAST(? AS DATE)", [day]) or 0)
+        activity_count = int(
+            self._scalar("SELECT COUNT(*) FROM activities WHERE activity_day = CAST(? AS DATE)", [day]) or 0
+        )
         stream_count = int(
             self._scalar(
                 """
@@ -1281,9 +1290,7 @@ class DuckDBRepository:
     ) -> dict[str, float]:
         return {
             point.date: point.effective_trimp
-            for point in self.daily_load_points_between(
-                start_day, end_day, bounds=bounds, sport_filter=sport_filter
-            )
+            for point in self.daily_load_points_between(start_day, end_day, bounds=bounds, sport_filter=sport_filter)
         }
 
     def activity_moving_time(self, activity_id: int) -> int | None:
@@ -1891,7 +1898,10 @@ class DuckDBRepository:
                         """,
                         [activity_id],
                     )
-                    if not any(channel in (json.loads(str(item["values_json"])) if item["values_json"] else {}) for item in value_rows):
+                    if not any(
+                        channel in (json.loads(str(item["values_json"])) if item["values_json"] else {})
+                        for item in value_rows
+                    ):
                         missing_channels.append(channel)
             if missing_channels or metadata_missing:
                 results.append(

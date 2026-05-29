@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
 import tomllib
+from pathlib import Path
 
 import duckdb
 import pytest
@@ -116,9 +116,7 @@ def test_entrypoint_runs_preflight_before_exec(monkeypatch: pytest.MonkeyPatch, 
     assert calls[1][0] == "execvp"
 
 
-def test_entrypoint_exits_without_exec_when_preflight_fails(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_entrypoint_exits_without_exec_when_preflight_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from mcp_strava.deploy import entrypoint
 
     exec_called = False
