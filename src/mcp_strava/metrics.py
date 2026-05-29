@@ -73,6 +73,12 @@ def calc_hr_recovery(rows):
     For each pause, measures HR drop over the pause duration.
     Returns aggregate stats: best/worst/avg recovery, count of pauses, total rest time.
     Returns None if no pauses found or insufficient data.
+
+    Precondition: `time_offset` values are expected to be unique. The repository
+    query returns one row per (activity_id, time_offset), but DuckDB does not
+    enforce that here, so duplicate offsets are de-duplicated below and the
+    sufficiency guard is re-checked against the de-duplicated point count to keep
+    the pause-detection math consistent (see WR-01).
     """
     if len(rows) < Config.Metrics.MIN_STREAM_POINTS:
         return None
@@ -80,9 +86,14 @@ def calc_hr_recovery(rows):
     MIN_PAUSE_SEC = Config.Metrics.MIN_PAUSE_SEC
     STOP_VEL = Config.Thresholds.VEL_STOP  # m/s (~0.5 km/h) — actual standing, not slow walking
 
-    # Build time-indexed lookup for fast access
+    # Build time-indexed lookup for fast access. Keying by time_offset collapses
+    # any duplicate-offset rows, so re-validate the sufficiency guard against the
+    # de-duplicated count — otherwise the pause math would run over fewer points
+    # than the len(rows) guard validated.
     by_time = {r['time_offset']: r for r in rows}
     all_times = sorted(by_time.keys())
+    if len(all_times) < Config.Metrics.MIN_STREAM_POINTS:
+        return None
 
     # Find all pause segments
     pauses = []
