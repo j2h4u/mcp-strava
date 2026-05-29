@@ -140,7 +140,13 @@ def calc_hr_recovery(rows):
                 hr_end = sum(by_time[t]['heartrate'] for t in end_times) / len(end_times)
 
                 drop = round(hr_start - hr_end, 1)
-                rate = round(drop / (pause_dur / 60), 1) if pause_dur > 0 else 0
+                # Rate (bpm/min) is divided by the count of actually-sampled rest
+                # seconds, not the wall-clock span (pause_dur). The inner loop
+                # tolerates gaps up to 3s, so pause_dur can over-count the real
+                # rest seconds and deflate the recovery rate; len(pause_window)
+                # is the true number of sampled points in the pause (see WR-05).
+                sampled_rest_sec = len(pause_window)
+                rate = round(drop / (sampled_rest_sec / 60), 1) if sampled_rest_sec > 0 else 0
 
                 pauses.append({
                     'time': pause_start,
