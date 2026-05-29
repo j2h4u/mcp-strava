@@ -130,5 +130,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-29 after Phase 10 verification*
+*Last updated: 2026-05-29 after Phase 11 verification — materializer→repository boundary tidied (IN-03 closed; no new requirement or decision)*
 *Completion updated: 2026-05-29 after Phase 10 execution — all v1.1 requirements validated*
