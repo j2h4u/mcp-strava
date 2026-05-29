@@ -237,12 +237,12 @@ src/mcp_strava/
 
 **All other claims verified by grep against the working tree.**
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `init_db` be deleted or kept as a no-op?**
    - What we know: It is dead (no live caller); `test_security_guards.py` asserts it has no DDL and that `sync` doesn't call it.
    - What's unclear: Whether the security guard's *intent* ("the runtime must never run schema DDL") should be preserved against a different anchor after `init_db` is gone.
-   - Recommendation: Delete `init_db`; if the operator values the "no runtime DDL" invariant, the planner should retain it as a guard against `sync.py`/runtime modules rather than against a deleted function. Surface as a checkpoint:decision if ambiguous, else delete + drop the now-vacuous guards (GP-02 default).
+   - **RESOLVED:** Delete `init_db` with `db.py` (GP-02 default — dead code is removed, not kept as a no-op). The now-vacuous `init_db` DDL guards in `test_security_guards.py` are removed or retargeted to `sync.py`/runtime modules — handled in Plan 12-04 Task 3, where the executor may optionally preserve the "no runtime DDL" invariant against a live anchor if the operator values it. No checkpoint needed; the GP-02 default applies.
 
 ## Sources
 

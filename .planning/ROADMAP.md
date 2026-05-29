@@ -277,7 +277,6 @@ Plans:
 **Requirements**: Core/domain separation — residual `db.py` coupling (extends PROJECT.md core/domain goal)
 **Depends on:** Phase 10
 **Plans:** 1 plan
-
 Plans:
 
 - [ ] TBD (run /gsd-plan-phase 12 to break down)
