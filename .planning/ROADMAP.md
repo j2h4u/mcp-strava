@@ -200,3 +200,13 @@ Plans:
 - [x] `09-02-PLAN.md` — Shared product factual bundle services with explicit completeness contracts
 - [x] `09-03-PLAN.md` — CLI read-model consolidation, replacement paths, and legacy service retirement
 - [x] `09-04-PLAN.md` — MCP bundle/completeness smoke, boundary guards, and verification docs
+
+### Phase 10: Materialize unwired training metrics and enforce core/domain storage boundary
+
+**Goal:** Finish the deferred 2026-05-25 decision (quick task 260525-jpo): make `metrics.py` a pure domain module and wire its compute into the read-model materializer so the registered-but-empty metrics (hr_recovery, vertical_speed, cardiac_drift, hrr_pct + rolling medians) are actually computed instead of stored as null/0 — closing the last open PROJECT.md requirement (core/domain separation) and fixing a latent product bug. Full context: see this phase's CONTEXT.md.
+**Requirements**: Core/domain separation (PROJECT.md Active); fix unmaterialized registered metrics (260525-jpo preserve-and-fix)
+**Depends on:** Phase 9
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 10 to break down)

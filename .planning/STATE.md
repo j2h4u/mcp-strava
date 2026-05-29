@@ -172,6 +172,7 @@ Recent decisions affecting current work:
 
 - Phase 8 planned: DuckDB Primary Storage & Aggregate Analytics Surface
 - Phase 9 added: Product factual bundles and CLI read-model consolidation
+- Phase 10 added (2026-05-29): Materialize unwired training metrics + enforce core/domain storage boundary — completes the deferred 260525-jpo preserve-and-fix decision and closes the core/domain-separation requirement. Rich CONTEXT.md seeded; ready for /gsd-plan-phase 10.
 
 ### Pending Todos
 
