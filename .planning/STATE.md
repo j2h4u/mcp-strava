@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-29T17:49:05.292Z"
+last_updated: "2026-05-29T17:52:58.731Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 47
-  completed_plans: 44
+  completed_plans: 45
   percent: 90
 ---
 
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 ## Current Position
 
 Phase: 10 (materialize-unwired-training-metrics-and-enforce-core-domain) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-05-29
 
@@ -88,6 +88,7 @@ Last activity: 2026-05-29
 | Phase 09-product-factual-bundles-and-cli-read-model-consolidation P09-03 | 10 min | 2 tasks | 10 files |
 | Phase 09-product-factual-bundles-and-cli-read-model-consolidation P09-04 | 15 min | 2 tasks | 6 files |
 | Phase 10 P01 | 8min | 3 tasks | 3 files |
+| Phase 10-materialize-unwired-training-metrics-and-enforce-core-domain P02 | 1min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -168,6 +169,7 @@ Recent decisions affecting current work:
 - [Phase 09-product-factual-bundles-and-cli-read-model-consolidation]: Scenario bundle smoke uses bounded start/end dates only; explicit as_of_day and window_days remain cache-identity inputs but are not valid shared parameters for mixed scenario bundle smoke.
 - [Phase 09-product-factual-bundles-and-cli-read-model-consolidation]: Phase 9 verification uses direct server MCP smoke and excludes gateway registration, gateway mutation, sync, raw, token, log, and recompute commands from product verification.
 - [Phase ?]: metrics.py is now a pure domain module — no storage import; four pure functions take plain dict rows; dead conn-coupled functions removed
+- [Phase ?]: Domain import-boundary guard widened to forbid mcp_strava.db and mcp_strava.adapters.duckdb across five domain modules
 
 ### Roadmap Evolution
 
@@ -196,7 +198,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T17:49:00.953Z
+Last session: 2026-05-29T17:52:51.640Z
 Stopped at: post-milestone admin-CLI cleanup queue (tasks 10-13) fully closed
 Resume file: None
 
