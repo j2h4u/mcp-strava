@@ -263,17 +263,17 @@ Plans:
 **Goal:** Replace the 6 inline-SQL `repo._fetchone`/`repo._fetchall` call sites in `src/mcp_strava/adapters/duckdb/read_model_materializer.py` (≈ lines 43, 64, 259, 356, 378, 386) with named methods on `DuckDBRepository`. Intra-adapter cleanup on the storage side — no behavior change, the full `just test` suite must stay green. Closes code-review finding IN-03 from Phase 10.
 **Requirements**: Code quality / boundary hygiene (Phase 10 REVIEW IN-03)
 **Depends on:** Phase 10
-**Plans:** 0 plans
+**Plans:** 1 plan
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 11 to break down)
+- [ ] 11-01-PLAN.md — Add 6 named DuckDBRepository methods + replace all inline call sites in materializer
 
 ### Phase 12: Decouple db.py into focused modules
 
 **Goal:** Split `src/mcp_strava/db.py` (237 lines mixing five concerns: connection management `DbConn`/`ReadConn`/thread-local pool, repository factories, token/OAuth `_CompatTokenProvider`/`refresh_token`, Strava HTTP `api_request`/`get_zones`/`_build_transport`, and clock/sleeper) into focused modules — move token/OAuth into a dedicated auth module, route HTTP through `adapters/strava`, fold connection management into `adapters/duckdb/connection` — then migrate all callers. `just test` must stay green. This is the last meaningful coupling hotspot after Phase 10.
 **Requirements**: Core/domain separation — residual `db.py` coupling (extends PROJECT.md core/domain goal)
 **Depends on:** Phase 10
-**Plans:** 0 plans
+**Plans:** 1 plan
 
 Plans:
 - [ ] TBD (run /gsd-plan-phase 12 to break down)
