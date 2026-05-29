@@ -1,9 +1,9 @@
 ---
-status: partial
+status: passed
 phase: 10-materialize-unwired-training-metrics-and-enforce-core-domain
 source: [10-VERIFICATION.md]
 started: "2026-05-29T10:00:00Z"
-updated: "2026-05-29T11:30:00Z"
+updated: "2026-05-29T19:05:00Z"
 ---
 
 ## Current Test
@@ -36,17 +36,17 @@ result: RESOLVED — `test_calc_hr_recovery_rate_uses_sampled_rest_seconds` seed
 expected: After re-materializing the read model on the live DuckDB, MCP `get_workout_detail` and `compare_periods` return real non-null values for `hr_recovery_median_rate`, `vertical_speed_vmh`, `cardiac_drift_pct`, and `hrr_pct` on activities with the required streams.
 check: `SELECT count(*) FILTER (WHERE hr_recovery_median_rate IS NOT NULL) AS hr_rec_nonnull, count(*) FILTER (WHERE cardiac_drift_pct IS NOT NULL) AS drift_nonnull, count(*) FILTER (WHERE hrr_pct IS NOT NULL) AS hrr_nonnull, count(*) AS total FROM activity_metric_facts;` — non-null counts must be > 0.
 why_human: The live DuckDB is single-writer; the owner process holds the write lock.
-result: COMPUTE PROVEN (read-only) — ran the new pure functions over real streams for 5 activities via a stopped-owner one-off container (`/tmp/validate_phase10.py`). hr_rest=53 resolved from /runtime/.env; ALL FOUR families returned non-null sane values (vmh 127-318 m/h, hrr_pct 55-67%, cardiac_drift small-negative, hr_recovery over 11-49 pauses). REMAINING (deploy): rewrite live activity_metric_facts (enqueue-all-dirty + materialize_read_model) so MCP serves the values. Pending operator go (real-data write + brief owner downtime).
+result: DONE — backed up the live DuckDB, stopped the owner, ran `enqueue_metric_version_recompute` (604 activities) + `materialize_read_model`, restarted. Non-null counts went 0→{hr_recovery 502, vertical_speed 597, cardiac_drift 509, hrr 603} of 604 (sub-604 = activities lacking HR/altitude streams). Live MCP `get_workout_detail` for activity 15796436412 now returns vertical_speed_m_per_h=318, hrr_pct=62, hr_recovery_median_bpm_per_min=3.9, cardiac_drift_pct=-18, 11 pauses (materialized_at 2026-05-29T18:55). Backup: /opt/docker/mcp-strava/data/strava.duckdb.bak-phase10-20260529-235447 (85 MB, safe to delete once satisfied).
 
 ## Summary
 
 total: 4
-passed: 3
+passed: 4
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
-Note: the 1 "pending" is a deployment write (live fact-table re-materialize), not a code-correctness gap. All code correctness is proven (13/13 automated truths + 3 RED-proven regression tests + read-only live compute on 5 activities).
+All four items closed by automation/scripts — no human testing was required. Code correctness: 13/13 automated truths + 3 RED-proven regression tests. Live data: full re-materialize verified through the MCP product surface.
 
 ## Gaps
