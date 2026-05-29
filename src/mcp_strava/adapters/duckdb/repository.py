@@ -1365,11 +1365,11 @@ class DuckDBRepository:
         """
         row = self._fetchone(
             """
-        SELECT COUNT(*) AS stream_count,
-               SUM(CASE WHEN heartrate IS NOT NULL THEN 1 ELSE 0 END) AS hr_count
-        FROM streams
-        WHERE activity_id = ?
-        """,
+            SELECT COUNT(*) AS stream_count,
+                   SUM(CASE WHEN heartrate IS NOT NULL THEN 1 ELSE 0 END) AS hr_count
+            FROM streams
+            WHERE activity_id = ?
+            """,
             [activity_id],
         )
         return int(row["stream_count"] or 0), int(row["hr_count"] or 0)
@@ -1383,25 +1383,27 @@ class DuckDBRepository:
         b = bounds
         row = self._fetchone(
             """
-        SELECT
-          SUM(CASE WHEN heartrate < ? THEN 1 ELSE 0 END) AS z1,
-          SUM(CASE WHEN heartrate >= ? AND heartrate < ? THEN 1 ELSE 0 END) AS z2,
-          SUM(CASE WHEN heartrate >= ? AND heartrate < ? THEN 1 ELSE 0 END) AS z3,
-          SUM(CASE WHEN heartrate >= ? AND heartrate < ? THEN 1 ELSE 0 END) AS z4,
-          SUM(CASE WHEN heartrate >= ? THEN 1 ELSE 0 END) AS z5
-        FROM streams
-        WHERE activity_id = ? AND heartrate IS NOT NULL
-        """,
+            SELECT
+              SUM(CASE WHEN heartrate < ? THEN 1 ELSE 0 END) AS z1,
+              SUM(CASE WHEN heartrate >= ? AND heartrate < ? THEN 1 ELSE 0 END) AS z2,
+              SUM(CASE WHEN heartrate >= ? AND heartrate < ? THEN 1 ELSE 0 END) AS z3,
+              SUM(CASE WHEN heartrate >= ? AND heartrate < ? THEN 1 ELSE 0 END) AS z4,
+              SUM(CASE WHEN heartrate >= ? THEN 1 ELSE 0 END) AS z5
+            FROM streams
+            WHERE activity_id = ? AND heartrate IS NOT NULL
+            """,
             [b[0], b[0], b[1], b[1], b[2], b[2], b[3], b[-2], activity_id],
         )
-        return tuple(int(row[f"z{idx}"] or 0) for idx in range(1, 6))
+        z = [int(row[f"z{idx}"] or 0) for idx in range(1, 6)]
+        return z[0], z[1], z[2], z[3], z[4]
 
-    def daily_fact_sums(self, activity_day: str, metric_version: int) -> dict[str, object] | None:
+    def daily_fact_sums(self, activity_day: str, metric_version: int) -> dict[str, object]:
         """Return the SUM aggregates over activity_metric_facts for one day and metric version.
 
-        Used when rolling up per-activity facts into daily_load_facts.
+        Used when rolling up per-activity facts into daily_load_facts. A no-GROUP-BY
+        aggregate always yields exactly one row, so the result is never None.
         """
-        return self._fetchone(
+        row = self._fetchone(
             """
             SELECT
               SUM(distance_m) AS distance_m,
@@ -1415,13 +1417,16 @@ class DuckDBRepository:
             """,
             [activity_day, metric_version],
         )
+        assert row is not None  # SUM/COUNT with no GROUP BY always returns one row
+        return row
 
-    def rolling_load_aggregate(self, start: str, as_of_day: str, metric_version: int) -> dict[str, object] | None:
+    def rolling_load_aggregate(self, start: str, as_of_day: str, metric_version: int) -> dict[str, object]:
         """Return the rolling-window load aggregate from daily_load_facts between start and as_of_day.
 
-        Filters for scope='all', sport_type='all'. Used by _materialize_rolling_facts.
+        Filters for scope='all', sport_type='all'. Used by _materialize_rolling_facts. A
+        no-GROUP-BY aggregate always yields exactly one row, so the result is never None.
         """
-        return self._fetchone(
+        row = self._fetchone(
             """
             SELECT
               COUNT(*) AS days,
@@ -1443,6 +1448,8 @@ class DuckDBRepository:
             """,
             [start, as_of_day, metric_version],
         )
+        assert row is not None  # SUM/COUNT with no GROUP BY always returns one row
+        return row
 
     def training_model_row(self, as_of_day: str, metric_version: int) -> dict[str, object] | None:
         """Return the fitness/fatigue/form/zones row from training_model_daily for as_of_day.

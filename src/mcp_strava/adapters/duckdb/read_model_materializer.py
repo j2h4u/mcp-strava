@@ -39,21 +39,6 @@ def _json_list(values: list[str]) -> str:
     return json.dumps(sorted(set(values)), ensure_ascii=True)
 
 
-def _stream_counts(repo: DuckDBRepository, activity_id: int) -> tuple[int, int]:
-    return repo.stream_counts_for_activity(activity_id)
-
-
-def _zone_seconds(
-    repo: DuckDBRepository, activity_id: int, bounds: list[int]
-) -> tuple[int, int, int, int, int]:
-    """Return (z1, z2, z3, z4, z5) second counts using the given zone bounds.
-
-    Uses parameterised integer literals from bounds — identical query structure
-    to the legacy SQL so results are byte-identical for the same bound values.
-    """
-    return repo.zone_seconds_for_activity(activity_id, bounds)
-
-
 def _adjusted_cardiac_cost(cc: float | None, distance_m: float | None, elevation_m: float | None) -> float | None:
     if cc is None or not distance_m or distance_m <= 0:
         return None
@@ -107,7 +92,7 @@ def _activity_fact(
     if source is None:
         raise RuntimeError(f"Dirty activity missing source state: {activity_id}")
 
-    stream_count, hr_count = _stream_counts(repo, activity_id)
+    stream_count, hr_count = repo.stream_counts_for_activity(activity_id)
 
     # Validate hr_rest before any zone computation.
     athlete = settings.athlete
@@ -129,7 +114,7 @@ def _activity_fact(
         bounds = get_zone_model(athlete.hr_zone_model).zone_bounds(
             hr_max=int(hr_max_observed), hr_rest=athlete.hr_rest
         )
-        zone1, zone2, zone3, zone4, zone5 = _zone_seconds(repo, activity_id, bounds)
+        zone1, zone2, zone3, zone4, zone5 = repo.zone_seconds_for_activity(activity_id, bounds)
         trimp_val = repo.activity_trimp(activity_id, bounds=bounds)
         hr_max_used = int(hr_max_observed)
 
