@@ -168,7 +168,13 @@ def _activity_fact(
     hr_rec = calc_hr_recovery(hr_rows)
     vspeed = calc_vertical_speed(alt_rows)
     drift = calc_cardiac_drift(drift_rows, activity.sport_type)
-    hrr = calc_hrr_pct(median_hr, athlete.hr_rest, hr_max_observed)
+    # %HRR uses this activity's own observed max so the numerator (per-activity
+    # median) and denominator share the same activity scope. Using the running
+    # cross-activity max (hr_max_observed) against a single-activity median would
+    # understate %HRR for an easy effort that follows a hard peak day. Fall back
+    # to the running max only when this activity has no HR samples (WR-03).
+    hr_max_for_hrr = max_hr if max_hr is not None else hr_max_observed
+    hrr = calc_hrr_pct(median_hr, athlete.hr_rest, hr_max_for_hrr)
 
     missing: list[str] = []
     if activity.detail_json is None:
