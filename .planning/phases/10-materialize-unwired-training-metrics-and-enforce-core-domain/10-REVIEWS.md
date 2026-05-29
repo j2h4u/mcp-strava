@@ -1,138 +1,198 @@
 ---
 phase: 10
-reviewers: [opencode, claude]
-reviewed_at: 2026-05-29T22:05:00+06:00
+cycle: 2
+reviewers: [codex, opencode]
+reviewed_at: 2026-05-29T22:40:00+06:00
 plans_reviewed: [10-01-PLAN.md, 10-02-PLAN.md, 10-03-PLAN.md, 10-04-PLAN.md]
+prior_cycle: 1
 ---
 
-# Cross-AI Plan Review — Phase 10
+# Cross-AI Plan Review — Phase 10 (Cycle 2)
 
-Phase 10 plans were independently reviewed by two AI systems (OpenCode and a separate
-Claude session). Both reviewers independently verified the central claims against the live
-codebase (the `metrics.py:5` db import, dead-code status, the hardcoded materializer defaults,
-the line-141 `hr_max_observed` reuse, and sibling-module cleanliness) rather than restating
-the provided context.
+Cycle 2 follows a replan (commit b1aca30) that folded in cycle-1 review feedback. Plans
+were independently reviewed by Codex and OpenCode. Both reviewers were asked to (a) confirm
+whether the four cycle-1 concerns were resolved and (b) surface any NEW concerns. The
+reviewer of record (Claude Code) additionally verified every load-bearing claim and both
+cross-cutting NEW concerns against the live codebase before writing the consensus.
+
+**Headline: no HIGH-severity concerns in either review. All four cycle-1 concerns confirmed
+resolved by both reviewers.** Two reviewers converge on one MEDIUM (a between-wave red-suite
+window); Codex raises two further MEDIUMs (a no-HR fixture spec ambiguity and live-ops
+runbook precision). All are pre-execution edits, none block the architecture/bug-fix goal.
+
+## Cycle-1 → Cycle-2 Resolution Status
+
+| # | Cycle-1 concern | Resolved? | How (cycle-2) |
+|---|-----------------|-----------|---------------|
+| (a) | Boundary-guard RED state structurally unobservable (Claude MEDIUM-HIGH, top divergence) | YES (both) | 10-02 Task 2 adds an explicit out-of-band RED proof: transiently re-add the `mcp_strava.db` import, observe the widened test FAIL (RED_EXIT=1, violations name metrics.py + mcp_strava.db), then revert; the transient import is never committed. |
+| (b) | hr_recovery / rolling-median / no-HR coverage gaps in the materializer test (both MEDIUM) | YES (both) | 10-03 Task 1 adds (i) a pause-inclusive fixture (`velocity < VEL_STOP` for `>= MIN_PAUSE_SEC`) asserting `hr_recovery_median_rate is not None AND hr_recovery_pause_count >= 1`; (ii) a `rolling_median_hr_recovery is not None` assertion proving the auto-populate column-name match; (iii) a no-HR None-path case. |
+| (c) | metric_version decision + live re-materialize sanity query (Claude MEDIUM) | YES (both) | 10-03 documents an explicit "do NOT bump metric_version" decision with rationale, and embeds a post-rematerialize SQL sanity query in the T-10-DI threat mitigation. |
+| (d) | 13-vs-14 column count ambiguity (Claude LOW) | YES (both) | 10-03 adds a full 14-column mapping table; `cardiac_drift_significant` is explicitly counted as the 14th column with its `1/0` collapse documented as a conscious carry-over. |
+
+---
+
+## Codex Review
+
+**Summary**
+
+Cycle 2 is materially stronger than cycle 1. The four named cycle-1 concerns are addressed in the plans: the boundary guard gets an explicit RED proof, the materializer tests now cover pause-based HR recovery, rolling medians, and no-HR paths, `metric_version` has an explicit no-bump decision plus a live sanity query, and the 13-vs-14 ambiguity is resolved with a full 14-column mapping. No new HIGH concerns. The remaining issues are execution-order and live-ops precision problems, not plan-breaking design flaws.
+
+**Strengths**
+
+- The phase is correctly decomposed: pure-domain extraction first, boundary guard and materializer wiring second, cleanup last.
+- 10-02 now makes the boundary guard observable by transiently reintroducing the forbidden import and recording the failure.
+- 10-03 directly fixes the product bug instead of deleting registered metrics.
+- The hrr_pct decision is coherent: using `hr_max_observed` keeps it aligned with the fact row's existing zone/TRIMP provenance.
+- The full 14-column mapping removes ambiguity around `cardiac_drift_significant`.
+- The materializer test plan now includes the important missing paths: pause-inclusive HR recovery, rolling median propagation, and insufficient/no-HR behavior.
+
+**Concerns**
+
+- **MEDIUM** — 10-01 deletes symbols while stale tests are only repaired in 10-04. That can leave the suite uncollectable between Wave 1 and Wave 3 if normal wave gates run `just test`. Move the stale `test_smoke.py` import/test cleanup into 10-01, or defer deleting the nonessential dead functions until 10-04.
+- **MEDIUM** — The no-HR materializer case may encode a false expectation for `vertical_speed_vmh`. Vertical speed depends on altitude/time, not HR. If the no-HR fixture still has sufficient altitude samples, `vertical_speed_vmh` should compute. Make the fixture explicitly no-HR and no/insufficient-altitude, or only assert HR-derived defaults there.
+- **MEDIUM** — The live re-materialize path still lacks an exact operator command or forced-recompute mechanism. Since `metric_version` intentionally does not change, the plan should say precisely how clean existing rows get recomputed, how the owner/single-writer rule is respected, and how the backup is checked before mutation.
+- **LOW** — 10-02's transient source edit for RED proof is useful, but the shell command should be failure-safe with a `trap` restore and a final `git diff -- src/mcp_strava/metrics.py` check. An interrupted proof can otherwise leave a dirty forbidden import.
+- **LOW** — The cardiac-drift integration assertion should be backed by a deterministic fixture known to produce non-null quality/pct, or the test may become brittle against algorithm quality gates.
+
+**Suggestions**
+
+- Add a short "between-wave suite state" note in 10-01/10-04 so executors know whether full-suite red is expected temporarily. Better: avoid temporary red by moving stale import cleanup earlier.
+- Add a live-ops appendix to 10-03 with the exact re-materialization command, backup check, owner/lock handling, and the post-query expected shape.
+- In 10-03, phrase the no-HR case as "HR-derived metrics remain default" unless the fixture also intentionally lacks altitude.
+- Keep the `metric_version` no-bump decision, but explicitly state that the operator-run rematerialization must bypass dirty-only skipping or mark all relevant facts dirty first.
+- Record the before/after sanity-query counts in the summary, not just the query text.
+
+**Risk Assessment: MEDIUM**
+
+Code design risk is low: the plans use existing repo methods, pure functions, and AST guards, and preserve the MCP boundary. Risk stays medium because this phase mutates persisted read-model facts in the live DuckDB runtime, and prior repo history shows live DuckDB operations need explicit backup, owner, parity, and smoke-validation discipline. Tightening the re-materialize runbook and avoiding temporary full-suite breakage would bring this close to low.
+
+---
 
 ## OpenCode Review
 
-# Phase 10 Plan Review
+## Overall Assessment
 
-## Summary
+The cycle-2 replan is a substantial improvement. All four cycle-1 concerns are directly addressed: the boundary-guard RED state now has an explicit out-of-band falsification step (10-02 Task 2), the materializer test now covers the pause-inclusive hr_recovery path, a rolling-median assertion, AND the no-HR None-path (10-03 Task 1), the 13-vs-14 ambiguity is fully resolved into an explicit 14-column mapping table with `cardiac_drift_significant` properly counted, and the `metric_version` decision is documented with rationale plus a post-rematerialize sanity query. One new **MEDIUM** concern remains: a broken test suite window between waves 1 and 3 caused by deleting symbols from `metrics.py` before fixing the test imports that reference them.
 
-The four plans form a well-researched, tightly-scoped TDD sequence that simultaneously closes the last PROJECT.md core/domain separation requirement AND fixes a latent product bug (13 registered, documented, exposed metric columns silently materialized as null/zero). The research backing is unusually thorough — every claim is verified against the live codebase, the 13-column mapping table is 1:1 correct, and the four verified repo method signatures match exactly what the materializer needs. The plans are production-quality in their level of detail. A few medium-grade concerns exist around test coverage completeness and stale-reference cleanup, none of which block execution.
+### 10-01 — Extract pure metric functions
 
-## Strengths
+**Strengths:** Clean TDD flow (RED new test file → GREEN extract + verify imports clean); pure signatures well-specified with data-shape contracts and None-guard behavior; mirrors `training.py` style; verification includes both test pass AND a grep for residual db import.
 
-- **Rigorously verified claims**: The RESEARCH.md verification table maps every dead symbol to `grep` results; every repo method signature is confirmed line-for-line. The confidence level label (HIGH) is earned.
-- **Correct TDD sequencing**: RED→GREEN pairs in plans 10-01 and 10-03 are properly ordered; the RED test will genuinely fail before the GREEN change. The boundary test (10-02) naturally passes only because 10-01 removed the offending import — exactly the right dependency ordering.
-- **Clean fetch/compute split**: Moving the `repo.stream_*` calls OUT of `metrics.py` and INTO the materializer (the only caller) is the correct seam. The pure functions mirror `training.py` style (plain data → dataclass or None), maintaining architectural consistency.
-- **`hrr_pct` hr_max decision is correct**: Reusing `hr_max_observed` (max-to-date, already at `_activity_fact` line 141) rather than all-time `max_heartrate()` keeps hrr_pct consistent with zone bounds and TRIMP — and aligns with the registry's documented "observed_hr_max" contract.
-- **No hidden work**: The claim that rolling medians auto-populate is verified correct — `_materialize_rolling_facts` (lines 368-376) already SELECTs `hr_recovery_median_rate` and `cardiac_drift_pct`; once per-activity facts are non-null, the rolling aggregates fill for free.
-- **Boundary guard avoids false positives**: The 10-02 plan explicitly calls out that `mcp_strava` prefix and sibling domain imports must NOT be forbidden. The `_import_violations` AST helper's three-form coverage (`import X`, `from X import`, `from mcp_strava import alias`) is correctly documented.
-- **`DecouplingResult` dataclass handling is pragmatic**: Leaving it defined in `types.py` (10-RESEARCH recommendation) avoids touching re-exports while removing it from test imports. Minimal risk.
-- **Dependency graph is clean**: 10-04 depends on {10-01, 10-03}; 10-02 depends on 10-01. Wave 2 plans (10-02, 10-03) are independent within the wave. No circular dependencies.
+**Concerns:**
+- **MEDIUM** — Deleting dead functions in 10-01 breaks `test_smoke.py` collection until 10-04. Task 2 deletes `enrich_activity`, `calc_decoupling`, `_decoupling_invalid`, `calc_decoupling_with_gate`, `_fetch_decoupling_rows`, `calc_efficiency_factor`. But `test_smoke.py` imports `enrich_activity`, `calc_decoupling_with_gate`, `calc_efficiency_factor` at line 12 and references `_decoupling_invalid`/`calc_decoupling` at lines 128/146; the import fixes are deferred to 10-04 (wave 3). So `pytest tests/test_smoke.py` fails to collect from wave-1 completion through wave 3 — contradicting RESEARCH.md Pitfall 3 ("Order the wave so test updates land with or before the deletions"). 10-01's verify step only runs `test_metrics_pure.py` + an import sanity check, so an executor may not notice, but any full-suite/CI run will be red.
+- **LOW** — `from mcp_strava.hr_zones import get_zone_model` (metrics.py line 6) — is it still used after deleting `enrich_activity`? If only the deleted code used it, it should be removed in the same "clean up now-unused imports" step; the plan says "any now-unused imports" but doesn't enumerate them.
 
-## Concerns
+**Suggestions:** Move the `test_smoke.py` import fixes from 10-04 Task 2 into 10-01 (same atomic commit), OR defer ALL dead-function deletions to 10-04, keeping 10-01 to new pure functions + the `db` import removal so the suite stays green through waves 1–2.
 
-- **MEDIUM — Materializer integration test does not cover hr_recovery columns**: `_seed_dirty_activity_with_streams` generates velocity values ≥ 3.0 m/s, well above `VEL_STOP` (0.15 m/s). No pauses exist in the synthetic data, so `calc_hr_recovery` returns `None`. The RED test in 10-03 correctly avoids asserting hr_recovery columns, but this means 6 of 13 columns are not exercised at the integration level. Covered at unit level (10-01 `test_metrics_pure.py`), but a materializer-side assertion on the `hr_recovery_pause_count >= 0` path would strengthen confidence. Mitigation: the pure-function unit tests in 10-01 cover all pause/no-pause branches; the integration gap is defensible given the fixture reuse constraint.
-- **MEDIUM — Stale `enrich_activity` reference in `test_metric_services.py::_block_legacy_recompute` not addressed**: Line 251 includes `"enrich_activity"` in a forbidden-recompute list guarded by `hasattr(metric_services, name)`. Since `hasattr` returns False after deletion, the monkeypatch is silently skipped — no test failure. However, none of the four plans mention cleaning this stale entry. CONTEXT.md scope item 5 flagged this file but no plan task handles it. Low practical risk (can't fail), but missed cleanup.
-- **LOW — Stale `enrich_activity` in security-guard negative-assert lists**: Lines 292, 490, 495 of `test_security_guards.py` reference `enrich_activity` in forbidden-call/import assertion lists. These are negative assertions, so they remain true post-deletion. No test failure risk, but leftover dead references accumulate.
-- **LOW — `calc_cardiac_drift` default parameter consistency**: RESEARCH.md code example shows `sport_type=None` default; 10-01 must_haves shows no default; 10-03 always passes `activity.sport_type`. Cosmetic since the only caller always passes the argument, but one document should be canonical.
-- **LOW — `_import_violations` does not handle `from mcp_strava import *`**: The `alias.name == '*'` case would silently pass the guard. Not a practical threat (no module uses wildcard imports), but the coverage annotation should acknowledge the gap.
-- **LOW — `test_metric_registry.py` in 10-03 verify step**: It validates the registry bootstrap from fixture data, not a materializer column-value regression. The real regression guard is the existing materializer test asserting `trimp > 0`. The registry test is harmless but doesn't add the regression coverage the plan implies.
+### 10-02 — Import-boundary guard
 
-## Suggestions
+**Strengths:** Reuses the existing `_import_violations` AST helper (zero new infra); Pitfall 2 (sibling domain imports stay allowed) explicitly handled by forbidding only storage/adapter prefixes; Task 2 provides the explicit throwaway RED proof that directly and definitively closes the cycle-1 unfalsifiability concern; the `from mcp_strava import db` form is covered by the helper's line 222–226 branch (verified against source).
 
-- **Add a pause-inclusive synthetic stream fixture variant** (optional, post-phase): a `_seed_dirty_activity_with_pauses` helper with velocity dips below `VEL_STOP` so hr_recovery columns are exercised at the integration level. Deferrable — unit tests cover the pure function and the None-safe access is trivial.
-- **Clean `_block_legacy_recompute`** in post-phase cleanup: remove `"enrich_activity"` from the forbidden list in `test_metric_services.py`; similarly remove it from the security-guard negative-assert lists (292, 490, 495).
-- **Add a one-line doc comment on the `_import_violations` wildcard gap** so future readers know `from mcp_strava import *` is a blind spot.
-- **Canonicalize `calc_cardiac_drift` signature with `sport_type: str | None = None`** to match the RESEARCH.md example.
+**Concerns:**
+- **LOW** — Task 2 RED proof uses fragile `cp` gymnastics; if interrupted between the swap and the restore, the working tree is corrupt. `git checkout` recovers it, but a single `edit`-then-revert is less fragile.
+- **LOW** — No explicit pre-check that `hr_zones` and `sports` have zero storage imports today (almost certainly true per RESEARCH §Pitfall 2; could add a "guard passes before 10-02" check).
 
-## Risk Assessment
+### 10-03 — Wire pure functions into the materializer
 
-**Overall: LOW**
+**Strengths:** All three cycle-1 coverage gaps addressed — (b-i) pause-inclusive hr_recovery, (b-ii) rolling-median auto-populate assertion, (b-iii) no-HR None-path; (d) 13-vs-14 fully resolved with a 14-row mapping table; (c) metric_version decision documented with rationale + embedded sanity query; the full mapping table maps every column to its source expression; `hr_max_observed` reuse is locked.
 
-The plans are exceptionally well-researched and grounded in verified codebase state. The only real computational risk is the `hrr_pct` all-time-vs-max-to-date choice, which is correctly locked and documented. Data preservation is externalized to operator-run re-materialization with a read-only backup safety net — the right boundary for a code-only phase. TDD sequence correctly ordered; boundary guard proven to catch its target violation class; clean wave decomposition; no new deps, no installs, no schema changes. Remaining gaps (stale test references, integration coverage for one metric family) are low-impact and do not threaten phase correctness.
+**Concerns:**
+- **LOW** — `_activity_fact` may fetch streams for activities that don't have them (4 fetches return empty, pure fns return None, None-safe access handles it). Not new overhead (median-HR fetch already in the zone path), just noting per-activity no-op queries.
+- **LOW** — The rolling-median assertion requires "enough activities with non-null hr_recovery_median_rate"; the plan doesn't specify how many the seed helper creates. If the single seeded activity isn't enough, the executor must add more. Could specify a minimum (e.g., "seed 3 activities with pause-inclusive streams").
 
----
+### 10-04 — Delete dead db.py code and repair stale tests
 
-## Claude Review
+**Strengths:** RESEARCH dead-code table is the authoritative pre-verified source; Task 3 covers the stale `enrich_activity` refs that CONTEXT scope item 5 called out but no prior plan addressed; `legacy_db_imports` explicitly preserved; `DecouplingResult` handling follows the RESEARCH recommendation; cleanup-only, no forward coupling.
 
-I verified the key claims against the actual codebase before writing this review. Findings below are evidence-based, not just a restatement of the provided context.
+**Concerns:**
+- **LOW** — Task 3 removes `enrich_activity` from forbidden_calls sets (negative assertions); correct since the function no longer exists, but worth confirming no separate positive test asserts it IS forbidden. From source line 292 it's a negative check — tautologically correct to remove, no risk.
+- **LOW** — Task 1's verify step doesn't grep for orphaned imports after deleting `get_daily_trimp_history`; add `python -c "import mcp_strava.db"` to confirm db.py still imports cleanly.
 
-# Phase 10 Plan Review
+## New Concerns Summary (OpenCode)
 
-## 1. Summary
+| # | Severity | Concern | Plan |
+|---|----------|---------|------|
+| 1 | MEDIUM | Deleting dead functions from `metrics.py` in 10-01 breaks `test_smoke.py` collection until 10-04 (violates RESEARCH Pitfall 3) | 10-01 ↔ 10-04 |
+| 2 | LOW | 10-02 Task 2 RED proof uses a fragile `cp` chain that could corrupt the working tree if interrupted | 10-02 |
+| 3 | LOW | Rolling-median assertion in 10-03 may need more seeded activities than the fixture provides | 10-03 |
 
-This is a tight, well-researched phase that correctly recognizes the architecture fix and the product-bug fix as a single change: `metrics.py` can't be wired into the materializer until it's pure, and making it pure is exactly what closes the core/domain requirement. I confirmed the central premises hold — `metrics.py:5` does import `repository_from_connection`; the three calc functions take `(conn, activity_id)` and fetch rows mid-computation; there are zero `src/` importers of any `metrics.py` function (genuinely dead); the materializer hardcodes the 13 columns to `0`/`None`; and `db.py:241` `get_daily_trimp_history` is imported only by `test_smoke.py`. The wave ordering is sound and the TDD framing is appropriate. My concerns are concentrated in **test coverage gaps** and one **structural flaw in how the boundary guard is validated** — notably the same blind-spot class that let the original leak ship green.
+## Risk Assessment: LOW
 
-## 2. Strengths
-
-- **Correct problem unification** — treating the dead-code/coupling violation and the unmaterialized-metrics bug as one change is accurate and avoids a redundant refactor pass.
-- **Verified signatures and reuse** — `hr_max_observed` at `read_model_materializer.py:141` exists and is already the max-to-date value used for zones/TRIMP; reusing it (decision 3) is genuinely consistent, not a guess.
-- **Sibling-module safety confirmed** — checked `hr_zones.py`, `sports.py`, `training.py`, `cardiac_drift.py`: none import `mcp_strava.db` or the adapters. So widening the guard to five modules (10-02) won't surprise-fail on a pre-existing violation.
-- **Correct restraint on the legacy guard** — 10-04 explicitly leaves `legacy_db_imports` (`test_security_guards.py:88`) untouched; that set still correctly forbids re-importing `get_daily_trimp_history`/`api_request` into `cli.py`.
-- **None-safe defaults preserved** — keeping the existing default when a pure fn returns `None` matches the current contract and avoids fabricating values.
-- **Clean dependency graph** — 10-02 and 10-03 both depend only on 10-01, touch disjoint files, and parallelize safely in Wave 2.
-
-## 3. Concerns
-
-- **[MEDIUM-HIGH] 10-02's RED state is structurally unobservable.** The research's own pitfall #1 says "verify RED before metrics.py import removed." But 10-02 `depends_on: [10-01]`, and 10-01 *removes* the import. By the time the widened guard is committed, the violation is already gone — so you can never observe the new assertion failing on the real leak. This is precisely the blind spot that let the original coupling pass green. A guard you've only ever seen pass hasn't been proven to catch anything.
-- **[MEDIUM] hr_recovery columns are not asserted in the materializer test.** The 10-03 RED test asserts `vertical_speed_vmh`, `cardiac_drift_quality`, `hrr_pct`, and `trimp` — but *not any* `hr_recovery_*` column. hr_recovery is named first in the phase goal, and `hr_recovery_pause_count`/`hr_recovery_total_rest_sec` default to `0` (int), not `None` — the same silent-default bug class. If wiring misses them, they stay `0` and the test passes anyway.
-- **[MEDIUM] The "rolling medians auto-populate" claim has no test.** Research asserts `_materialize_rolling_facts` already SELECTs the source columns so the rolling medians populate for free. That's an untested assumption about exact column names matching. The cheapest insurance against a false claim is one assertion.
-- **[MEDIUM] `hr_max` variable ambiguity + no-HR None-safety.** There are two values: `hr_max_observed` (raw, can be non-`None`) and `hr_max_used` (set to `None` when `hr_count == 0`). The plan says "reuse `hr_max_observed` (line 141)." For an activity with no HR samples but a non-null max-to-date, `calc_hrr_pct` must be `None`-safe on a present `hr_max` with `None` `median_hr`. The plan asserts pure fns are None-safe but never tests the no-HR path. Specify which variable and add a no-HR fixture asserting `hrr_pct` stays `None` without crashing.
-- **[MEDIUM] Live re-materialization has no verification step or trigger mechanism.** Decision 7 is operator-run and rewrites live stored facts. But: (a) there's no before/after sanity query (e.g., count of non-null `hr_recovery_median_rate` rows) to confirm the rematerialize did what's expected; (b) the plans never mention whether `metric_version` should be bumped. If consumers/cache invalidation key off `metric_version`, bumping it is the clean idempotent trigger — a manual rematerialize is a step that can be forgotten or half-run on a single-writer DB.
-- **[LOW] Column count discrepancy (13 vs 14).** Counting hardcoded defaults: hr_recovery (6) + vertical_speed (3) + cardiac_drift pct/severity/significant/quality (4) + hrr_pct (1) = **14**, but the plans say "13." Likely `cardiac_drift_significant` (defaults to `0`, handled specially) is excluded. Minor, but a miscount risks one column silently left unwired — the mapping table should enumerate all of them explicitly.
-- **[LOW] `cardiac_drift_significant` semantics unchanged but worth noting.** `1 if (drift and drift.is_significant) else 0` collapses "insufficient data" and "computed, not significant" into the same `0`. Pre-existing design, not introduced here — flagged only as a conscious carry-over.
-
-## 4. Suggestions
-
-- **Prove the guard RED out-of-band.** During 10-02, transiently re-add the `from mcp_strava.db import repository_from_connection` line (or run the new assertion against the pre-10-01 tree / a stash) and confirm it fails, then revert. Document the observed RED in the plan's verify section. Otherwise the guard is unfalsified.
-- **Extend the 10-03 RED test** to assert at least one `hr_recovery_*` column (e.g., `hr_recovery_median_rate is not None`) and one rolling-median column is populated after materialize — closing two coverage gaps in one fixture.
-- **Add a no-HR activity case** asserting `hrr_pct`, `hr_recovery_median_rate`, `vertical_speed_vmh`, `cardiac_drift_*` all stay at their defaults and nothing raises. The None-path the happy-path id-920 fixture can't exercise.
-- **Decide `metric_version` explicitly.** Either bump it (so rematerialization is triggered/idempotent via the normal mechanism) or state in 10-03 why it stays fixed. Add a one-line post-deploy verification query to decision 7's live-ops note.
-- **Have 10-03 enumerate the full column mapping table in-plan** (all 14, including `significant`) so the executor can't drop one.
-
-## 5. Risk Assessment
-
-**Overall: LOW-MEDIUM.**
-
-The factual foundation is solid — independently verified imports, dead-code status, materializer defaults, line-141 reuse, sibling-module cleanliness, and legacy-guard handling all checked out. The change is well-bounded with no new dependencies and clean wave ordering. What keeps this above LOW is that the **verification** is weaker than the **implementation**: the boundary guard (the artifact whose entire purpose is catching this leak) can't be observed failing given the dependency order, and the materializer test under-covers the very metric family the phase headlines (hr_recovery) plus the rolling-median auto-populate claim and the no-HR None path. None of these threaten the architecture goal; they threaten confidence that the product bug is durably fixed. Address the RED-guard validation and the hr_recovery/rolling-median assertions and this drops cleanly to LOW.
+The phase is well-scoped, has zero external dependencies, and all four cycle-1 concerns are substantively resolved. The TDD structure is sound and the plans are detailed enough that an executor won't need to make architectural decisions. The one MEDIUM (test-suite red window) requires only reordering deletions relative to test fixes — no change to the actual code changes, no new files, no dependency restructuring.
 
 ---
 
 ## Consensus Summary
 
-Both reviewers independently verified the plans against the live codebase and converged on the
-same headline: the **implementation is well-grounded and well-sequenced, but the verification is
-weaker than the implementation**. Every factual premise (the `metrics.py:5` db import, zero `src/`
-importers, the 13/14 hardcoded materializer defaults, the line-141 `hr_max_observed` reuse, the
-sibling-module cleanliness, the untouched legacy guard) was confirmed by both. No HIGH-severity
-concern was raised by either reviewer. Overall risk: **LOW (OpenCode) / LOW-MEDIUM (Claude)**.
+Both reviewers independently confirm the cycle-2 replan resolves all four cycle-1 concerns and
+introduces **no HIGH-severity issues**. Overall risk: **LOW (OpenCode) / MEDIUM (Codex)** — the
+divergence is entirely about live-ops/runtime mutation discipline, not the code design.
+
+The reviewer of record verified the load-bearing claims and both cross-cutting NEW concerns
+against the live codebase:
+- `metrics.py:5` db import + the conn-coupled calc signatures, the 14 hardcoded materializer
+  defaults (lines ~190–205), `hr_max_observed` at line 141 (via `max_heartrate_to_date`),
+  `athlete.hr_rest` and `activity.sport_type` in scope, all four repo method signatures, the
+  `_import_violations` helper + the `test_read_modules_do_not_import_strava_or_refresh` family
+  (3 modules, strava/refresh prefix tuple at line 374), the sibling `cardiac_drift` import to
+  preserve (line 10), and the enrich_activity refs at 292/490/495 (security_guards) + 251
+  (metric_services) — **all match the plans exactly.**
+- **CONFIRMED (red-suite window):** `metrics.py:6` `from mcp_strava.hr_zones import get_zone_model`
+  is used only by the deleted `enrich_activity` path → correctly an unused-import-to-remove.
+  `test_smoke.py:12` imports symbols 10-01 deletes while the repair is in 10-04 (wave 3) → the
+  between-wave uncollectable-suite window is real.
+- **CONFIRMED (no-HR/altitude spec ambiguity):** 10-03 line 132 asserts `vertical_speed_vmh is None`
+  in the no-HR case, but `calc_vertical_speed` reads altitude rows independently of HR. If the
+  no-HR fixture reuses the ascending-altitude seed and only nulls HR, that assertion will FAIL.
 
 ### Agreed Strengths
 
-- Correct unification of the architecture fix and the product-bug fix into one change.
-- Reusing `hr_max_observed` (max-to-date, line 141) for `hrr_pct` is verified-consistent with zones/TRIMP and the registry's documented contract — not a guess.
-- Clean fetch/compute seam (fetch stays in materializer, compute moves to pure functions mirroring `training.py`).
-- Correct TDD/wave ordering and a clean, acyclic dependency graph (10-02 and 10-03 both depend only on 10-01 and touch disjoint files).
-- 10-04 correctly leaves the `legacy_db_imports` cli.py ban in place while deleting the function.
-- None-safe defaults preserved (no fabricated values on insufficient data).
+- Correct phase decomposition (pure extraction → guard + wiring → cleanup); clean acyclic wave graph.
+- The 10-02 out-of-band RED proof definitively closes the cycle-1 unfalsifiable-guard concern.
+- 10-03 fixes the product bug (computes the registered metrics) rather than deleting them, honoring decision 260525-jpo "preserve and fix".
+- `hr_max_observed` reuse for `hrr_pct` is verified-consistent with zones/TRIMP provenance.
+- The full 14-column mapping removes the `cardiac_drift_significant` miscount.
+- Materializer test now covers pause-inclusive hr_recovery, rolling-median, and no-HR paths.
 
 ### Agreed Concerns (highest priority)
 
-1. **[MEDIUM — both reviewers] hr_recovery columns are not asserted in the 10-03 materializer test.** The synthetic fixture has no sub-`VEL_STOP` pauses, so `calc_hr_recovery` returns `None` and 6 hr_recovery columns are never exercised at the integration level — and `hr_recovery_pause_count`/`total_rest_sec` default to `0` (int), the same silent-default class the phase exists to fix. Recommend extending the RED test with a pause-inclusive fixture asserting at least one `hr_recovery_*` column.
-2. **[MEDIUM — Claude, related cleanup flagged by OpenCode] Verification gaps around the rolling-median auto-populate claim and the no-HR None path.** Both are untested assumptions; one assertion each is cheap insurance.
+1. **[MEDIUM — both] Between-wave red-suite window.** 10-01 deletes `metrics.py` symbols that
+   `test_smoke.py:12` still imports; the test repair is deferred to 10-04 (wave 3). Any
+   full-suite/`just test` run is uncollectable from wave-1 completion through wave 3, contradicting
+   RESEARCH Pitfall 3. **Recommended fix (both reviewers agree):** move the `test_smoke.py` import
+   fixes into 10-01 (same atomic commit), OR defer the nonessential dead-function deletions to
+   10-04 — keeping 10-01 to new pure functions + the `db` import removal so the suite stays green
+   through waves 1–2. Verified real against the live tree.
 
 ### Divergent Views
 
-- **Boundary-guard RED observability** — Claude rates this **MEDIUM-HIGH** (its top concern): because 10-02 `depends_on: [10-01]` and 10-01 removes the offending import, the new guard can never be observed failing on the real leak, so it is structurally unfalsified — the exact blind-spot class that let the original coupling ship green. OpenCode treats the same boundary test as a **strength** ("naturally passes only because 10-01 removed the import"), not flagging the unobservable-RED risk. Recommended resolution: prove the guard RED out-of-band during 10-02 (transiently re-add the import or run the new assertion against the pre-10-01 tree/stash, confirm failure, revert) and record the observed RED in the plan's verify section. This is the single most actionable divergence and is cheap to close.
-- **Live re-materialization trigger / `metric_version`** — Claude raises this as a MEDIUM (no before/after sanity query; `metric_version` bump undecided); OpenCode does not mention it. Worth a one-line decision in 10-03 plus a verification query in the decision-7 live-ops note.
-- **13 vs 14 column count** — Claude flags a LOW miscount (14 actual defaults incl. `cardiac_drift_significant`); OpenCode consistently says 13. Enumerating the full mapping table in-plan removes the ambiguity.
+- **Overall risk level** — OpenCode rates **LOW** (code-design lens); Codex rates **MEDIUM** because
+  the phase mutates live DuckDB read-model facts and prior incidents show live DuckDB ops need
+  explicit backup/owner/parity/smoke discipline. Resolution: this is a framing difference, not a
+  contradiction — the code change is low risk; the operator-run live re-materialize is the medium-risk
+  step, which is exactly why decision 7 is operator-gated. Tightening the runbook (below) closes it.
+- **No-HR fixture (`vertical_speed_vmh`)** — Codex flags a MEDIUM spec ambiguity that OpenCode does
+  not. Verified real: the assertion is only correct if the no-HR fixture ALSO lacks sufficient
+  altitude. **Recommended:** either make the no-HR fixture no-HR-and-no/low-altitude, or scope the
+  no-HR assertions to HR-derived columns (`hrr_pct`, `hr_recovery_*`) and assert `vertical_speed_*`
+  separately on an altitude-bearing fixture.
+- **Live-ops runbook precision** — Codex MEDIUM (no exact rematerialize command / forced-recompute
+  given metric_version is intentionally fixed); OpenCode does not raise it. **Recommended:** add a
+  live-ops appendix to 10-03 stating the exact re-materialize command, that it must mark relevant
+  facts dirty / bypass dirty-only skipping (since metric_version doesn't change), the backup-intact
+  check on `~/backups/mcp-strava-safe/`, the single-writer/owner handling, and the expected
+  before/after sanity-query counts.
 
 ### Recommended pre-execution edits (all cheap, none blocking)
 
-- Add the boundary-guard out-of-band RED proof to 10-02's verify section.
-- Extend the 10-03 RED test with a pause-inclusive fixture (one `hr_recovery_*` assertion) and one rolling-median assertion; add a no-HR None-path case.
-- Decide and document `metric_version` handling + a post-deploy sanity query in decision 7.
-- Enumerate all 14 columns in the 10-03 mapping table; canonicalize `calc_cardiac_drift(rows, sport_type=None)`.
+- Close the red-suite window: move `test_smoke.py` import fixes into 10-01, or defer the
+  dead-function deletions to 10-04. (Agreed MEDIUM — the one edit worth making before execution.)
+- Fix the no-HR fixture's `vertical_speed_vmh` expectation (make it altitude-poor, or scope the
+  assertion to HR-derived columns).
+- Add the live-ops runbook appendix to 10-03 (exact command, dirty/forced recompute, backup check,
+  owner handling, expected counts).
+- Enumerate the now-unused `metrics.py` imports to drop (line 6 `get_zone_model`, `get_settings`,
+  `json`, `parse_strava_activity`, `EnrichedActivity`, `DecouplingResult`).
+- Harden the 10-02 RED-proof shell (trap-based restore + final `git diff` check), or use an
+  edit-then-revert instead of the `cp` chain.
+- Specify a minimum seeded-activity count for the rolling-median assertion in 10-03.
