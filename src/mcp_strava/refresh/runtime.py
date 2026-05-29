@@ -35,6 +35,11 @@ class RefreshResult:
     reason: str | None = None
     mode: str = "daily"
     checkpoint_stage: str | None = None
+    activities_seen: int = 0
+    activities_new: int = 0
+    streams_fetched: int = 0
+    details_fetched: int = 0
+    kudos_fetched: int = 0
 
 
 @dataclass(frozen=True)
@@ -121,7 +126,16 @@ def run_once(
             error=None,
             kudos_fetched=kudos_fetched,
         )
-        return RefreshResult(status="ok", mode=mode, checkpoint_stage=Stage.COMPLETE.value)
+        return RefreshResult(
+            status="ok",
+            mode=mode,
+            checkpoint_stage=Stage.COMPLETE.value,
+            activities_seen=activities_seen,
+            activities_new=activities_new,
+            streams_fetched=streams_fetched,
+            details_fetched=details_fetched,
+            kudos_fetched=kudos_fetched,
+        )
     except StravaUnavailable as exc:
         return _handle_failure(repo, clock, policy, exc.reason, mode)
     finally:
@@ -179,7 +193,13 @@ def run_catchup(
             error=None,
             kudos_fetched=None,
         )
-        return RefreshResult(status="ok", mode="backfill", checkpoint_stage=Stage.COMPLETE_BACKFILL.value)
+        return RefreshResult(
+            status="ok",
+            mode="backfill",
+            checkpoint_stage=Stage.COMPLETE_BACKFILL.value,
+            streams_fetched=streams_fetched,
+            details_fetched=details_fetched,
+        )
     except StravaUnavailable as exc:
         return _handle_failure(repo, clock, policy, exc.reason, "backfill")
     finally:

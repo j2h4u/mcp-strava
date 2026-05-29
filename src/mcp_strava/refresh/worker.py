@@ -88,7 +88,38 @@ def _run_stream_channel_backfill(repo, transport, refresh_policy, clock, sleeper
     )
 
 
+_prev_free_blocks: int | None = None
+
+
+def _emit_mirror_storage() -> None:
+    """Emit the DuckDB reclaimable-space indicator with a per-cycle delta.
+
+    Fires on every cycle (including idle) so the mirror size is a continuous
+    series independent of refresh outcome — `free_blocks_delta` shows growth per
+    cycle. Best-effort: never disrupts the worker.
+    """
+    global _prev_free_blocks
+    try:
+        with DbConn() as conn:
+            stats = storage_stats(conn)
+    except Exception as exc:  # noqa: BLE001
+        _emit("mirror_storage_error", error_type=type(exc).__name__, error=str(exc)[:200])
+        return
+    free = int(stats["free_blocks"])
+    stats["free_blocks_delta"] = None if _prev_free_blocks is None else free - _prev_free_blocks
+    _prev_free_blocks = free
+    _emit("mirror_storage", **stats)
+
+
 def run_pending_once(*, emit_idle: bool = True) -> int:
+    """Run one refresh cycle, then always emit the storage indicator."""
+    try:
+        return _run_pending_cycle(emit_idle=emit_idle)
+    finally:
+        _emit_mirror_storage()
+
+
+def _run_pending_cycle(*, emit_idle: bool = True) -> int:
     """Run one refresh cycle when interval policy or queued requests require it."""
     settings = get_settings()
     ensure_runtime_refresh_schema(settings)
@@ -152,14 +183,16 @@ def run_pending_once(*, emit_idle: bool = True) -> int:
                     return 0
             elif result.status == "ok":
                 consumed = repo.mark_refresh_requests_consumed(_now_iso())
-                _emit("refresh_ok", consumed=consumed, checkpoint_stage=result.checkpoint_stage)
-                # Surface how much of the mirror file is reclaimable dead space so
-                # compaction can be decided from logs. Best-effort: never let a
-                # storage probe fail the refresh cycle.
-                try:
-                    _emit("mirror_storage", **storage_stats(conn))
-                except Exception as exc:  # noqa: BLE001
-                    _emit("mirror_storage_error", error_type=type(exc).__name__, error=str(exc)[:200])
+                _emit(
+                    "refresh_ok",
+                    consumed=consumed,
+                    checkpoint_stage=result.checkpoint_stage,
+                    activities_seen=result.activities_seen,
+                    activities_new=result.activities_new,
+                    streams_fetched=result.streams_fetched,
+                    details_fetched=result.details_fetched,
+                    kudos_fetched=result.kudos_fetched,
+                )
             else:
                 _emit("refresh_failed", reason=result.reason or "unknown", checkpoint_stage=result.checkpoint_stage)
                 return 1

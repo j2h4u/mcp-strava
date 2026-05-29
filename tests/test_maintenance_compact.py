@@ -189,6 +189,9 @@ def test_storage_stats_clean_fixture_reports_no_reclaimable(tmp_path: Path) -> N
     assert stats["compaction_recommended"] is False
     assert "compaction not needed" in stats["message"]
     assert stats["file_size"].endswith(("KB", "MB"))
+    # Raw block counts for diagnosis/delta.
+    assert stats["free_blocks"] == 0
+    assert stats["total_blocks"] > 0
 
 
 def test_storage_stats_recommends_compaction_above_threshold() -> None:

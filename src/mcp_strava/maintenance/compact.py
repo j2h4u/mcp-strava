@@ -80,6 +80,9 @@ def storage_stats(conn) -> dict:
         "reclaimable": humanize_bytes(reclaimable),
         "reclaimable_pct": reclaimable_pct,
         "compaction_recommended": recommended,
+        # Raw block counts for diagnosis/charting (free_blocks = reclaimable dead space).
+        "free_blocks": free_blocks,
+        "total_blocks": total_blocks,
         "message": message,
     }
 

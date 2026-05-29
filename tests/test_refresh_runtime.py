@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+import duckdb
 import pytest
 
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
@@ -640,7 +641,15 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
 
     def fake_run_once(repo, transport, refresh_policy, clock, sleeper, *, owner, force, mode):
         calls.append((owner, force, mode))
-        return SimpleNamespace(status="ok", checkpoint_stage=Stage.COMPLETE.value)
+        return SimpleNamespace(
+            status="ok",
+            checkpoint_stage=Stage.COMPLETE.value,
+            activities_seen=3,
+            activities_new=1,
+            streams_fetched=0,
+            details_fetched=0,
+            kudos_fetched=0,
+        )
 
     def fake_stream_backfill(repo, transport, refresh_policy, clock, sleeper):
         backfill_calls.append(refresh_policy.stream_backfill_batch_size)
@@ -778,6 +787,37 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
     )
 
     assert worker.run_pending_once(emit_idle=False) == 0
+
+
+def test_emit_mirror_storage_reports_free_block_delta(tmp_path, monkeypatch):
+    from mcp_strava.refresh import worker
+    from tests._fixtures_duckdb import create_fixture_db
+
+    db = tmp_path / "mirror.duckdb"
+    create_fixture_db(db)
+    events: list[tuple[str, dict]] = []
+
+    class FakeDbConn:
+        def __enter__(self):
+            self._conn = duckdb.connect(str(db), read_only=True)
+            return self._conn
+
+        def __exit__(self, *_a):
+            self._conn.close()
+            return False
+
+    monkeypatch.setattr(worker, "DbConn", FakeDbConn)
+    monkeypatch.setattr(worker, "_emit", lambda event, **fields: events.append((event, fields)))
+    monkeypatch.setattr(worker, "_prev_free_blocks", None)
+
+    worker._emit_mirror_storage()
+    worker._emit_mirror_storage()
+
+    assert [name for name, _ in events] == ["mirror_storage", "mirror_storage"]
+    # First reading has no prior; second compares against it (no change between reads).
+    assert events[0][1]["free_blocks_delta"] is None
+    assert events[1][1]["free_blocks_delta"] == 0
+    assert "reclaimable_pct" in events[0][1] and "message" in events[0][1]
 
 
 def test_refresh_modules_do_not_import_sync_per_D17():
