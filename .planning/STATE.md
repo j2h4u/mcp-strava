@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: verifying
-last_updated: "2026-05-29T21:32:36.302Z"
+status: ready_to_plan
+last_updated: 2026-05-29T21:41:40.319Z
 last_activity: 2026-05-29
 progress:
   total_phases: 12
@@ -11,6 +11,7 @@ progress:
   total_plans: 48
   completed_plans: 48
   percent: 92
+stopped_at: Phase 11 complete (1/1) — ready to discuss Phase 12
 ---
 
 # Project State
@@ -20,20 +21,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Phase 11 — tidy-materializer-repository-access-replace-the-6-inline-sql
+**Current focus:** Phase 12 — decouple db py into focused modules
 
 ## Current Position
 
-Phase: 11 (tidy-materializer-repository-access-replace-the-6-inline-sql) — EXECUTING
-Plan: 1 of 1
-Status: Phase complete — ready for verification
+Phase: 12
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-05-29
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 39
+- Total plans completed: 40
 - Average duration: 0 min
 - Total execution time: 0.0 hours
 
@@ -50,6 +51,7 @@ Last activity: 2026-05-29
 | 07 | 6 | 247min | 41min |
 | 09 | 4 | - | - |
 | 10 | 4 | - | - |
+| 11 | 1 | - | - |
 
 **Recent Trend:**
 
