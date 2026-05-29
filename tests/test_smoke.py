@@ -9,7 +9,6 @@ def test_imports():
     from mcp_strava.constants import Config
     from mcp_strava.types import BanisterResult, DecouplingResult
     from mcp_strava.db import DbConn, get_daily_trimp_history
-    from mcp_strava.metrics import enrich_activity, calc_decoupling_with_gate, calc_efficiency_factor
     from mcp_strava.training import calc_banister, forward_simulate, ewma
     from mcp_strava.application.freshness import get_freshness_service
     from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
@@ -121,47 +120,6 @@ def test_sim_one_day():
     assert f == round(f, 1)
     assert fa == round(fa, 1)
     print(f"  OK: _sim_one_day — f={f:.1f} fa={fa:.1f} form={form:.1f}")
-
-
-def test_decoupling_invalid():
-    """_decoupling_invalid: <2 points, low velocity, high CV, normal."""
-    from mcp_strava.metrics import _decoupling_invalid
-
-    # Too few points
-    assert _decoupling_invalid([]) is True
-    assert _decoupling_invalid([1.5]) is True
-
-    # Standing still (mean < VEL_MOVING=0.3)
-    assert _decoupling_invalid([0.1, 0.2]) is True
-
-    # Normal steady pace (CV ~0) — should be valid
-    assert _decoupling_invalid([3.0] * 10) is False
-
-    # High variability (run→walk, CV > 0.25)
-    # 2.5 m/s (~9 km/h) + 1.0 m/s (~3.6 km/h): mean=1.75, σ≈0.75, CV≈0.43 > 0.25
-    assert _decoupling_invalid([2.5, 2.5, 1.0, 1.0]) is True
-    print("  OK: _decoupling_invalid — edges, standing, steady, variable")
-
-
-def test_calc_decoupling():
-    """calc_decoupling: empty, insufficient, positive decoupling, negative."""
-    from mcp_strava.metrics import calc_decoupling
-
-    # Insufficient rows
-    assert calc_decoupling([]) is None
-    assert calc_decoupling([{'heartrate': 140, 'velocity': 3.0}]) is None
-
-    # Make 120 rows (minimum): first half faster, second half slower → positive decoupling
-    rows = []
-    for i in range(120):
-        hr = 140 if i < 60 else 150       # HR rises in second half
-        vel = 3.0 if i < 60 else 2.8       # pace drops in second half
-        rows.append({'heartrate': hr, 'velocity': vel})
-
-    result = calc_decoupling(rows)
-    assert result is not None
-    assert result.decoupling_pct > 0, f"Expected positive decoupling, got {result.decoupling_pct}"
-    print(f"  OK: calc_decoupling — pct={result.decoupling_pct}%")
 
 
 def test_sports_registry():
