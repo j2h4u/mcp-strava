@@ -358,12 +358,12 @@ No external/network dependencies. Pure code+test change.
 
 **This table is empty:** every claim above was verified by reading the actual source. No user confirmation needed.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Keep or delete `DecouplingResult` dataclass after `calc_decoupling*` removal?**
-   - What we know: it becomes unused in `src/` but is imported by `test_smoke.py::test_imports`.
-   - Recommendation: leave the dataclass defined (zero risk, avoids touching `types.py` exports) and
-     simply drop it from the test_smoke import line. Planner: treat as Claude's discretion.
+   - RESOLVED: Leave the `DecouplingResult` dataclass defined in `types.py` (zero risk, avoids touching
+     `types.py` exports) and drop it from the `test_smoke.py::test_imports` import line. Plan 10-04 Task 2
+     implements exactly this (removes `DecouplingResult` from the test import; does not touch `types.py`).
 
 ## Sources
 
