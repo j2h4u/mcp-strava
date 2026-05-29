@@ -40,16 +40,7 @@ def _json_list(values: list[str]) -> str:
 
 
 def _stream_counts(repo: DuckDBRepository, activity_id: int) -> tuple[int, int]:
-    row = repo._fetchone(
-        """
-        SELECT COUNT(*) AS stream_count,
-               SUM(CASE WHEN heartrate IS NOT NULL THEN 1 ELSE 0 END) AS hr_count
-        FROM streams
-        WHERE activity_id = ?
-        """,
-        [activity_id],
-    )
-    return int(row["stream_count"] or 0), int(row["hr_count"] or 0)
+    return repo.stream_counts_for_activity(activity_id)
 
 
 def _zone_seconds(
@@ -60,21 +51,7 @@ def _zone_seconds(
     Uses parameterised integer literals from bounds — identical query structure
     to the legacy SQL so results are byte-identical for the same bound values.
     """
-    b = bounds
-    row = repo._fetchone(
-        """
-        SELECT
-          SUM(CASE WHEN heartrate < ? THEN 1 ELSE 0 END) AS z1,
-          SUM(CASE WHEN heartrate >= ? AND heartrate < ? THEN 1 ELSE 0 END) AS z2,
-          SUM(CASE WHEN heartrate >= ? AND heartrate < ? THEN 1 ELSE 0 END) AS z3,
-          SUM(CASE WHEN heartrate >= ? AND heartrate < ? THEN 1 ELSE 0 END) AS z4,
-          SUM(CASE WHEN heartrate >= ? THEN 1 ELSE 0 END) AS z5
-        FROM streams
-        WHERE activity_id = ? AND heartrate IS NOT NULL
-        """,
-        [b[0], b[0], b[1], b[1], b[2], b[2], b[3], b[-2], activity_id],
-    )
-    return tuple(int(row[f"z{idx}"] or 0) for idx in range(1, 6))
+    return repo.zone_seconds_for_activity(activity_id, bounds)
 
 
 def _adjusted_cardiac_cost(cc: float | None, distance_m: float | None, elevation_m: float | None) -> float | None:
@@ -256,20 +233,7 @@ def _materialize_daily_facts(
     points = repo.daily_load_points_between(start_day, end_day, bounds=bounds)
     daily_trimp: dict[str, float] = {}
     for point in points:
-        sums = repo._fetchone(
-            """
-            SELECT
-              SUM(distance_m) AS distance_m,
-              SUM(moving_time_s) AS moving_time_s,
-              SUM(elevation_gain_m) AS elevation_gain_m,
-              SUM(zone4_seconds) AS zone4_seconds,
-              SUM(zone5_seconds) AS zone5_seconds,
-              SUM(anomaly_count) AS anomaly_count
-            FROM activity_metric_facts
-            WHERE activity_day = CAST(? AS DATE) AND metric_version = ?
-            """,
-            [point.date, metric_version],
-        )
+        sums = repo.daily_fact_sums(point.date, metric_version)
         missing = _daily_missing_reasons(point.status)
         repo.upsert_daily_load_fact(
             {
@@ -353,45 +317,9 @@ def _materialize_rolling_facts(
     as_of = date.fromisoformat(as_of_day)
     for window in ROLLING_WINDOWS:
         start = (as_of - timedelta(days=window - 1)).isoformat()
-        row = repo._fetchone(
-            """
-            SELECT
-              COUNT(*) AS days,
-              SUM(activity_count) AS activity_count,
-              SUM(CASE WHEN activity_count > 0 THEN 1 ELSE 0 END) AS active_days,
-              SUM(CASE WHEN activity_count = 0 THEN 1 ELSE 0 END) AS rest_days,
-              SUM(observed_trimp) AS observed_trimp,
-              SUM(effective_trimp) AS effective_trimp,
-              SUM(distance_m) AS distance_m,
-              SUM(moving_time_s) AS moving_time_s,
-              SUM(elevation_gain_m) AS elevation_gain_m,
-              SUM(high_zone_seconds) AS high_zone_seconds,
-              SUM(anomaly_count) AS anomaly_count
-            FROM daily_load_facts
-            WHERE day BETWEEN CAST(? AS DATE) AND CAST(? AS DATE)
-              AND scope = 'all'
-              AND sport_type = 'all'
-              AND metric_version = ?
-            """,
-            [start, as_of_day, metric_version],
-        )
-        model = repo._fetchone(
-            """
-            SELECT fitness, fatigue, form, form_zone, acwr_zone, acwr
-            FROM training_model_daily
-            WHERE day = CAST(? AS DATE) AND scope = 'all' AND sport_type = 'all' AND metric_version = ?
-            """,
-            [as_of_day, metric_version],
-        )
-        metric_rows = repo._fetchall(
-            """
-            SELECT cardiac_cost, adjusted_cardiac_cost, hr_recovery_median_rate, cardiac_drift_pct
-            FROM activity_metric_facts
-            WHERE activity_day BETWEEN CAST(? AS DATE) AND CAST(? AS DATE)
-              AND metric_version = ?
-            """,
-            [start, as_of_day, metric_version],
-        )
+        row = repo.rolling_load_aggregate(start, as_of_day, metric_version)
+        model = repo.training_model_row(as_of_day, metric_version)
+        metric_rows = repo.rolling_cardiac_metric_rows(start, as_of_day, metric_version)
         repo.upsert_rolling_period_fact(
             {
                 "as_of_day": as_of_day,
