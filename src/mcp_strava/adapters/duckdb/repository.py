@@ -1358,6 +1358,122 @@ class DuckDBRepository:
             [activity_id],
         )
 
+    def stream_counts_for_activity(self, activity_id: int) -> tuple[int, int]:
+        """Return (stream_count, hr_count) for an activity.
+
+        Used by the materializer to classify completeness.
+        """
+        row = self._fetchone(
+            """
+        SELECT COUNT(*) AS stream_count,
+               SUM(CASE WHEN heartrate IS NOT NULL THEN 1 ELSE 0 END) AS hr_count
+        FROM streams
+        WHERE activity_id = ?
+        """,
+            [activity_id],
+        )
+        return int(row["stream_count"] or 0), int(row["hr_count"] or 0)
+
+    def zone_seconds_for_activity(self, activity_id: int, bounds: list[int]) -> tuple[int, int, int, int, int]:
+        """Return (z1, z2, z3, z4, z5) second counts using precomputed zone bounds.
+
+        Parameter order [b[0], b[0], b[1], b[1], b[2], b[2], b[3], b[-2], activity_id]
+        is preserved verbatim to keep results byte-identical.
+        """
+        b = bounds
+        row = self._fetchone(
+            """
+        SELECT
+          SUM(CASE WHEN heartrate < ? THEN 1 ELSE 0 END) AS z1,
+          SUM(CASE WHEN heartrate >= ? AND heartrate < ? THEN 1 ELSE 0 END) AS z2,
+          SUM(CASE WHEN heartrate >= ? AND heartrate < ? THEN 1 ELSE 0 END) AS z3,
+          SUM(CASE WHEN heartrate >= ? AND heartrate < ? THEN 1 ELSE 0 END) AS z4,
+          SUM(CASE WHEN heartrate >= ? THEN 1 ELSE 0 END) AS z5
+        FROM streams
+        WHERE activity_id = ? AND heartrate IS NOT NULL
+        """,
+            [b[0], b[0], b[1], b[1], b[2], b[2], b[3], b[-2], activity_id],
+        )
+        return tuple(int(row[f"z{idx}"] or 0) for idx in range(1, 6))
+
+    def daily_fact_sums(self, activity_day: str, metric_version: int) -> dict[str, object] | None:
+        """Return the SUM aggregates over activity_metric_facts for one day and metric version.
+
+        Used when rolling up per-activity facts into daily_load_facts.
+        """
+        return self._fetchone(
+            """
+            SELECT
+              SUM(distance_m) AS distance_m,
+              SUM(moving_time_s) AS moving_time_s,
+              SUM(elevation_gain_m) AS elevation_gain_m,
+              SUM(zone4_seconds) AS zone4_seconds,
+              SUM(zone5_seconds) AS zone5_seconds,
+              SUM(anomaly_count) AS anomaly_count
+            FROM activity_metric_facts
+            WHERE activity_day = CAST(? AS DATE) AND metric_version = ?
+            """,
+            [activity_day, metric_version],
+        )
+
+    def rolling_load_aggregate(self, start: str, as_of_day: str, metric_version: int) -> dict[str, object] | None:
+        """Return the rolling-window load aggregate from daily_load_facts between start and as_of_day.
+
+        Filters for scope='all', sport_type='all'. Used by _materialize_rolling_facts.
+        """
+        return self._fetchone(
+            """
+            SELECT
+              COUNT(*) AS days,
+              SUM(activity_count) AS activity_count,
+              SUM(CASE WHEN activity_count > 0 THEN 1 ELSE 0 END) AS active_days,
+              SUM(CASE WHEN activity_count = 0 THEN 1 ELSE 0 END) AS rest_days,
+              SUM(observed_trimp) AS observed_trimp,
+              SUM(effective_trimp) AS effective_trimp,
+              SUM(distance_m) AS distance_m,
+              SUM(moving_time_s) AS moving_time_s,
+              SUM(elevation_gain_m) AS elevation_gain_m,
+              SUM(high_zone_seconds) AS high_zone_seconds,
+              SUM(anomaly_count) AS anomaly_count
+            FROM daily_load_facts
+            WHERE day BETWEEN CAST(? AS DATE) AND CAST(? AS DATE)
+              AND scope = 'all'
+              AND sport_type = 'all'
+              AND metric_version = ?
+            """,
+            [start, as_of_day, metric_version],
+        )
+
+    def training_model_row(self, as_of_day: str, metric_version: int) -> dict[str, object] | None:
+        """Return the fitness/fatigue/form/zones row from training_model_daily for as_of_day.
+
+        Filters for scope='all', sport_type='all'.
+        """
+        return self._fetchone(
+            """
+            SELECT fitness, fatigue, form, form_zone, acwr_zone, acwr
+            FROM training_model_daily
+            WHERE day = CAST(? AS DATE) AND scope = 'all' AND sport_type = 'all' AND metric_version = ?
+            """,
+            [as_of_day, metric_version],
+        )
+
+    def rolling_cardiac_metric_rows(self, start: str, as_of_day: str, metric_version: int) -> list[dict[str, object]]:
+        """Return per-activity cardiac metric rows from activity_metric_facts for the rolling window.
+
+        Columns: cardiac_cost, adjusted_cardiac_cost, hr_recovery_median_rate, cardiac_drift_pct.
+        Used to compute rolling medians.
+        """
+        return self._fetchall(
+            """
+            SELECT cardiac_cost, adjusted_cardiac_cost, hr_recovery_median_rate, cardiac_drift_pct
+            FROM activity_metric_facts
+            WHERE activity_day BETWEEN CAST(? AS DATE) AND CAST(? AS DATE)
+              AND metric_version = ?
+            """,
+            [start, as_of_day, metric_version],
+        )
+
     def activity_trimp(self, activity_id: int, *, bounds: list[int]) -> float:
         """Compute TRIMP for an activity using explicit zone bounds.
 
