@@ -243,6 +243,13 @@ def calc_hrr_pct(median_hr, hr_rest, hr_max):
     """
     if median_hr is None or hr_rest is None or hr_max is None:
         return None
-    if float(hr_max) <= hr_rest:
+    # Coerce all three inputs consistently. The materializer passes ints, but
+    # coercing only hr_max (as before) left hr_rest un-coerced, so a numeric
+    # string hr_rest would raise TypeError mid-formula instead of being handled
+    # by the guard. Float all of them up front (WR-04).
+    median_hr_f = float(median_hr)
+    hr_rest_f = float(hr_rest)
+    hr_max_f = float(hr_max)
+    if hr_max_f <= hr_rest_f:
         return None
-    return round((median_hr - hr_rest) / (float(hr_max) - hr_rest) * 100, 1)
+    return round((median_hr_f - hr_rest_f) / (hr_max_f - hr_rest_f) * 100, 1)
