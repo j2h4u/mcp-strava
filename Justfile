@@ -10,6 +10,7 @@ build:
     uv run python -m compileall -q src deploy tests
 
 test:
+    uv run pytest -q
     {{compose}} build
     {{compose}} up -d --force-recreate --remove-orphans --wait --wait-timeout 90
     {{compose}} exec -T mcp-strava {{smoke}}
