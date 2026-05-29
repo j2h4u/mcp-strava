@@ -100,6 +100,46 @@ def test_calc_vertical_speed():
     print(f"  OK: calc_vertical_speed — vmh={result.vmh}, ascent={result.total_ascent_m}m")
 
 
+def test_calc_vertical_speed_nonzero_leading_offset():
+    """calc_vertical_speed uses the elapsed span, not the absolute last time_offset.
+
+    Regression for CR-01: altitude sampling may begin partway into the activity
+    (the leading samples have NULL altitude and are filtered out by the repository
+    query). The denominator must be (last - first) time_offset, not last alone.
+
+    Window: altitude present only for time_offset 1800..3600 (a 30-min climb,
+    30 min into a ride). The true elapsed span is (3600 - 1800) = 1800s = 0.5h,
+    not 3600s = 1.0h. With the absolute-offset bug the reported vmh is HALF the
+    true ascent rate.
+    """
+    n = Config.Metrics.MIN_ALT_POINTS + 10
+    # Spread n rows evenly across the 1800..3600 window (10s spacing), each +2.0 m.
+    rows = [
+        {'time_offset': 1800 + i * 10, 'altitude': 100.0 + i * 2.0}
+        for i in range(n)
+    ]
+    span_sec = rows[-1]['time_offset'] - rows[0]['time_offset']
+    elapsed_hours = span_sec / 3600
+    total_ascent = (n - 1) * 2.0
+    expected_vmh = round(total_ascent / elapsed_hours, 0)
+
+    result = calc_vertical_speed(rows)
+    assert result is not None
+    # The buggy implementation divides by rows[-1]['time_offset']/3600 (the
+    # absolute offset including the 1800s lead-in), which inflates the
+    # denominator and roughly halves vmh.
+    assert result.duration_hours == round(elapsed_hours, 2), (
+        f"duration_hours must be the elapsed span {round(elapsed_hours, 2)}h, "
+        f"got {result.duration_hours}h"
+    )
+    assert result.vmh == int(expected_vmh), (
+        f"vmh must be computed over the elapsed span: expected {int(expected_vmh)}, "
+        f"got {result.vmh}"
+    )
+    print(f"  OK: calc_vertical_speed nonzero-offset — vmh={result.vmh}, "
+          f"duration={result.duration_hours}h")
+
+
 # ─── calc_cardiac_drift ───
 
 def test_calc_cardiac_drift():

@@ -179,8 +179,15 @@ def calc_vertical_speed(rows):
         if diff > 0:
             total_ascent += diff
 
-    # Use elapsed time (last time_offset) — pauses are part of the climbing effort
-    duration_hours = rows[-1]['time_offset'] / 3600
+    # Use the elapsed SPAN of the altitude series (last - first time_offset),
+    # not the absolute last offset. The repository query filters altitude IS NOT
+    # NULL and orders by time_offset, so the first returned row is not guaranteed
+    # to be at offset 0 (e.g. the barometer warms up partway into a ride). Using
+    # the absolute last offset would inflate the denominator and understate vmh.
+    # Pauses within the span are part of the climbing effort, so the full span is
+    # the right denominator.
+    elapsed_sec = rows[-1]['time_offset'] - rows[0]['time_offset']
+    duration_hours = elapsed_sec / 3600
     if duration_hours < 0.05:  # < 3 min
         return None
 
