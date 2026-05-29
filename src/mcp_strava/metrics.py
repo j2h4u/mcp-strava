@@ -1,19 +1,12 @@
-"""Per-activity metrics: decoupling, efficiency factor, HR recovery,
-vertical speed, and the enrichment wrapper that computes all of them."""
+"""Per-activity metrics: pure domain functions over plain stream data.
+
+All functions take pre-fetched plain dict rows and return dataclasses or None.
+No storage imports — callers are responsible for fetching rows via the repository.
+"""
 
 from mcp_strava.constants import Config
-from mcp_strava.db import repository_from_connection
-from mcp_strava.hr_zones import get_zone_model
-from mcp_strava.settings import get_settings
-from mcp_strava.types import (HrRecovery, VerticalSpeed, DecouplingResult,
-                               EnrichedActivity, CardiacDriftResult, parse_strava_activity)
+from mcp_strava.types import HrRecovery, VerticalSpeed, CardiacDriftResult
 from mcp_strava.cardiac_drift import cardiac_drift as _drift_algo
-import json
-
-_HR_REST_MISSING_MSG = (
-    "MCP_STRAVA_HR_REST is not set — cannot compute HR zones. "
-    "Set MCP_STRAVA_HR_REST to the athlete's resting heart rate."
-)
 
 
 # ─── Decoupling validity gate ───
@@ -42,15 +35,9 @@ def _decoupling_invalid(velocities):
 
 # ─── Decoupling ───
 
-def _fetch_decoupling_rows(conn, activity_id):
-    """Fetch stream rows needed for decoupling (HR + velocity, in motion)."""
-    repo = repository_from_connection(conn)
-    return repo.stream_hr_velocity_rows(activity_id, Config.Thresholds.VEL_MOVING)
-
-
 def calc_decoupling(rows):
     """Pure: HR/Pace decoupling from pre-fetched rows — TrainingPeaks Pa:HR method.
-    
+
     Compares HR/pace ratio between first and second half of activity.
     Decoupling = (ratio₂ / ratio₁ − 1) × 100%
 
@@ -64,6 +51,8 @@ def calc_decoupling(rows):
     for this athlete's data — they naturally adjust pace on hills, so raw HR/vel
     already captures the terrain effect correctly.
     """
+    from mcp_strava.types import DecouplingResult
+
     if len(rows) < Config.Metrics.MIN_STREAM_POINTS:
         return None
 
@@ -86,43 +75,17 @@ def calc_decoupling(rows):
     )
 
 
-def calc_decoupling_with_gate(conn, activity_id):
-    """Fetch rows, gate by pace variability, compute decoupling if valid.
-    
-    Returns DecouplingResult (possibly with decoupling_pct=None + pace_too_variable=True)
-    or None if insufficient data.
-    """
-    rows = _fetch_decoupling_rows(conn, activity_id)
-    if not rows:
-        return None
-
-    velocities = [r['velocity'] for r in rows]
-    if _decoupling_invalid(velocities):
-        return DecouplingResult(
-            decoupling_pct=None,
-            pace_too_variable=True,
-        )
-
-    return calc_decoupling(rows)
-
-
 # ─── Intra-Activity Cardiac Drift ───
 
-def calc_cardiac_drift(conn, activity_id, sport_type=None):
-    """Intra-activity cardiac drift using Jenks pace clustering.
-    
-    Fetches stream rows, clusters velocity into homogeneous pace zones
-    via Jenks natural breaks, then compares median HR in early vs late
-    temporal segments within each cluster.
-    
-    Unlike calc_decoupling_with_gate (first vs second half, CV ≤ 25%),
-    this works with variable pace by clustering pace first.
-    
-    Returns CardiacDriftResult or None if insufficient data.
-    """
-    repo = repository_from_connection(conn)
-    rows = repo.stream_hr_velocity_simple_rows(activity_id, Config.Thresholds.VEL_MOVING)
+def calc_cardiac_drift(rows, sport_type=None):
+    """Pure: Intra-activity cardiac drift using Jenks pace clustering.
 
+    Takes pre-fetched stream rows ({heartrate, velocity}) and returns
+    a CardiacDriftResult, or None if insufficient data.
+
+    Unlike calc_decoupling (first vs second half, CV ≤ 25%),
+    this works with variable pace by clustering pace first.
+    """
     if len(rows) < Config.Metrics.MIN_STREAM_POINTS:
         return None
 
@@ -164,50 +127,25 @@ def calc_cardiac_drift(conn, activity_id, sport_type=None):
     )
 
 
-# ─── Efficiency Factor ───
-
-def calc_efficiency_factor(conn, activity_id):
-    """Efficiency Factor: normalized speed / avg HR.
-    Higher = more economical movement. Computed as (distance_m / moving_time_s) / avg_hr.
-    """
-    repo = repository_from_connection(conn)
-    moving_time = repo.activity_moving_time(activity_id)
-    if moving_time is None or moving_time < Config.Metrics.MIN_MOVING_TIME:
-        return None
-
-    avg_hr, n_hr = repo.activity_hr_summary(activity_id)
-    if avg_hr is None or avg_hr <= 0 or n_hr < Config.Metrics.MIN_HR_POINTS:
-        return None
-
-    # Use velocity from streams for actual pace
-    avg_vel = repo.activity_avg_velocity(activity_id)
-    if avg_vel is None or avg_vel < Config.Thresholds.VEL_MOVING:
-        return None
-
-    # EF = speed_m_s / avg_hr × 100 (scale for readability)
-    ef = round(avg_vel / avg_hr * 100, 3)
-    return ef
-
-
 # ─── HR Recovery ───
 
-def calc_hr_recovery(conn, activity_id):
-    """HR recovery: finds ALL rest pauses in the activity and measures HR drop at each.
-    
-    A \"pause\" = 20+ consecutive seconds where velocity < 0.15 m/s (~0.5 km/h).
+def calc_hr_recovery(rows):
+    """Pure: HR recovery over pre-fetched stream rows ({time_offset, heartrate, velocity}).
+
+    Finds ALL rest pauses in the activity and measures HR drop at each.
+
+    A "pause" = MIN_PAUSE_SEC+ consecutive seconds where velocity < VEL_STOP m/s (~0.5 km/h).
     That's standing still, not slow walking (which is ~0.5+ m/s).
     For each pause, measures HR drop over the pause duration.
     Returns aggregate stats: best/worst/avg recovery, count of pauses, total rest time.
-    Returns None if no pauses found (e.g. continuous run with no stops).
+    Returns None if no pauses found or insufficient data.
     """
-    repo = repository_from_connection(conn)
-    rows = repo.stream_hr_velocity_time_rows(activity_id)
     if len(rows) < Config.Metrics.MIN_STREAM_POINTS:
         return None
 
     MIN_PAUSE_SEC = Config.Metrics.MIN_PAUSE_SEC
     STOP_VEL = Config.Thresholds.VEL_STOP  # m/s (~0.5 km/h) — actual standing, not slow walking
-    
+
     # Build time-indexed lookup for fast access
     by_time = {r['time_offset']: r for r in rows}
     all_times = sorted(by_time.keys())
@@ -219,7 +157,7 @@ def calc_hr_recovery(conn, activity_id):
         t = all_times[i]
         r = by_time[t]
         v = r['velocity'] or 0
-        
+
         if v < STOP_VEL:
             # Start of potential pause — find how long it lasts
             pause_start = t
@@ -235,23 +173,23 @@ def calc_hr_recovery(conn, activity_id):
                 if v2 >= STOP_VEL:
                     break
                 j += 1
-            
+
             pause_end = all_times[j-1]
             pause_dur = pause_end - pause_start
-            
+
             if pause_dur >= MIN_PAUSE_SEC:
                 # Get HR at start of pause (avg of first 5s)
                 start_times = all_times[pause_start_idx:pause_start_idx+5]
                 hr_start = sum(by_time[t]['heartrate'] for t in start_times) / len(start_times)
-                
+
                 # Get HR at end of pause (avg of last 5s)
                 end_idx = j - 1
                 end_times = all_times[max(0, end_idx-4):end_idx+1]
                 hr_end = sum(by_time[t]['heartrate'] for t in end_times) / len(end_times)
-                
+
                 drop = round(hr_start - hr_end, 1)
                 rate = round(drop / (pause_dur / 60), 1) if pause_dur > 0 else 0
-                
+
                 pauses.append({
                     'time': pause_start,
                     'duration': pause_dur,
@@ -260,7 +198,7 @@ def calc_hr_recovery(conn, activity_id):
                     'drop': drop,
                     'rate': rate,  # bpm/min
                 })
-            
+
             i = j  # skip past this pause
         else:
             i += 1
@@ -292,10 +230,12 @@ def calc_hr_recovery(conn, activity_id):
 
 # ─── Vertical Speed ───
 
-def calc_vertical_speed(conn, activity_id):
-    """Vertical ascent speed in m/h. Only counts ascending segments."""
-    repo = repository_from_connection(conn)
-    rows = repo.stream_altitude_rows(activity_id)
+def calc_vertical_speed(rows):
+    """Pure: Vertical ascent speed in m/h from pre-fetched altitude rows ({time_offset, altitude}).
+
+    Only counts ascending segments.
+    Returns None if insufficient data or duration too short.
+    """
     if len(rows) < Config.Metrics.MIN_ALT_POINTS:
         return None
 
@@ -311,7 +251,6 @@ def calc_vertical_speed(conn, activity_id):
         return None
 
     vmh = round(total_ascent / duration_hours, 0)
-    # Also: total ascent for context
     return VerticalSpeed(
         vmh=int(vmh),
         total_ascent_m=round(total_ascent, 0),
@@ -319,78 +258,21 @@ def calc_vertical_speed(conn, activity_id):
     )
 
 
-# ─── Activity Enrichment ───
+# ─── %HRR ───
 
-def enrich_activity(conn, act_row):
-    """Compute all metrics for a single activity row.
-    
-    May 2026: decoupling and EF removed from enrichment — decoupling almost always
-    N/A (pace too variable), EF replaced by CC in progressive signal.
+def calc_hrr_pct(median_hr, hr_rest, hr_max):
+    """Pure: Average %HRR (Heart Rate Reserve percentage).
+
+    How much of the heart's reserve was used.
+    Uses MEDIAN heartrate (more robust to sensor spikes than mean).
+
+    Returns None if any input is None, or if hr_max <= hr_rest.
+    Returns round((median_hr - hr_rest) / (hr_max - hr_rest) * 100, 1) otherwise.
+
+    Example: calc_hrr_pct(150, 50, 200) == 66.7
     """
-    def _field(name, default=None):
-        if isinstance(act_row, dict):
-            return act_row.get(name, default)
-        return getattr(act_row, name, default)
-
-    raw_summary = json.loads(_field("summary_json")) if _field("summary_json") else {}
-    summary = parse_strava_activity(raw_summary) if raw_summary else None
-
-    # TRIMP
-    repo = repository_from_connection(conn)
-    trimp = repo.activity_trimp(_field("id"))
-
-    # HR Recovery
-    hr_recovery = calc_hr_recovery(conn, _field("id"))
-
-    # Vertical Speed
-    vertical_speed = calc_vertical_speed(conn, _field("id"))
-
-    # Cardiac Cost (CC) = avg_HR / avg_velocity — for progressive signal
-    cc = repo.activity_cc(_field("id"), Config.Thresholds.VEL_MOVING)
-
-    # Average %HRR: how much of the heart's reserve was used.
-    # Uses MEDIAN heartrate from streams (more robust to sensor spikes than mean).
-    # HRmax from streams (live), HRrest from MCP_STRAVA_HR_REST env setting.
-    hrr_pct = None
-    median_hr = repo.activity_median_heartrate(_field("id"))
-    if median_hr:
-        athlete = get_settings().athlete
-        hr_rest = athlete.hr_rest
-        if hr_rest is not None:
-            hr_max = repo.max_heartrate()
-            if hr_max is not None and float(hr_max) > hr_rest:
-                hrr_pct = round(
-                    (median_hr - hr_rest) / (float(hr_max) - hr_rest) * 100, 1
-                )
-
-    # Start time from summary_json (local time, HH:MM)
-    start_time = None
-    if raw_summary:
-        sdl = raw_summary.get('start_date_local', '')
-        # Strava format: "2026-05-11T00:50:30Z" (Z suffix but it's local time)
-        if sdl and 'T' in sdl:
-            time_part = sdl.split('T')[1]
-            start_time = time_part[:5]  # "HH:MM"
-
-    # Intra-activity cardiac drift (Jenks-based)
-    cardiac_drift = calc_cardiac_drift(conn, _field("id"), _field("sport_type"))
-
-    return EnrichedActivity(
-        id=_field("id"),
-        date=_field("date")[:10],
-        name=_field("name"),
-        sport_type=_field("sport_type"),
-        distance_km=round(_field("distance") / 1000, 2),
-        moving_time_min=round(_field("moving_time") / 60, 1),
-        elapsed_time_min=round(_field("elapsed_time") / 60, 1),
-        elevation_m=_field("total_elevation_gain"),
-        trimp=trimp,
-        avg_hr=summary.average_heartrate if summary else None,
-        max_hr=int(round(summary.max_heartrate)) if summary and summary.max_heartrate else None,
-        hr_recovery=hr_recovery,
-        vertical_speed=vertical_speed,
-        cc=cc,
-        cardiac_drift=cardiac_drift,
-        hrr_pct=hrr_pct,
-        start_time=start_time,
-    )
+    if median_hr is None or hr_rest is None or hr_max is None:
+        return None
+    if float(hr_max) <= hr_rest:
+        return None
+    return round((median_hr - hr_rest) / (float(hr_max) - hr_rest) * 100, 1)
