@@ -181,6 +181,8 @@ Recent decisions affecting current work:
 - Phase 8 planned: DuckDB Primary Storage & Aggregate Analytics Surface
 - Phase 9 added: Product factual bundles and CLI read-model consolidation
 - Phase 10 added (2026-05-29): Materialize unwired training metrics + enforce core/domain storage boundary — completes the deferred 260525-jpo preserve-and-fix decision and closes the core/domain-separation requirement. Rich CONTEXT.md seeded; ready for /gsd-plan-phase 10.
+- Phase 11 added (2026-05-29): Tidy materializer repository access — Phase 10 code-review cleanup (IN-03), swap 6 inline-SQL call sites in read_model_materializer.py for named DuckDBRepository methods. Cosmetic/low-risk.
+- Phase 12 added (2026-05-29): Decouple db.py — split connection mgmt, repo factories, token/OAuth, and Strava HTTP out of the 237-line db.py grab-bag. The last real coupling hotspot; independent of Phase 11 (different files).
 
 ### Pending Todos
 
