@@ -266,10 +266,10 @@ Plans:
 **Goal:** Replace the 6 inline-SQL `repo._fetchone`/`repo._fetchall` call sites in `src/mcp_strava/adapters/duckdb/read_model_materializer.py` (≈ lines 43, 64, 259, 356, 378, 386) with named methods on `DuckDBRepository`. Intra-adapter cleanup on the storage side — no behavior change, the full `just test` suite must stay green. Closes code-review finding IN-03 from Phase 10.
 **Requirements**: Code quality / boundary hygiene (Phase 10 REVIEW IN-03)
 **Depends on:** Phase 10
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 
-- [ ] 11-01-PLAN.md — Add 6 named DuckDBRepository methods + replace all inline call sites in materializer
+- [x] 11-01-PLAN.md — Add 6 named DuckDBRepository methods + replace all inline call sites in materializer
 
 ### Phase 12: Decouple db.py into focused modules
 
