@@ -249,13 +249,16 @@ Plans:
 Plans:
 
 **Wave 1**
+
 - [x] 10-01-PLAN.md — Extract pure metric functions in metrics.py (calc_hr_recovery/vertical_speed/cardiac_drift/hrr_pct), remove the mcp_strava.db import (TDD)
 
 **Wave 2** *(blocked on Wave 1 completion)*
+
 - [x] 10-02-PLAN.md — Extend the import-boundary guard to forbid storage/adapter imports from domain modules
 - [x] 10-03-PLAN.md — Wire the pure functions into read_model_materializer._activity_fact so the 13 empty columns are computed (TDD)
 
 **Wave 3** *(blocked on Wave 2 completion)*
+
 - [x] 10-04-PLAN.md — Delete dead db.py::get_daily_trimp_history and repair stale tests (test_smoke.py)
 
 ### Phase 11: Tidy materializer repository access
@@ -264,8 +267,8 @@ Plans:
 **Requirements**: Code quality / boundary hygiene (Phase 10 REVIEW IN-03)
 **Depends on:** Phase 10
 **Plans:** 1 plan
-
 Plans:
+
 - [ ] 11-01-PLAN.md — Add 6 named DuckDBRepository methods + replace all inline call sites in materializer
 
 ### Phase 12: Decouple db.py into focused modules
@@ -276,4 +279,5 @@ Plans:
 **Plans:** 1 plan
 
 Plans:
+
 - [ ] TBD (run /gsd-plan-phase 12 to break down)
