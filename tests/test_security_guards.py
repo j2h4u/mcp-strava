@@ -371,18 +371,26 @@ def test_legacy_application_report_and_workout_modules_remain_retired() -> None:
     assert [path for path in retired if path.exists()] == []
 
 
-def test_read_modules_do_not_import_strava_or_refresh() -> None:
+def test_read_modules_do_not_import_storage_strava_or_refresh() -> None:
+    """Domain modules must not import storage or adapter tiers (strava, refresh, db, duckdb adapter)."""
     read_modules = [
         "src/mcp_strava/training.py",
         "src/mcp_strava/metrics.py",
         "src/mcp_strava/cardiac_drift.py",
+        "src/mcp_strava/hr_zones.py",
+        "src/mcp_strava/sports.py",
     ]
     violations: list[str] = []
     for rel_path in read_modules:
         violations.extend(
             _import_violations(
                 rel_path,
-                ("mcp_strava.adapters.strava", "mcp_strava.refresh"),
+                (
+                    "mcp_strava.adapters.strava",
+                    "mcp_strava.refresh",
+                    "mcp_strava.db",
+                    "mcp_strava.adapters.duckdb",
+                ),
             )
         )
     assert violations == []
