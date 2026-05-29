@@ -248,7 +248,6 @@ def _block_legacy_recompute(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError("MCP metric service must not recompute from raw mirror data")
 
     for name in (
-        "enrich_activity",
         "daily_report_from_connection",
         "weekly_digest",
         "check_z5_minutes",

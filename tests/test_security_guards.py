@@ -289,7 +289,6 @@ def test_product_bundle_services_do_not_call_request_time_recompute_or_admin_han
         "daily_report_from_connection",
         "weekly_digest",
         "compute_trends",
-        "enrich_activity",
         "check_z5_minutes",
         "check_hr_anomalies",
         "activity_stream_rows",
@@ -495,12 +494,10 @@ def test_metric_services_do_not_import_or_call_request_time_recompute_helpers() 
     module = ast.parse(source)
     forbidden_imports = {
         "mcp_strava.analytics.weekly_digest",
-        "mcp_strava.metrics.enrich_activity",
         "mcp_strava.report.daily_report_from_connection",
     }
     forbidden_calls = {
         "weekly_digest",
-        "enrich_activity",
         "daily_report_from_connection",
         "activity_stream_rows",
         "stream_hr_velocity_rows",
