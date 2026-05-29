@@ -9,6 +9,26 @@ default:
 build:
     uv run python -m compileall -q src deploy tests
 
+# Lint with ruff (report only)
+lint:
+    uv run ruff check src tests
+
+# Check formatting without writing
+fmt-check:
+    uv run ruff format --check src tests
+
+# Static type checking
+typecheck:
+    uv run pyright src
+
+# Auto-fix lint findings + formatting
+fix:
+    uv run ruff check --fix src tests
+    uv run ruff format src tests
+
+# All static checks: lint, formatting, types
+check: lint fmt-check typecheck
+
 test:
     uv run pytest -q
     {{compose}} build

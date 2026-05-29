@@ -34,7 +34,7 @@ The long-term shape is a Docker-packaged local MCP server connected to the user'
 - `mcp` (`mcp>=1.27.1,<1.28`) - MCP SDK powering the HTTP tool surface in `interfaces/mcp_http.py`.
 - `duckdb` (`duckdb>=1.5.3,<1.6`) - Embedded analytical database; the only runtime storage engine.
 - `PyYAML` (`PyYAML>=6.0.2,<7`) - Reference/config parsing.
-- `pytest` (dev/test extra) - Test framework; tests live in `tests/`.
+- `pytest` (dev dependency-group) - Test framework; tests live in `tests/`. Also `ruff` (lint/format) and `pyright` (types) — see `just lint`/`fix`/`typecheck`.
 - `uv` - Dependency and execution manager (`uv run ...`).
 - `just` - Local command runner defined in `Justfile`.
 ## Key Dependencies
