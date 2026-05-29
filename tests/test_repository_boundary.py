@@ -96,13 +96,17 @@ def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_pat
                     "gap_distance": 10.0,
                     "is_moving": 1,
                 }
-                for idx in range(6001)
+                # 11 rows with chunk_size=5 exercises the same multi-chunk +
+                # partial-remainder path (5+5+1) as the old 6001/5000, without the
+                # ~45s cost of row-by-row DuckDB inserts at scale. This is a
+                # coverage test for the chunking boundary, not a performance test.
+                for idx in range(11)
             ],
-            chunk_size=5000,
+            chunk_size=5,
         )
 
         stream_rows = repo.activity_stream_rows(1)
-        assert len(stream_rows) == 6001
+        assert len(stream_rows) == 11
 
         with pytest.raises(KeyError):
             repo.replace_stream_rows_chunked(
@@ -123,9 +127,9 @@ def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_pat
                     },
                     {"heartrate": 151},
                 ],
-                chunk_size=5000,
+                chunk_size=5,
             )
-        assert len(repo.activity_stream_rows(1)) == 6001
+        assert len(repo.activity_stream_rows(1)) == 11
 
         replaced = repo.replace_stream_rows_chunked(
             1,
