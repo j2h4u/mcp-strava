@@ -34,6 +34,20 @@ def reset_settings():
 
 
 @pytest.fixture(autouse=True)
+def isolate_refresh_health_path(tmp_path, monkeypatch):
+    """Isolate the refresh-health status file per test.
+
+    The in-process worker records each cycle's outcome to a global default file
+    (/tmp/mcp-strava-refresh-health.json) that the container healthcheck reads.
+    Without isolation, a test that simulates a worker fatal would pollute that
+    shared file and fail unrelated healthcheck tests downstream. Give each test
+    its own path; tests that exercise the health behaviour override it.
+    """
+    monkeypatch.setenv("MCP_STRAVA_REFRESH_HEALTH_PATH", str(tmp_path / "refresh-health.json"))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def reset_read_connections():
     """Close thread-local read connections around each test.
 

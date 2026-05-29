@@ -14,15 +14,14 @@ services:
       MCP_STRAVA_ALLOWED_ORIGINS: http://127.0.0.1:8080,http://localhost:8080,http://mcp-strava:8080
       MCP_STRAVA_DB_PATH: /runtime/data/strava.duckdb
       MCP_STRAVA_TOKEN_PATH: /runtime/.env
+      # Settings reads the single canonical /runtime/.env for config (incl. the
+      # untracked MCP_STRAVA_HR_REST physiology value) — kept out of git by design.
+      MCP_STRAVA_PROJECT_ROOT: /runtime
       MCP_STRAVA_REFRESH_WORKER_ENABLED: "1"
       MCP_STRAVA_REFRESH_POLL_SECONDS: "60"
       MCP_STRAVA_REFRESH_INTERVAL_SECONDS: "3600"
       MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE: "50"
       MCP_STRAVA_READ_MODEL_BATCH_SIZE: "25"
-    # Athlete physiology (MCP_STRAVA_HR_REST) lives in this untracked host file,
-    # never inline here — keeps the repo free of hardcoded athlete constants.
-    env_file:
-      - /opt/docker/mcp-strava/runtime.env
     volumes:
       - /opt/docker/mcp-strava:/runtime
     expose: ["8080"]

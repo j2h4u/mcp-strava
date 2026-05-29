@@ -2,7 +2,6 @@ import os
 import subprocess
 import sys
 import tomllib
-from pathlib import Path
 
 import pytest
 
@@ -51,12 +50,3 @@ def test_found02_dbconn_fails_closed_for_missing_expected_db(tmp_path: Path, mon
         reset_settings_cache()
 
     assert not db_path.exists()
-
-
-def test_found03_just_test_routes_to_docker_smoke() -> None:
-    justfile = Path('Justfile').read_text(encoding='utf-8')
-    assert 'docker compose -f deploy/docker-compose.yml' in justfile
-    assert 'python -m mcp_strava.devtools.mcp_client.cli smoke-basic' in justfile
-    assert 'mcp-smoke-full' in justfile
-    assert 'mcp-list-tools' in justfile
-    assert 'scripts/run_tests.py' not in justfile

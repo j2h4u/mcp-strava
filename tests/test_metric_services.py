@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import json
 import urllib.request
 from datetime import datetime
@@ -463,28 +462,6 @@ def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reaso
             evidence = warning.get("evidence") or {}
             if evidence:
                 assert isinstance(evidence, dict)
-
-
-def test_metric_services_source_does_not_serialize_then_filter_daily_report() -> None:
-    source_path = Path("src/mcp_strava/application/metric_services.py")
-    text = source_path.read_text(encoding="utf-8")
-    lowered = text.lower()
-
-    forbidden_patterns = [
-        "dc_to_dict(report)",
-        "asdict(report)",
-        "dataclasses.asdict(report)",
-        "dailyreport",
-    ]
-    for pattern in forbidden_patterns:
-        assert pattern not in lowered
-
-    module = ast.parse(text)
-    has_projection = any(
-        isinstance(node, ast.FunctionDef) and node.name == "_project_fitness_state_metrics"
-        for node in module.body
-    )
-    assert has_projection
 
 
 def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

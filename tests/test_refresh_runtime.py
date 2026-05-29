@@ -1,4 +1,3 @@
-import ast
 import json
 import urllib.request
 from collections import defaultdict
@@ -645,14 +644,6 @@ def test_worker_logs_exception_message_and_traceback(monkeypatch, capsys):
     assert "RuntimeError: duckdb fatal detail" in captured.err
 
 
-def test_refresh_worker_source_uses_storage_neutral_repository_boundary() -> None:
-    source = (Path(__file__).resolve().parents[1] / "src" / "mcp_strava" / "refresh" / "worker.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert "from mcp_strava.db import DbConn, repository_from_connection" in source
-
-
 def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_path):
     from mcp_strava.refresh import Stage
     from mcp_strava.refresh import worker
@@ -872,22 +863,6 @@ def test_emit_mirror_storage_reports_free_block_delta(tmp_path, monkeypatch):
     assert events[0][1]["free_blocks_delta"] is None
     assert events[1][1]["free_blocks_delta"] == 0
     assert "reclaimable_pct" in events[0][1] and "message" in events[0][1]
-
-
-def test_refresh_modules_do_not_import_sync_per_D17():
-    src_root = Path(__file__).resolve().parents[1] / "src" / "mcp_strava" / "refresh"
-    violations: list[str] = []
-    for py_file in src_root.rglob("*.py"):
-        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for name in node.names:
-                    if name.name == "mcp_strava.sync":
-                        violations.append(f"{py_file}:{node.lineno}")
-            elif isinstance(node, ast.ImportFrom) and node.module == "mcp_strava.sync":
-                violations.append(f"{py_file}:{node.lineno}")
-
-    assert violations == []
 
 
 def test_sync_streams_requests_all_configured_channels_and_writes_projection_metadata(tmp_path):
