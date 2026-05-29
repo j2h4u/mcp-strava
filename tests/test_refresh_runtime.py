@@ -99,6 +99,60 @@ def _repo(tmp_path: Path) -> DuckDBRepository:
     return DuckDBRepository.from_path(path)
 
 
+def test_sync_summaries_skips_rewrite_when_summary_unchanged(tmp_path):
+    """Re-syncing an unchanged activity must NOT rewrite the activities row.
+
+    Each rewrite of a PRIMARY-KEY-indexed row churns the DuckDB ART index, which
+    (a) bloats the file unbounded — freed index blocks are never reused — and
+    (b) re-triggers the upstream ART stale-update-read corruption. The daily
+    refresh sees the same ~600 activities every cycle with no content change, so
+    unchanged rows must be left untouched. synced_at staying at its first value
+    across an unchanged re-sync is the observable proof that no write happened.
+    """
+    from mcp_strava.refresh._sync_ops import sync_summaries
+
+    activity = {
+        "id": 500,
+        "name": "Morning Run",
+        "sport_type": "Run",
+        "start_date_local": "2026-05-21T06:00:00Z",
+        "distance": 1000,
+        "moving_time": 600,
+        "elapsed_time": 620,
+        "total_elevation_gain": 10,
+    }
+
+    class _SummaryTransport:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def fetch(self, path: str) -> StravaResponse:
+            if path.startswith("/athlete/activities"):
+                return StravaResponse(data=[self.payload], rate_info=StravaRateInfo(), status=200)
+            return StravaResponse(data=[], rate_info=StravaRateInfo(), status=200)
+
+    transport = _SummaryTransport(activity)
+    with _repo(tmp_path) as repo:
+        seen1, new1 = sync_summaries(repo, transport, "2026-05-29T00:00:00")
+        first = repo.activity_by_id(500)
+
+        # Same content, later sync timestamp -> must be a no-op (no row rewrite).
+        seen2, new2 = sync_summaries(repo, transport, "2026-05-29T01:00:00")
+        unchanged = repo.activity_by_id(500)
+
+        # Genuinely changed content -> must still write through.
+        transport.payload = {**activity, "name": "Renamed Run"}
+        sync_summaries(repo, transport, "2026-05-29T02:00:00")
+        changed = repo.activity_by_id(500)
+
+    assert (seen1, new1) == (1, 1)
+    assert (seen2, new2) == (1, 0)
+    assert first.synced_at == "2026-05-29T00:00:00"
+    assert unchanged.synced_at == "2026-05-29T00:00:00"  # untouched by the no-op re-sync
+    assert changed.name == "Renamed Run"
+    assert changed.synced_at == "2026-05-29T02:00:00"  # real change wrote through
+
+
 def test_run_once_completes_daily_refresh_per_REFRESH_01_STRAVA_03(tmp_path):
     from mcp_strava.refresh import RefreshPolicy, Stage, run_once
 

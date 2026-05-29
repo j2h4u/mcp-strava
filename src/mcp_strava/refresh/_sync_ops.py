@@ -10,7 +10,7 @@ from typing import Any, Callable
 from mcp_strava.adapters.duckdb.read_model_materializer import (
     materialize_read_model as materialize_duckdb_read_model,
 )
-from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository, summary_payload_changed
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.types import parse_strava_activity, parse_strava_stream_channels
 
@@ -196,6 +196,16 @@ def sync_summaries(repo, transport, now_iso: str) -> tuple[int, int]:
         for raw in data:
             act = parse_strava_activity(raw)
             existing = repo.activity_by_id(act.id)
+            summary_json = json.dumps(raw)
+            # Skip the write when an existing activity is semantically unchanged:
+            # the daily refresh re-sees every activity each cycle, and rewriting
+            # an unchanged PRIMARY-KEY-indexed row churns the DuckDB ART index
+            # (unbounded file bloat + re-triggers ART corruption). Freshness does
+            # not depend on activities.synced_at, so leaving it untouched is safe.
+            if existing is None:
+                new += 1
+            elif not summary_payload_changed(existing.summary_json, summary_json):
+                continue
             repo.upsert_activity_summary(
                 activity_id=act.id,
                 date=act.start_date_local[:10],
@@ -205,11 +215,9 @@ def sync_summaries(repo, transport, now_iso: str) -> tuple[int, int]:
                 moving_time=act.moving_time,
                 elapsed_time=act.elapsed_time,
                 total_elevation_gain=act.total_elevation_gain,
-                summary_json=json.dumps(raw),
+                summary_json=summary_json,
                 synced_at=now_iso,
             )
-            if not existing:
-                new += 1
         if len(data) < 100:
             break
         page += 1

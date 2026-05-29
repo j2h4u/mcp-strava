@@ -15,7 +15,7 @@ import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION
 from mcp_strava.db import DbConn, repository_from_connection
 from mcp_strava.refresh import RefreshSkipped, Stage
-from mcp_strava.refresh import _sync_ops
+from mcp_strava.refresh import _sync_ops, health
 from mcp_strava.refresh.bootstrap import build_refresh_collaborators, ensure_runtime_refresh_schema, record_refresh_misconfigured
 from mcp_strava.refresh.policy import RefreshPolicy, refresh_interval_elapsed
 from mcp_strava.maintenance.compact import storage_stats
@@ -240,10 +240,12 @@ def run_forever(
 
     while stop_event is None or not stop_event.is_set():
         try:
-            run_pending_once(emit_idle=False)
+            return_code = run_pending_once(emit_idle=False)
+            health.record_cycle("ok" if return_code == 0 else "error")
         except Exception as exc:  # noqa: BLE001
             _emit("refresh_worker_error", error_type=type(exc).__name__, error=str(exc))
             traceback.print_exc(file=sys.stderr)
+            health.record_cycle("error", error_type=type(exc).__name__, error=str(exc))
         if stop_event is not None:
             if stop_event.wait(resolved_poll_seconds):
                 break

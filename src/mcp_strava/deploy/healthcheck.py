@@ -8,6 +8,8 @@ import sys
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
 
+from mcp_strava.refresh.health import check_refresh_health
+
 
 def _state_path() -> Path:
     raw_path = os.environ.get("MCP_STRAVA_SUPERVISOR_STATE_PATH")
@@ -59,6 +61,7 @@ def main() -> int:
     try:
         _validate_owner_and_children()
         _validate_http()
+        check_refresh_health()
     except Exception as exc:
         print(f"healthcheck failed: {exc}", file=sys.stderr)
         return 1

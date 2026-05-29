@@ -122,6 +122,27 @@ def _semantic_json_hash(value: object) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def summary_payload_changed(stored_summary_json: object, new_summary_json: object) -> bool:
+    """True when two Strava summary payloads differ in semantic content.
+
+    Compares canonicalized content (sorted keys, non-semantic keys like
+    synced_at/fetched_at dropped) so that re-syncing an unchanged activity is
+    not treated as a change. The daily refresh re-sees the same ~600 activities
+    every cycle; rewriting an unchanged PRIMARY-KEY-indexed row churns the
+    DuckDB ART index, which bloats the file (freed index blocks are never
+    reused) and re-triggers the upstream ART stale-update-read corruption.
+
+    A plain string-equality fast path covers the common case (Strava returns
+    byte-identical JSON for an unchanged activity); the semantic hash is the
+    fallback that tolerates key reordering or whitespace differences.
+    """
+    if stored_summary_json is None:
+        return True
+    if stored_summary_json == new_summary_json:
+        return False
+    return _semantic_json_hash(stored_summary_json) != _semantic_json_hash(new_summary_json)
+
+
 def _normalize_cell(value: object) -> object:
     if isinstance(value, date):
         return value.isoformat()
