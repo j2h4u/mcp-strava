@@ -2,7 +2,7 @@
 
 import json
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from mcp_strava.adapters.duckdb.connection import open_expected_mirror_db
@@ -235,28 +235,3 @@ def get_zones():
         repo.insert_athlete_zones(datetime.now().isoformat(), json.dumps(zones))
     return zones
 
-
-# --- TRIMP History ---
-
-def get_daily_trimp_history(conn, days=None, sport_filter=None):
-    """Return dict {date_str: trimp} for last N days (0 for rest days).
-    days=None: use all available history (needed for Banister warmup).
-    sport_filter='training': exclude non-training activities (Walk) from TRIMP.
-                           Prevents daily walking from creating false fatigue signals.
-    """
-    from mcp_strava.hr_zones import get_zone_model
-    repo = repository_from_connection(conn)
-    since = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d') if days is not None else None
-    athlete = get_settings().athlete
-    if athlete.hr_rest is None:
-        raise RuntimeError(
-            "MCP_STRAVA_HR_REST is not set — cannot compute HR zones. "
-            "Set MCP_STRAVA_HR_REST to the athlete's resting heart rate."
-        )
-    hr_max = repo.max_heartrate()
-    if hr_max is None:
-        return {}
-    bounds = get_zone_model(athlete.hr_zone_model).zone_bounds(
-        hr_max=int(hr_max), hr_rest=athlete.hr_rest
-    )
-    return repo.observed_trimp_history(bounds=bounds, since_day=since, sport_filter=sport_filter)
