@@ -1,135 +1,186 @@
 ---
 phase: 12
 reviewers: [codex, opencode]
-reviewed_at: 2026-05-30T05:05:00+06:00
+reviewed_at: 2026-05-30T05:25:00+06:00
 plans_reviewed: [12-01-PLAN.md, 12-02-PLAN.md, 12-03-PLAN.md, 12-04-PLAN.md, 12-05-PLAN.md]
-cycle: convergence-2
+cycle: convergence-3
 ---
 
-# Cross-AI Plan Review — Phase 12 (Convergence Re-Review, cycle 2)
+# Cross-AI Plan Review — Phase 12 (Convergence Re-Review, cycle 3)
 
-> Prior cycle (cycle 1) raised a HIGH consensus concern (incomplete test blast
-> radius) plus several MEDIUM/LOW items. The plans were revised; this cycle
-> re-reviews the revised set. Both reviewers agree the cycle-1 HIGH is resolved.
-> Codex surfaces a NEW HIGH about wave placement of the (now-complete) test
-> retargets; OpenCode does not flag it.
+> Prior cycle (cycle 2) raised one divergent HIGH (Codex: wave placement of the
+> application/refresh/sync test retargets — 12-03 migrated production code whose
+> monkeypatch retargets were deferred to 12-04, so 12-03's own full-suite gate
+> would fail mid-migration). The plans were replanned (commit 2e6a5d6) to add a
+> dedicated 12-03 Task 3 that retargets those test sites in the same wave, and to
+> scope 12-04 to CLI-only retargets. This cycle re-reviews the revised set.
+>
+> **Both reviewers agree the cycle-2 HIGH is RESOLVED.** Codex surfaces a NEW HIGH:
+> 12-04 Task 1's `RealClock|RealSleeper` grep is overbroad and matches the
+> still-present `_RealClock`/`_RealSleeper` in `db.py`, so the gate fails
+> deterministically before 12-05 deletes db.py. **This claim was verified against
+> the repo and is well-founded (see Orchestrator Verification below).** OpenCode
+> quotes the same grep approvingly and rates risk LOW — it did not cross-check the
+> grep against db.py's contents.
 
 ## Codex Review
 
-**Summary**
+## Summary
 
-The revised plans are substantially better than the prior cycle: they enumerate the real blast radius, address the `token=` decision, preserve read-only settings loading, and add a final Docker smoke gate. However, as written they still have a HIGH convergence issue: several test retargets are scheduled in 12-04 even though the corresponding production code is migrated in 12-03 and 12-03 explicitly runs those tests. That makes the intermediate wave unlikely to stay green.
+The cycle-2 HIGH issue is resolved: application/refresh/sync test retargets now land in 12-03 with the production moves they exercise. The overall decomposition is sound and aligned with the phase goal. However, there is a new blocking verification issue: 12-04's `RealClock|RealSleeper` grep scans all `src/mcp_strava`, while `db.py` is intentionally still present until 12-05 and still contains `_RealClock`/`_RealSleeper`. As written, 12-04 cannot pass.
 
-**Strengths**
+## Strengths
 
-- Clear hard-cut strategy: no compatibility shim, `db.py` deleted last.
-- Good wave dependency shape overall: additive homes first, caller migration next, deletion last.
-- Prior missing test files are now explicitly listed.
-- `StravaClient.api_request(path)` drops the dead `token=` parameter and verifies the signature.
-- Settings fail-fast scope is corrected: `load_settings()` remains safe for read-only mirror paths.
-- Final gate includes `just test`, which matches this repo's need for Docker/MCP runtime validation.
+- Clean hard-cut sequencing: additive homes, caller migration, CLI migration, then `db.py` deletion.
+- Prior HIGH wave-placement concern is fixed by moving `conftest.py`, metric, refresh, application, and sync test retargets into 12-03.
+- `test_repository_boundary.py` retarget is now concrete: `StravaClient.api_request` and `.refresh_token`.
+- `StravaClient` has an explicit fake-transport injection seam.
+- Final `just test` Docker/MCP smoke is appropriate for this repo.
 
-**Concerns**
+## Concerns
 
-- **[HIGH] Test retargeting is complete but in the wrong wave.** 12-03 migrates `metric_services`, `worker`, `sync`, and `freshness`, then runs tests that still patch old `mcp_strava.db` or `*.DbConn` symbols. Examples: `test_metric_services.py` still patches `mcp_strava.db._db_path/open_expected_mirror_db`, `test_refresh_runtime.py` still patches `worker.DbConn/repository_from_connection`, and `test_security_guards.py` still patches `sync.DbConn`. `conftest.py` also still resets the old read pool while 12-03 starts using the new pool. These are deterministic intermediate failures or vacuous guards.
+- **HIGH**: 12-04 Task 1 verification will fail. `! rg -q "RealClock|RealSleeper" src/mcp_strava` matches `_RealClock`/`_RealSleeper` in `src/mcp_strava/db.py`, which is not deleted until 12-05. Scope the grep to `cli.py`, `refresh/bootstrap.py`, and `sync.py`, or exclude `db.py`.
 
-- **[MEDIUM] `StravaClient` construction/test seam is underspecified.** The plan says focused tests should use fakes/monkeypatches, but if `StravaClient()` eagerly builds the real transport and credentials are required at construction, tests and CLI guards may need brittle private monkeypatching. Specify an explicit optional transport/settings/clock injection seam.
+- **MEDIUM**: credential accessor behavior is under-tested. 12-02 specifies important behavior, but verification does not directly test missing token file, missing individual keys, comment/whitespace parsing, or secret-safe errors.
 
-- **[MEDIUM] Some verification commands are not fail-closed.** 12-04 uses patterns like `rg ... && echo FAIL || echo ok`; that prints failure text but exits successfully. Use `! rg -q ...` or an explicit `if rg ...; then exit 1; fi`.
+- **MEDIUM**: monkeypatching `DuckDBRepository.from_connection` should specify descriptor-safe replacement. Since it is a `@classmethod`, a plain lambda on the class can get an unexpected `cls`; prescribe `staticmethod(lambda conn: FakeRepo())` or `classmethod(lambda cls, conn: FakeRepo())`.
 
-- **[LOW] The shared transport helper is private but planned as cross-module API.** If `bootstrap.py` is meant to import `_build_strava_transport`, either make it public (`build_strava_transport`) or explicitly document it as an intentional private shared helper.
+- **LOW**: 12-03 Task 3 still uses `rg ... && exit 1 || echo`, which can mask `rg` errors. Use `! rg -q ...`.
 
-- **[LOW] Repository-boundary retargeting is vague.** Retargeting `legacy_db.api_request/refresh_token` to "where migrated code looks them up" is unclear for tests whose invariant is "repository must never touch Strava." Prefer an AST import guard against `mcp_strava.adapters.strava` in repository modules or patch `StravaClient.__init__` fail-closed.
+- **LOW**: 12-05 action says `ruff format --check`, but verify omits it. Align the gate with the stated action.
 
-**Suggestions**
+## Suggestions
 
-- Move test retargets that correspond to application/refresh/sync migration into 12-03: `conftest.py`, `test_metric_services.py`, `test_refresh_runtime.py`, `test_application_services.py`, and the `sync.MirrorConn` parts of `test_security_guards.py`.
-- Leave CLI-specific retargeting for 12-04: `test_cli_surface.py`, CLI product guards, and remaining `DbConn -> MirrorConn` imports in smoke/phase tests.
-- Add explicit tests for missing `STRAVA_CLIENT_ID/SECRET`: `load_settings()` succeeds with an empty temp token file, while `Settings.strava_client_credentials()` or `StravaClient()` fails with the expected path/key message.
-- Replace 12-04/12-05 grep checks with fail-closed shell snippets and avoid missing-path `rg` false failures for optional `Dockerfile`/compose paths.
+- Change 12-04 Task 1 grep to:
+  `! rg -q "RealClock|RealSleeper" src/mcp_strava/cli.py src/mcp_strava/refresh/bootstrap.py src/mcp_strava/sync.py`
 
-**Resolution Of Prior Feedback**
+- Add settings tests for `strava_client_credentials()` or equivalent: `load_settings()` succeeds without creds, accessor fails with missing keys + token path, valid token file parses, no secret leaks.
 
-| Prior concern | Status | Justification |
+- Strengthen repository boundary with an AST/import guard that `adapters/duckdb/repository.py` does not import `mcp_strava.adapters.strava`, in addition to patching `StravaClient` methods.
+
+## Resolution Of Prior Feedback
+
+| Cycle-2 concern | Status | Justification |
 |---|---|---|
-| HIGH test blast radius | **PARTIALLY RESOLVED** | All important files/sites are now enumerated, but too many are retargeted in 12-04 after 12-03 already migrates and tests them. |
-| MEDIUM `token=` parameter | **RESOLVED** | `StravaClient.api_request(path)` explicitly drops `token`, with signature verification. |
-| MEDIUM settings fail-fast scope | **RESOLVED** | Plans clearly keep `load_settings()` non-throwing and make Strava creds required-when-used. Add stronger tests, but the design is correct. |
-| MEDIUM security-guard semantic retarget | **PARTIALLY RESOLVED** | The plan names semantic retargeting, but some guards are still moved too late and one repository-boundary retarget is ambiguous. |
-| LOW key-prefix inconsistency | **RESOLVED** | `STRAVA_CLIENT_*` are explicitly not added to `_KEYS`. |
-| LOW AST import gate brittleness | **RESOLVED** | Replaced with an `rg` gate, though it should also fail closed. |
-| LOW stale `get_zones` comment | **RESOLVED** | 12-05 explicitly fixes `strava_api_reference.py` and greps for remaining `get_zones`. |
+| HIGH wave placement of test retargets | **RESOLVED** | 12-03 now owns application/refresh/sync retargets before its full-suite gate. |
+| MEDIUM `test_repository_boundary.py` target | **RESOLVED** | 12-04 names `mcp_strava.adapters.strava.client.StravaClient.api_request` and `.refresh_token`. |
+| MEDIUM StravaClient construction seam | **RESOLVED** | 12-02 specifies `transport=None, *, settings=None, clock=None, sleeper=None`. |
+| MEDIUM fail-closed verification | **PARTIALLY RESOLVED** | Most gates improved, but 12-03 still has a non-fail-closed grep pattern and 12-04 has an overbroad grep that fails before deletion. |
+| LOW private shared helper | **RESOLVED** | Plans document `_build_strava_transport` as an intentional internal shared helper. |
+| LOW connection.py settings edge | **RESOLVED** | 12-01 explicitly acknowledges `get_settings` in the DuckDB connection home. |
 
-**Risk Assessment**
+## Risk Assessment
 
-**HIGH as written**, because 12-03's own verification is likely to fail after production migration but before test retargeting. Once those test retargets move into the same wave as the code they exercise, the plan drops to MEDIUM/LOW: the decomposition is otherwise coherent and the final runtime smoke gate is appropriate.
+**HIGH as written**, because 12-04 has a deterministic verification failure. After narrowing that grep and tightening the small test/descriptor details, risk drops to **LOW/MEDIUM**: the architecture and wave split are otherwise coherent.
 
 ---
 
 ## OpenCode Review
 
-### 1. Summary
+## 1. Summary
 
-The revised plan set is a substantial improvement over the prior cycle. The HIGH-concern incomplete test blast radius has been comprehensively addressed — all 8 test files are now in scope for 12-04, every monkeypatch-by-path site is enumerated with explicit retarget instructions, and dead-attribute / vacuous-no-op traps are identified and mitigated. The additive-then-migrate wave ordering (01→02→03→04→05) is correct, dependencies are properly declared, and the hard-cut deletion (12-05) is gated by a zero-reference grep across src, tests, and ops config plus a Docker smoke test. All 5 prior MEDIUM/HIGH concerns are RESOLVED, and the 6 LOW/suggestion items are also addressed. Two minor new concerns noted below, neither blocking.
+The cycle-3 revision directly addresses both dominant cycle-2 concerns. The **HIGH wave-placement issue** is resolved: 12-03 now carries its own test retargets (conftest, test_metric_services, test_refresh_runtime, test_application_services, sync.DbConn sites) via a dedicated Task 3, and 12-03's own full-suite gate (Task 4) runs after those retargets. 12-04 is consequently scoped to CLI-only retargets. The **MEDIUM repository-boundary retarget** is resolved: 12-04 Task 2 now names the concrete `mcp_strava.adapters.strava.client.StravaClient.api_request` / `.refresh_token` as patch targets. All 6 remaining cycle-2 MEDIUM/LOW items are also resolved. Two minor cycle-3 observations, neither blocking. **Overall risk: LOW.**
 
-### 2. Strengths
+## 2. Strengths
 
-- **Complete monkeypatch blast radius**: 12-04 `files_modified` now covers all 8 test files with coupling; Task 2 enumerates every site (`worker.DbConn` x6, `freshness.repository_from_connection`, `metric_services.repository_from_connection`, `cli.api_request`/`cli.DbConn`, `legacy_db.api_request`/`refresh_token`, `DbConn→MirrorConn` in smoke/phase01 tests) and prescribes the correct retarget for each.
-- **Dead-attribute and vacuous-no-op traps explicitly mitigated**: `worker.DbConn` (plain `setattr`, would error), `cli.api_request`/`cli.DbConn` (`raising=False`, would silently no-op), and `sync.DbConn` (would create dead attribute) are all called out with the required fix — `raising=False` dropped where attributes should exist so misses fail loudly.
-- **Security guard retargeting is semantic, not string-swap**: 12-04 Task 3 explicitly says guards must forbid the actual `StravaClient` network path and `MirrorConn` in read/product modules, not merely swap the literal and pass vacuously.
-- **Wave ordering preserves importability mid-migration**: RealClock/RealSleeper aliases are kept on bootstrap through wave 3 so `cli.py` (which still imports them from `refresh.bootstrap`) doesn't break between 12-03 and 12-04.
-- **Hard-cut gate is rigorous**: 12-05 Task 1 gates deletion on a zero-reference grep covering `src`, `tests`, AND ops config (`Justfile`, `Dockerfile`, `compose.yaml`), plus `just test` Docker smoke — catches runtime-only breakage that static analysis misses.
-- **Governing principles consistently honored**: GP-02 (no shims, hard cut), GP-01 (clean over fast — dedicated `clock.py`, shared `_build_strava_transport`), GP-04 (dependency rule — application depends on adapters, not vice versa).
+- **Wave-placement fix is correct and complete.** 12-03 Task 3 retargets exactly the test sites that exercise production code migrated in 12-03 Tasks 1-2; 12-03 Task 4 runs the full `uv run pytest -q` after those retargets — same wave, same plan. 12-04 `must_haves` / Task 2 explicitly acknowledge those sites were *already* handled in 12-03 and tell the executor not to touch them.
+- **Repository-boundary retarget is concrete and fail-safe.** 12-04 Task 2 now specifies `monkeypatch.setattr(mcp_strava.adapters.strava.client.StravaClient, "api_request", _boom)` and `.refresh_token` — the exact network methods on the facade. The invariant "repository must never touch Strava" cannot pass vacuously: if the repository path ever constructs or calls `StravaClient`, the `_boom` fires.
+- **StravaClient injection seam is fully specified.** 12-02 Task 3 requires `StravaClient(transport=None, *, settings=None, clock=None, sleeper=None)` with an explicit optional-transport path that bypasses all construction-time cred resolution. The verify block asserts `'transport' in init.parameters`.
+- **Fail-closed grep discipline is consistent.** Every verification block across all 5 plans now uses `! rg -q ...` (non-zero exit on match) — no more `&& echo FAIL || echo ok` patterns that mask failures.
+- **RealClock/RealSleeper alias lifecycle is explicit:** added on `bootstrap.py` in 12-03 Task 2 (kept through wave 3), deleted from `bootstrap.py` + `sync.py` in 12-04 Task 1 after `cli.py` migrates. The verify checks `! rg -q "RealClock|RealSleeper" src/mcp_strava` after 12-04 proves no leftover.
+- **Settings fail-fast scope holds:** `load_settings()` never raises on missing Strava creds; the cred accessor raises only when called. 12-02 Task 1 verify explicitly asserts `load_settings()` succeeds without creds.
 
-### 3. Concerns
+## 3. Concerns
 
-- **MEDIUM — test_repository_boundary.py L353–354 retarget destination is underspecified**. The plan says "retarget L353-354 `legacy_db.api_request`/`refresh_token` to the `StravaClient` home (patch where the migrated code looks them up)." The code under test in `test_repository_boundary.py` exercises the DuckDB repository, not the StravaClient facade. After migration, the repository's `api_request`/`refresh_token` calls route through `StravaClient` (for sync/refresh paths) or may not involve them at all for pure-repository tests. The plan correctly identifies the site but leaves the exact patch target (e.g., `repository_boundary_module.StravaClient.api_request` vs. patching the transport layer) to the executor. A wrong choice could leave the test either broken or vacuously passing. Recommend explicitly naming the target module+attribute in the action block.
+- **[LOW] 12-03 Task 3 verify uses `||` which catches `rg` errors as false-success.** The check `rg -q 'setattr\(sync,\s*"DbConn"' tests/test_security_guards.py && exit 1 || echo "sync-DbConn-retargeted"` prints the success echo if `rg` exits with code 2 (file-not-found / error), not just code 1 (no-match). In practice the file is guaranteed to exist, but a `! rg -q ...` pattern would be more robust.
+- **[LOW] 12-05 `files_modified` omits `strava_api_reference.py`.** Task 1 explicitly says to fix the stale `get_zones()` comment at L54 of that file, but it's not listed in the plan's `files_modified` metadata. The verify grep for zero `get_zones` across `src tests` will catch it regardless.
 
-- **LOW — `_db_path()` in `connection.py` introduces a new settings dependency**. Plan 12-01 defines `_db_path()` as `str(get_settings().database_path)`. This creates an import of `get_settings` in `adapters/duckdb/connection.py` where it may not have existed before (the existing `open_expected_mirror_db` currently takes a path parameter). This is architecturally fine — the DuckDB adapter can depend on settings — but the plan doesn't acknowledge the new import edge.
+## 4. Suggestions
 
-### 4. Suggestions
+- For 12-03 Task 3 verify: replace the `rg ... && exit 1 || echo` pattern with a consistent `! rg -q ...` or `test $(rg -c ...) -eq 0` to avoid masking `rg` file errors.
+- Consider adding a 12-01 note about the `_open_storage_connection` collapse: once co-located in `connection.py` with `open_expected_mirror_db`, the one-line `_open_storage_connection` wrapper can be inlined (MirrorConn/ReadConn call `open_expected_mirror_db` directly). Task 1 says "collapse to a direct call" but doesn't say whether to keep the wrapper as a module-level alias — consistent with GP-01 (clean over fast).
 
-- For the test_repository_boundary.py retarget (12-04 Task 2), add a one-liner specifying the concrete module to patch (e.g., "patch `StravaClient.api_request` on the module object where the repository boundary code resolves it — likely `mcp_strava.adapters.strava.client.StravaClient.api_request` or the transport it wraps").
-- In 12-01 Task 1, explicitly note that adding `from mcp_strava.settings import get_settings` to `connection.py` is intentional and architecturally valid (DuckDB adapter depending on settings for the data path).
+## 5. Resolution of Prior Feedback (cycle 2)
 
-### 5. Resolution of Prior Cycle's Feedback
-
-| Prior Concern | Severity | Status | Justification |
+| Concern | Severity | Status | Justification |
 |---|---|---|---|
-| Incomplete test blast radius | HIGH (consensus) | **RESOLVED** | 12-04 `files_modified` expanded to all 8 test files; Task 2 enumerates every monkeypatch site with explicit retarget; Task 3 covers `sync.DbConn` L637/L700 → `sync.MirrorConn` |
-| StravaClient.api_request(token=None) override unspecified | MEDIUM (consensus) | **RESOLVED** | 12-02 drops the `token` param (verified zero live callers); verify asserts `token` not in signature |
-| Settings fail-fast scope / read-only mirror path | MEDIUM (consensus) | **RESOLVED** | 12-02 Task 1: creds resolve from token file, `load_settings()` never raises, fail-fast only at StravaClient/refresh construction |
-| Security guards need semantic retargeting | MEDIUM (Codex) | **RESOLVED** | 12-04 Task 3: guards forbid `MirrorConn` + real `StravaClient` network path; `sync.DbConn` → `sync.MirrorConn`; `init_db` guards removed |
-| MCP_STRAVA_* key-prefix inconsistency | LOW (OpenCode) | **RESOLVED** | `STRAVA_CLIENT_*` explicitly NOT added to `_KEYS` env set |
-| Brittle AST import check | LOW (Codex) | **RESOLVED** | Replaced with `rg` gate |
-| Stale get_zones() comment | LOW (Codex) | **RESOLVED** | 12-05 Task 1 fixes L54 comment; greps for zero `get_zones` |
-| No focused StravaClient facade test | suggestion (Codex) | **RESOLVED** | 12-02 Task 3 adds `tests/test_strava_client.py` (5 cases) |
-| Third parallel transport wiring path | suggestion (Codex) | **RESOLVED** | 12-02 adds shared `_build_strava_transport`; 12-03 bootstrap calls it |
-| db.py refs may linger in ops config | suggestion (OpenCode) | **RESOLVED** | 12-05 Task 1 greps ops config, not just src/tests |
-| init_db DDL guards reference soon-deleted symbol | (Codex/OpenCode) | **RESOLVED** | 12-04 Task 3: guard + test removed |
+| Wave placement of test retargets (12-03 migrates code whose test retargets are in 12-04) | HIGH (Codex) | **RESOLVED** | 12-03 now includes Task 3 (retarget conftest, test_metric_services, test_refresh_runtime, test_application_services, sync.DbConn sites in test_security_guards) before its own Task 4 full-suite gate. 12-04 explicitly scoped to CLI-only retargets. `must_haves` in both plans cross-reference the split. |
+| `test_repository_boundary.py` L353-354 retarget destination underspecified | MEDIUM (both) | **RESOLVED** | 12-04 Task 2 names concrete targets: `mcp_strava.adapters.strava.client.StravaClient.api_request` and `.refresh_token` with `_boom`. `must_haves` entry confirms "patches the CONCRETE StravaClient network methods." |
+| `StravaClient` construction/test seam underspecified | MEDIUM (Codex) | **RESOLVED** | 12-02 Task 3 specifies `StravaClient(transport=None, *, settings=None, clock=None, sleeper=None)` with optional transport injection; verify checks signature; all 5 focused tests inject fake transport. |
+| Verification commands not fail-closed | MEDIUM (Codex) | **RESOLVED** | All 12-04/12-05/12-03 grep checks now use `! rg -q ...` patterns. |
+| Shared transport helper private but cross-module | LOW (Codex) | **RESOLVED** | Acknowledged in 12-02/12-03 as intentional private shared helper `_build_strava_transport`; single wiring path documented. |
+| `_db_path()` introduces new settings dependency in connection.py | LOW (OpenCode) | **RESOLVED** | 12-01 review-feedback section explicitly calls this out as architecturally valid; Task 1 already adds the import. |
 
-### 6. Risk Assessment
+## 6. Risk Assessment
 
 **OVERALL: LOW**
 
-The dominant risk from the prior cycle has been thoroughly addressed. Every known coupling site is enumerated and retargeted. The additive wave ordering with alias preservation eliminates mid-wave import breakage. The hard-cut deletion gate catches stranded imports at both static and runtime levels. The two new concerns are minor and easily addressed during execution. The phase goal is achievable against these plans.
+The cycle-2 HIGH (wave placement) is definitively resolved — 12-03 carries its own test retargets in the same wave, and 12-04 is scoped to CLI-only retargets with explicit cross-references confirming the split. The cycle-2 MEDIUM (repository-boundary retarget) is resolved with concrete `StravaClient.api_request`/`.refresh_token` targets. All remaining cycle-2 MEDIUM/LOW items are addressed. Two new cycle-3 observations are LOW (fragile verify shell pattern, minor metadata omission), neither blocking. The additive→migrate→delete wave ordering, fail-closed grep discipline, alias lifecycle, and Docker smoke gate are all sound. The phase goal (dissolve `db.py`, behavior unchanged, full suite green) is achievable against these plans.
+
+---
+
+## Orchestrator Verification (Claude, cycle 3)
+
+I independently verified the single new HIGH against the working tree, because the two
+reviewers diverge on it:
+
+```
+$ rg -n 'RealClock|RealSleeper' .planning/.../12-04-PLAN.md
+77:  <automated>... && ! rg -q "RealClock|RealSleeper" src/mcp_strava</automated>
+
+$ rg -n 'RealClock|RealSleeper' src/mcp_strava/db.py
+128:class _RealClock:
+133:class _RealSleeper:
+189:    clock = _RealClock()
+190:    sleeper = _RealSleeper()
+195:    clock = _RealClock()
+196:    sleeper = _RealSleeper()
+```
+
+**Codex is correct.** 12-04 Task 1's verify uses `! rg -q "RealClock|RealSleeper" src/mcp_strava`.
+`rg` matches substrings by default (no word boundary), so the pattern matches `_RealClock`
+and `_RealSleeper` inside `db.py`. Because `db.py` is intentionally not deleted until 12-05,
+the `! rg -q` gate exits non-zero and **12-04 Task 1 fails deterministically**, regardless of
+whether cli.py/bootstrap.py/sync.py were correctly migrated. OpenCode quoted the same grep as
+a strength without cross-checking db.py and therefore missed it.
+
+**Recommended fix (Codex):** scope the grep to the files actually being cleaned in this wave:
+`! rg -q "RealClock|RealSleeper" src/mcp_strava/cli.py src/mcp_strava/refresh/bootstrap.py src/mcp_strava/sync.py`.
+(Equivalently, add `--glob '!db.py'`, but the explicit-files form is clearer.) Once narrowed,
+this HIGH drops away and the residual items are MEDIUM/LOW.
 
 ---
 
 ## Consensus Summary
 
-Both reviewers agree the **cycle-1 HIGH (incomplete test blast radius) is now resolved** — all 8 coupled test files and every monkeypatch-by-path site are enumerated with explicit, correct retargets, and the dead-attribute / vacuous-no-op traps are called out. Both agree the remaining cycle-1 MEDIUM/LOW items (token= drop, settings fail-fast scope, key-prefix, AST→rg gate, stale get_zones comment, shared transport helper, facade test) are addressed. They diverge on a single new issue around wave placement.
+Both reviewers agree the **cycle-2 HIGH (wave placement of test retargets) is RESOLVED** — 12-03
+now carries its own application/refresh/sync test retargets (new Task 3) in the same wave as the
+production migration, and its full-suite gate (Task 4) runs after those retargets; 12-04 is scoped
+to CLI-only retargets, with `must_haves` in both plans cross-referencing the split. Both also agree
+the **cycle-2 MEDIUM (`test_repository_boundary.py` retarget destination)** is RESOLVED — 12-04 Task 2
+now names the concrete `StravaClient.api_request`/`.refresh_token` methods. All remaining cycle-2
+MEDIUM/LOW items are resolved by both.
 
 ### Agreed Strengths
-- Hard-cut, no-shim discipline; `db.py` deleted last (12-05) behind a zero-reference grep over src + tests + ops config plus a `just test` Docker smoke gate.
-- Additive-first wave ordering with RealClock/RealSleeper aliases kept on bootstrap through wave 3, so cli.py imports stay resolvable mid-migration.
-- Full monkeypatch blast radius enumerated; `token=` dropped with a signature assertion; `load_settings()` kept non-throwing for the read-only mirror path.
-- Strong final gate (pytest + ruff + format + pyright + Docker/MCP smoke).
+- Cycle-2 HIGH wave-placement fix is correct and complete (test retargets co-located with the code they exercise; full-suite gate runs after).
+- Repository-boundary retarget is now concrete and cannot pass vacuously.
+- StravaClient transport/settings/clock/sleeper injection seam fully specified.
+- Hard-cut sequencing (additive homes → caller migration → CLI migration → db.py deletion) with explicit RealClock/RealSleeper alias lifecycle.
+- Final `just test` Docker/MCP smoke gate.
 
 ### Agreed Concerns
-- **[MEDIUM] `test_repository_boundary.py` L353–354 retarget destination underspecified** (both reviewers, independently). The plan says "patch where the migrated code looks them up" for `legacy_db.api_request`/`refresh_token`, but the repository-boundary test's invariant is "repository must never touch Strava." Name the concrete module+attribute (or convert to an AST import guard against `mcp_strava.adapters.strava`, or a fail-closed `StravaClient.__init__`) so the test cannot pass vacuously.
+- None at HIGH consensus. The two LOW items OpenCode raises (12-03 Task 3 non-fail-closed `rg ... && exit 1 || echo` pattern; 12-05 `files_modified` omits `strava_api_reference.py`) overlap with Codex's own LOW about the same 12-03 grep pattern.
 
-### Divergent Views — **the dominant open question this cycle**
-- **[HIGH per Codex / not flagged by OpenCode] Wave placement of test retargets.** Codex argues 12-03 migrates production code in `metric_services`, `worker`, `sync`, and `freshness`, and 12-03's own verification (Task 2 runs `test_refresh_runtime.py` + `test_security_guards.py`; Task 3 runs the **full** `uv run pytest -q`) executes tests whose monkeypatch retargets are not scheduled until 12-04. After 12-03 renames `DbConn→MirrorConn` / removes `repository_from_connection`, the un-retargeted `monkeypatch.setattr(worker, "DbConn", ...)` (plain setattr) errors and `setattr(sync, "DbConn", ...)` creates a dead attribute — so 12-03 cannot land green as written. `conftest.py` is also only retargeted in 12-04 while 12-03 starts using the relocated read pool. OpenCode reads the 01→05 ordering as correct and rates overall risk LOW, but does not address the intra-12-03 verification scope. **This claim is directly verifiable from the plan text** (12-03 Task 2/3 verify blocks vs. 12-04 Task 2/3 retarget scope) and appears well-founded.
-  - **Recommended fix (Codex):** move the application/refresh/sync test retargets (`conftest.py`, `test_metric_services.py`, `test_refresh_runtime.py`, `test_application_services.py`, and the `sync.MirrorConn` part of `test_security_guards.py`) into 12-03 alongside the code they exercise; keep only CLI-specific retargets (`test_cli_surface.py`, CLI guards, `DbConn→MirrorConn` in smoke/phase01) in 12-04. Alternatively, relax 12-03's verification to the narrower targeted subsets that do not depend on the deferred retargets, deferring the full-suite gate to after 12-04.
-- **Overall risk rating.** Codex: HIGH as written (wave-placement ordering). OpenCode: LOW. Both converge to LOW/MEDIUM once the 12-03↔12-04 test-retarget split is corrected.
+### Divergent Views — the dominant open question this cycle
+- **[HIGH per Codex / not flagged by OpenCode — VERIFIED VALID by orchestrator] 12-04 Task 1 grep is overbroad.**
+  `! rg -q "RealClock|RealSleeper" src/mcp_strava` matches `_RealClock`/`_RealSleeper` still
+  present in `db.py` (db.py deleted only in 12-05), so 12-04 Task 1's gate fails deterministically.
+  Confirmed against the working tree (db.py L128/133/189-196). OpenCode rated risk LOW and quoted
+  this grep as a strength without checking db.py, so it missed the issue.
+  - **Recommended fix:** narrow the grep to `src/mcp_strava/cli.py src/mcp_strava/refresh/bootstrap.py src/mcp_strava/sync.py` (the files this wave cleans), or exclude `db.py`.
+- **Overall risk rating.** Codex: HIGH as written (deterministic 12-04 gate failure). OpenCode: LOW.
+  Both converge to LOW/MEDIUM once the 12-04 grep is scoped.
+
+### Open MEDIUMs (fold into a final replan along with the HIGH grep fix)
+- Credential-accessor behavior under-tested (Codex): add explicit tests for missing token file, missing individual keys, comment/whitespace parsing, secret-safe error messages.
+- `DuckDBRepository.from_connection` monkeypatch is a `@classmethod` (Codex): prescribe a descriptor-safe replacement (`staticmethod(lambda conn: FakeRepo())` or `classmethod(lambda cls, conn: FakeRepo())`) so the fake doesn't receive an unexpected `cls`.
