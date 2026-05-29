@@ -141,9 +141,10 @@ def _seed_dirty_activity_with_pauses(
 ) -> None:
     """Seed an activity whose velocity series includes a >=30 s pause below VEL_STOP=0.15.
 
-    Layout (each row = 10 s interval):
+    Layout (each row = 1 s interval — required because calc_hr_recovery detects
+    consecutive rows with gap > 3 s as a data break, not a pause):
     - rows 0-49:   running, velocity=3.0, ascending altitude
-    - rows 50-82:  stopped, velocity=0.0  (33 rows × 10 s = 330 s pause ≥ MIN_PAUSE_SEC=30)
+    - rows 50-82:  stopped, velocity=0.0  (33 rows × 1 s = 33 s pause ≥ MIN_PAUSE_SEC=30)
     - rows 83-179: running again, velocity=3.0, ascending altitude
     Total = 180 rows ≥ MIN_STREAM_POINTS=120.
     """
@@ -176,7 +177,7 @@ def _seed_dirty_activity_with_pauses(
             heartrate = 140 + (idx % 20)
         rows.append(
             {
-                "time_offset": idx * 10,
+                "time_offset": idx,  # 1-second intervals — required for gap detection in calc_hr_recovery
                 "heartrate": heartrate,
                 "velocity": velocity,
                 "altitude": 500.0 + idx * 0.2,
@@ -185,9 +186,9 @@ def _seed_dirty_activity_with_pauses(
                 "lng": 76.9 + idx * 0.00001,
                 "grade": 1.0,
                 "gap_speed": velocity,
-                "gap_distance": idx * 30.0,
+                "gap_distance": idx * 3.0,
                 "is_moving": 0 if is_pause else 1,
-                "values_json": '{"distance": %.1f}' % (idx * 30.0),
+                "values_json": '{"distance": %.1f}' % (idx * 3.0),
             }
         )
     repo.replace_stream_rows_and_channel_metadata(

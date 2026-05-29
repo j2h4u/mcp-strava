@@ -8,6 +8,7 @@ from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDB
 from mcp_strava.application.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 from mcp_strava.constants import Config
 from mcp_strava.hr_zones import get_zone_model
+from mcp_strava.metrics import calc_hr_recovery, calc_vertical_speed, calc_cardiac_drift, calc_hrr_pct
 from mcp_strava.settings import Settings, get_settings
 from mcp_strava.training import calc_banister_series
 
@@ -158,6 +159,17 @@ def _activity_fact(
     min_hr, max_hr = repo.activity_hr_range(activity_id)
     cc = repo.activity_cc(activity_id, Config.Thresholds.VEL_MOVING)
 
+    # ── Pure metric computation (wires the 14 previously-default columns) ──
+    hr_rows = repo.stream_hr_velocity_time_rows(activity_id)
+    alt_rows = repo.stream_altitude_rows(activity_id)
+    drift_rows = repo.stream_hr_velocity_simple_rows(activity_id, Config.Thresholds.VEL_MOVING)
+    median_hr = repo.activity_median_heartrate(activity_id)
+
+    hr_rec = calc_hr_recovery(hr_rows)
+    vspeed = calc_vertical_speed(alt_rows)
+    drift = calc_cardiac_drift(drift_rows, activity.sport_type)
+    hrr = calc_hrr_pct(median_hr, athlete.hr_rest, hr_max_observed)
+
     missing: list[str] = []
     if activity.detail_json is None:
         missing.append("missing_details")
@@ -187,22 +199,22 @@ def _activity_fact(
         "zone3_seconds": zone3,
         "zone4_seconds": zone4,
         "zone5_seconds": zone5,
-        "hr_recovery_pause_count": 0,
-        "hr_recovery_total_rest_sec": 0,
-        "hr_recovery_median_rate": None,
-        "hr_recovery_best_rate": None,
-        "hr_recovery_worst_rate": None,
-        "hr_recovery_avg_rate": None,
-        "vertical_speed_vmh": None,
-        "vertical_speed_total_ascent_m": None,
-        "vertical_speed_duration_hours": None,
+        "hr_recovery_pause_count": hr_rec.pauses_found if hr_rec else 0,
+        "hr_recovery_total_rest_sec": hr_rec.total_rest_sec if hr_rec else 0,
+        "hr_recovery_median_rate": hr_rec.median_rate if hr_rec else None,
+        "hr_recovery_best_rate": hr_rec.best_rate if hr_rec else None,
+        "hr_recovery_worst_rate": hr_rec.worst_rate if hr_rec else None,
+        "hr_recovery_avg_rate": hr_rec.avg_rate if hr_rec else None,
+        "vertical_speed_vmh": vspeed.vmh if vspeed else None,
+        "vertical_speed_total_ascent_m": vspeed.total_ascent_m if vspeed else None,
+        "vertical_speed_duration_hours": vspeed.duration_hours if vspeed else None,
         "cardiac_cost": cc,
         "adjusted_cardiac_cost": _adjusted_cardiac_cost(cc, activity.distance, activity.total_elevation_gain),
-        "cardiac_drift_pct": None,
-        "cardiac_drift_severity": None,
-        "cardiac_drift_significant": 0,
-        "cardiac_drift_quality": None,
-        "hrr_pct": None,
+        "cardiac_drift_pct": drift.drift_pct if drift else None,
+        "cardiac_drift_severity": drift.severity if drift else None,
+        "cardiac_drift_significant": 1 if (drift and drift.is_significant) else 0,
+        "cardiac_drift_quality": drift.quality if drift else None,
+        "hrr_pct": hrr,
         "anomaly_count": 0,
         "distance_m": activity.distance,
         "moving_time_s": activity.moving_time,
