@@ -164,11 +164,16 @@ def calc_hr_recovery(rows):
     if not pauses:
         return None
 
-    rates = sorted(p['rate'] for p in pauses if p['rate'] is not None)
+    # Single contract: rates, best, and worst all operate on the same
+    # rate-bearing subset. Today rate is always numeric, but keeping the filter
+    # and the best/worst selection in sync prevents a future nullable rate from
+    # making max()/min() raise on None while rates silently excluded it (WR-06).
+    rated = [p for p in pauses if p['rate'] is not None]
+    rates = sorted(p['rate'] for p in rated)
     total_rest = sum(p['duration'] for p in pauses)
 
-    best = max(pauses, key=lambda p: p['rate']) if pauses else None
-    worst = min(pauses, key=lambda p: p['rate']) if pauses else None
+    best = max(rated, key=lambda p: p['rate']) if rated else None
+    worst = min(rated, key=lambda p: p['rate']) if rated else None
 
     # Median (robust to outliers from short/noisy pauses)
     n = len(rates)
