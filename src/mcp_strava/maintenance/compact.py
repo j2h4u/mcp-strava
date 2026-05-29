@@ -43,6 +43,47 @@ def humanize_bytes(num: int) -> str:
     raise AssertionError("unreachable")  # pragma: no cover
 
 
+COMPACT_RECOMMEND_PCT = 25.0
+"""Reclaimable share at or above which compaction is worth running. Mirrors
+DuckDB's own ~25% row-group merge heuristic."""
+
+
+def storage_stats(conn) -> dict:
+    """Report how much of the mirror file is reclaimable dead space.
+
+    DuckDB keeps freed blocks inside the file (it never shrinks in place), so the
+    gap between allocated and used blocks is what `admin compact` would reclaim.
+    Reads `PRAGMA database_size` on an open connection — only the owner process
+    can read this while the file is served, so it is emitted from there.
+
+    Returns plainly-named fields plus a human-readable ``message``.
+    """
+    row = conn.execute("PRAGMA database_size").fetchone()
+    columns = [d[0] for d in conn.description]
+    raw = dict(zip(columns, row))
+    block_size = int(raw["block_size"])
+    total_blocks = int(raw["total_blocks"])
+    free_blocks = int(raw["free_blocks"])
+
+    file_size = total_blocks * block_size
+    reclaimable = free_blocks * block_size
+    reclaimable_pct = round(free_blocks / total_blocks * 100, 1) if total_blocks else 0.0
+    recommended = reclaimable_pct >= COMPACT_RECOMMEND_PCT
+
+    advice = "consider running `just admin compact`" if recommended else "compaction not needed"
+    message = (
+        f"Mirror file {humanize_bytes(file_size)}, "
+        f"{reclaimable_pct}% reclaimable ({humanize_bytes(reclaimable)}) — {advice}."
+    )
+    return {
+        "file_size": humanize_bytes(file_size),
+        "reclaimable": humanize_bytes(reclaimable),
+        "reclaimable_pct": reclaimable_pct,
+        "compaction_recommended": recommended,
+        "message": message,
+    }
+
+
 def _sql_path(path: Path) -> str:
     """Render a path as a single-quoted SQL string literal."""
     return str(path).replace("'", "''")

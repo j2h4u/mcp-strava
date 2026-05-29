@@ -18,6 +18,7 @@ from mcp_strava.refresh import RefreshSkipped, Stage
 from mcp_strava.refresh import _sync_ops
 from mcp_strava.refresh.bootstrap import build_refresh_collaborators, ensure_runtime_refresh_schema, record_refresh_misconfigured
 from mcp_strava.refresh.policy import RefreshPolicy, refresh_interval_elapsed
+from mcp_strava.maintenance.compact import storage_stats
 from mcp_strava.settings import get_settings
 
 
@@ -152,6 +153,13 @@ def run_pending_once(*, emit_idle: bool = True) -> int:
             elif result.status == "ok":
                 consumed = repo.mark_refresh_requests_consumed(_now_iso())
                 _emit("refresh_ok", consumed=consumed, checkpoint_stage=result.checkpoint_stage)
+                # Surface how much of the mirror file is reclaimable dead space so
+                # compaction can be decided from logs. Best-effort: never let a
+                # storage probe fail the refresh cycle.
+                try:
+                    _emit("mirror_storage", **storage_stats(conn))
+                except Exception as exc:  # noqa: BLE001
+                    _emit("mirror_storage_error", error_type=type(exc).__name__, error=str(exc)[:200])
             else:
                 _emit("refresh_failed", reason=result.reason or "unknown", checkpoint_stage=result.checkpoint_stage)
                 return 1

@@ -11,7 +11,30 @@ import pytest
 from tests._fixtures_duckdb import ACTIVITY_COUNT, create_fixture_db
 
 from mcp_strava.adapters.duckdb.connection import MirrorDbLocked
-from mcp_strava.maintenance.compact import compact_database, humanize_bytes
+from mcp_strava.maintenance.compact import compact_database, humanize_bytes, storage_stats
+
+
+_DB_SIZE_COLUMNS = (
+    "database_name", "database_size", "block_size", "total_blocks",
+    "used_blocks", "free_blocks", "wal_size", "memory_usage", "memory_limit",
+)
+
+
+class _FakeDbSizeConn:
+    """Stands in for a DuckDB connection answering `PRAGMA database_size`."""
+
+    def __init__(self, *, block_size: int, total_blocks: int, free_blocks: int) -> None:
+        self._row = (
+            "mirror", "n/a", block_size, total_blocks,
+            total_blocks - free_blocks, free_blocks, "0 bytes", "0 bytes", "0 bytes",
+        )
+        self.description = [(name,) for name in _DB_SIZE_COLUMNS]
+
+    def execute(self, _sql: str):
+        return self
+
+    def fetchone(self):
+        return self._row
 
 
 @pytest.mark.parametrize(
@@ -149,3 +172,42 @@ def test_admin_compact_cli_invokes_compact_database(
     assert payload["status"] == "ok"
     assert payload["reclaimed"] == "624 B"
     assert calls == [{"db_path": db, "backup": False}]
+
+
+def test_storage_stats_clean_fixture_reports_no_reclaimable(tmp_path: Path) -> None:
+    db = tmp_path / "strava.duckdb"
+    create_fixture_db(db)
+
+    conn = duckdb.connect(str(db), read_only=True)
+    try:
+        stats = storage_stats(conn)
+    finally:
+        conn.close()
+
+    # A freshly written file has no freed blocks.
+    assert stats["reclaimable_pct"] == 0.0
+    assert stats["compaction_recommended"] is False
+    assert "compaction not needed" in stats["message"]
+    assert stats["file_size"].endswith(("KB", "MB"))
+
+
+def test_storage_stats_recommends_compaction_above_threshold() -> None:
+    # 40 of 100 blocks free => 40% reclaimable, over the 25% threshold.
+    conn = _FakeDbSizeConn(block_size=262_144, total_blocks=100, free_blocks=40)
+
+    stats = storage_stats(conn)
+
+    assert stats["reclaimable_pct"] == 40.0
+    assert stats["compaction_recommended"] is True
+    assert "just admin compact" in stats["message"]
+
+
+def test_storage_stats_below_threshold_does_not_recommend() -> None:
+    # 10 of 100 blocks free => 10%, under the threshold.
+    conn = _FakeDbSizeConn(block_size=262_144, total_blocks=100, free_blocks=10)
+
+    stats = storage_stats(conn)
+
+    assert stats["reclaimable_pct"] == 10.0
+    assert stats["compaction_recommended"] is False
+    assert "compaction not needed" in stats["message"]
