@@ -3,14 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-stopped_at: context exhaustion at 79% (2026-05-30)
-last_updated: "2026-05-30T09:46:24.811Z"
-last_activity: 2026-05-30 -- Phase 12 planning complete
+last_updated: "2026-05-30T10:03:22.733Z"
+last_activity: 2026-05-30
 progress:
   total_phases: 13
   completed_phases: 11
   total_plans: 53
-  completed_plans: 48
+  completed_plans: 49
   percent: 85
 ---
 
@@ -21,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Phase 12 — decouple db py into focused modules
+**Current focus:** Phase 12 — decouple-db-py-into-focused-modules
 
 ## Current Position
 
-Phase: 12
-Plan: Not started
+Phase: 12 (decouple-db-py-into-focused-modules) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-05-30 -- Phase 12 planning complete
+Last activity: 2026-05-30
 
 ## Performance Metrics
 
@@ -94,6 +93,7 @@ Last activity: 2026-05-30 -- Phase 12 planning complete
 | Phase 10-materialize-unwired-training-metrics-and-enforce-core-domain P02 | 1min | 2 tasks | 1 files |
 | Phase 10 P03 | 10min | 2 tasks | 2 files |
 | Phase 10-materialize-unwired-training-metrics-and-enforce-core-domain P04 | 2min | 3 tasks | 4 files |
+| Phase 12-decouple-db-py-into-focused-modules P01 | 6 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -176,6 +176,8 @@ Recent decisions affecting current work:
 - [Phase ?]: metrics.py is now a pure domain module — no storage import; four pure functions take plain dict rows; dead conn-coupled functions removed
 - [Phase ?]: Domain import-boundary guard widened to forbid mcp_strava.db and mcp_strava.adapters.duckdb across five domain modules
 - [Phase ?]: metric_version NOT bumped in 10-03 — only defaults replaced with computed values; no formula or column-set changes
+- [Phase ?]: MirrorConn collapses _open_storage_connection alias — calls open_expected_mirror_db directly in adapters/duckdb/connection
+- [Phase ?]: init_db NOT relocated to connection.py — dead code per RI-03, deleted with db.py in 12-05
 
 ### Roadmap Evolution
 
@@ -206,7 +208,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-30T09:46:24.505Z
+Last session: 2026-05-30T10:03:11.825Z
 Stopped at: context exhaustion at 79% (2026-05-30)
 Resume file: None
 
