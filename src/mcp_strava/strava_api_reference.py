@@ -51,7 +51,7 @@ Last updated: 2026-05-05, verified against live API.
 
 # GET /athlete/zones
 #   Returns: heart rate zones, power zones
-#   ✅ WE USE: get_zones() → stored in DB, used for TRIMP
+#   ⛔ NOT USED: get_zones() removed in Phase 12 (dead code — zones not used in TRIMP)
 
 # GET /athletes/{id}/stats
 #   Returns: recent_run_totals, ytd_run_totals, all_run_totals, etc.
