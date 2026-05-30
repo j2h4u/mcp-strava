@@ -5,6 +5,7 @@ import sys
 from dataclasses import is_dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.duckdb.connection import MirrorConn, MirrorDbLocked
@@ -45,14 +46,15 @@ def cmd_sql(args):
         return
     with MirrorConn() as conn:
         try:
-            rows = conn.execute(query).fetchall()
+            cursor = conn.execute(query)
+            rows = cursor.fetchall()
             if not rows:
                 print("No results.")
                 return
-            cols = rows[0].keys()
+            cols = [item[0] for item in cursor.description]
             header = "| " + " | ".join(cols) + " |"
             sep = "| " + " | ".join(["---"] * len(cols)) + " |"
-            body = ["| " + " | ".join(str(r[c]) for c in cols) + " |" for r in rows]
+            body = ["| " + " | ".join(str(r[i]) for i in range(len(cols))) + " |" for r in rows]
             print("\n".join([header, sep] + body))
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
@@ -125,19 +127,31 @@ def cmd_strava_raw(args):
 def cmd_log(args):
     """Show recent sync log entries."""
     limit = int(args[0]) if args else 10
+    _log_cols = (
+        "timestamp",
+        "status",
+        "activities_seen",
+        "activities_new",
+        "streams_fetched",
+        "details_fetched",
+        "kudos_fetched",
+        "api_calls",
+        "error",
+    )
     with MirrorConn() as conn:
-        rows = conn.execute(
+        raw_rows = conn.execute(
             "SELECT timestamp, status, activities_seen, activities_new, "
             "streams_fetched, details_fetched, kudos_fetched, api_calls, error "
             "FROM sync_log ORDER BY id DESC LIMIT ?",
             (limit,),
         ).fetchall()
+    rows: list[dict[str, Any]] = [dict(zip(_log_cols, row, strict=False)) for row in raw_rows]
     if not rows:
         print("No sync log entries yet.")
         return
     for r in rows:
         ok = "✓" if r["status"] == "ok" else "✗"
-        parts = [f"{r['timestamp'][:19]} {ok}"]
+        parts = [f"{str(r['timestamp'])[:19]} {ok}"]
         if r["activities_new"]:
             parts.append(f"+{r['activities_new']} new")
         if r["streams_fetched"]:
@@ -148,7 +162,7 @@ def cmd_log(args):
             parts.append(f"{r['kudos_fetched']} kudos")
         parts.append(f"{r['api_calls'] or 0} calls")
         if r["error"]:
-            parts.append(r["error"][:80])
+            parts.append(str(r["error"])[:80])
         print("  ".join(parts))
 
 

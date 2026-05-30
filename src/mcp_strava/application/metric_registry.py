@@ -7,6 +7,7 @@ derived metric. MCP tools expose filtered subsets through ``exposed_in``.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Any
 
 from mcp_strava.types import ExcludedInterpretation, MetricDefinition, StatusFactDefinition
 
@@ -1053,7 +1054,7 @@ def _agg(
     metric_version_policy: str = "mixed_degraded",
     rolling_window_days: int | None = None,
     fixed_rolling_window: bool = False,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     if mode not in AGGREGATE_MODES:
         raise ValueError(f"Unknown aggregate mode: {mode}")
     unknown_buckets = set(supported_buckets) - set(SUPPORTED_AGGREGATE_BUCKETS)
@@ -1082,7 +1083,7 @@ def _agg(
     }
 
 
-_AGGREGATE_METADATA_BY_METRIC_ID: dict[str, dict[str, object]] = {
+_AGGREGATE_METADATA_BY_METRIC_ID: dict[str, dict[str, Any]] = {
     "sport_type": _agg(
         "distribution",
         "activity_summary_fact",
@@ -1915,8 +1916,8 @@ def _status_fact(
     code: str,
     metric_id: str,
     *,
-    threshold: dict[str, object],
-    window: dict[str, object],
+    threshold: dict[str, Any],
+    window: dict[str, Any],
     evidence_keys: list[str],
     completeness_reasons: list[str],
     calculation: str,
@@ -2107,7 +2108,7 @@ def comparable_metrics(scope: str | None = None, sport_scope: str | None = None)
     return sorted(metrics, key=lambda metric: metric.metric_id)
 
 
-def metric_catalog_payload() -> dict[str, object]:
+def metric_catalog_payload() -> dict[str, Any]:
     return {
         "tool_ids": list(MCP_TOOL_IDS),
         "metrics": [

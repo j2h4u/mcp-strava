@@ -224,7 +224,7 @@ def parse_strava_streams(raw: dict) -> StravaStreams:
     )
 
 
-def parse_strava_stream_channels(raw: dict[str, object]) -> dict[str, StravaStreamChannel]:
+def parse_strava_stream_channels(raw: dict[str, Any]) -> dict[str, StravaStreamChannel]:
     """Parse raw keyed stream response and preserve every returned channel."""
     channels: dict[str, StravaStreamChannel] = {}
     for key, value in raw.items():

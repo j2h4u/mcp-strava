@@ -9,10 +9,12 @@ from mcp_strava.types import RefreshStateRow
 
 
 def evaluate_freshness(state: RefreshStateRow, now: datetime, policy: RefreshPolicy) -> str:
-    if state.lease_owner is not None and _parse_dt(state.lease_expires_at) and _parse_dt(state.lease_expires_at) > now:
+    _lease_expires = _parse_dt(state.lease_expires_at)
+    if state.lease_owner is not None and _lease_expires is not None and _lease_expires > now:
         return "refresh_in_progress"
 
-    if state.backoff_until is not None and _parse_dt(state.backoff_until) and _parse_dt(state.backoff_until) > now:
+    _backoff_until = _parse_dt(state.backoff_until)
+    if state.backoff_until is not None and _backoff_until is not None and _backoff_until > now:
         return "refresh_delayed"
 
     if state.last_status == "failed" and state.last_attempt_at:

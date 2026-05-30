@@ -268,7 +268,7 @@ def materialize_read_model_stage(
     now_iso: str,
     renew_lease: Callable[[], None] | None,
     limit: int | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     if not isinstance(repo, DuckDBRepository):
         raise TypeError(f"DuckDBRepository required, got {type(repo).__name__}")
     return materialize_duckdb_read_model(

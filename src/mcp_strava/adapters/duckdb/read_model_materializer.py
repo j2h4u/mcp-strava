@@ -3,6 +3,7 @@
 import json
 from datetime import date, datetime, timedelta
 from statistics import median
+from typing import Any
 
 from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository
 from mcp_strava.application.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
@@ -66,7 +67,7 @@ def _acwr_zone(acwr: float | None) -> str:
     return "undertrained"
 
 
-def _median_or_none(values: list[object]) -> float | None:
+def _median_or_none(values: list[Any]) -> float | None:
     numeric = [float(value) for value in values if value is not None]
     return round(float(median(numeric)), 3) if numeric else None
 
@@ -83,7 +84,7 @@ def _activity_fact(
     metric_version: int,
     computed_at: str,
     settings: Settings,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     activity_id = int(dirty_row["activity_id"])
     activity = repo.activity_by_id(activity_id)
     if activity is None:
@@ -369,7 +370,7 @@ def materialize_read_model(
     run_id: int | None = None,
     renew_lease=None,
     settings: Settings | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     del run_id
     _settings = settings or get_settings()
     athlete = _settings.athlete

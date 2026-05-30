@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from mcp_strava.adapters.duckdb.aggregate_queries import query_status_facts
 from mcp_strava.adapters.duckdb.connection import ReadConn
@@ -391,10 +392,10 @@ def get_historical_facts_service(
 
 def format_aggregate_product_bundle(
     bundle_id: str | None,
-    rows: list[dict[str, object]],
+    rows: list[dict[str, Any]],
     *,
-    read_model: dict[str, object] | None = None,
-) -> dict[str, object] | None:
+    read_model: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     if not is_product_fact_bundle(bundle_id):
         return None
     requested = tuple(metrics_for_aggregate_bundle(str(bundle_id)))
@@ -450,12 +451,12 @@ def _parse_day(value: str) -> date:
     return date.fromisoformat(value)
 
 
-def _dict_data(payload: dict[str, object]) -> dict[str, object]:
+def _dict_data(payload: dict[str, Any]) -> dict[str, Any]:
     data = payload.get("data")
     return data if isinstance(data, dict) else {}
 
 
-def _data_list(payload: dict[str, object] | ServiceEnvelope) -> list[dict[str, object]]:
+def _data_list(payload: dict[str, Any] | ServiceEnvelope) -> list[dict[str, Any]]:
     if isinstance(payload, ServiceEnvelope):
         data = payload.data
     else:
@@ -465,7 +466,7 @@ def _data_list(payload: dict[str, object] | ServiceEnvelope) -> list[dict[str, o
     return [item for item in data if isinstance(item, dict)]
 
 
-def _rows(payload: dict[str, object]) -> list[dict[str, object]]:
+def _rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     data = payload.get("data")
     if not isinstance(data, dict):
         return []
@@ -475,12 +476,12 @@ def _rows(payload: dict[str, object]) -> list[dict[str, object]]:
     return [row for row in rows if isinstance(row, dict)]
 
 
-def _filter_rows(rows: list[dict[str, object]], metric_ids: set[str]) -> list[dict[str, object]]:
+def _filter_rows(rows: list[dict[str, Any]], metric_ids: set[str]) -> list[dict[str, Any]]:
     return [row for row in rows if str(row.get("metric_id")) in metric_ids]
 
 
-def _metric_values(rows: list[dict[str, object]]) -> dict[str, object]:
-    values: dict[str, object] = {}
+def _metric_values(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    values: dict[str, Any] = {}
     for row in rows:
         metric_id = str(row.get("metric_id"))
         value = row.get("value")
@@ -493,7 +494,7 @@ def _metric_values(rows: list[dict[str, object]]) -> dict[str, object]:
     return values
 
 
-def _pick_metrics(values: dict[str, object], metric_ids: tuple[str, ...]) -> dict[str, object]:
+def _pick_metrics(values: dict[str, Any], metric_ids: tuple[str, ...]) -> dict[str, Any]:
     return {
         metric_id: values[metric_id]
         for metric_id in metric_ids
@@ -501,7 +502,7 @@ def _pick_metrics(values: dict[str, object], metric_ids: tuple[str, ...]) -> dic
     }
 
 
-def _normalise_status_fact(item) -> dict[str, object]:
+def _normalise_status_fact(item) -> dict[str, Any]:
     payload = dc_to_dict(item)
     evidence = payload.get("evidence")
     if not isinstance(evidence, dict):
@@ -525,12 +526,12 @@ def _normalise_status_fact(item) -> dict[str, object]:
 
 
 def _supported_gear_section(
-    recent_items: list[dict[str, object]],
+    recent_items: list[dict[str, Any]],
     *,
     checked_at: datetime,
     connection,
-) -> dict[str, object]:
-    items: list[dict[str, object]] = []
+) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
     for workout in recent_items:
         activity_id = workout.get("activity_id")
         if activity_id is None:
@@ -565,18 +566,18 @@ def _supported_gear_section(
 def _section(
     *,
     requested: tuple[str, ...],
-    rows: list[dict[str, object]] | None = None,
-    items: list[dict[str, object]] | None = None,
-    metrics: dict[str, object] | None = None,
-    facts: dict[str, object] | None = None,
-    periods: dict[str, object] | None = None,
-    comparison: dict[str, object] | None = None,
+    rows: list[dict[str, Any]] | None = None,
+    items: list[dict[str, Any]] | None = None,
+    metrics: dict[str, Any] | None = None,
+    facts: dict[str, Any] | None = None,
+    periods: dict[str, Any] | None = None,
+    comparison: dict[str, Any] | None = None,
     season: str | None = None,
-    current_week: dict[str, object] | None = None,
-    read_model: dict[str, object] | None = None,
+    current_week: dict[str, Any] | None = None,
+    read_model: dict[str, Any] | None = None,
     row_count: int | None = None,
-) -> dict[str, object]:
-    section: dict[str, object] = {}
+) -> dict[str, Any]:
+    section: dict[str, Any] = {}
     if rows is not None:
         section["rows"] = rows
     if items is not None:
@@ -606,10 +607,10 @@ def _section(
 def _included_metrics(
     requested: tuple[str, ...],
     *,
-    rows: list[dict[str, object]] | None,
-    items: list[dict[str, object]] | None,
-    metrics: dict[str, object] | None,
-    facts: dict[str, object] | None,
+    rows: list[dict[str, Any]] | None,
+    items: list[dict[str, Any]] | None,
+    metrics: dict[str, Any] | None,
+    facts: dict[str, Any] | None,
 ) -> set[str]:
     requested_set = set(requested)
     included: set[str] = set()
@@ -633,10 +634,10 @@ def _bundle_data(
     *,
     bundle_id: str,
     as_of_day: str | None,
-    sections: dict[str, dict[str, object]],
+    sections: dict[str, dict[str, Any]],
     requested_metrics: tuple[str, ...],
-    rows: list[dict[str, object]],
-) -> dict[str, object]:
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
     included: set[str] = set()
     for section in sections.values():
         completeness = section.get("bundle_completeness")
@@ -655,10 +656,10 @@ def _bundle_completeness(
     requested_metrics: tuple[str, ...],
     *,
     included_metrics: tuple[str, ...] = (),
-    unavailable_metrics: tuple[dict[str, object], ...] = (),
-    skipped_metrics: tuple[dict[str, object], ...] = (),
-    scope_incompatible_metrics: tuple[dict[str, object], ...] = (),
-) -> dict[str, object]:
+    unavailable_metrics: tuple[dict[str, Any], ...] = (),
+    skipped_metrics: tuple[dict[str, Any], ...] = (),
+    scope_incompatible_metrics: tuple[dict[str, Any], ...] = (),
+) -> dict[str, Any]:
     requested = tuple(metric_id for metric_id in requested_metrics if metric_id in METRIC_REGISTRY)
     included = tuple(dict.fromkeys(metric_id for metric_id in included_metrics if metric_id in requested))
     unavailable = list(unavailable_metrics)
@@ -680,7 +681,7 @@ def _bundle_completeness(
     }
 
 
-def _reason(metric_id: str, reason_code: str, *, evidence_count: int = 0) -> dict[str, object]:
+def _reason(metric_id: str, reason_code: str, *, evidence_count: int = 0) -> dict[str, Any]:
     return {
         "metric_id": metric_id,
         "reason_code": reason_code,
@@ -688,7 +689,7 @@ def _reason(metric_id: str, reason_code: str, *, evidence_count: int = 0) -> dic
     }
 
 
-def _read_model_from(*payloads: dict[str, object]) -> dict[str, object]:
+def _read_model_from(*payloads: dict[str, Any]) -> dict[str, Any]:
     for payload in payloads:
         completeness = payload.get("completeness")
         if not isinstance(completeness, dict):
@@ -710,10 +711,10 @@ def _read_model_from(*payloads: dict[str, object]) -> dict[str, object]:
 
 
 def _service_envelope(
-    data: dict[str, object],
+    data: dict[str, Any],
     primary: ServiceEnvelope,
     related: list[ServiceEnvelope],
-    read_model: dict[str, object],
+    read_model: dict[str, Any],
     requested_metrics: set[str],
 ) -> ServiceEnvelope:
     section_statuses = [_section_status(section) for section in data["sections"].values() if isinstance(section, dict)]
@@ -743,7 +744,7 @@ def _service_envelope(
     )
 
 
-def _section_status(section: dict[str, object]) -> str:
+def _section_status(section: dict[str, Any]) -> str:
     completeness = section.get("bundle_completeness")
     if not isinstance(completeness, dict):
         return "unavailable"
@@ -758,7 +759,7 @@ def _section_status(section: dict[str, object]) -> str:
     return "unavailable"
 
 
-def _overall_status(section_statuses: list[str], read_model: dict[str, object]) -> str:
+def _overall_status(section_statuses: list[str], read_model: dict[str, Any]) -> str:
     if read_model.get("status") == "stale":
         return "stale"
     if not section_statuses or all(status == "unavailable" for status in section_statuses):
@@ -768,7 +769,7 @@ def _overall_status(section_statuses: list[str], read_model: dict[str, object]) 
     return "complete"
 
 
-def _missing_reasons(data: dict[str, object]) -> set[str]:
+def _missing_reasons(data: dict[str, Any]) -> set[str]:
     missing: set[str] = set()
     sections = data.get("sections")
     if not isinstance(sections, dict):

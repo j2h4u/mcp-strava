@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from mcp_strava.adapters.duckdb.aggregate_queries import (
     AggregateRequest,
@@ -127,9 +128,9 @@ def get_training_aggregates_service(
 
 def _product_bundle_payload(
     bundle_id: str | None,
-    rows: list[dict[str, object]],
-    read_model: dict[str, object],
-) -> dict[str, object] | None:
+    rows: list[dict[str, Any]],
+    read_model: dict[str, Any],
+) -> dict[str, Any] | None:
     if bundle_id is None:
         return None
     from mcp_strava.application.product_facts import format_aggregate_product_bundle
@@ -137,7 +138,7 @@ def _product_bundle_payload(
     return format_aggregate_product_bundle(bundle_id, rows, read_model=read_model)
 
 
-def _request_payload(request: AggregateServiceRequest) -> dict[str, object]:
+def _request_payload(request: AggregateServiceRequest) -> dict[str, Any]:
     return {
         "metric_ids": list(request.metric_ids),
         "bundle_id": request.bundle_id,
@@ -152,7 +153,7 @@ def _request_payload(request: AggregateServiceRequest) -> dict[str, object]:
     }
 
 
-def _payload_completeness(row_statuses: list[str], read_model: dict[str, object]) -> str:
+def _payload_completeness(row_statuses: list[str], read_model: dict[str, Any]) -> str:
     if not row_statuses:
         return "unavailable"
     if read_model.get("status") != "current":
@@ -168,7 +169,7 @@ def _payload_completeness(row_statuses: list[str], read_model: dict[str, object]
 
 def _warnings_for_aggregate_payload(
     row_statuses: list[str],
-    read_model: dict[str, object],
+    read_model: dict[str, Any],
 ) -> list[ServiceWarning]:
     warnings: list[ServiceWarning] = []
     if read_model.get("status") != "current":

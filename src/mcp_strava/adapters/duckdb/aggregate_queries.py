@@ -906,7 +906,7 @@ def _query_hr_zone_distribution(
     return rows
 
 
-def _rows(result) -> list[dict[str, object]]:
+def _rows(result) -> list[dict[str, Any]]:
     columns = [item[0] for item in result.description]
     return [dict(zip(columns, row, strict=False)) for row in result.fetchall()]
 
@@ -1016,7 +1016,7 @@ def _aggregate_row_from_group(
     request: AggregateRequest,
     effective_start: date,
     effective_end: date,
-    row: dict[str, object],
+    row: dict[str, Any],
 ) -> AggregateRow:
     bucket_start = _to_iso(row["bucket_start"])
     bucket_end = _bucket_end(bucket_start, request, effective_end)
@@ -1066,7 +1066,7 @@ def _aggregate_row_from_group(
     )
 
 
-def _aggregate_value(metric: MetricDefinition, row: dict[str, object]) -> float | int | str | None:
+def _aggregate_value(metric: MetricDefinition, row: dict[str, Any]) -> float | int | str | None:
     if metric.aggregate_mode == "distribution":
         return None
     value = row.get("value")
@@ -1077,7 +1077,7 @@ def _aggregate_value(metric: MetricDefinition, row: dict[str, object]) -> float 
     return float(value)
 
 
-def _quantiles(metric: MetricDefinition, row: dict[str, object]) -> dict[str, float] | None:
+def _quantiles(metric: MetricDefinition, row: dict[str, Any]) -> dict[str, float] | None:
     if metric.aggregate_mode != "quantile":
         return None
     value = row.get("value")
@@ -1089,7 +1089,7 @@ def _quantiles(metric: MetricDefinition, row: dict[str, object]) -> dict[str, fl
     return _quantiles_from_group(row)
 
 
-def _quantiles_from_group(row: dict[str, object]) -> dict[str, float] | None:
+def _quantiles_from_group(row: dict[str, Any]) -> dict[str, float] | None:
     # The quantile list is fetched by a focused follow-up query to keep the row contract stable.
     values = row.get("quantile_values")
     if not values:
@@ -1100,7 +1100,7 @@ def _quantiles_from_group(row: dict[str, object]) -> dict[str, float] | None:
     return {label: float(value) for label, value in zip(_QUANTILE_LABELS, values, strict=False)}
 
 
-def _missing_reasons(row: dict[str, object]) -> list[str]:
+def _missing_reasons(row: dict[str, Any]) -> list[str]:
     reasons: list[str] = []
     for payload in row.get("missing_reason_payloads") or []:
         if payload is None:

@@ -3,6 +3,7 @@
 import threading
 from pathlib import Path
 from threading import RLock
+from typing import Any
 
 import duckdb
 
@@ -78,7 +79,7 @@ class MirrorConn:
 _thread_state = threading.local()
 
 
-def _thread_read_connections() -> dict[str, object]:
+def _thread_read_connections() -> dict[str, Any]:
     connections = getattr(_thread_state, "read_connections", None)
     if connections is None:
         connections = {}

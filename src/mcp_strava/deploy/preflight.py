@@ -6,6 +6,7 @@ import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from mcp_strava.adapters.duckdb.connection import open_expected_mirror_db as open_expected_duckdb
 from mcp_strava.adapters.duckdb.schema import DUCKDB_TABLES
@@ -36,7 +37,7 @@ def _duckdb_table_exists(conn, table: str) -> bool:
     )
 
 
-def _duckdb_read_model_readiness(conn) -> dict[str, object]:
+def _duckdb_read_model_readiness(conn) -> dict[str, Any]:
     missing_tables = [
         table
         for table in (
@@ -70,7 +71,7 @@ def _duckdb_read_model_readiness(conn) -> dict[str, object]:
     }
 
 
-def _duckdb_refresh_state(conn) -> dict[str, object]:
+def _duckdb_refresh_state(conn) -> dict[str, Any]:
     row = conn.execute(
         """
         SELECT lease_owner, lease_expires_at, last_status, checkpoint_stage
@@ -89,7 +90,7 @@ def _duckdb_refresh_state(conn) -> dict[str, object]:
     return dict(zip(columns, row, strict=False))
 
 
-def _lease_active(refresh_state: dict[str, object]) -> bool:
+def _lease_active(refresh_state: dict[str, Any]) -> bool:
     owner = refresh_state.get("lease_owner")
     expires_at = refresh_state.get("lease_expires_at")
     if owner is None:
@@ -107,7 +108,7 @@ def _validate_duckdb_runtime_db(
     *,
     quick: bool = False,
     allow_active_refresh_lease: bool = False,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     with open_expected_duckdb(path) as conn:
         missing = [table for table in DUCKDB_TABLES if not _duckdb_table_exists(conn, table)]
         if missing:
@@ -115,7 +116,9 @@ def _validate_duckdb_runtime_db(
         refresh_state = _duckdb_refresh_state(conn)
         if _lease_active(refresh_state) and not allow_active_refresh_lease:
             raise RuntimeError(f"active refresh lease blocks DuckDB startup: {refresh_state.get('lease_owner')}")
-        activity_count = int(conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0])
+        _count_row = conn.execute("SELECT COUNT(*) FROM activities").fetchone()
+        assert _count_row is not None, "COUNT(*) always returns a row"
+        activity_count = int(_count_row[0])
         if quick:
             return {
                 "path": str(path),
@@ -137,7 +140,7 @@ def validate_runtime_db(
     *,
     quick: bool = False,
     allow_active_refresh_lease: bool = False,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Validate runtime DB structure.
 
     DuckDB runtime validation is an offline startup gate. Live health checks use

@@ -250,7 +250,7 @@ async def execute_script_steps(
 
 async def verify_tool_surface(client: StdioMcpClient | HttpMcpClient) -> list[str]:
     tools = await client.list_tools()
-    tool_names = {tool.get("name") for tool in tools if isinstance(tool, dict)}
+    tool_names = {name for tool in tools if isinstance(tool, dict) and (name := tool.get("name")) is not None}
     missing = sorted(EXPECTED_TOOL_NAMES - tool_names)
     unexpected = sorted(tool_names - EXPECTED_TOOL_NAMES)
     if missing or unexpected:

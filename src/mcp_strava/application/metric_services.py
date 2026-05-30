@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from mcp_strava.adapters.duckdb.connection import ReadConn
 from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository
@@ -97,8 +98,8 @@ ROLLING_FACTS = {
 }
 
 
-def _project_fitness_state_metrics(model, rolling: dict[int, object]) -> dict[str, object]:
-    data: dict[str, object] = {}
+def _project_fitness_state_metrics(model, rolling: dict[int, Any]) -> dict[str, Any]:
+    data: dict[str, Any] = {}
     if model is not None:
         for metric_id, column in MODEL_FACTS.items():
             _metric_if_registered(data, metric_id, model[column])
@@ -117,7 +118,7 @@ def _policy() -> RefreshPolicy:
     return RefreshPolicy.from_settings(get_settings())
 
 
-def _metric_if_registered(payload: dict[str, object], metric_id: str, value) -> None:
+def _metric_if_registered(payload: dict[str, Any], metric_id: str, value) -> None:
     if metric_id in METRIC_REGISTRY:
         payload[metric_id] = value
 
@@ -140,7 +141,7 @@ def _parse_json_list(value) -> list[str]:
     return [str(item) for item in parsed]
 
 
-def _json_object_from_row(row, key: str) -> dict[str, object]:
+def _json_object_from_row(row, key: str) -> dict[str, Any]:
     raw = _row_get(row, key)
     if not raw:
         return {}
@@ -151,15 +152,15 @@ def _json_object_from_row(row, key: str) -> dict[str, object]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _summary_json(row) -> dict[str, object]:
+def _summary_json(row) -> dict[str, Any]:
     return _json_object_from_row(row, "summary_json")
 
 
-def _detail_json(row) -> dict[str, object]:
+def _detail_json(row) -> dict[str, Any]:
     return _json_object_from_row(row, "detail_json")
 
 
-def _kudos_count(summary: dict[str, object]) -> int:
+def _kudos_count(summary: dict[str, Any]) -> int:
     value = summary.get("kudos_count")
     try:
         return int(value) if value is not None else 0
@@ -182,19 +183,17 @@ def _next_day(day: str) -> str:
     return (date.fromisoformat(day) + timedelta(days=1)).isoformat()
 
 
-def _read_model_status(repo) -> dict[str, object]:
+def _read_model_status(repo) -> dict[str, Any]:
     return repo.read_model_status(metric_version=CURRENT_METRIC_VERSION)
 
 
-def _coverage_with_read_model(
-    read_model: dict[str, object], extra: dict[str, object] | None = None
-) -> dict[str, object]:
+def _coverage_with_read_model(read_model: dict[str, Any], extra: dict[str, Any] | None = None) -> dict[str, Any]:
     coverage = dict(extra or {})
     coverage["read_model"] = read_model
     return coverage
 
 
-def _status_from_read_model(read_model: dict[str, object], *, has_data: bool, missing: list[str]) -> str:
+def _status_from_read_model(read_model: dict[str, Any], *, has_data: bool, missing: list[str]) -> str:
     if not has_data:
         return "unavailable"
     if read_model.get("status") == "stale":
@@ -208,7 +207,7 @@ def _rationale(message: str) -> list[ServiceRationale]:
     return [ServiceRationale(code="metric_bundle_from_read_model", message=message)]
 
 
-def _fact_status(row) -> dict[str, object]:
+def _fact_status(row) -> dict[str, Any]:
     missing = _parse_json_list(row["missing_reasons_json"])
     return {
         "status": row["completeness_status"],
@@ -252,9 +251,10 @@ def _activity_value(row, metric_id: str):
     return round(float(value) * float(scale), 3)
 
 
-def _gear_payload(row, summary: dict[str, object]) -> dict[str, object]:
+def _gear_payload(row, summary: dict[str, Any]) -> dict[str, Any]:
     detail = _detail_json(row)
-    gear = detail.get("gear") if isinstance(detail.get("gear"), dict) else {}
+    _gear_raw = detail.get("gear")
+    gear: dict[str, Any] = _gear_raw if isinstance(_gear_raw, dict) else {}
     gear_id = summary.get("gear_id") or detail.get("gear_id") or gear.get("id")
     distance_m = gear.get("distance") or gear.get("converted_distance")
     try:
@@ -275,7 +275,7 @@ def _activity_payload(
     *,
     kudos_names: list[str] | None = None,
     include_detail_context: bool = False,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     summary = _summary_json(row)
     payload = {
         "activity_id": int(row["activity_id"]),
@@ -488,6 +488,7 @@ def get_workout_detail_service(
                 rationale=_rationale("Workout detail requested from materialized activity facts."),
             )
 
+        assert resolved_id is not None, "row is non-None only when resolved_id is non-None"
         data = _activity_payload(
             row,
             kudos_names=_kudos_names(repo.kudos_for_activity(resolved_id)),
@@ -526,13 +527,13 @@ def get_workout_detail_service(
     )
 
 
-def _aggregate_rows(envelope: ServiceEnvelope) -> list[dict[str, object]]:
+def _aggregate_rows(envelope: ServiceEnvelope) -> list[dict[str, Any]]:
     data = envelope.data if isinstance(envelope.data, dict) else {}
     rows = data.get("rows", [])
     return [row for row in rows if isinstance(row, dict)]
 
 
-def _compare_row_key(row: dict[str, object]) -> tuple[str, str | None, str]:
+def _compare_row_key(row: dict[str, Any]) -> tuple[str, str | None, str]:
     scope = str(row.get("scope") or "global")
     metric_id = str(row["metric_id"])
     if scope == "per_sport":
@@ -540,30 +541,30 @@ def _compare_row_key(row: dict[str, object]) -> tuple[str, str | None, str]:
     return "global", None, metric_id
 
 
-def _compare_rows_by_key(rows: list[dict[str, object]]) -> dict[tuple[str, str | None, str], dict[str, object]]:
+def _compare_rows_by_key(rows: list[dict[str, Any]]) -> dict[tuple[str, str | None, str], dict[str, Any]]:
     return {_compare_row_key(row): row for row in rows}
 
 
-def _row_missing_reasons(row: dict[str, object] | None) -> list[str]:
+def _row_missing_reasons(row: dict[str, Any] | None) -> list[str]:
     if row is None:
         return ["no_activity_in_period"]
     reasons = row.get("missing_reasons") or []
     return [str(reason) for reason in reasons if reason]
 
 
-def _row_sample_size(row: dict[str, object] | None) -> int:
+def _row_sample_size(row: dict[str, Any] | None) -> int:
     if row is None:
         return 0
     return int(row.get("sample_size") or 0)
 
 
-def _row_activity_count(row: dict[str, object] | None) -> int:
+def _row_activity_count(row: dict[str, Any] | None) -> int:
     if row is None:
         return 0
     return int(row.get("activity_count") or 0)
 
 
-def _coverage_value(row: dict[str, object] | None) -> float:
+def _coverage_value(row: dict[str, Any] | None) -> float:
     if row is None or str(row.get("completeness_status")) == "unavailable":
         return 0.0
     if str(row.get("completeness_status")) == "partial":
@@ -571,8 +572,8 @@ def _coverage_value(row: dict[str, object] | None) -> float:
     return 1.0
 
 
-def _period_record(row: dict[str, object] | None) -> dict[str, object]:
-    payload: dict[str, object] = {
+def _period_record(row: dict[str, Any] | None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "sample_size": _row_sample_size(row),
         "activity_count": _row_activity_count(row),
         "completeness_status": str(row.get("completeness_status")) if row is not None else "unavailable",
@@ -589,7 +590,7 @@ def _period_record(row: dict[str, object] | None) -> dict[str, object]:
     return payload
 
 
-def _metric_version_status(row_a: dict[str, object] | None, row_b: dict[str, object] | None) -> str:
+def _metric_version_status(row_a: dict[str, Any] | None, row_b: dict[str, Any] | None) -> str:
     statuses = {
         str(row.get("metric_version_status"))
         for row in (row_a, row_b)
@@ -607,11 +608,13 @@ def _metric_version_status(row_a: dict[str, object] | None, row_b: dict[str, obj
 
 
 def _distribution_delta(
-    row_a: dict[str, object] | None,
-    row_b: dict[str, object] | None,
+    row_a: dict[str, Any] | None,
+    row_b: dict[str, Any] | None,
 ) -> tuple[dict[str, float], dict[str, float | None], float | None]:
-    buckets_a = row_a.get("distribution") if row_a is not None and isinstance(row_a.get("distribution"), dict) else {}
-    buckets_b = row_b.get("distribution") if row_b is not None and isinstance(row_b.get("distribution"), dict) else {}
+    _dist_a = row_a.get("distribution") if row_a is not None else None
+    _dist_b = row_b.get("distribution") if row_b is not None else None
+    buckets_a: dict[str, Any] = _dist_a if isinstance(_dist_a, dict) else {}
+    buckets_b: dict[str, Any] = _dist_b if isinstance(_dist_b, dict) else {}
     keys = sorted(set(buckets_a) | set(buckets_b))
     deltas: dict[str, float] = {}
     delta_pct: dict[str, float | None] = {}
@@ -636,7 +639,7 @@ def _distribution_delta(
     return deltas, delta_pct, overlap
 
 
-def _compare_aggregate_pair(row_a: dict[str, object] | None, row_b: dict[str, object] | None) -> dict[str, object]:
+def _compare_aggregate_pair(row_a: dict[str, Any] | None, row_b: dict[str, Any] | None) -> dict[str, Any]:
     period_a = _period_record(row_a)
     period_b = _period_record(row_b)
     missing = sorted(set(_row_missing_reasons(row_a) + _row_missing_reasons(row_b)))
@@ -661,15 +664,19 @@ def _compare_aggregate_pair(row_a: dict[str, object] | None, row_b: dict[str, ob
 
     value_a = period_a.get("value")
     value_b = period_b.get("value")
-    delta = round(float(value_a) - float(value_b), 3) if _is_number(value_a) and _is_number(value_b) else None
-    delta_pct = (
-        round((delta / float(value_b)) * 100, 2)
-        if _is_number(delta) and _is_number(value_b) and float(value_b) != 0
+    delta: float | None = (
+        round(float(value_a) - float(value_b), 3)  # type: ignore[arg-type]
+        if _is_number(value_a) and _is_number(value_b)
+        else None
+    )
+    delta_pct: float | None = (
+        round((delta / float(value_b)) * 100, 2)  # type: ignore[arg-type]
+        if _is_number(delta) and _is_number(value_b) and float(value_b) != 0  # type: ignore[arg-type]
         else None
     )
     trend = "unavailable"
-    if _is_number(delta):
-        trend = "flat" if abs(float(delta)) < 1e-9 else ("up" if float(delta) > 0 else "down")
+    if delta is not None:
+        trend = "flat" if abs(delta) < 1e-9 else ("up" if delta > 0 else "down")
     return {
         "period_a": period_a,
         "period_b": period_b,
@@ -738,7 +745,7 @@ def compare_periods_service(
     period_b_by_key = _compare_rows_by_key(_aggregate_rows(period_b_envelope))
     keys = sorted(set(period_a_by_key) | set(period_b_by_key))
     global_section = {"scope_filter": "sport" if sport else "all", "metrics": {}}
-    per_sport_section: dict[str, dict[str, object]] = {}
+    per_sport_section: dict[str, dict[str, Any]] = {}
     for scope, sport_name, metric_id in keys:
         comparison = _compare_aggregate_pair(
             period_a_by_key.get((scope, sport_name, metric_id)), period_b_by_key.get((scope, sport_name, metric_id))
@@ -813,8 +820,8 @@ def _comparison_completeness_status(
     period_a_status: str,
     period_b_status: str,
     *,
-    period_a_read_model: dict[str, object],
-    period_b_read_model: dict[str, object],
+    period_a_read_model: dict[str, Any],
+    period_b_read_model: dict[str, Any],
     has_data: bool,
 ) -> str:
     if not has_data:
@@ -869,7 +876,7 @@ def _scenario_trimps(
     today_day: date,
     history_daily_trimp: dict[str, float],
     custom_daily_trimp,
-) -> tuple[list[float], dict[str, object]]:
+) -> tuple[list[float], dict[str, Any]]:
     if scenario == "rest":
         return [0.0 for _ in days], {"template_source": "rest_zero_load"}
     if scenario == "easy":
@@ -935,7 +942,7 @@ def project_fitness_state_service(
     baseline_fitness = float(baseline["fitness"] or 0.0) if baseline is not None else 0.0
     baseline_fatigue = float(baseline["fatigue"] or 0.0) if baseline is not None else 0.0
     missing = [] if baseline is not None else ["read_model_unavailable"]
-    scenario_payload: dict[str, dict[str, object]] = {}
+    scenario_payload: dict[str, dict[str, Any]] = {}
     for scenario in scenarios:
         trimps, assumptions = _scenario_trimps(
             scenario=scenario,
@@ -962,7 +969,7 @@ def project_fitness_state_service(
             }
             for index, row in enumerate(sim)
         ]
-        metadata: dict[str, object] = {"missing_reasons": []}
+        metadata: dict[str, Any] = {"missing_reasons": []}
         if target_day.weekday() in {4, 5, 6}:
             monday = target_day + timedelta(days=(7 - target_day.weekday()))
             monday_sim = forward_simulate(
