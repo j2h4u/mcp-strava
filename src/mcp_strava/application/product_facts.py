@@ -11,6 +11,7 @@ from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 
 from mcp_strava.adapters.duckdb.aggregate_queries import query_status_facts
+from mcp_strava.adapters.duckdb.connection import ReadConn
 from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
     get_training_aggregates_service,
@@ -27,7 +28,6 @@ from mcp_strava.application.metric_services import (
     get_workout_detail_service,
     list_workouts_service,
 )
-from mcp_strava.adapters.duckdb.connection import ReadConn
 from mcp_strava.types import (
     CompletenessMetadata,
     ServiceEnvelope,

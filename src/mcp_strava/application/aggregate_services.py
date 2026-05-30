@@ -11,9 +11,9 @@ from mcp_strava.adapters.duckdb.aggregate_queries import (
     query_training_aggregates,
     validate_aggregate_request,
 )
-from mcp_strava.application.freshness import build_freshness_metadata
 from mcp_strava.adapters.duckdb.connection import ReadConn
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.application.freshness import build_freshness_metadata
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
 from mcp_strava.types import (

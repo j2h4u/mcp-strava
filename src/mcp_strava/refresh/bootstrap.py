@@ -8,7 +8,7 @@ from mcp_strava.adapters.duckdb.connection import MirrorConn
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.strava import SystemClock, SystemSleeper, _build_strava_transport
 from mcp_strava.refresh.policy import RefreshPolicy
-from mcp_strava.settings import Settings, get_settings, required_strava_client_creds
+from mcp_strava.settings import Settings, get_settings
 
 # Backward-compat aliases — cli.py imports these via sync.py through wave 3.
 # Remove once cli.py migrates to SystemClock/SystemSleeper in 12-04.

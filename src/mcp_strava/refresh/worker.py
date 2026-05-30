@@ -12,9 +12,8 @@ from datetime import datetime
 from threading import Event
 
 import mcp_strava.refresh.runtime as refresh_runtime
-from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION
 from mcp_strava.adapters.duckdb.connection import MirrorConn
-from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository
 from mcp_strava.maintenance.compact import storage_stats
 from mcp_strava.refresh import RefreshSkipped, Stage, _sync_ops, health
 from mcp_strava.refresh.bootstrap import (
@@ -291,4 +290,4 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except KeyboardInterrupt:
         print("refresh worker interrupted", file=sys.stderr)
-        raise SystemExit(130)
+        raise SystemExit(130) from None

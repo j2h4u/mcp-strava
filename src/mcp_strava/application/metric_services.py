@@ -6,7 +6,8 @@ import json
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 
-from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION
+from mcp_strava.adapters.duckdb.connection import ReadConn
+from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository
 from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
     get_training_aggregates_service,
@@ -14,8 +15,6 @@ from mcp_strava.application.aggregate_services import (
 from mcp_strava.application.freshness import build_freshness_metadata
 from mcp_strava.application.metric_registry import METRIC_REGISTRY
 from mcp_strava.constants import Config
-from mcp_strava.adapters.duckdb.connection import ReadConn
-from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
 from mcp_strava.training import forward_simulate
