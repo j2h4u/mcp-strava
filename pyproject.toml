@@ -45,3 +45,4 @@ quote-style = "double"
 [tool.pyright]
 include = ["src"]
 pythonVersion = "3.14"
+typeCheckingMode = "standard"
