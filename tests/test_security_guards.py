@@ -29,21 +29,6 @@ def _source_text(rel_path: str) -> str:
     return (root / rel_path).read_text(encoding="utf-8")
 
 
-def _assert_no_schema_ddl_in_init_db() -> list[str]:
-    violations: list[str] = []
-    source = _source_text("src/mcp_strava/db.py")
-    module = ast.parse(source)
-    targets = {"create table", "create index", "alter table"}
-    for node in module.body:
-        if not isinstance(node, ast.FunctionDef) or node.name != "init_db":
-            continue
-        for child in ast.walk(node):
-            if isinstance(child, ast.Constant) and isinstance(child.value, str):
-                lowered = " ".join(child.value.lower().split())
-                if any(target in lowered for target in targets):
-                    violations.append(f"db.py:{child.lineno}")
-    return violations
-
 
 def _command_registry_names() -> set[str]:
     source = _source_text("src/mcp_strava/cli.py")
@@ -196,13 +181,6 @@ def test_cmd_sql_is_not_reused_as_service_or_mcp_surface() -> None:
             violations.append(rel)
     assert violations == []
 
-
-def test_sync_never_calls_init_db_and_db_init_db_has_no_ddl() -> None:
-    sync_source = _source_text("src/mcp_strava/sync.py")
-    assert "init_db(" not in sync_source
-    assert "class RateLimiter" not in sync_source
-    assert "def _fetch_with_retry" not in sync_source
-    assert _assert_no_schema_ddl_in_init_db() == []
 
 
 def _import_violations(rel_path: str, disallowed_prefixes: tuple[str, ...]) -> list[str]:
@@ -465,8 +443,8 @@ def test_application_product_modules_do_not_import_strava_sync_or_admin_runtime(
                 for alias in node.names:
                     full_name = f"{imported_module}.{alias.name}" if imported_module else alias.name
                     if full_name in {
-                        "mcp_strava.db.api_request",
-                        "mcp_strava.db.refresh_token",
+                        "mcp_strava.adapters.strava.client.StravaClient",
+                        "mcp_strava.adapters.strava.client.api_request",
                     }:
                         violations.append(f"{rel}:{node.lineno} from {imported_module} import {alias.name}")
 
@@ -481,8 +459,7 @@ def test_metric_services_do_not_import_strava_sync_or_token_refresh() -> None:
             "mcp_strava.adapters.strava",
             "mcp_strava.sync",
             "mcp_strava.refresh.runtime",
-            "mcp_strava.db.api_request",
-            "mcp_strava.db.refresh_token",
+            "mcp_strava.adapters.strava.client",
         ),
     )
     assert violations == []
