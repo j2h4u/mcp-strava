@@ -13,7 +13,8 @@ from threading import Event
 
 import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION
-from mcp_strava.db import DbConn, repository_from_connection
+from mcp_strava.adapters.duckdb.connection import MirrorConn
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.maintenance.compact import storage_stats
 from mcp_strava.refresh import RefreshSkipped, Stage, _sync_ops, health
 from mcp_strava.refresh.bootstrap import (
@@ -58,8 +59,8 @@ def _stream_channel_backfill_due(state) -> bool:
 
 
 def _materialize_dirty_read_model(batch_size: int) -> int:
-    with DbConn() as conn:
-        repo = repository_from_connection(conn)
+    with MirrorConn() as conn:
+        repo = DuckDBRepository.from_connection(conn)
         status = repo.read_model_status(metric_version=CURRENT_METRIC_VERSION)
         dirty_count = int(status.get("dirty_count") or 0)
         if dirty_count == 0:
@@ -103,7 +104,7 @@ def _emit_mirror_storage() -> None:
     """
     global _prev_free_blocks
     try:
-        with DbConn() as conn:
+        with MirrorConn() as conn:
             stats = storage_stats(conn)
     except Exception as exc:  # noqa: BLE001
         _emit("mirror_storage_error", error_type=type(exc).__name__, error=str(exc)[:200])
@@ -131,8 +132,8 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> int:
 
     refresh_policy = RefreshPolicy.from_settings(settings)
 
-    with DbConn() as conn:
-        repo = repository_from_connection(conn)
+    with MirrorConn() as conn:
+        repo = DuckDBRepository.from_connection(conn)
         state = repo.get_refresh_state()
         pending_count = len(repo.pending_refresh_requests())
         blocked_reason = _refresh_blocked_reason(state, now_iso)
@@ -155,8 +156,8 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> int:
         _emit("refresh_failed", reason="refresh_misconfigured", pending_requests=pending_count)
         return 1
 
-    with DbConn() as conn:
-        repo = repository_from_connection(conn)
+    with MirrorConn() as conn:
+        repo = DuckDBRepository.from_connection(conn)
         pending_count = len(repo.pending_refresh_requests())
         state = repo.get_refresh_state()
         stream_backfill_due = _stream_channel_backfill_due(state)

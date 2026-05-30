@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import mcp_strava.refresh.runtime as refresh_runtime
+from mcp_strava.adapters.duckdb.connection import MirrorConn
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-from mcp_strava.db import DbConn
 from mcp_strava.refresh.bootstrap import (
     RealClock,
     RealSleeper,
@@ -27,7 +27,7 @@ def sync_activities(quick: bool = False):
     settings = get_settings()
     ensure_runtime_refresh_schema(settings)
     _, clock, sleeper, transport, refresh_policy = build_refresh_collaborators(settings)
-    with DbConn() as conn:
+    with MirrorConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
         return refresh_runtime.run_once(
             repo,
@@ -45,7 +45,7 @@ def backfill_activities(since: str | None = None):
     settings = get_settings()
     ensure_runtime_refresh_schema(settings)
     _, clock, sleeper, transport, refresh_policy = build_refresh_collaborators(settings)
-    with DbConn() as conn:
+    with MirrorConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
         return refresh_runtime.run_catchup(
             repo,
