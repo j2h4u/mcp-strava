@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: executing
-last_updated: "2026-05-30T10:39:09.571Z"
+status: verifying
+last_updated: "2026-05-30T11:01:06.013Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 13
-  completed_phases: 11
+  completed_phases: 12
   total_plans: 53
-  completed_plans: 52
-  percent: 85
+  completed_plans: 53
+  percent: 92
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 Phase: 12 (decouple-db-py-into-focused-modules) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-30
 
 ## Performance Metrics
@@ -97,6 +97,7 @@ Last activity: 2026-05-30
 | Phase 12 P02 | 7 | 3 tasks | 5 files |
 | Phase 12 P03 | 8 | 4 tasks | 13 files |
 | Phase 12-decouple-db-py-into-focused-modules P04 | 9 | 3 tasks | 8 files |
+| Phase 12-decouple-db-py-into-focused-modules P05 | 20 | 2 tasks | 29 files |
 
 ## Accumulated Context
 
@@ -185,6 +186,7 @@ Recent decisions affecting current work:
 - [Phase ?]: Single _build_strava_transport helper shared by StravaClient and build_refresh_collaborators
 - [Phase ?]: StravaClient.api_request drops token= param (GP-02: zero live callers)
 - [Phase ?]: RealClock/RealSleeper wave-3 compat aliases removed; cli.py fully migrated to MirrorConn/DuckDBRepository/StravaClient/SystemClock/SystemSleeper; init_db DDL guard removed
+- [Phase ?]: constants.py re-export block uses noqa: E402,F401,I001 — ruff --fix is destructive on aliased re-exports at module tail
 
 ### Roadmap Evolution
 
@@ -215,7 +217,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-30T10:39:09.557Z
+Last session: 2026-05-30T11:01:01.010Z
 Stopped at: context exhaustion at 79% (2026-05-30)
 Resume file: None
 
