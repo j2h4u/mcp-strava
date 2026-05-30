@@ -179,10 +179,10 @@ def _install_product_service_spies(monkeypatch: pytest.MonkeyPatch) -> dict[str,
     monkeypatch.setattr(cli, "get_workout_analytics_service", forbidden, raising=False)
     monkeypatch.setattr(cli, "daily_report", forbidden, raising=False)
     monkeypatch.setattr(cli, "weekly_digest", forbidden, raising=False)
-    monkeypatch.setattr(cli, "api_request", forbidden, raising=False)
+    monkeypatch.setattr(cli, "StravaClient", forbidden)
     monkeypatch.setattr(cli, "sync_activities", forbidden, raising=False)
     monkeypatch.setattr(cli, "backfill_activities", forbidden, raising=False)
-    monkeypatch.setattr(cli, "DbConn", forbidden, raising=False)
+    monkeypatch.setattr(cli, "MirrorConn", forbidden)
     return calls
 
 

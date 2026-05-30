@@ -345,13 +345,13 @@ def test_repository_module_does_not_call_strava_network(monkeypatch: pytest.Monk
     fixture = tmp_path / "repo.duckdb"
     create_empty_fixture_db(fixture)
 
-    import mcp_strava.db as legacy_db
+    import mcp_strava.adapters.strava.client as strava_client
 
     def _boom(*_args, **_kwargs):
         raise AssertionError("network auth/api must not be touched by repository tests")
 
-    monkeypatch.setattr(legacy_db, "api_request", _boom)
-    monkeypatch.setattr(legacy_db, "refresh_token", _boom)
+    monkeypatch.setattr(strava_client.StravaClient, "api_request", _boom)
+    monkeypatch.setattr(strava_client.StravaClient, "refresh_token", _boom)
 
     with DuckDBRepository.from_path(fixture) as repo:
         repo.recent_activities(limit=1)
@@ -366,7 +366,7 @@ def test_runtime_dbconn_and_repository_factory_route_duckdb_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mcp_strava.db import DbConn, repository_from_connection
+    from mcp_strava.adapters.duckdb.connection import MirrorConn
     from mcp_strava.settings import reset_settings_cache
 
     fixture = tmp_path / "strava.duckdb"
@@ -375,8 +375,8 @@ def test_runtime_dbconn_and_repository_factory_route_duckdb_paths(
     monkeypatch.setenv("MCP_STRAVA_DB_PATH", str(fixture))
     reset_settings_cache()
     try:
-        with DbConn() as conn:
-            repo = repository_from_connection(conn)
+        with MirrorConn() as conn:
+            repo = DuckDBRepository.from_connection(conn)
             assert isinstance(repo, DuckDBRepository)
             assert conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0] == 0
     finally:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_strava.db import DbConn
+from mcp_strava.adapters.duckdb.connection import MirrorConn
 from mcp_strava.settings import reset_settings_cache
 
 
@@ -45,7 +45,7 @@ def test_found02_dbconn_fails_closed_for_missing_expected_db(tmp_path: Path, mon
 
     try:
         with pytest.raises(Exception):
-            with DbConn():
+            with MirrorConn():
                 pass
     finally:
         reset_settings_cache()
