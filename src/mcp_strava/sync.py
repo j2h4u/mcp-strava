@@ -6,16 +6,12 @@ import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.duckdb.connection import MirrorConn
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.refresh.bootstrap import (
-    RealClock,
-    RealSleeper,
     build_refresh_collaborators,
     ensure_runtime_refresh_schema,
 )
 from mcp_strava.settings import get_settings
 
 __all__ = [
-    "RealClock",
-    "RealSleeper",
     "backfill_activities",
     "build_refresh_collaborators",
     "sync_activities",

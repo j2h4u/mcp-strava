@@ -12,15 +12,14 @@ from mcp_strava.application.freshness import get_freshness_service
 from mcp_strava.application.metric_services import get_workout_detail_service, list_workouts_service
 from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
 from mcp_strava.application.product_facts import get_daily_brief_facts_service, get_weekly_digest_facts_service
-from mcp_strava.db import DbConn, refresh_token, repository_from_connection, repository_from_path
+from mcp_strava.adapters.duckdb.connection import MirrorConn
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.strava.client import StravaClient
+from mcp_strava.adapters.strava.clock import SystemClock, SystemSleeper
 from mcp_strava.deploy.preflight import validate_runtime_db
 from mcp_strava.maintenance.compact import compact_database
 from mcp_strava.refresh import RefreshPolicy, RefreshSkipped
-from mcp_strava.refresh.bootstrap import (
-    RealClock,
-    RealSleeper,
-    build_refresh_collaborators,
-)
+from mcp_strava.refresh.bootstrap import build_refresh_collaborators
 from mcp_strava.settings import get_settings
 from mcp_strava.sync import (
     backfill_activities,
@@ -45,7 +44,7 @@ def cmd_sql(args):
     if not query:
         print('Usage: sql "SELECT ..."', file=sys.stderr)
         return
-    with DbConn() as conn:
+    with MirrorConn() as conn:
         try:
             rows = conn.execute(query).fetchall()
             if not rows:
@@ -61,7 +60,7 @@ def cmd_sql(args):
 
 
 def cmd_refresh(args):
-    token = refresh_token()
+    token = StravaClient().refresh_token()
     print(json.dumps({"status": "ok", "token": token[:10] + "..."}))
 
 
@@ -119,17 +118,15 @@ def cmd_freshness(args):
 
 def cmd_strava_raw(args):
     """Raw Strava API call."""
-    from mcp_strava.db import api_request
-
     path = args[0] if args else "/athlete"
-    data, _rate = api_request(path)
+    data, _rate = StravaClient().api_request(path)
     print(json.dumps(data, indent=2))
 
 
 def cmd_log(args):
     """Show recent sync log entries."""
     limit = int(args[0]) if args else 10
-    with DbConn() as conn:
+    with MirrorConn() as conn:
         rows = conn.execute(
             "SELECT timestamp, status, activities_seen, activities_new, "
             "streams_fetched, details_fetched, kudos_fetched, api_calls, error "
@@ -187,7 +184,7 @@ def cmd_mirror_coverage(args):
     if db_path is None:
         payload = get_mirror_coverage_service()
     else:
-        with repository_from_path(db_path) as repo:
+        with DuckDBRepository.from_path(db_path) as repo:
             payload = get_mirror_coverage_service(connection=repo.conn)
 
     if json_output:
@@ -278,13 +275,13 @@ def cmd_catchup(args):
         _usage_error("--db is only valid together with --dry-run")
 
     if dry_run:
-        clock = RealClock()
-        sleeper = RealSleeper()
+        clock = SystemClock()
+        sleeper = SystemSleeper()
         transport = _DryRunStravaTransport()
         refresh_policy = RefreshPolicy()
-        conn_context = DbConn() if db_path is None else repository_from_path(db_path)
+        conn_context = MirrorConn() if db_path is None else DuckDBRepository.from_path(db_path)
         with conn_context as conn:
-            repo = repository_from_connection(conn) if db_path is None else conn
+            repo = DuckDBRepository.from_connection(conn) if db_path is None else conn
             stream_result = backfill_stream_channels(
                 repo,
                 transport,
@@ -307,8 +304,8 @@ def cmd_catchup(args):
     activities_result = backfill_activities(since=since)
 
     _settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
-    with DbConn() as conn:
-        repo = repository_from_connection(conn)
+    with MirrorConn() as conn:
+        repo = DuckDBRepository.from_connection(conn)
         stream_result = backfill_stream_channels(
             repo,
             transport,
