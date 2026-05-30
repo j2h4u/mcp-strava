@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: verifying
-last_updated: "2026-05-30T11:01:06.013Z"
+status: ready_to_plan
+last_updated: 2026-05-30T11:17:44.689Z
 last_activity: 2026-05-30
 progress:
   total_phases: 13
@@ -11,6 +11,7 @@ progress:
   total_plans: 53
   completed_plans: 53
   percent: 92
+stopped_at: Phase 12 complete (5/5) — ready to discuss Phase 13
 ---
 
 # Project State
@@ -20,20 +21,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Phase 12 — decouple-db-py-into-focused-modules
+**Current focus:** Phase 13 — lint and type check cleanup (ruff residual + pyright)
 
 ## Current Position
 
-Phase: 12 (decouple-db-py-into-focused-modules) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
+Phase: 13
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-05-30
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 40
+- Total plans completed: 45
 - Average duration: 0 min
 - Total execution time: 0.0 hours
 
@@ -51,6 +52,7 @@ Last activity: 2026-05-30
 | 09 | 4 | - | - |
 | 10 | 4 | - | - |
 | 11 | 1 | - | - |
+| 12 | 5 | - | - |
 
 **Recent Trend:**
 
