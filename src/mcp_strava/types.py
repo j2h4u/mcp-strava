@@ -815,7 +815,7 @@ def smart_round(value: float) -> int | float:
     return round(value, 4)
 
 
-def dc_to_dict(obj, *, round_floats: bool = False):
+def dc_to_dict(obj: Any, *, round_floats: bool = False) -> Any:
     """Recursively convert dataclass (or list/dict of dataclasses) to plain dict.
     Safe for json.dumps()."""
     if hasattr(obj, "__dataclass_fields__"):
