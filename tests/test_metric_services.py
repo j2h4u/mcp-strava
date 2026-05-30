@@ -244,18 +244,24 @@ def _read_model_current() -> dict[str, object]:
 def _block_legacy_recompute(monkeypatch: pytest.MonkeyPatch) -> None:
     import mcp_strava.application.metric_services as metric_services
 
-    def _blocked(*_args, **_kwargs):
-        raise AssertionError("MCP metric service must not recompute from raw mirror data")
-
-    for name in (
-        "daily_report_from_connection",
-        "weekly_digest",
-        "check_z5_minutes",
-        "check_hr_anomalies",
-        "calc_banister",
-    ):
-        if hasattr(metric_services, name):
-            monkeypatch.setattr(metric_services, name, _blocked, raising=False)
+    # Regression guard: the MCP metric service must serve precomputed read-model
+    # facts and never recompute from raw mirror data. After Phase 12 the legacy
+    # recompute entry points were removed/relocated (calc_banister now lives in
+    # training.py and only runs during materialization). Assert none of them are
+    # reachable as attributes of the service module — re-importing any would
+    # silently reopen the recompute path on the serving side.
+    leaked = [
+        name
+        for name in (
+            "daily_report_from_connection",
+            "weekly_digest",
+            "check_z5_minutes",
+            "check_hr_anomalies",
+            "calc_banister",
+        )
+        if hasattr(metric_services, name)
+    ]
+    assert leaked == [], f"metric_services must not expose legacy recompute symbols: {leaked}"
 
 
 def test_get_fitness_state_service_returns_metric_bundle_envelope(
