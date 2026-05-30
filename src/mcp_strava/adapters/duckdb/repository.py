@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 
 from mcp_strava.adapters.duckdb.connection import duckdb_process_lock, open_expected_mirror_db, open_fixture_db
 from mcp_strava.adapters.duckdb.schema import ensure_provenance_columns
@@ -20,6 +21,8 @@ from mcp_strava.types import (
     RepositoryDailyLoadStatus,
     RepositorySyncLogEntry,
 )
+
+Row = dict[str, Any]
 
 CURRENT_METRIC_VERSION = 1
 
@@ -242,7 +245,7 @@ class DuckDBRepository:
         with duckdb_process_lock():
             return self.conn.executemany(sql, params)
 
-    def _fetchone(self, sql: str, params: Iterable[object] | None = None) -> dict[str, object] | None:
+    def _fetchone(self, sql: str, params: Iterable[object] | None = None) -> Row | None:
         if self._transaction_depth > 0:
             result = self.conn.execute(sql, list(params or []))
             row = result.fetchone()
@@ -255,7 +258,7 @@ class DuckDBRepository:
         columns = [item[0] for item in result.description]
         return {column: _normalize_cell(value) for column, value in zip(columns, row, strict=False)}
 
-    def _fetchall(self, sql: str, params: Iterable[object] | None = None) -> list[dict[str, object]]:
+    def _fetchall(self, sql: str, params: Iterable[object] | None = None) -> list[Row]:
         if self._transaction_depth > 0:
             result = self.conn.execute(sql, list(params or []))
             rows = result.fetchall()
@@ -266,7 +269,7 @@ class DuckDBRepository:
         columns = [item[0] for item in result.description]
         return [{column: _normalize_cell(value) for column, value in zip(columns, row, strict=False)} for row in rows]
 
-    def _scalar(self, sql: str, params: Iterable[object] | None = None) -> object | None:
+    def _scalar(self, sql: str, params: Iterable[object] | None = None) -> Any | None:
         if self._transaction_depth > 0:
             row = self.conn.execute(sql, list(params or [])).fetchone()
         else:
