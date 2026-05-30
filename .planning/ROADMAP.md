@@ -284,8 +284,11 @@ Plans:
 **Goal:** Clear the deferred lint/type findings surfaced when ruff + pyright were introduced in Phase 11 side-work (tooling: commit `bcfc0e2`; safe autofixes already applied in `b27a167`; the one real bug — F821 missing `Path` import — fixed in `859859b`). Scope: (1) **ruff F401** unused-import (~40) — separate genuinely-dead imports (remove) from re-exported public names in namespace modules like `constants.py` (protect with `__all__`; do NOT blind-remove — that broke importers in the Phase 11 trial). (2) **~17 manual ruff fixes**: bugbear `B905` (zip `strict=`), `B904` (`raise … from`), `B007`, `B017`; pyupgrade `UP031` (printf→format), `UP035` (deprecated-import). (3) **`E402`** (3 import-not-at-top) — decide `# noqa` vs intentional late imports. (4) **pyright (~359 errors)** — dominated by DuckDB rows typed `object` flowing into `int()`/`float()`; needs a typing strategy first (a typed `Row`/`Mapping` alias or a pyright mode decision), not blind per-error edits. `just test` and `just lint` must end green; `just check` should pass.
 **Requirements**: Code quality / tooling hygiene (ruff + pyright introduced in Phase 11 side-work)
 **Depends on:** Phase 11
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 13 to break down)
+- [ ] `13-01-PLAN.md` — Widen DuckDB fetch boundary (Row alias + Any) and annotate dc_to_dict — clears ~326-error bulk cluster (Wave 1)
+- [ ] `13-02-PLAN.md` — None-guard sweep and D-04 one-offs — reaches 0 pyright errors (Wave 2)
+- [ ] `13-03-PLAN.md` — Pin typeCheckingMode = standard and remove vestigial noqa: BLE001 (Wave 2, parallel)
+- [ ] `13-04-PLAN.md` — D-08 gate verification: just check + just test both green (Wave 3)
