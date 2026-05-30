@@ -1,5 +1,5 @@
 ---
-status: testing
+status: complete
 phase: 13-lint-and-type-check-cleanup-ruff-residual-pyright
 source: [13-01-SUMMARY.md, 13-02-SUMMARY.md, 13-03-SUMMARY.md, 13-04-SUMMARY.md]
 started: 2026-05-30T17:30:00Z
@@ -8,11 +8,7 @@ updated: 2026-05-30T17:30:00Z
 
 ## Current Test
 
-number: 1
-name: Cold Start Smoke Test
-expected: |
-  Fresh server boot, all 6 MCP tools callable, real data returned, exit 0.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
