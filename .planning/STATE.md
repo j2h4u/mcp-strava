@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-30T10:03:22.733Z"
+last_updated: "2026-05-30T10:13:51.505Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 13
   completed_phases: 11
   total_plans: 53
-  completed_plans: 49
+  completed_plans: 50
   percent: 85
 ---
 
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 ## Current Position
 
 Phase: 12 (decouple-db-py-into-focused-modules) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-05-30
 
@@ -94,6 +94,7 @@ Last activity: 2026-05-30
 | Phase 10 P03 | 10min | 2 tasks | 2 files |
 | Phase 10-materialize-unwired-training-metrics-and-enforce-core-domain P04 | 2min | 3 tasks | 4 files |
 | Phase 12-decouple-db-py-into-focused-modules P01 | 6 | 2 tasks | 1 files |
+| Phase 12 P02 | 7 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -178,6 +179,9 @@ Recent decisions affecting current work:
 - [Phase ?]: metric_version NOT bumped in 10-03 — only defaults replaced with computed values; no formula or column-set changes
 - [Phase ?]: MirrorConn collapses _open_storage_connection alias — calls open_expected_mirror_db directly in adapters/duckdb/connection
 - [Phase ?]: init_db NOT relocated to connection.py — dead code per RI-03, deleted with db.py in 12-05
+- [Phase ?]: D-06 cred accessor in settings.py — load_settings stays cred-free; STRAVA_CLIENT_* NOT in _KEYS
+- [Phase ?]: Single _build_strava_transport helper shared by StravaClient and build_refresh_collaborators
+- [Phase ?]: StravaClient.api_request drops token= param (GP-02: zero live callers)
 
 ### Roadmap Evolution
 
@@ -208,7 +212,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-30T10:03:11.825Z
+Last session: 2026-05-30T10:13:51.476Z
 Stopped at: context exhaustion at 79% (2026-05-30)
 Resume file: None
 
