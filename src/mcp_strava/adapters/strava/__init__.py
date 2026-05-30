@@ -1,5 +1,7 @@
 """Strava adapter package."""
 
+from mcp_strava.adapters.strava.client import StravaClient, _build_strava_transport
+from mcp_strava.adapters.strava.clock import SystemClock, SystemSleeper
 from mcp_strava.adapters.strava.rate_limit import RateLimitDecision, RateLimitPolicy
 from mcp_strava.adapters.strava.token_provider import FileTokenProvider
 from mcp_strava.adapters.strava.token_refresh import TokenRefreshTransport
@@ -22,9 +24,13 @@ __all__ = [
     "RefreshedTokens",
     "RefreshReason",
     "Sleeper",
+    "StravaClient",
     "StravaRateInfo",
     "StravaResponse",
     "StravaTransport",
     "StravaUnavailable",
+    "SystemClock",
+    "SystemSleeper",
     "TokenRefreshTransport",
+    "_build_strava_transport",
 ]

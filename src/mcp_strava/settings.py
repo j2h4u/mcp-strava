@@ -280,3 +280,50 @@ def get_settings(
 
 def reset_settings_cache() -> None:
     _CACHED_SETTINGS.clear()
+
+
+# ---------------------------------------------------------------------------
+# Strava client credential accessor (D-06)
+# ---------------------------------------------------------------------------
+# Credentials live in the token file (settings.token_path), NOT in env vars.
+# The token-file keys use Strava's own naming convention (STRAVA_CLIENT_ID /
+# STRAVA_CLIENT_SECRET), which is intentionally different from the MCP_STRAVA_*
+# env-var namespace so they are never confused.  They are NOT in _KEYS and
+# load_settings() never reads or validates them — the read-only mirror path
+# must remain credential-free.
+#
+# Call required_strava_client_creds(settings) only when creds are actually
+# needed (StravaClient / build_refresh_collaborators construction).  It raises
+# RuntimeError with missing keys + token_path so the caller gets an actionable
+# message, matching the existing bootstrap._required_strava_client semantics.
+
+
+def _read_token_file_values(token_path: Path) -> dict[str, str]:
+    """Parse a KEY=VALUE token file, skipping comments and blank lines."""
+    values: dict[str, str] = {}
+    if not token_path.exists():
+        return values
+    for raw_line in token_path.read_text(encoding="utf-8").splitlines():
+        stripped = raw_line.lstrip()
+        if not stripped or stripped.startswith("#") or "=" not in raw_line:
+            continue
+        key, value = raw_line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
+
+
+def required_strava_client_creds(settings: Settings) -> tuple[str, str]:
+    """Return (client_id, client_secret) from the token file.
+
+    Raises RuntimeError naming the missing keys and token_path when either
+    credential is absent.  Never called from load_settings() — the read-only
+    mirror path must load settings without Strava creds.
+    """
+    values = _read_token_file_values(settings.token_path)
+    required = ("STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET")
+    missing = [key for key in required if not values.get(key)]
+    if missing:
+        raise RuntimeError(
+            f"Missing Strava client settings: {', '.join(missing)}. Check {settings.token_path}"
+        )
+    return values["STRAVA_CLIENT_ID"], values["STRAVA_CLIENT_SECRET"]
