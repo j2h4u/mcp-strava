@@ -1,9 +1,12 @@
 """DuckDB connection policy with fail-closed expected DB open."""
 
+import threading
 from pathlib import Path
 from threading import RLock
 
 import duckdb
+
+from mcp_strava.settings import get_settings
 
 _DUCKDB_PROCESS_LOCK = RLock()
 
@@ -36,3 +39,91 @@ def open_fixture_db(path: str | Path):
     db_path = Path(path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     return _connect_or_translate_lock(db_path, read_only=False)
+
+
+# ---------------------------------------------------------------------------
+# Connection-lifetime helpers (migrated from db.py — D-01/D-02/D-03)
+# ---------------------------------------------------------------------------
+
+
+def _db_path() -> str:
+    return str(get_settings().database_path)
+
+
+class MirrorConn:
+    """Context manager for primary storage connections — auto-closes on exit.
+
+    Renamed from DbConn (D-03). Opens via open_expected_mirror_db so the
+    fail-closed expected-mirror check is always applied.
+    """
+
+    def __enter__(self):
+        self.conn = open_expected_mirror_db(_db_path())
+        return self.conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.conn.close()
+
+
+# --- Thread-local read connection reuse ---
+#
+# Opening a fresh DuckDB connection per request costs ~25 ms (catalog attach),
+# which dominated warm read latency. Read services reuse one connection per
+# (thread, db path) instead. DuckDB caches the database instance by path within
+# a process, so a persistent reader coexists with the refresh writer exactly as
+# the previous open-per-call readers did — only the connection lifetime changes,
+# not the in-process RLock or MVCC behaviour. Each FastMCP worker thread keeps
+# its own connection, matching the single-owner / per-thread-connection model.
+
+_thread_state = threading.local()
+
+
+def _thread_read_connections() -> dict[str, object]:
+    connections = getattr(_thread_state, "read_connections", None)
+    if connections is None:
+        connections = {}
+        _thread_state.read_connections = connections
+    return connections
+
+
+class ReadConn:
+    """Thread-local reused read connection — opened once per (thread, db path).
+
+    Not closed on normal exit, so repeated reads avoid connect/close overhead.
+    On an error inside the ``with`` block the connection is evicted and closed
+    so the next call reopens a clean one (a poisoned cached connection is a
+    worse failure mode than the churn this removes). Use
+    ``reset_thread_connections()`` for shutdown and per-test isolation.
+    """
+
+    def __enter__(self):
+        self._path = _db_path()
+        connections = _thread_read_connections()
+        conn = connections.get(self._path)
+        if conn is None:
+            conn = open_expected_mirror_db(self._path)
+            connections[self._path] = conn
+        return conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            conn = _thread_read_connections().pop(self._path, None)
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        return False
+
+
+def reset_thread_connections() -> None:
+    """Close and clear this thread's cached read connections (tests, shutdown)."""
+    connections = getattr(_thread_state, "read_connections", None)
+    if not connections:
+        return
+    for conn in list(connections.values()):
+        try:
+            conn.close()
+        except Exception:
+            pass
+    connections.clear()
