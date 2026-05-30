@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-30T12:52:16.295Z"
+last_updated: "2026-05-30T12:57:27.010Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 13
   completed_phases: 12
   total_plans: 57
-  completed_plans: 55
+  completed_plans: 56
   percent: 92
 ---
 
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 ## Current Position
 
 Phase: 13 (lint-and-type-check-cleanup-ruff-residual-pyright) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-05-30
 
@@ -100,6 +100,7 @@ Last activity: 2026-05-30
 | Phase 12-decouple-db-py-into-focused-modules P04 | 9 | 3 tasks | 8 files |
 | Phase 12-decouple-db-py-into-focused-modules P05 | 20 | 2 tasks | 29 files |
 | Phase 13 P02 | 30 | 1 tasks | 16 files |
+| Phase 13 P03 | 5 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -189,6 +190,8 @@ Recent decisions affecting current work:
 - [Phase ?]: StravaClient.api_request drops token= param (GP-02: zero live callers)
 - [Phase ?]: RealClock/RealSleeper wave-3 compat aliases removed; cli.py fully migrated to MirrorConn/DuckDBRepository/StravaClient/SystemClock/SystemSleeper; init_db DDL guard removed
 - [Phase ?]: constants.py re-export block uses noqa: E402,F401,I001 — ruff --fix is destructive on aliased re-exports at module tail
+- [Phase ?]: typeCheckingMode = standard pinned explicitly in [tool.pyright] — D-05
+- [Phase ?]: BLE001 noqa comments removed from refresh/worker.py and refresh/health.py — D-07
 
 ### Roadmap Evolution
 
@@ -219,7 +222,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-30T12:52:16.264Z
+Last session: 2026-05-30T12:56:57.941Z
 Stopped at: Phase 13 context gathered (assumptions mode)
 Resume file: None
 
