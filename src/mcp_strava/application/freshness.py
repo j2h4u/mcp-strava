@@ -5,7 +5,8 @@ from __future__ import annotations
 from contextlib import nullcontext
 from datetime import datetime
 
-from mcp_strava.db import DbConn, repository_from_connection
+from mcp_strava.adapters.duckdb.connection import MirrorConn
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.refresh.freshness import _parse_dt, evaluate_freshness
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
@@ -124,13 +125,13 @@ def get_freshness_service(
     checked_at = now or datetime.now()
     settings = get_settings()
     policy = RefreshPolicy.from_settings(settings)
-    # DbConn (open-per-call), not ReadConn: this is a CLI/registry read on a
+    # MirrorConn (open-per-call), not ReadConn: this is a CLI/registry read on a
     # one-shot process, so connection reuse buys nothing. The reused thread-local
     # ReadConn is reserved for the long-lived MCP server read tools.
-    conn_context = nullcontext(connection) if connection is not None else DbConn()
+    conn_context = nullcontext(connection) if connection is not None else MirrorConn()
 
     with conn_context as conn:
-        repo = repository_from_connection(conn)
+        repo = DuckDBRepository.from_connection(conn)
         freshness = build_freshness_metadata(
             repo,
             checked_at,

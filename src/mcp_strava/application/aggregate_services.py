@@ -12,7 +12,8 @@ from mcp_strava.adapters.duckdb.aggregate_queries import (
     validate_aggregate_request,
 )
 from mcp_strava.application.freshness import build_freshness_metadata
-from mcp_strava.db import ReadConn, repository_from_connection
+from mcp_strava.adapters.duckdb.connection import ReadConn
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
 from mcp_strava.types import (
@@ -66,7 +67,7 @@ def get_training_aggregates_service(
     conn_context = nullcontext(connection) if connection is not None else ReadConn()
 
     with conn_context as conn:
-        repo = repository_from_connection(conn)
+        repo = DuckDBRepository.from_connection(conn)
         freshness = build_freshness_metadata(
             repo,
             checked_at,

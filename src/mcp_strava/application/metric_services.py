@@ -14,7 +14,8 @@ from mcp_strava.application.aggregate_services import (
 from mcp_strava.application.freshness import build_freshness_metadata
 from mcp_strava.application.metric_registry import METRIC_REGISTRY
 from mcp_strava.constants import Config
-from mcp_strava.db import ReadConn, repository_from_connection
+from mcp_strava.adapters.duckdb.connection import ReadConn
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
 from mcp_strava.training import forward_simulate
@@ -163,7 +164,7 @@ def _kudos_count(summary: dict[str, object]) -> int:
     value = summary.get("kudos_count")
     try:
         return int(value) if value is not None else 0
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return 0
 
 
@@ -259,7 +260,7 @@ def _gear_payload(row, summary: dict[str, object]) -> dict[str, object]:
     distance_m = gear.get("distance") or gear.get("converted_distance")
     try:
         gear_distance_km = round(float(distance_m) / 1000.0, 3) if distance_m is not None else None
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         gear_distance_km = None
     primary = gear.get("primary")
     return {
@@ -351,7 +352,7 @@ def get_fitness_state_service(
 ) -> ServiceEnvelope:
     checked_at = now or datetime.now()
     with _connection_context(connection) as conn:
-        repo = repository_from_connection(conn)
+        repo = DuckDBRepository.from_connection(conn)
         freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         as_of_day = _latest_as_of_day(checked_at)
@@ -397,7 +398,7 @@ def list_workouts_service(
     start_day = start_date or "0001-01-01"
     end_day = _next_day(end_date) if end_date else "9999-12-31"
     with _connection_context(connection) as conn:
-        repo = repository_from_connection(conn)
+        repo = DuckDBRepository.from_connection(conn)
         freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
         rows = repo.fetch_activity_metric_facts(
             start_day,
@@ -460,7 +461,7 @@ def get_workout_detail_service(
 ) -> ServiceEnvelope:
     checked_at = now or datetime.now()
     with _connection_context(connection) as conn:
-        repo = repository_from_connection(conn)
+        repo = DuckDBRepository.from_connection(conn)
         freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         resolved_id = repo.latest_activity_id() if activity_id == "latest" else int(activity_id)
@@ -923,7 +924,7 @@ def project_fitness_state_service(
 
     days = [today_day + timedelta(days=offset) for offset in range(horizon_days + 1)]
     with _connection_context(connection) as conn:
-        repo = repository_from_connection(conn)
+        repo = DuckDBRepository.from_connection(conn)
         freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         baseline = repo.fetch_latest_training_model_day(CURRENT_METRIC_VERSION, as_of_day=today_day.isoformat())

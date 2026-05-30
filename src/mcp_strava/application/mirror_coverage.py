@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 
-from mcp_strava.db import DbConn, repository_from_connection
+from mcp_strava.adapters.duckdb.connection import MirrorConn
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 
 
 def _stream_columns(conn) -> set[str]:
@@ -26,9 +27,9 @@ def _table_exists(conn, table: str) -> bool:
 
 
 def get_mirror_coverage_service(*, connection=None) -> dict:
-    conn_context = nullcontext(connection) if connection is not None else DbConn()
+    conn_context = nullcontext(connection) if connection is not None else MirrorConn()
     with conn_context as conn:
-        repo = repository_from_connection(conn)
+        repo = DuckDBRepository.from_connection(conn)
         stream_columns = _stream_columns(conn)
         activities_total = int(conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0])
         activities_with_streams = int(conn.execute("SELECT COUNT(DISTINCT activity_id) FROM streams").fetchone()[0])

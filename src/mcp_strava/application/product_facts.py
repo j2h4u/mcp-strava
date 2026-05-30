@@ -27,7 +27,7 @@ from mcp_strava.application.metric_services import (
     get_workout_detail_service,
     list_workouts_service,
 )
-from mcp_strava.db import ReadConn
+from mcp_strava.adapters.duckdb.connection import ReadConn
 from mcp_strava.types import (
     CompletenessMetadata,
     ServiceEnvelope,
