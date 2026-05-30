@@ -59,7 +59,7 @@ def record_cycle(outcome: str, *, error_type: str | None = None, error: str | No
         tmp = path.with_name(f".{path.name}.tmp")
         tmp.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
         tmp.replace(path)
-    except Exception:  # noqa: BLE001 — health recording must never break the worker loop
+    except Exception:  # health recording must never break the worker loop
         pass
 
 

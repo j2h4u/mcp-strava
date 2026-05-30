@@ -105,7 +105,7 @@ def _emit_mirror_storage() -> None:
     try:
         with MirrorConn() as conn:
             stats = storage_stats(conn)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _emit("mirror_storage_error", error_type=type(exc).__name__, error=str(exc)[:200])
         return
     free = int(stats["free_blocks"])
@@ -245,7 +245,7 @@ def run_forever(
         try:
             return_code = run_pending_once(emit_idle=False)
             health.record_cycle("ok" if return_code == 0 else "error")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _emit("refresh_worker_error", error_type=type(exc).__name__, error=str(exc))
             traceback.print_exc(file=sys.stderr)
             health.record_cycle("error", error_type=type(exc).__name__, error=str(exc))
