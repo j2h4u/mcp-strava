@@ -578,8 +578,8 @@ def test_worker_materializes_read_model_in_bounded_batch(monkeypatch):
         calls.append(("materialize_stage", limit))
         return {"dirty_rows_cleared": limit}
 
-    monkeypatch.setattr(worker, "DbConn", FakeDbConn)
-    monkeypatch.setattr(worker, "repository_from_connection", fake_repository_from_connection)
+    monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
+    monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(fake_repository_from_connection))
     monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", fake_materialize_stage)
     monkeypatch.setattr(worker, "_emit", lambda event, **fields: events.append((event, fields)))
 
@@ -618,8 +618,8 @@ def test_worker_materialization_uses_repository_factory_and_runtime_stage(monkey
         calls.append(("materialize_stage", 3))
         return {"dirty_rows_cleared": 3}
 
-    monkeypatch.setattr(worker, "DbConn", FakeDbConn)
-    monkeypatch.setattr(worker, "repository_from_connection", fake_repository_from_connection)
+    monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
+    monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(fake_repository_from_connection))
     monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", fake_materialize_stage)
     monkeypatch.setattr(worker, "_emit", lambda *_args, **_kwargs: None)
 
@@ -720,8 +720,8 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
     monkeypatch.setattr(worker, "get_settings", lambda: settings)
     monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
     monkeypatch.setattr(worker, "ensure_runtime_refresh_schema", lambda _settings: None)
-    monkeypatch.setattr(worker, "DbConn", FakeDbConn)
-    monkeypatch.setattr(worker, "repository_from_connection", lambda _conn: FakeRepo())
+    monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
+    monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
     monkeypatch.setattr(
         worker,
         "build_refresh_collaborators",
@@ -782,8 +782,8 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
     monkeypatch.setattr(worker, "get_settings", lambda: settings)
     monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
     monkeypatch.setattr(worker, "ensure_runtime_refresh_schema", lambda _settings: None)
-    monkeypatch.setattr(worker, "DbConn", FakeDbConn)
-    monkeypatch.setattr(worker, "repository_from_connection", lambda _conn: FakeRepo())
+    monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
+    monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
     monkeypatch.setattr(
         worker,
         "build_refresh_collaborators",
@@ -835,8 +835,8 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
     monkeypatch.setattr(worker, "get_settings", lambda: settings)
     monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
     monkeypatch.setattr(worker, "ensure_runtime_refresh_schema", lambda _settings: None)
-    monkeypatch.setattr(worker, "DbConn", FakeDbConn)
-    monkeypatch.setattr(worker, "repository_from_connection", lambda _conn: FakeRepo())
+    monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
+    monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
     monkeypatch.setattr(
         worker,
         "build_refresh_collaborators",
@@ -863,7 +863,7 @@ def test_emit_mirror_storage_reports_free_block_delta(tmp_path, monkeypatch):
             self._conn.close()
             return False
 
-    monkeypatch.setattr(worker, "DbConn", FakeDbConn)
+    monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
     monkeypatch.setattr(worker, "_emit", lambda event, **fields: events.append((event, fields)))
     monkeypatch.setattr(worker, "_prev_free_blocks", None)
 

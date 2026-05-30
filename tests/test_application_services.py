@@ -200,7 +200,7 @@ def test_get_freshness_service_uses_primary_repository_factory_for_connections(
         seen_connections.append(conn)
         return FakeRepository()
 
-    monkeypatch.setattr(freshness, "repository_from_connection", fake_repository_from_connection)
+    monkeypatch.setattr(freshness.DuckDBRepository, "from_connection", staticmethod(fake_repository_from_connection))
 
     envelope = freshness.get_freshness_service(
         now=datetime.fromisoformat("2026-05-21T09:00:00"),

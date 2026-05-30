@@ -634,7 +634,7 @@ def test_sync_activities_quick_invokes_run_once_with_force_true_per_D15(monkeypa
             "policy",
         ),
     )
-    monkeypatch.setattr(sync, "DbConn", FakeDbConn)
+    monkeypatch.setattr(sync, "MirrorConn", FakeDbConn)
     monkeypatch.setattr(sync.DuckDBRepository, "from_connection", staticmethod(lambda _conn: "repo"))
     monkeypatch.setattr(sync.refresh_runtime, "run_once", fake_run_once)
 
@@ -697,7 +697,7 @@ def test_backfill_activities_invokes_run_catchup_per_D16(monkeypatch, tmp_path: 
             "policy",
         ),
     )
-    monkeypatch.setattr(sync, "DbConn", FakeDbConn)
+    monkeypatch.setattr(sync, "MirrorConn", FakeDbConn)
     monkeypatch.setattr(sync.DuckDBRepository, "from_connection", staticmethod(lambda _conn: "repo"))
     monkeypatch.setattr(sync.refresh_runtime, "run_once", fake_run_once)
     monkeypatch.setattr(sync.refresh_runtime, "run_catchup", fake_run_catchup)

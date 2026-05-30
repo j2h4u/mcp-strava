@@ -55,7 +55,7 @@ def reset_read_connections():
     tmp_path DB each, so a cached connection from a prior test must not leak
     into the next. Tests passing an explicit ``connection=`` are unaffected.
     """
-    from mcp_strava.db import reset_thread_connections
+    from mcp_strava.adapters.duckdb.connection import reset_thread_connections
 
     reset_thread_connections()
     yield

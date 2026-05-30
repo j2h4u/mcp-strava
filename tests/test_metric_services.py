@@ -365,7 +365,7 @@ def test_read_path_reuses_connection_and_checks_schema_once(tmp_path: Path, monk
     read-model schema-existence fact once per call, not twice. These call-count
     assertions lock in the win without relying on a flaky wall-clock gate.
     """
-    import mcp_strava.db as db
+    import mcp_strava.adapters.duckdb.connection as duckdb_conn
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
     from mcp_strava.application.metric_services import list_workouts_service
 
@@ -376,16 +376,16 @@ def test_read_path_reuses_connection_and_checks_schema_once(tmp_path: Path, monk
     repo = _repo_with_facts(tmp_path / "reuse.db")
     repo.close()
     db_path = str(tmp_path / "reuse.db")
-    monkeypatch.setattr(db, "_db_path", lambda: db_path)
+    monkeypatch.setattr(duckdb_conn, "_db_path", lambda: db_path)
 
     open_calls = {"n": 0}
-    real_open = db.open_expected_mirror_db
+    real_open = duckdb_conn.open_expected_mirror_db
 
     def _counting_open(path, *args, **kwargs):
         open_calls["n"] += 1
         return real_open(path, *args, **kwargs)
 
-    monkeypatch.setattr(db, "open_expected_mirror_db", _counting_open)
+    monkeypatch.setattr(duckdb_conn, "open_expected_mirror_db", _counting_open)
 
     schema_checks = {"n": 0}
     real_table_exists = DuckDBRepository._table_exists
@@ -397,7 +397,7 @@ def test_read_path_reuses_connection_and_checks_schema_once(tmp_path: Path, monk
 
     monkeypatch.setattr(DuckDBRepository, "_table_exists", _counting_table_exists)
 
-    db.reset_thread_connections()
+    duckdb_conn.reset_thread_connections()
     try:
         list_workouts_service(limit=2, signal_first_use=False)
         assert open_calls["n"] == 1  # one connection opened on first read
@@ -406,7 +406,7 @@ def test_read_path_reuses_connection_and_checks_schema_once(tmp_path: Path, monk
         list_workouts_service(limit=2, signal_first_use=False)
         assert open_calls["n"] == 1  # connection reused, no second open
     finally:
-        db.reset_thread_connections()
+        duckdb_conn.reset_thread_connections()
 
 
 def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reasons(
@@ -650,7 +650,7 @@ def test_compare_periods_service_delegates_to_bounded_all_time_aggregates(monkey
             rationale=[ServiceRationale(code="aggregate_layer", message="Prepared aggregate rows.")],
         )
 
-    monkeypatch.setattr(metric_services, "repository_from_connection", lambda _conn: FakeRepo())
+    monkeypatch.setattr(metric_services.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
     monkeypatch.setattr(
         metric_services,
         "build_freshness_metadata",
