@@ -275,7 +275,7 @@ Plans:
 
 **Goal:** Split `src/mcp_strava/db.py` (237 lines mixing five concerns: connection management `DbConn`/`ReadConn`/thread-local pool, repository factories, token/OAuth `_CompatTokenProvider`/`refresh_token`, Strava HTTP `api_request`/`get_zones`/`_build_transport`, and clock/sleeper) into focused modules — move token/OAuth into a dedicated auth module, route HTTP through `adapters/strava`, fold connection management into `adapters/duckdb/connection` — then migrate all callers. `just test` must stay green. This is the last meaningful coupling hotspot after Phase 10.
 **Requirements**: Core/domain separation — residual `db.py` coupling (extends PROJECT.md core/domain goal)
-**Depends on:** Phase 10**Plans:** 3/5 plans executed
+**Depends on:** Phase 10**Plans:** 4/5 plans executed
 
 - [ ] TBD (run /gsd-plan-phase 12 to break down)
 

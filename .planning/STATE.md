@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-30T10:26:52.638Z"
+last_updated: "2026-05-30T10:39:09.571Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 13
   completed_phases: 11
   total_plans: 53
-  completed_plans: 51
+  completed_plans: 52
   percent: 85
 ---
 
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 ## Current Position
 
 Phase: 12 (decouple-db-py-into-focused-modules) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-05-30
 
@@ -96,6 +96,7 @@ Last activity: 2026-05-30
 | Phase 12-decouple-db-py-into-focused-modules P01 | 6 | 2 tasks | 1 files |
 | Phase 12 P02 | 7 | 3 tasks | 5 files |
 | Phase 12 P03 | 8 | 4 tasks | 13 files |
+| Phase 12-decouple-db-py-into-focused-modules P04 | 9 | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -183,6 +184,7 @@ Recent decisions affecting current work:
 - [Phase ?]: D-06 cred accessor in settings.py — load_settings stays cred-free; STRAVA_CLIENT_* NOT in _KEYS
 - [Phase ?]: Single _build_strava_transport helper shared by StravaClient and build_refresh_collaborators
 - [Phase ?]: StravaClient.api_request drops token= param (GP-02: zero live callers)
+- [Phase ?]: RealClock/RealSleeper wave-3 compat aliases removed; cli.py fully migrated to MirrorConn/DuckDBRepository/StravaClient/SystemClock/SystemSleeper; init_db DDL guard removed
 
 ### Roadmap Evolution
 
@@ -213,7 +215,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-30T10:26:52.623Z
+Last session: 2026-05-30T10:39:09.557Z
 Stopped at: context exhaustion at 79% (2026-05-30)
 Resume file: None
 
