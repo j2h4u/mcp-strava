@@ -163,7 +163,7 @@ def _kudos_count(summary: dict[str, object]) -> int:
     value = summary.get("kudos_count")
     try:
         return int(value) if value is not None else 0
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0
 
 
@@ -259,7 +259,7 @@ def _gear_payload(row, summary: dict[str, object]) -> dict[str, object]:
     distance_m = gear.get("distance") or gear.get("converted_distance")
     try:
         gear_distance_km = round(float(distance_m) / 1000.0, 3) if distance_m is not None else None
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         gear_distance_km = None
     primary = gear.get("primary")
     return {

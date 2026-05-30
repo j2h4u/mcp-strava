@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import calendar
 import json
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
@@ -17,7 +16,7 @@ from mcp_strava.application.metric_registry import (
     aggregate_query_allowed_columns,
     metrics_for_aggregate_bundle,
 )
-from mcp_strava.constants import ALL_SPORTS, RUNNING_SPORTS, Config
+from mcp_strava.constants import ALL_SPORTS, RUNNING_SPORTS
 from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.settings import get_settings
 from mcp_strava.types import MetricDefinition, StatusFact, StatusFactDefinition

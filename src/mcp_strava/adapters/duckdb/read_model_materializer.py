@@ -4,7 +4,7 @@ import json
 from datetime import date, datetime, timedelta
 from statistics import median
 
-from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository, build_trimp_sql
+from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository
 from mcp_strava.application.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 from mcp_strava.constants import Config
 from mcp_strava.hr_zones import get_zone_model

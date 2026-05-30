@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -59,7 +59,7 @@ def storage_stats(conn) -> dict:
     """
     row = conn.execute("PRAGMA database_size").fetchone()
     columns = [d[0] for d in conn.description]
-    raw = dict(zip(columns, row))
+    raw = dict(zip(columns, row, strict=False))
     block_size = int(raw["block_size"])
     total_blocks = int(raw["total_blocks"])
     free_blocks = int(raw["free_blocks"])

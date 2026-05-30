@@ -1,7 +1,5 @@
 """Metric registry contract tests for Phase 05 plan 05-01."""
 
-from pathlib import Path
-
 import duckdb
 import pytest
 

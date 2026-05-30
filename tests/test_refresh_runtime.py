@@ -1,7 +1,7 @@
 import json
 import urllib.request
 from collections import defaultdict
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1319,9 +1319,7 @@ def test_stream_channel_backfill_renews_long_lease_during_progress(tmp_path):
     assert len(renewals) >= 2
     first = datetime.fromisoformat(renewals[0])
     last = datetime.fromisoformat(renewals[-1])
-    assert (
-        first - datetime.fromtimestamp(1_716_206_400.0, tz=UTC).replace(tzinfo=None)
-    ).total_seconds() == 1800
+    assert (first - datetime.fromtimestamp(1_716_206_400.0, tz=UTC).replace(tzinfo=None)).total_seconds() == 1800
     assert (last - first).total_seconds() >= 901
 
 

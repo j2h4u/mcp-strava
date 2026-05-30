@@ -32,14 +32,13 @@ def _seed_dirty_activity_with_streams(
         elapsed_time=1900,
         total_elevation_gain=120.0,
         summary_json=(
-            '{"id":%d,"name":"Materialized","sport_type":"Run","start_date_local":"%sT06:00:00Z",'
+            f'{{"id":{activity_id},"name":"Materialized","sport_type":"Run","start_date_local":"{day}T06:00:00Z",'
             '"distance":6000,"moving_time":1800,"elapsed_time":1900,"total_elevation_gain":120,'
             '"average_heartrate":145,"max_heartrate":172,"has_heartrate":true}'
-        )
-        % (activity_id, day),
+        ),
         synced_at=f"{day}T07:00:00Z",
     )
-    repo.update_activity_detail(activity_id, '{"id": %d, "resource_state": 3}' % activity_id)
+    repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
     rows = []
     for idx in range(180):
         rows.append(
@@ -156,14 +155,13 @@ def _seed_dirty_activity_with_pauses(
         elapsed_time=1800,
         total_elevation_gain=80.0,
         summary_json=(
-            '{"id":%d,"name":"Pause","sport_type":"Run","start_date_local":"%sT07:00:00Z",'
+            f'{{"id":{activity_id},"name":"Pause","sport_type":"Run","start_date_local":"{day}T07:00:00Z",'
             '"distance":5000,"moving_time":1500,"elapsed_time":1800,"total_elevation_gain":80,'
             '"average_heartrate":145,"max_heartrate":170,"has_heartrate":true}'
-        )
-        % (activity_id, day),
+        ),
         synced_at=f"{day}T08:00:00Z",
     )
-    repo.update_activity_detail(activity_id, '{"id": %d, "resource_state": 3}' % activity_id)
+    repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
     rows = []
     for idx in range(180):
         is_pause = 50 <= idx <= 82
@@ -228,14 +226,13 @@ def _seed_dirty_activity_no_hr(
         elapsed_time=1300,
         total_elevation_gain=60.0,
         summary_json=(
-            '{"id":%d,"name":"NoHR","sport_type":"Run","start_date_local":"%sT06:00:00Z",'
+            f'{{"id":{activity_id},"name":"NoHR","sport_type":"Run","start_date_local":"{day}T06:00:00Z",'
             '"distance":4000,"moving_time":1200,"elapsed_time":1300,"total_elevation_gain":60,'
             '"has_heartrate":false}'
-        )
-        % (activity_id, day),
+        ),
         synced_at=f"{day}T07:00:00Z",
     )
-    repo.update_activity_detail(activity_id, '{"id": %d, "resource_state": 3}' % activity_id)
+    repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
     rows = []
     for idx in range(180):
         rows.append(

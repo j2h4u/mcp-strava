@@ -367,7 +367,7 @@ def cardiac_drift(
     drifts = [d for d, _ in cluster_drifts]
     weights = [w for _, w in cluster_drifts]
     total_w = sum(weights)
-    drift_weighted_pct = sum(d * w for d, w in zip(drifts, weights)) / total_w if total_w > 0 else 0
+    drift_weighted_pct = sum(d * w for d, w in zip(drifts, weights, strict=False)) / total_w if total_w > 0 else 0
     drift_consistency = sum(1 for d in drifts if d > 0) / len(drifts)
 
     # ── Step 6: Build result ──

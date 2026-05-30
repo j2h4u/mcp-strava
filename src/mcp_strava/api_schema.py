@@ -10,7 +10,7 @@ Derived from strava_api_reference.py (single source of human docs).
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # ═══════════════════════════════════════════════════════════════════
 #  Status constants
@@ -303,7 +303,7 @@ def validate_batch(
     # Collect findings from first N items
     all_unknown = {}
     all_summit = {}
-    for i, item in enumerate(items[:max_samples]):
+    for _i, item in enumerate(items[:max_samples]):
         if not isinstance(item, dict):
             continue
         for f in schema.unknown_keys(item):

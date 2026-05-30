@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import socket
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -76,7 +75,7 @@ class StravaTransport:
                 if attempts >= 3:
                     break
                 self.sleeper.sleep([1, 5, 30][attempts - 1])
-            except (TimeoutError, urllib.error.URLError, OSError):
+            except TimeoutError, urllib.error.URLError, OSError:
                 last_reason = "network_unstable"
                 attempts += 1
                 if attempts >= 3:

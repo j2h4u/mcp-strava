@@ -29,7 +29,6 @@ def _source_text(rel_path: str) -> str:
     return (root / rel_path).read_text(encoding="utf-8")
 
 
-
 def _command_registry_names() -> set[str]:
     source = _source_text("src/mcp_strava/cli.py")
     module = ast.parse(source)
@@ -180,7 +179,6 @@ def test_cmd_sql_is_not_reused_as_service_or_mcp_surface() -> None:
         if "cmd_sql(" in source or "COMMANDS['sql']" in source or 'COMMANDS["sql"]' in source:
             violations.append(rel)
     assert violations == []
-
 
 
 def _import_violations(rel_path: str, disallowed_prefixes: tuple[str, ...]) -> list[str]:

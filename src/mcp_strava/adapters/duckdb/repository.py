@@ -4,7 +4,7 @@ import hashlib
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from mcp_strava.adapters.duckdb.connection import duckdb_process_lock, open_expected_mirror_db, open_fixture_db

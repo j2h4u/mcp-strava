@@ -115,16 +115,10 @@ class Config:
 # ═══════════════════════════════════════════════════════════════
 # All 50 Strava sport types defined once in sports.py.
 
-from mcp_strava.sports import (
+from mcp_strava.sports import (  # noqa: E402, F401, I001
     SPORT_ALL as ALL_SPORTS,
-)
-from mcp_strava.sports import (
     SPORT_RUNNING as RUNNING_SPORTS,
-)
-from mcp_strava.sports import (  # noqa: E402
     SPORT_TRAINING as TRAINING_SPORTS,
-)
-from mcp_strava.sports import (
     build_eff_config,
     detect_new_types,
     get_category,

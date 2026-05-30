@@ -18,10 +18,6 @@ def test_imports():
         get_weekly_digest_facts_service,
     )
     from mcp_strava.constants import Config
-    from mcp_strava.adapters.duckdb.connection import MirrorConn
-    from mcp_strava.sync import backfill_activities, build_refresh_collaborators, sync_activities
-    from mcp_strava.training import calc_banister, ewma, forward_simulate
-    from mcp_strava.types import BanisterResult
 
     # Verify Config hierarchy
     assert Config.Model.Banister.TAU_FITNESS == 42

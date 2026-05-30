@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-from tests._fixtures_duckdb import create_empty_fixture_db, create_fixture_db
+from tests._fixtures_duckdb import create_empty_fixture_db
 
 
 def _guard_load_paths_do_not_use_raw_activity_stream_sql() -> list[str]:

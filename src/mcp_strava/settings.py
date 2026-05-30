@@ -323,7 +323,5 @@ def required_strava_client_creds(settings: Settings) -> tuple[str, str]:
     required = ("STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET")
     missing = [key for key in required if not values.get(key)]
     if missing:
-        raise RuntimeError(
-            f"Missing Strava client settings: {', '.join(missing)}. Check {settings.token_path}"
-        )
+        raise RuntimeError(f"Missing Strava client settings: {', '.join(missing)}. Check {settings.token_path}")
     return values["STRAVA_CLIENT_ID"], values["STRAVA_CLIENT_SECRET"]

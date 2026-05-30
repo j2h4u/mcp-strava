@@ -44,7 +44,7 @@ def test_found02_dbconn_fails_closed_for_missing_expected_db(tmp_path: Path, mon
     reset_settings_cache()
 
     try:
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             with MirrorConn():
                 pass
     finally:

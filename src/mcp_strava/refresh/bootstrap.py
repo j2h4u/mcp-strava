@@ -10,6 +10,7 @@ from mcp_strava.adapters.strava import SystemClock, SystemSleeper, _build_strava
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import Settings, get_settings
 
+
 def _now_iso() -> str:
     return datetime.now().isoformat()
 

@@ -74,7 +74,7 @@ class FakeTokenRefreshTransport:
         self.refresh_tokens_seen: list[str] = []
 
     def refresh_tokens(self, refresh_token: str):
-        from mcp_strava.adapters.strava import RefreshedTokens, StravaUnavailable
+        from mcp_strava.adapters.strava import RefreshedTokens
 
         self.calls += 1
         self.refresh_tokens_seen.append(refresh_token)

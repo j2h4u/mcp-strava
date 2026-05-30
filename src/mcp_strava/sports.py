@@ -16,7 +16,6 @@ Each sport_type is annotated with:
 """
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
 
 
 @dataclass

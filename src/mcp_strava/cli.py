@@ -7,15 +7,14 @@ from datetime import datetime
 from pathlib import Path
 
 import mcp_strava.refresh.runtime as refresh_runtime
-from mcp_strava.adapters.duckdb.connection import MirrorDbLocked
+from mcp_strava.adapters.duckdb.connection import MirrorConn, MirrorDbLocked
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.strava.client import StravaClient
+from mcp_strava.adapters.strava.clock import SystemClock, SystemSleeper
 from mcp_strava.application.freshness import get_freshness_service
 from mcp_strava.application.metric_services import get_workout_detail_service, list_workouts_service
 from mcp_strava.application.mirror_coverage import get_mirror_coverage_service
 from mcp_strava.application.product_facts import get_daily_brief_facts_service, get_weekly_digest_facts_service
-from mcp_strava.adapters.duckdb.connection import MirrorConn
-from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-from mcp_strava.adapters.strava.client import StravaClient
-from mcp_strava.adapters.strava.clock import SystemClock, SystemSleeper
 from mcp_strava.deploy.preflight import validate_runtime_db
 from mcp_strava.maintenance.compact import compact_database
 from mcp_strava.refresh import RefreshPolicy, RefreshSkipped
@@ -583,7 +582,7 @@ def cmd_admin(args):
             "      (stops the container, runs the command, restarts it)",
             file=sys.stderr,
         )
-        raise SystemExit(2)
+        raise SystemExit(2) from None
 
 
 # ═══════════════════════════════════════════════════════════════
