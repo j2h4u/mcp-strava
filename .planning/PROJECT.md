@@ -51,6 +51,7 @@ Preserve the local Strava mirror and keep trusted training analytics working whi
 - [x] DuckDB is the primary runtime storage for MCP/CLI aggregate analytics, with cutover/parity checks, single-owner Docker runtime behavior, and read-model-backed aggregate queries — validated in Phase 8
 - [x] MCP and CLI product reads expose factual daily, weekly, historical, status, kudos, and supported gear facts from shared DuckDB/read-model application services, while MCP remains the exact six-tool product surface — validated in Phase 9
 - [x] Separate core/domain training logic from SQLite, Strava HTTP calls, CLI formatting, and MCP transport concerns — validated in Phase 10 (`metrics.py` is a pure domain module with an AST import-boundary guard; the previously-unwired metrics now materialize from real streams)
+- [x] Metric-platform fact schema metadata for `activity_metric_facts` is registry-owned, runtime DuckDB DDL is generated from the registry, and late additive activity fact migrations use registry-rendered SQL with safety guards — validated in Phase 14
 
 ### Active
 
@@ -111,6 +112,7 @@ Existing codebase concerns that should shape the roadmap:
 | DuckDB primary runtime store | Aggregate analytics and time-bucket style product reads fit DuckDB better than SQLite row scans | Validated in Phase 8 with DuckDB cutover, runtime routing, Docker ownership, aggregate queries, and parity checks |
 | Product factual bundles stay inside existing MCP surface | Agents need richer prepared facts, but not additional admin/debug/sync tools or coaching interpretation from this service | Validated in Phase 9 through shared bundle services, six-tool MCP allowlist, direct bundle smoke, and CLI read-model consolidation |
 | Domain metric math is pure and storage-free | Keeping training-metric functions free of storage/HTTP imports completes core/domain separation and makes the metrics unit-testable without a DB | Validated in Phase 10 — `metrics.py` imports only constants/types/cardiac_drift, an AST guard forbids storage imports, and the four pure functions now feed the read-model materializer |
+| Activity fact schema metadata is registry-owned | Duplicated hand-written `activity_metric_facts` SQL would drift from metric registry semantics; registry SQL metadata now renders table DDL and late-column ADD COLUMN SQL while schema.py keeps explicit migration policy | Validated in Phase 14 with generated DDL, generated additive migration SQL, safety guards, temp-DuckDB parity tests, and full `just test` Docker smoke |
 
 ## Evolution
 
@@ -130,5 +132,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-29 after Phase 11 verification — materializer→repository boundary tidied (IN-03 closed; no new requirement or decision)*
+*Last updated: 2026-05-31 after Phase 14 verification — registry-owned `activity_metric_facts` schema slice validated*
 *Completion updated: 2026-05-29 after Phase 10 execution — all v1.1 requirements validated*
