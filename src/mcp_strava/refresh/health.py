@@ -17,6 +17,9 @@ from pathlib import Path
 
 _DEFAULT_PATH = Path("/tmp/mcp-strava-refresh-health.json")
 DEFAULT_MAX_CONSECUTIVE_FAILURES = 3
+DEFAULT_MAX_STALE_CYCLES = 5
+# Floor so a short poll interval cannot flap health on a single slow cycle.
+_MIN_STALENESS_LIMIT_SECONDS = 300
 
 
 def health_path() -> Path:
@@ -31,7 +34,7 @@ def _now_iso() -> str:
 def _read(path: Path) -> dict:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except OSError, json.JSONDecodeError:
+    except (OSError, json.JSONDecodeError):
         return {}
 
 
@@ -73,6 +76,31 @@ def _max_consecutive_failures() -> int:
         return DEFAULT_MAX_CONSECUTIVE_FAILURES
 
 
+def _poll_seconds() -> int:
+    raw = os.environ.get("MCP_STRAVA_REFRESH_POLL_SECONDS")
+    if raw is None:
+        return 60
+    try:
+        return max(5, int(raw))
+    except ValueError:
+        return 60
+
+
+def _max_stale_cycles() -> int:
+    raw = os.environ.get("MCP_STRAVA_REFRESH_MAX_STALE_CYCLES")
+    if raw is None:
+        return DEFAULT_MAX_STALE_CYCLES
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return DEFAULT_MAX_STALE_CYCLES
+
+
+def _staleness_limit_seconds() -> int:
+    """How old last_attempt_at may get before the worker is presumed dead."""
+    return max(_poll_seconds() * _max_stale_cycles(), _MIN_STALENESS_LIMIT_SECONDS)
+
+
 def check_refresh_health() -> None:
     """Raise RuntimeError when the refresh worker is persistently failing.
 
@@ -95,3 +123,24 @@ def check_refresh_health() -> None:
             f"refresh worker failing: {failures} consecutive failures (>= {threshold}); "
             f"last_error_type={data.get('last_error_type')}; last_error={data.get('last_error')}"
         )
+
+    # Silent-death guard: a live worker rewrites last_attempt_at every poll cycle
+    # (even idle cycles record "ok"). If the refresh thread dies without raising
+    # — killed by a signal, or it exits — the failure counter freezes below the
+    # threshold above and never trips. Detect the frozen counter by the age of
+    # last_attempt_at instead. Timestamps are naive-local on both sides (the
+    # worker writes datetime.now().isoformat(); the healthcheck runs on the same
+    # host), so the subtraction is consistent.
+    last_attempt = data.get("last_attempt_at")
+    if last_attempt:
+        try:
+            age = (datetime.now() - datetime.fromisoformat(last_attempt)).total_seconds()
+        except (TypeError, ValueError):
+            age = None
+        if age is not None:
+            limit = _staleness_limit_seconds()
+            if age > limit:
+                raise RuntimeError(
+                    f"refresh worker stale: last attempt {int(age)}s ago (> {limit}s); "
+                    f"the worker thread may have died silently (last_outcome={data.get('last_outcome')})"
+                )

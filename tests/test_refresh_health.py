@@ -8,6 +8,7 @@ silently.
 """
 
 import json
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -74,3 +75,34 @@ def test_threshold_is_configurable(monkeypatch):
     health.record_cycle("error", error_type="X", error="x")
     with pytest.raises(RuntimeError):
         health.check_refresh_health()
+
+
+def test_check_refresh_health_fails_when_last_attempt_is_stale():
+    # A silently-dead worker: the health file exists with no failures recorded,
+    # but last_attempt_at is far older than the staleness limit because the
+    # thread stopped rewriting it. The failure counter never trips, so the age
+    # check is the only thing that catches this.
+    stale = (datetime.now() - timedelta(seconds=10_000)).isoformat()
+    health.health_path().write_text(
+        json.dumps({"last_attempt_at": stale, "last_outcome": "ok", "consecutive_failures": 0})
+    )
+    with pytest.raises(RuntimeError, match="stale"):
+        health.check_refresh_health()
+
+
+def test_check_refresh_health_passes_when_recently_attempted():
+    # A live worker rewrites last_attempt_at every cycle; a fresh timestamp with
+    # no failures must not trip the staleness guard.
+    health.record_cycle("ok")
+    health.check_refresh_health()  # no raise
+
+
+def test_staleness_limit_respects_poll_and_cycles(monkeypatch):
+    monkeypatch.setenv("MCP_STRAVA_REFRESH_POLL_SECONDS", "120")
+    monkeypatch.setenv("MCP_STRAVA_REFRESH_MAX_STALE_CYCLES", "4")
+    # 120 * 4 = 480 > floor 300
+    assert health._staleness_limit_seconds() == 480
+    # Floor wins for short poll intervals.
+    monkeypatch.setenv("MCP_STRAVA_REFRESH_POLL_SECONDS", "10")
+    monkeypatch.setenv("MCP_STRAVA_REFRESH_MAX_STALE_CYCLES", "5")
+    assert health._staleness_limit_seconds() == health._MIN_STALENESS_LIMIT_SECONDS
