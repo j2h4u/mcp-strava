@@ -389,6 +389,30 @@ def test_materialized_fact_column_registry_has_sql_metadata():
             assert column.sql_type, f"{table_name}.{column.column_name} missing sql_type"
 
 
+def test_fact_column_sql_metadata_rejects_unsafe_fragments_before_rendering():
+    from mcp_strava.metric_registry import FactColumnDefinition, _validate_fact_column_sql_metadata
+
+    def definition(**overrides):
+        values = {
+            "table_name": "activity_metric_facts",
+            "column_name": "calories_kcal",
+            "role": "metric",
+            "sql_type": "DOUBLE",
+        }
+        values.update(overrides)
+        return FactColumnDefinition(**values)
+
+    cases = (
+        (definition(table_name="activity_metric_facts; DROP TABLE activities"), "Unsafe SQL identifier"),
+        (definition(column_name="calories-kcal"), "Unsafe SQL identifier"),
+        (definition(sql_type="BOOLEAN"), "unsupported sql_type"),
+        (definition(default_sql="CURRENT_TIMESTAMP"), "unsafe default_sql"),
+    )
+    for column, match in cases:
+        with pytest.raises(ValueError, match=match):
+            _validate_fact_column_sql_metadata(column)
+
+
 def test_activity_metric_facts_generated_sql_matches_current_contract():
     from mcp_strava.metric_registry import (
         activity_metric_fact_add_column_sql,
