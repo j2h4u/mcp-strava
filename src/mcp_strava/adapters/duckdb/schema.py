@@ -1,6 +1,6 @@
 """DuckDB schema inventory for the primary Strava mirror."""
 
-from mcp_strava.metric_registry import activity_metric_facts_table_sql
+from mcp_strava.metric_registry import activity_metric_fact_add_column_sql, activity_metric_facts_table_sql
 
 DUCKDB_TABLES: tuple[str, ...] = (
     "activities",
@@ -274,6 +274,15 @@ DUCKDB_VIEWS: tuple[str, ...] = (
     "v_metric_version_status",
 )
 
+ACTIVITY_METRIC_FACT_LATE_COLUMNS: tuple[str, ...] = (
+    "observed_min_hr",
+    "observed_max_hr",
+    "hr_zone_model",
+    "hr_max_used",
+    "hr_rest_used",
+    "calories_kcal",
+)
+
 DUCKDB_AGGREGATE_VIEW_SQL = """
 CREATE OR REPLACE VIEW v_activity_aggregate_facts AS
 SELECT
@@ -506,17 +515,8 @@ def ensure_provenance_columns(conn) -> None:
     """Additive migration: add later-introduced activity_metric_facts columns
     (HR provenance + calories) if they do not already exist. Safe to call on any
     existing DuckDB file; new columns are NULL on old rows until re-materialized."""
-    alterations = [
-        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS observed_min_hr BIGINT",
-        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS observed_max_hr BIGINT",
-        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS hr_zone_model VARCHAR",
-        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS hr_max_used BIGINT",
-        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS hr_rest_used BIGINT",
-        # Backfills the `calories` aggregate-metric column on DBs created before it
-        # existed (NULL until the activity's fact is re-materialized).
-        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS calories_kcal DOUBLE",
-    ]
-    for sql in alterations:
+    for column_name in ACTIVITY_METRIC_FACT_LATE_COLUMNS:
+        sql = activity_metric_fact_add_column_sql(column_name)
         conn.execute(sql)
 
 
