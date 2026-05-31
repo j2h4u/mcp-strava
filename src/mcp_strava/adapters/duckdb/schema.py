@@ -1,5 +1,7 @@
 """DuckDB schema inventory for the primary Strava mirror."""
 
+from mcp_strava.metric_registry import activity_metric_facts_table_sql
+
 DUCKDB_TABLES: tuple[str, ...] = (
     "activities",
     "streams",
@@ -29,7 +31,7 @@ DATE_COLUMNS: dict[str, tuple[str, ...]] = {
     "rolling_period_facts": ("as_of_day",),
 }
 
-DUCKDB_SCHEMA_SQL = """
+DUCKDB_SCHEMA_SQL = f"""
 CREATE TABLE activities (
     id BIGINT PRIMARY KEY,
     activity_day DATE NOT NULL,
@@ -147,56 +149,7 @@ CREATE TABLE metric_dirty_activities (
     PRIMARY KEY (activity_id, metric_version)
 );
 
-CREATE TABLE activity_metric_facts (
-    activity_id BIGINT NOT NULL,
-    activity_day DATE NOT NULL,
-    sport_type VARCHAR NOT NULL,
-    source_hash VARCHAR NOT NULL,
-    source_revision BIGINT NOT NULL,
-    metric_version BIGINT NOT NULL,
-    computed_at VARCHAR NOT NULL,
-    completeness_status VARCHAR NOT NULL,
-    missing_reasons_json VARCHAR NOT NULL DEFAULT '[]',
-    trimp DOUBLE,
-    zone1_seconds BIGINT NOT NULL DEFAULT 0,
-    zone2_seconds BIGINT NOT NULL DEFAULT 0,
-    zone3_seconds BIGINT NOT NULL DEFAULT 0,
-    zone4_seconds BIGINT NOT NULL DEFAULT 0,
-    zone5_seconds BIGINT NOT NULL DEFAULT 0,
-    hr_recovery_pause_count BIGINT NOT NULL DEFAULT 0,
-    hr_recovery_total_rest_sec BIGINT NOT NULL DEFAULT 0,
-    hr_recovery_median_rate DOUBLE,
-    hr_recovery_best_rate DOUBLE,
-    hr_recovery_worst_rate DOUBLE,
-    hr_recovery_avg_rate DOUBLE,
-    vertical_speed_vmh BIGINT,
-    vertical_speed_total_ascent_m DOUBLE,
-    vertical_speed_duration_hours DOUBLE,
-    cardiac_cost DOUBLE,
-    adjusted_cardiac_cost DOUBLE,
-    cardiac_drift_pct DOUBLE,
-    cardiac_drift_severity VARCHAR,
-    cardiac_drift_significant BIGINT NOT NULL DEFAULT 0,
-    cardiac_drift_quality VARCHAR,
-    hrr_pct DOUBLE,
-    anomaly_count BIGINT NOT NULL DEFAULT 0,
-    distance_m DOUBLE,
-    -- Raw Strava kcal (DetailedActivity.calories, detail_json only — not a summary
-    -- field). Populated by the materializer from detail_json; surfaced through
-    -- v_activity_aggregate_facts and summed by the `calories` aggregate metric.
-    calories_kcal DOUBLE,
-    moving_time_s BIGINT,
-    elapsed_time_s BIGINT,
-    elevation_gain_m DOUBLE,
-    heartrate_sample_count BIGINT NOT NULL DEFAULT 0,
-    stream_sample_count BIGINT NOT NULL DEFAULT 0,
-    observed_min_hr BIGINT,
-    observed_max_hr BIGINT,
-    hr_zone_model VARCHAR,
-    hr_max_used BIGINT,
-    hr_rest_used BIGINT,
-    PRIMARY KEY (activity_id, metric_version)
-);
+{activity_metric_facts_table_sql()}
 
 CREATE TABLE daily_load_facts (
     day DATE NOT NULL,
