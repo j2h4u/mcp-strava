@@ -327,3 +327,20 @@ def test_ensure_schema_extensions_swallows_missing_table_but_surfaces_real_error
     monkeypatch.setattr(repo_mod, "ensure_provenance_columns", _boom)
     with pytest.raises(RuntimeError, match="disk on fire"):
         DuckDBRepository.from_connection(duckdb.connect(":memory:"))
+
+
+def test_safe_identifier_rejects_sql_injection() -> None:
+    """_safe_identifier accepts bare identifiers and rejects anything else.
+
+    Panel Security finding (defense-in-depth): a handful of internal queries
+    interpolate table/column names because DuckDB cannot parameterize
+    identifiers. All current callers pass schema literals, but the guard makes a
+    future Strava-sourced string fail loudly instead of injecting.
+    """
+    from mcp_strava.adapters.duckdb.repository import _safe_identifier
+
+    assert _safe_identifier("activity_metric_facts") == "activity_metric_facts"
+    assert _safe_identifier("observed_max_hr") == "observed_max_hr"
+    for bad in ["facts; DROP TABLE x", "a'b", "a b", "a-b", "", "1abc", "x)", "a,b"]:
+        with pytest.raises(ValueError):
+            _safe_identifier(bad)

@@ -8,7 +8,12 @@ Fields we COULD use are marked with 🔵.
 Fields we DON'T need are marked with ⬜.
 
 Machine-readable version: mcp_strava/api_schema.py (FieldSchema/EndpointSchema dataclasses).
-Used by cmd_sync Phase 4 for automatic schema validation + Summit detection.
+
+STATUS: planned, not yet wired. This reference and api_schema.py were built for an
+automatic schema-validation + Summit-detection pass in the sync path (unknown-key
+and newly-active-Summit detection), but that wiring was never connected — neither
+module is imported anywhere yet. Kept as the source of truth for when the feature
+is implemented; do not assume it runs.
 
 Last updated: 2026-05-05, verified against live API.
 """

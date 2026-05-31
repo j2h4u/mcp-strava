@@ -95,7 +95,12 @@ class _FileLock:
 
     def __enter__(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._handle = self.path.open("a+")
+        # Create the lock sidecar 0600 rather than umask-inherited 0644: os.open
+        # honours the mode on creation, and chmod repairs a pre-existing file.
+        # Keeps the advisory lock from being world-readable next to the token.
+        fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+        os.chmod(self.path, 0o600)
+        self._handle = os.fdopen(fd, "a+")
         fcntl.flock(self._handle.fileno(), fcntl.LOCK_EX)
         return self
 

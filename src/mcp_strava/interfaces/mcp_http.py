@@ -176,6 +176,21 @@ def validate_http_settings(settings: Settings) -> None:
 
 
 def build_transport_security(settings: Settings) -> TransportSecuritySettings:
+    """Build transport-layer guards for the MCP HTTP surface.
+
+    THREAT MODEL (single-user, local): there is NO per-request authentication on
+    this surface — any process that can reach the bound address may call every
+    tool. That is acceptable only because the service is deployed for one user
+    behind these load-bearing assumptions:
+      - the container binds loopback by default; a wildcard bind requires the
+        container profile AND an explicit allow flag (see validate_http_settings);
+      - the compose file exposes the port to the internal Docker network only
+        (`expose`, not `ports`) — it is not published to the LAN;
+      - DNS-rebinding protection plus host/origin allowlists (below) block
+        browser-driven cross-origin access.
+    If this ever becomes multi-user or network-reachable, add per-request auth —
+    the transport guards here are not a substitute for it.
+    """
     if not settings.http.allowed_hosts:
         raise ValueError("allowed_hosts must not be empty")
     if not settings.http.allowed_origins:

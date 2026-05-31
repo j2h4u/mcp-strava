@@ -399,3 +399,20 @@ def test_fetch_rate_limit_exhaustion_carries_rate_snapshot_detail():
     assert exc.detail["read_usage_daily"] == 1000
     assert exc.detail["read_limit_daily"] == 1000
     assert exc.detail["limit_daily"] == 2000
+
+
+def test_file_lock_creates_sidecar_with_owner_only_permissions(tmp_path):
+    """The advisory lock sidecar is created 0600, not umask-inherited 0644.
+
+    Panel Security finding: _FileLock opened the lock file via Path.open, which
+    inherits the process umask (typically 0644 → world-readable). The lock sits
+    next to the token file, so it must not be world-readable.
+    """
+    import stat
+
+    from mcp_strava.adapters.strava.token_provider import _FileLock
+
+    lock_path = tmp_path / "tokens.env.lock"
+    with _FileLock(lock_path):
+        mode = stat.S_IMODE(lock_path.stat().st_mode)
+    assert mode == 0o600, f"lock file must be 0600, got {oct(mode)}"

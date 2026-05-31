@@ -6,6 +6,11 @@ Two-layer detection:
   2. Newly-active Summit: field marked 💰 suddenly becomes non-null/non-zero
 
 Derived from strava_api_reference.py (single source of human docs).
+
+STATUS: planned, not yet wired. These dataclasses were designed for the sync
+path to flag unknown Strava fields and newly-active Summit fields, but nothing
+imports this module yet — the detection pass was never connected. Kept for when
+the feature is implemented.
 """
 
 from dataclasses import dataclass, field

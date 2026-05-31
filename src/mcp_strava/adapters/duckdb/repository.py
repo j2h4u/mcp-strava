@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
@@ -28,6 +29,19 @@ from mcp_strava.types import (
 Row = dict[str, Any]
 
 CURRENT_METRIC_VERSION = 1
+
+# A few internal queries must interpolate table/column names (DuckDB does not
+# parameterize identifiers). All current callers pass schema-defined literals,
+# never Strava-sourced strings — but this guard rejects anything that is not a
+# bare SQL identifier, so a future mistake fails loudly instead of allowing
+# injection. Defense-in-depth for the single-user threat model.
+_SQL_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _safe_identifier(name: str) -> str:
+    if not _SQL_IDENTIFIER.match(name):
+        raise ValueError(f"unsafe SQL identifier (not a bare table/column name): {name!r}")
+    return name
 
 
 def build_trimp_sql(bounds: list[int], alias: str = "") -> str:
@@ -288,6 +302,7 @@ class DuckDBRepository:
         return row[0] if row is not None else None
 
     def _table_columns(self, table: str) -> set[str]:
+        _safe_identifier(table)
         with duckdb_process_lock():
             rows = self.conn.execute(f"PRAGMA table_info('{table}')").fetchall()
         return {str(row[1]) for row in rows}
@@ -306,6 +321,7 @@ class DuckDBRepository:
         return row is not None
 
     def _next_id(self, table: str) -> int:
+        _safe_identifier(table)
         value = self._scalar(f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table}")
         return int(value or 1)
 
@@ -587,7 +603,10 @@ class DuckDBRepository:
         )
 
     def _upsert_fact(self, table: str, values: dict[str, Any], conflict_columns: tuple[str, ...]) -> None:
-        columns = tuple(values.keys())
+        _safe_identifier(table)
+        columns = tuple(_safe_identifier(col) for col in values)
+        for col in conflict_columns:
+            _safe_identifier(col)
         placeholders = ", ".join("?" for _ in columns)
         update_columns = [col for col in columns if col not in conflict_columns]
         assignments = ", ".join(f"{col}=excluded.{col}" for col in update_columns)
