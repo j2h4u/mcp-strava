@@ -299,20 +299,21 @@ Plans:
 **Requirements**: Metric platform maintainability / registry source-of-truth (promoted from backlog 999.1)
 **Depends on:** Phase 13
 **Plans:** 3/3 plans complete
+**Completed:** 2026-05-31
 
 Plans:
 
 **Wave 1**
 
-- [ ] `14-01-PLAN.md` - Registry SQL metadata and activity fact DDL helpers
+- [x] `14-01-PLAN.md` - Registry SQL metadata and activity fact DDL helpers
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] `14-02-PLAN.md` - Runtime schema cutover to registry-generated activity_metric_facts DDL and ALTER SQL
+- [x] `14-02-PLAN.md` - Runtime schema cutover to registry-generated activity_metric_facts DDL and ALTER SQL
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] `14-03-PLAN.md` - Full gate verification and scope-fence check
+- [x] `14-03-PLAN.md` - Full gate verification and scope-fence check
 
 ## Backlog
 
