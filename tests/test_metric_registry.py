@@ -286,6 +286,48 @@ def test_materialized_fact_column_registry_matches_duckdb_schema():
             assert schema_columns == set(materialized_fact_column_names(table_name)), table_name
 
 
+def test_materialized_fact_column_registry_has_sql_metadata():
+    for table_name, columns in MATERIALIZED_FACT_COLUMN_REGISTRY.items():
+        for column in columns.values():
+            assert column.sql_type, f"{table_name}.{column.column_name} missing sql_type"
+
+
+def test_activity_metric_facts_generated_sql_matches_current_contract():
+    from mcp_strava.metric_registry import (
+        activity_metric_fact_add_column_sql,
+        activity_metric_facts_table_sql,
+        materialized_fact_column_definition_sql,
+    )
+
+    assert (
+        materialized_fact_column_definition_sql("activity_metric_facts", "activity_id")
+        == "activity_id BIGINT NOT NULL"
+    )
+    assert (
+        materialized_fact_column_definition_sql("activity_metric_facts", "activity_day")
+        == "activity_day DATE NOT NULL"
+    )
+    assert (
+        materialized_fact_column_definition_sql("activity_metric_facts", "missing_reasons_json")
+        == "missing_reasons_json VARCHAR NOT NULL DEFAULT '[]'"
+    )
+    assert (
+        materialized_fact_column_definition_sql("activity_metric_facts", "zone1_seconds")
+        == "zone1_seconds BIGINT NOT NULL DEFAULT 0"
+    )
+    assert materialized_fact_column_definition_sql("activity_metric_facts", "calories_kcal") == (
+        "calories_kcal DOUBLE"
+    )
+    assert activity_metric_fact_add_column_sql("calories_kcal") == (
+        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS calories_kcal DOUBLE"
+    )
+
+    ddl = activity_metric_facts_table_sql()
+    assert ddl.startswith("CREATE TABLE activity_metric_facts (")
+    assert "    PRIMARY KEY (activity_id, metric_version)" in ddl
+    assert ddl.rstrip().endswith(");")
+
+
 def test_fact_column_registry_has_known_roles_and_metric_refs():
     allowed_roles = {"dimension", "metric", "dependency", "provenance"}
     for table_name, columns in MATERIALIZED_FACT_COLUMN_REGISTRY.items():
