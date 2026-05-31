@@ -9,11 +9,10 @@ Fields we DON'T need are marked with ⬜.
 
 Machine-readable version: mcp_strava/api_schema.py (FieldSchema/EndpointSchema dataclasses).
 
-STATUS: planned, not yet wired. This reference and api_schema.py were built for an
-automatic schema-validation + Summit-detection pass in the sync path (unknown-key
-and newly-active-Summit detection), but that wiring was never connected — neither
-module is imported anywhere yet. Kept as the source of truth for when the feature
-is implemented; do not assume it runs.
+WIRED: api_schema.py is connected via refresh/schema_drift.py — the sync path
+validates every fetched Strava response and logs a strava_schema_drift event for
+unknown or newly-active Summit fields. This file is the human source of truth for
+that schema; keep field statuses (✅/🔵/💰/⬜) current when promoting fields.
 
 Last updated: 2026-05-05, verified against live API.
 """

@@ -7,10 +7,10 @@ Two-layer detection:
 
 Derived from strava_api_reference.py (single source of human docs).
 
-STATUS: planned, not yet wired. These dataclasses were designed for the sync
-path to flag unknown Strava fields and newly-active Summit fields, but nothing
-imports this module yet — the detection pass was never connected. Kept for when
-the feature is implemented.
+WIRED: refresh/schema_drift.py runs validate_response/validate_batch on every
+fetched Strava response and logs a strava_schema_drift event when an unknown or
+newly-active Summit field appears. This module is detection-only — it writes
+nothing to the DB (the raw JSON is already persisted in full).
 """
 
 from dataclasses import dataclass, field
