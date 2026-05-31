@@ -298,11 +298,21 @@ Plans:
 **Goal:** Deliver slice 1 of the Metric Platform refactor: add SQL type metadata to the fact-column registry and generate the `activity_metric_facts` DDL plus additive migrations from that registry, retiring the parallel hand-written fact schema while keeping computed-metric/source-grammar work behind later decision gates.
 **Requirements**: Metric platform maintainability / registry source-of-truth (promoted from backlog 999.1)
 **Depends on:** Phase 13
-**Plans:** 0 plans
+**Plans:** 3/3 plans ready
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 14 to break down)
+**Wave 1**
+
+- [ ] `14-01-PLAN.md` - Registry SQL metadata and activity fact DDL helpers
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] `14-02-PLAN.md` - Runtime schema cutover to registry-generated activity_metric_facts DDL and ALTER SQL
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] `14-03-PLAN.md` - Full gate verification and scope-fence check
 
 ## Backlog
 
