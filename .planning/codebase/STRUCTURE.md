@@ -242,10 +242,7 @@ mcp-strava/
 - Generated: No
 - Committed: Yes
 
-**`src/mcp_strava/adapters/sqlite/`:**
-- Purpose: Legacy SQLite adapter with migration version files (present in repo but superseded by DuckDB adapter)
-- Generated: No
-- Committed: Yes
+> Note: the former `src/mcp_strava/adapters/sqlite/` adapter was removed in commit `22b7045` (Phase 08) when the project migrated to DuckDB. No SQLite source remains in the tree.
 
 ---
 
