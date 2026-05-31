@@ -292,3 +292,14 @@ Plans:
 - [ ] `13-02-PLAN.md` — None-guard sweep and D-04 one-offs — reaches 0 pyright errors (Wave 2)
 - [ ] `13-03-PLAN.md` — Pin typeCheckingMode = standard and remove vestigial noqa: BLE001 (Wave 2, parallel)
 - [ ] `13-04-PLAN.md` — D-08 gate verification: just check + just test both green (Wave 3)
+
+## Backlog
+
+### Phase 999.1: Metric Platform — declarative metric registry (BACKLOG)
+
+**Goal:** Make the metric registry a true single source of truth so adding a metric is one declaration, not ~7 coordinated edits across schema.py / read_model_materializer.py / metric_registry.py / aggregate_queries.py / metric_services.py. Surfaced while adding the `calories` metric (commit `d114e2a`): the registry centralizes metadata but not the value plumbing (source → DDL column → materializer extraction → aggregate selection → payload). Full context, wiring map, smells, and a proposed declarative design (`source="detail_json.calories"` style + a generic engine that derives DDL/extraction/aggregate/payload): see `phases/999.1-metric-platform-declarative-registry/CONTEXT.md`.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready; start with a design/spike phase)
