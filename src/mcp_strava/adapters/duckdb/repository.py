@@ -12,7 +12,8 @@ import duckdb
 
 from mcp_strava.adapters.duckdb.connection import duckdb_process_lock, open_expected_mirror_db, open_fixture_db
 from mcp_strava.adapters.duckdb.schema import ensure_provenance_columns
-from mcp_strava.constants import TRAINING_SPORTS, Config
+from mcp_strava.constants import Config
+from mcp_strava.sports import SPORT_TRAINING as TRAINING_SPORTS
 from mcp_strava.types import (
     ALLOWED_REASON_CODES,
     DailyLoadPoint,

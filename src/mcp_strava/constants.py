@@ -110,24 +110,10 @@ class Config:
             TAU_CTL = 28  # chronic load EWMA window
 
 
-# ═══════════════════════════════════════════════════════════════
-#  Sport type groups — imported from registry (single source)
-# ═══════════════════════════════════════════════════════════════
-# All 50 Strava sport types defined once in sports.py.
-
-from mcp_strava.sports import (  # noqa: E402, F401, I001
-    SPORT_ALL as ALL_SPORTS,
-    SPORT_RUNNING as RUNNING_SPORTS,
-    SPORT_TRAINING as TRAINING_SPORTS,
-    build_eff_config,
-    detect_new_types,
-    get_category,
-    get_display,
-    get_eff_windows,
-    is_hr_based,
-    is_running,
-    is_training,
-)
+# Sport type groups (SPORT_ALL/SPORT_RUNNING/SPORT_TRAINING) and helpers
+# (is_running, get_category, ...) live in mcp_strava.sports — import them from
+# there directly. constants.py no longer re-exports them (the old E402/F401
+# shim is gone now that all callers import from sports).
 
 # Individual sport type constants
 SPORT_RUN = "Run"
