@@ -435,7 +435,6 @@ def test_expensive_mcp_tools_use_short_lived_response_cache(monkeypatch) -> None
         return _envelope({"rows": [{"metric_id": "trimp"}]})
 
     monkeypatch.setattr(mcp_http, "_TOOL_CACHE_TTL_SECONDS", 30.0)
-    mcp_http._TOOL_RESPONSE_CACHE.clear()
 
     first = mcp_http._run_cached_logged_tool(
         "get_training_aggregates",
@@ -450,7 +449,6 @@ def test_expensive_mcp_tools_use_short_lived_response_cache(monkeypatch) -> None
 
     assert calls == 1
     assert first == second
-    mcp_http._TOOL_RESPONSE_CACHE.clear()
 
 
 def test_training_aggregate_bundle_payloads_keep_rows_sections_metadata_and_reasons(monkeypatch) -> None:
@@ -461,7 +459,6 @@ def test_training_aggregate_bundle_payloads_keep_rows_sections_metadata_and_reas
         "get_training_aggregates_service",
         lambda request, **_: _bundle_envelope(request.bundle_id),
     )
-    mcp_http._TOOL_RESPONSE_CACHE.clear()
     server = mcp_http.build_mcp_server()
 
     for bundle_id in EXPECTED_PRODUCT_BUNDLES:
@@ -481,7 +478,6 @@ def test_training_aggregate_bundle_payloads_keep_rows_sections_metadata_and_reas
         )
         _assert_bundle_payload_contract(payload, bundle_id=bundle_id)
 
-    mcp_http._TOOL_RESPONSE_CACHE.clear()
 
 
 def test_daily_brief_mcp_composition_keeps_workout_facts_on_workout_tools(monkeypatch) -> None:
@@ -500,7 +496,6 @@ def test_daily_brief_mcp_composition_keeps_workout_facts_on_workout_tools(monkey
         "get_workout_detail_service",
         lambda workout_id, **_: _envelope({"activity_id": workout_id, "gear_name": "Road Shoe"}),
     )
-    mcp_http._TOOL_RESPONSE_CACHE.clear()
     server = mcp_http.build_mcp_server()
 
     _, aggregate_payload = asyncio.run(
@@ -527,7 +522,6 @@ def test_daily_brief_mcp_composition_keeps_workout_facts_on_workout_tools(monkey
     assert workouts_payload["data"]["items"][0]["activity_id"] == 701
     assert detail_payload["data"]["gear_name"] == "Road Shoe"
     assert tuple(tool.name for tool in asyncio.run(server.list_tools())) == EXPECTED_TOOL_NAMES
-    mcp_http._TOOL_RESPONSE_CACHE.clear()
 
 
 def test_training_aggregate_cache_identity_includes_full_product_request(monkeypatch) -> None:

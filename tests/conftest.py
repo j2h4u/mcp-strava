@@ -60,3 +60,20 @@ def reset_read_connections():
     reset_thread_connections()
     yield
     reset_thread_connections()
+
+
+@pytest.fixture(autouse=True)
+def reset_tool_response_cache():
+    """Clear the MCP tool-response cache around each test.
+
+    interfaces.mcp_http._TOOL_RESPONSE_CACHE is a module-level singleton that
+    survives between tests. Without isolation, a test exercising a cached tool
+    can inherit or leak entries to/from whichever test ran before it in the
+    collection order. This replaces per-test manual .clear() calls that a new
+    test author could easily forget.
+    """
+    from mcp_strava.interfaces.mcp_http import _TOOL_RESPONSE_CACHE
+
+    _TOOL_RESPONSE_CACHE.clear()
+    yield
+    _TOOL_RESPONSE_CACHE.clear()

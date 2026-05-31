@@ -173,9 +173,9 @@ def _query_status_fact(conn, definition: StatusFactDefinition, as_of: date) -> S
     if code == "stale_read_model_facts":
         return _query_stale_read_model_status(conn, definition, as_of)
     if code == "missing_hr":
-        return _query_missing_sample_status(conn, definition, as_of, "heartrate_sample_count", "missing_hr")
+        return _query_missing_sample_status(conn, definition, as_of, "heartrate_sample_count")
     if code == "missing_streams":
-        return _query_missing_sample_status(conn, definition, as_of, "stream_sample_count", "missing_streams")
+        return _query_missing_sample_status(conn, definition, as_of, "stream_sample_count")
     if code == "excessive_z5_exposure":
         return _query_excessive_z5_status(conn, definition, as_of)
     if code == "hr_anomaly_burst":
@@ -254,7 +254,6 @@ def _query_missing_sample_status(
     definition: StatusFactDefinition,
     as_of: date,
     sample_column: str,
-    missing_code: str,
 ) -> StatusFact:
     start = _lookback_start(definition, as_of)
     total = _activity_fact_count(conn, start, as_of)
@@ -277,7 +276,6 @@ def _query_missing_sample_status(
         "activity_ids": activity_ids,
         "sample_column": sample_column,
     }
-    del missing_code
     return _status_fact(definition, "active" if activity_ids else "inactive", evidence)
 
 
@@ -1084,9 +1082,6 @@ def _quantiles(metric: MetricDefinition, row: dict[str, Any]) -> dict[str, float
     value = row.get("value")
     if value is None:
         return None
-    source = str(metric.aggregate_source)
-    day_column = _SOURCE_DAY_COLUMNS[source]
-    del day_column
     return _quantiles_from_group(row)
 
 

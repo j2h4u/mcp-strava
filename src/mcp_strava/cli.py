@@ -71,7 +71,7 @@ def cmd_report(args):
     if not args or args[0] != "daily":
         _usage_error("Usage: python -m mcp_strava report daily [--json]")
     envelope = get_daily_brief_facts_service(as_of_day=_today_day())
-    _print_product_envelope(envelope, json_output=json_output, title="Daily Report", renderer=_render_daily_report)
+    _print_product_envelope(envelope, json_output=json_output, title="Daily Report", renderer=_render_bundle_report)
 
 
 def cmd_weekly(args):
@@ -80,7 +80,7 @@ def cmd_weekly(args):
     if args:
         _usage_error("Usage: python -m mcp_strava weekly [--json]")
     envelope = get_weekly_digest_facts_service(as_of_day=_today_day())
-    _print_product_envelope(envelope, json_output=json_output, title="Weekly Summary", renderer=_render_weekly_summary)
+    _print_product_envelope(envelope, json_output=json_output, title="Weekly Summary", renderer=_render_bundle_report)
 
 
 def cmd_workouts(args):
@@ -449,12 +449,7 @@ def _render_metadata(payload):
             print(f"- {item.get('code')}: {item.get('message')}")
 
 
-def _render_daily_report(data):
-    data = data or {}
-    _render_bundle_sections(data)
-
-
-def _render_weekly_summary(data):
+def _render_bundle_report(data):
     data = data or {}
     _render_bundle_sections(data)
 

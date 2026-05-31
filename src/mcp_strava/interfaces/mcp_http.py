@@ -23,7 +23,8 @@ from mcp_strava.application.metric_services import (
     list_workouts_service,
     project_fitness_state_service,
 )
-from mcp_strava.mcp_content import MCP_PROMPT_NAMES, load_prompt  # noqa: F401
+from mcp_strava.mcp_content import MCP_PROMPT_NAMES as MCP_PROMPT_NAMES  # re-exported as part of the MCP surface
+from mcp_strava.mcp_content import load_prompt
 from mcp_strava.settings import Settings, get_settings, load_settings
 from mcp_strava.types import ServiceEnvelope, dc_to_dict
 
