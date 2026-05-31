@@ -293,13 +293,17 @@ Plans:
 - [ ] `13-03-PLAN.md` — Pin typeCheckingMode = standard and remove vestigial noqa: BLE001 (Wave 2, parallel)
 - [ ] `13-04-PLAN.md` — D-08 gate verification: just check + just test both green (Wave 3)
 
-## Backlog
+### Phase 14: Metric Platform registry-owned fact schema
 
-### Phase 999.1: Metric Platform — declarative metric registry (BACKLOG)
-
-**Goal:** Make the metric registry a true single source of truth so adding a metric is one declaration, not ~7 coordinated edits across schema.py / read_model_materializer.py / metric_registry.py / aggregate_queries.py / metric_services.py. Surfaced while adding the `calories` metric (commit `d114e2a`): the registry centralizes metadata but not the value plumbing (source → DDL column → materializer extraction → aggregate selection → payload). Full context, wiring map, smells, and a proposed declarative design (`source="detail_json.calories"` style + a generic engine that derives DDL/extraction/aggregate/payload): see `phases/999.1-metric-platform-declarative-registry/CONTEXT.md`.
-**Requirements:** TBD
+**Goal:** Deliver slice 1 of the Metric Platform refactor: add SQL type metadata to the fact-column registry and generate the `activity_metric_facts` DDL plus additive migrations from that registry, retiring the parallel hand-written fact schema while keeping computed-metric/source-grammar work behind later decision gates.
+**Requirements**: Metric platform maintainability / registry source-of-truth (promoted from backlog 999.1)
+**Depends on:** Phase 13
 **Plans:** 0 plans
 
 Plans:
-- [ ] TBD (promote with /gsd-review-backlog when ready; start with a design/spike phase)
+
+- [ ] TBD (run /gsd-plan-phase 14 to break down)
+
+## Backlog
+
+No backlog items currently.
