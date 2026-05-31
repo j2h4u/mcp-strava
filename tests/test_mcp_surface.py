@@ -479,7 +479,6 @@ def test_training_aggregate_bundle_payloads_keep_rows_sections_metadata_and_reas
         _assert_bundle_payload_contract(payload, bundle_id=bundle_id)
 
 
-
 def test_daily_brief_mcp_composition_keeps_workout_facts_on_workout_tools(monkeypatch) -> None:
     from mcp_strava.interfaces import mcp_http
 

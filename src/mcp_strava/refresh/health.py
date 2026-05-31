@@ -34,7 +34,7 @@ def _now_iso() -> str:
 def _read(path: Path) -> dict:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return {}
 
 
@@ -135,7 +135,7 @@ def check_refresh_health() -> None:
     if last_attempt:
         try:
             age = (datetime.now() - datetime.fromisoformat(last_attempt)).total_seconds()
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             age = None
         if age is not None:
             limit = _staleness_limit_seconds()

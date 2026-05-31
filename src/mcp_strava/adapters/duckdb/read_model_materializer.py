@@ -90,13 +90,13 @@ def _detail_calories(detail_json: str | None) -> float | None:
         return None
     try:
         value = json.loads(detail_json).get("calories")
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
     if value is None:
         return None
     try:
         return float(value)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 

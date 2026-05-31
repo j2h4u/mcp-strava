@@ -36,9 +36,7 @@ class StravaTransport:
         while attempts < 3:
             decision = self.policy.decide_next_call(self.clock.now())
             if decision.status == "exhausted":
-                raise StravaUnavailable(
-                    decision.reason or "rate_limited", detail=self.policy.rate_info.as_dict()
-                )
+                raise StravaUnavailable(decision.reason or "rate_limited", detail=self.policy.rate_info.as_dict())
             if decision.status == "wait" and decision.wait_until is not None:
                 self.sleeper.sleep(max(0, decision.wait_until - self.clock.now()))
 
@@ -77,7 +75,7 @@ class StravaTransport:
                 if attempts >= 3:
                     break
                 self.sleeper.sleep([1, 5, 30][attempts - 1])
-            except (TimeoutError, urllib.error.URLError, OSError):
+            except TimeoutError, urllib.error.URLError, OSError:
                 last_reason = "network_unstable"
                 attempts += 1
                 if attempts >= 3:

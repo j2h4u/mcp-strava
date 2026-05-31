@@ -252,3 +252,4 @@ Resume file: None
 | 260525-ng3 Hermes prompts and metric polish | 2026-05-25 | `.planning/quick/260525-ng3-hermes-prompts-metric-polish/260525-ng3-SUMMARY.md` |
 | 260526-lal centralize materialized analytic fact registry and add drift audit | 2026-05-26 | `.planning/quick/260526-lal-centralize-materialized-analytic-fact-re/260526-lal-SUMMARY.md` |
 | 260527-nbq compute HR zones on the fly and drop hardcoded athlete HR constants | 2026-05-27 | `.planning/quick/260527-nbq-wire-hr-zone-computation-on-the-fly-into/260527-nbq-SUMMARY.md` |
+| 260531-nv0 format pre-existing unrelated ruff drift | 2026-05-31 | `.planning/quick/260531-nv0-format-pre-existing-unrelated-ruff-forma/260531-nv0-SUMMARY.md` |
