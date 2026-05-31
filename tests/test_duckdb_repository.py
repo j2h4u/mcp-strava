@@ -374,7 +374,10 @@ def test_ensure_provenance_columns_adds_registry_owned_late_activity_columns() -
         ORDER BY ordinal_position
         """
     ).fetchall()
-    added_columns = {str(name): (str(data_type), str(is_nullable) == "YES", default_sql) for name, data_type, is_nullable, default_sql in rows}
+    added_columns = {
+        str(name): (str(data_type), str(is_nullable) == "YES", default_sql)
+        for name, data_type, is_nullable, default_sql in rows
+    }
 
     assert tuple(added_columns) == expected_late_columns
     registry_columns = MATERIALIZED_FACT_COLUMN_REGISTRY["activity_metric_facts"]

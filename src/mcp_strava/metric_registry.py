@@ -2096,9 +2096,7 @@ def _validate_fact_column_registry() -> None:
         metadata_columns = set(_MATERIALIZED_FACT_COLUMN_SQL_METADATA.get(table_name, {}))
         unknown_metadata_columns = metadata_columns - set(columns)
         if unknown_metadata_columns:
-            raise ValueError(
-                f"{table_name} has SQL metadata for unknown columns: {sorted(unknown_metadata_columns)}"
-            )
+            raise ValueError(f"{table_name} has SQL metadata for unknown columns: {sorted(unknown_metadata_columns)}")
         for column_name, definition in columns.items():
             if definition.table_name != table_name or definition.column_name != column_name:
                 raise ValueError(f"Fact column key mismatch: {table_name}.{column_name}")

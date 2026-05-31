@@ -397,12 +397,10 @@ def test_activity_metric_facts_generated_sql_matches_current_contract():
     )
 
     assert (
-        materialized_fact_column_definition_sql("activity_metric_facts", "activity_id")
-        == "activity_id BIGINT NOT NULL"
+        materialized_fact_column_definition_sql("activity_metric_facts", "activity_id") == "activity_id BIGINT NOT NULL"
     )
     assert (
-        materialized_fact_column_definition_sql("activity_metric_facts", "activity_day")
-        == "activity_day DATE NOT NULL"
+        materialized_fact_column_definition_sql("activity_metric_facts", "activity_day") == "activity_day DATE NOT NULL"
     )
     assert (
         materialized_fact_column_definition_sql("activity_metric_facts", "missing_reasons_json")
@@ -412,9 +410,7 @@ def test_activity_metric_facts_generated_sql_matches_current_contract():
         materialized_fact_column_definition_sql("activity_metric_facts", "zone1_seconds")
         == "zone1_seconds BIGINT NOT NULL DEFAULT 0"
     )
-    assert materialized_fact_column_definition_sql("activity_metric_facts", "calories_kcal") == (
-        "calories_kcal DOUBLE"
-    )
+    assert materialized_fact_column_definition_sql("activity_metric_facts", "calories_kcal") == ("calories_kcal DOUBLE")
     assert activity_metric_fact_add_column_sql("calories_kcal") == (
         "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS calories_kcal DOUBLE"
     )
