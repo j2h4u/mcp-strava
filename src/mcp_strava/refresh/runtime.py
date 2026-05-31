@@ -39,6 +39,8 @@ class RefreshResult:
     streams_fetched: int = 0
     details_fetched: int = 0
     kudos_fetched: int = 0
+    # Diagnostic detail for failures (e.g. rate-limit usage/limit snapshot).
+    rate_info: dict[str, int | None] | None = None
 
 
 @dataclass(frozen=True)
@@ -136,7 +138,7 @@ def run_once(
             kudos_fetched=kudos_fetched,
         )
     except StravaUnavailable as exc:
-        return _handle_failure(repo, clock, policy, exc.reason, mode)
+        return _handle_failure(repo, clock, policy, exc.reason, mode, detail=exc.detail or None)
     finally:
         repo.release_refresh_lease(owner)
 
@@ -200,7 +202,7 @@ def run_catchup(
             details_fetched=details_fetched,
         )
     except StravaUnavailable as exc:
-        return _handle_failure(repo, clock, policy, exc.reason, "backfill")
+        return _handle_failure(repo, clock, policy, exc.reason, "backfill", detail=exc.detail or None)
     finally:
         repo.release_refresh_lease(owner)
 
@@ -287,12 +289,13 @@ def run_stream_channel_catchup(
             "completed": result["completed"],
         }
     except StravaUnavailable as exc:
-        _handle_failure(repo, clock, policy, exc.reason, "backfill_stream_channels")
+        _handle_failure(repo, clock, policy, exc.reason, "backfill_stream_channels", detail=exc.detail or None)
         repo.set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, repo.get_refresh_state().checkpoint_cursor)
         return {
             "status": "failed",
             "mode": "backfill_stream_channels",
             "reason": exc.reason,
+            "rate_info": exc.detail or None,
             "checkpoint_stage": Stage.STREAM_CHANNELS_BACKFILL.value,
             "activities_considered": 0,
             "activities_to_backfill": 0,
@@ -304,10 +307,12 @@ def run_stream_channel_catchup(
         repo.release_refresh_lease(owner)
 
 
-def _handle_failure(repo, clock, policy: RefreshPolicy, reason: str, mode: str) -> RefreshResult:
+def _handle_failure(
+    repo, clock, policy: RefreshPolicy, reason: str, mode: str, detail: dict[str, int | None] | None = None
+) -> RefreshResult:
     now_iso = _now_iso(clock)
     repo.record_refresh_failure(now_iso, reason, _plus_seconds_iso(clock, _backoff_seconds(reason, policy)))
-    return RefreshResult(status="failed", reason=reason, mode=mode)
+    return RefreshResult(status="failed", reason=reason, mode=mode, rate_info=detail or None)
 
 
 def _backoff_seconds(reason: str, policy: RefreshPolicy) -> int:

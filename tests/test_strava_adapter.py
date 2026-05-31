@@ -357,3 +357,45 @@ def test_tokens_never_appear_in_errors_or_output_per_D10_D18(capsys):
     rendered = f"{captured.out}\n{captured.err}"
     assert access_token not in str(rendered)
     assert refresh_token not in str(rendered)
+
+
+def test_fetch_rate_limit_exhaustion_carries_rate_snapshot_detail():
+    """A rate-limited StravaUnavailable carries the usage/limit snapshot in .detail.
+
+    Panel SRE finding: refresh_failed logged reason=rate_limited with no quota
+    values, leaving "why did I hit the limit?" unanswerable. The transport now
+    attaches the rate snapshot so the operator log shows usage/limit at the
+    moment of exhaustion.
+    """
+    from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport, StravaUnavailable
+
+    class TokenProvider:
+        def access_token(self):
+            return "access-secret"
+
+        def refresh(self):
+            return "access-new"
+
+    policy = RateLimitPolicy()
+    # Prime to daily exhaustion: read_long usage == limit (1000/1000).
+    policy.update_from_headers(
+        {
+            "X-RateLimit-Limit": "200,2000",
+            "X-RateLimit-Usage": "10,20",
+            "X-ReadRateLimit-Limit": "100,1000",
+            "X-ReadRateLimit-Usage": "10,1000",
+        }
+    )
+    transport = StravaTransport(
+        TokenProvider(), policy, clock=FakeClock(), sleeper=FakeSleeper(), http=FakeStravaHttp([])
+    )
+
+    with pytest.raises(StravaUnavailable) as exc_info:
+        transport.fetch("/athlete")
+
+    exc = exc_info.value
+    assert exc.reason == "rate_limited"
+    # Detail surfaces concrete usage/limit values, not an empty dict.
+    assert exc.detail["read_usage_daily"] == 1000
+    assert exc.detail["read_limit_daily"] == 1000
+    assert exc.detail["limit_daily"] == 2000

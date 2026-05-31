@@ -36,7 +36,9 @@ class StravaTransport:
         while attempts < 3:
             decision = self.policy.decide_next_call(self.clock.now())
             if decision.status == "exhausted":
-                raise StravaUnavailable(decision.reason or "rate_limited")
+                raise StravaUnavailable(
+                    decision.reason or "rate_limited", detail=self.policy.rate_info.as_dict()
+                )
             if decision.status == "wait" and decision.wait_until is not None:
                 self.sleeper.sleep(max(0, decision.wait_until - self.clock.now()))
 
@@ -75,7 +77,7 @@ class StravaTransport:
                 if attempts >= 3:
                     break
                 self.sleeper.sleep([1, 5, 30][attempts - 1])
-            except TimeoutError, urllib.error.URLError, OSError:
+            except (TimeoutError, urllib.error.URLError, OSError):
                 last_reason = "network_unstable"
                 attempts += 1
                 if attempts >= 3:
@@ -83,7 +85,10 @@ class StravaTransport:
                 self.sleeper.sleep([1, 5, 30][attempts - 1])
                 continue
 
-        raise StravaUnavailable(last_reason)
+        # Attach the rate snapshot when we give up because of rate limiting, so
+        # the operator log shows the usage/limit at the moment of exhaustion.
+        detail = self.policy.rate_info.as_dict() if last_reason == "rate_limited" else None
+        raise StravaUnavailable(last_reason, detail=detail)
 
     def _build_request(self, path: str, token: str) -> urllib.request.Request:
         url = f"{self.base_url}/{path.lstrip('/')}"

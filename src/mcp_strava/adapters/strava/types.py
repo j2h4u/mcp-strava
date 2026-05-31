@@ -16,10 +16,16 @@ class RefreshReason(StrEnum):
 
 
 class StravaUnavailable(Exception):
-    """Typed adapter failure with a product-safe reason code."""
+    """Typed adapter failure with a product-safe reason code.
 
-    def __init__(self, reason: str):
+    ``detail`` carries optional diagnostic context for operator logs (e.g. the
+    rate-limit usage/limit snapshot when ``reason == "rate_limited"``). It is
+    never surfaced to end users — only the opaque ``reason`` code is.
+    """
+
+    def __init__(self, reason: str, detail: dict[str, Any] | None = None):
         self.reason = reason
+        self.detail: dict[str, Any] = detail or {}
         super().__init__(reason)
 
 

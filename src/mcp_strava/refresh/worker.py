@@ -197,7 +197,13 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> int:
                     kudos_fetched=result.kudos_fetched,
                 )
             else:
-                _emit("refresh_failed", reason=result.reason or "unknown", checkpoint_stage=result.checkpoint_stage)
+                _emit(
+                    "refresh_failed",
+                    reason=result.reason or "unknown",
+                    checkpoint_stage=result.checkpoint_stage,
+                    # Rate-limit usage/limit snapshot when reason == "rate_limited".
+                    **(result.rate_info or {}),
+                )
                 return 1
 
         backfill_result = _run_stream_channel_backfill(repo, transport, refresh_policy, clock, sleeper)
