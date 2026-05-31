@@ -13,6 +13,7 @@ from mcp_strava.adapters.duckdb.read_model_materializer import (
 )
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository, summary_payload_changed
 from mcp_strava.refresh.checkpoints import Stage
+from mcp_strava.refresh.schema_drift import journal_schema_drift
 from mcp_strava.types import parse_strava_activity, parse_strava_stream_channels
 
 STREAM_KEYS = (
@@ -193,6 +194,7 @@ def sync_summaries(repo, transport, now_iso: str) -> tuple[int, int]:
         if not isinstance(data, list):
             break
         seen += len(data)
+        journal_schema_drift(data, "summary_activity", is_batch=True)
         for raw in data:
             act = parse_strava_activity(raw)
             existing = repo.activity_by_id(act.id)
@@ -235,6 +237,7 @@ def sync_streams(
         repo.set_checkpoint(checkpoint_stage.value, str(activity.id))
         response = transport.fetch(f"/activities/{activity.id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
         if isinstance(response.data, dict):
+            journal_schema_drift(response.data, "streams")
             _insert_streams(
                 repo, activity.id, response.data, fetched_at=datetime.now(UTC).replace(tzinfo=None).isoformat()
             )
@@ -253,6 +256,7 @@ def sync_details(
         repo.set_checkpoint(checkpoint_stage.value, str(activity.id))
         response = transport.fetch(f"/activities/{activity.id}")
         if isinstance(response.data, dict):
+            journal_schema_drift(response.data, "detailed_activity")
             repo.update_activity_detail(activity.id, json.dumps(response.data))
             fetched += 1
     return fetched
