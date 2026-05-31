@@ -4,7 +4,7 @@ import duckdb
 import pytest
 
 from mcp_strava.adapters.duckdb.schema import create_schema
-from mcp_strava.application.metric_registry import (
+from mcp_strava.metric_registry import (
     AGGREGATE_METRIC_BUNDLES,
     AGGREGATE_MODES,
     EXCLUDED_INTERPRETATIONS,
@@ -417,7 +417,7 @@ def test_kudos_aggregate_excludes_kudos_names():
 
 
 def test_phase9_status_fact_registry_is_machine_readable():
-    from mcp_strava.application.metric_registry import STATUS_FACT_REGISTRY
+    from mcp_strava.metric_registry import STATUS_FACT_REGISTRY
 
     assert set(STATUS_FACT_REGISTRY) == EXPECTED_STATUS_FACT_CODES
     for code, definition in STATUS_FACT_REGISTRY.items():

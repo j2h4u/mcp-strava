@@ -511,7 +511,7 @@ def test_metric_services_do_not_query_raw_streams() -> None:
 def test_mcp_request_modules_do_not_reference_raw_stream_table_sql() -> None:
     request_modules = [
         "src/mcp_strava/application/metric_services.py",
-        "src/mcp_strava/application/metric_registry.py",
+        "src/mcp_strava/metric_registry.py",
         "src/mcp_strava/interfaces/mcp_http.py",
     ]
     forbidden_fragments = (

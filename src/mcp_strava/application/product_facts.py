@@ -17,17 +17,17 @@ from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
     get_training_aggregates_service,
 )
-from mcp_strava.application.metric_registry import (
-    AGGREGATE_METRIC_BUNDLES,
-    METRIC_REGISTRY,
-    STATUS_FACT_REGISTRY,
-    metrics_for_aggregate_bundle,
-)
 from mcp_strava.application.metric_services import (
     compare_periods_service,
     get_fitness_state_service,
     get_workout_detail_service,
     list_workouts_service,
+)
+from mcp_strava.metric_registry import (
+    AGGREGATE_METRIC_BUNDLES,
+    METRIC_REGISTRY,
+    STATUS_FACT_REGISTRY,
+    metrics_for_aggregate_bundle,
 )
 from mcp_strava.types import (
     CompletenessMetadata,

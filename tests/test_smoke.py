@@ -6,9 +6,9 @@ from pathlib import Path
 
 def test_imports():
     """All 14 public symbols import without errors — including new Config paths."""
-    import mcp_strava.application.metric_registry as metric_registry
     import mcp_strava.deploy.smoke as deploy_smoke
     import mcp_strava.interfaces.mcp_http as mcp_http
+    import mcp_strava.metric_registry as metric_registry
     from mcp_strava.application.freshness import get_freshness_service
     from mcp_strava.application.metric_services import get_workout_detail_service, list_workouts_service
     from mcp_strava.application.mirror_coverage import get_mirror_coverage_service

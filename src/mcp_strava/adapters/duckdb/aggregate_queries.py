@@ -8,7 +8,9 @@ from datetime import date, timedelta
 from typing import Any
 
 from mcp_strava.adapters.duckdb.schema import create_aggregate_views
-from mcp_strava.application.metric_registry import (
+from mcp_strava.constants import ALL_SPORTS, RUNNING_SPORTS
+from mcp_strava.hr_zones import get_zone_model
+from mcp_strava.metric_registry import (
     METRIC_REGISTRY,
     STATUS_FACT_REGISTRY,
     SUPPORTED_AGGREGATE_BUCKETS,
@@ -16,8 +18,6 @@ from mcp_strava.application.metric_registry import (
     aggregate_query_allowed_columns,
     metrics_for_aggregate_bundle,
 )
-from mcp_strava.constants import ALL_SPORTS, RUNNING_SPORTS
-from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.settings import get_settings
 from mcp_strava.types import MetricDefinition, StatusFact, StatusFactDefinition
 

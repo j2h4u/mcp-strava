@@ -6,7 +6,7 @@ from pathlib import Path
 from mcp_strava.adapters.duckdb.connection import open_fixture_db
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.duckdb.schema import create_schema
-from mcp_strava.application.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
+from mcp_strava.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 
 READ_MODEL_METADATA_KEYS = {
     "status",

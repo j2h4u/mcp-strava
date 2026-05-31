@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from mcp_strava.adapters.duckdb.connection import open_fixture_db
-from mcp_strava.application.metric_registry import (
+from mcp_strava.metric_registry import (
     METRIC_REGISTRY,
     STATUS_FACT_REGISTRY,
     metrics_for_aggregate_bundle,

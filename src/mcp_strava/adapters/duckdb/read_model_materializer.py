@@ -6,9 +6,9 @@ from statistics import median
 from typing import Any
 
 from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository
-from mcp_strava.application.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 from mcp_strava.constants import Config
 from mcp_strava.hr_zones import get_zone_model
+from mcp_strava.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 from mcp_strava.metrics import calc_cardiac_drift, calc_hr_recovery, calc_hrr_pct, calc_vertical_speed
 from mcp_strava.settings import Settings, get_settings
 from mcp_strava.training import calc_banister_series

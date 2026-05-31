@@ -13,7 +13,7 @@ from mcp_strava.adapters.duckdb.aggregate_queries import (
 )
 from mcp_strava.adapters.duckdb.connection import open_fixture_db
 from mcp_strava.adapters.duckdb.schema import create_schema
-from mcp_strava.application.metric_registry import (
+from mcp_strava.metric_registry import (
     METRIC_REGISTRY,
     SUPPORTED_AGGREGATE_BUCKETS,
     SUPPORTED_ROLLING_WINDOW_DAYS,
@@ -924,7 +924,7 @@ def test_phase9_product_bundles_handle_mixed_scopes_and_historical_context(tmp_p
 
 def test_phase9_status_fact_queries_return_fixture_evidence(tmp_path: Path) -> None:
     from mcp_strava.adapters.duckdb.aggregate_queries import query_status_facts
-    from mcp_strava.application.metric_registry import STATUS_FACT_REGISTRY
+    from mcp_strava.metric_registry import STATUS_FACT_REGISTRY
 
     db_path = _phase9_status_fixture(tmp_path / "phase9-status.duckdb")
     conn = open_fixture_db(db_path)

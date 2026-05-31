@@ -82,7 +82,8 @@ mcp-strava/
 
 **`src/mcp_strava/application/`:**
 - Purpose: Product-facing services — all reads from DuckDB fact tables assembled into `ServiceEnvelope`
-- Key files: `metric_services.py` (fitness state, workouts, period comparison, projection), `product_facts.py` (daily brief, weekly digest, historical fact bundles), `aggregate_services.py` (bucketed time-series), `freshness.py` (freshness metadata), `metric_registry.py` (METRIC_REGISTRY, AGGREGATE_METRIC_BUNDLES, STATUS_FACT_REGISTRY), `mirror_coverage.py` (stream coverage report)
+- Key files: `metric_services.py` (fitness state, workouts, period comparison, projection), `product_facts.py` (daily brief, weekly digest, historical fact bundles), `aggregate_services.py` (bucketed time-series), `freshness.py` (freshness metadata), `mirror_coverage.py` (stream coverage report)
+- Note: `metric_registry.py` (METRIC_REGISTRY, AGGREGATE_METRIC_BUNDLES, STATUS_FACT_REGISTRY) lives at the package root (`src/mcp_strava/metric_registry.py`), not under `application/` — it is core schema imported by both application and adapters
 
 **`src/mcp_strava/deploy/`:**
 - Purpose: Container startup and lifecycle

@@ -72,7 +72,7 @@ The deploy layer owns process lifecycle:
 | `application/product_facts.py` | Narrative-ready daily/weekly/historical fact bundles assembled from metric services | `src/mcp_strava/application/product_facts.py` |
 | `application/aggregate_services.py` | Bucketed time-series aggregate queries over read-model fact tables | `src/mcp_strava/application/aggregate_services.py` |
 | `application/freshness.py` | Freshness metadata assembly from refresh state | `src/mcp_strava/application/freshness.py` |
-| `application/metric_registry.py` | Central registry of metric IDs, bundles, and status fact specs | `src/mcp_strava/application/metric_registry.py` |
+| `metric_registry.py` | Central registry of metric IDs, bundles, and status fact specs (core-level: imported by both application and adapters, so it lives below both to avoid an adapter→application dependency) | `src/mcp_strava/metric_registry.py` |
 | `adapters/duckdb/repository.py` | All DuckDB reads and writes behind explicit unit-of-work; process-level RLock | `src/mcp_strava/adapters/duckdb/repository.py` |
 | `adapters/duckdb/connection.py` | `MirrorConn` (write/admin), `ReadConn` (thread-local reused read), process RLock | `src/mcp_strava/adapters/duckdb/connection.py` |
 | `adapters/duckdb/schema.py` | DDL definitions and table/column inventory constants | `src/mcp_strava/adapters/duckdb/schema.py` |

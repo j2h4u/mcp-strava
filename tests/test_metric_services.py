@@ -9,7 +9,7 @@ import pytest
 
 from mcp_strava.adapters.duckdb.connection import open_fixture_db
 from mcp_strava.adapters.duckdb.schema import create_schema
-from mcp_strava.application.metric_registry import METRIC_REGISTRY, metrics_for_aggregate_bundle
+from mcp_strava.metric_registry import METRIC_REGISTRY, metrics_for_aggregate_bundle
 from mcp_strava.types import (
     CompletenessMetadata,
     FreshnessMetadata,
