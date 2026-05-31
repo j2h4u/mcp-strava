@@ -456,3 +456,27 @@ def test_duckdb_materializer_hrr_uses_per_activity_max_not_running_max(tmp_path:
     assert easy_fact["hrr_pct"] == 69.1, (
         f"hrr_pct must use per-activity max 150 (=69.1), not running max 190 (=48.9); got {easy_fact['hrr_pct']}"
     )
+
+
+def test_materializer_extracts_calories_from_detail_json(tmp_path: Path) -> None:
+    """activity_metric_facts.calories_kcal is populated from detail_json.calories.
+
+    Calories live only in DetailedActivity (detail_json), never in the summary,
+    so the materializer parses them out. Activities whose detail has no calories
+    field get NULL (the column is nullable).
+    """
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+    with repo:
+        # Activity with a calories value in its detail (update re-enqueues dirty).
+        _seed_dirty_activity_with_streams(repo, activity_id=930, day="2026-05-21")
+        repo.update_activity_detail(930, '{"id": 930, "resource_state": 3, "calories": 612.5}')
+        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        with_cal = repo.fetch_activity_metric_fact(930, metric_version=1)
+
+        # Activity whose detail has no calories field -> NULL.
+        _seed_dirty_activity_with_streams(repo, activity_id=931, day="2026-05-22")
+        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        without_cal = repo.fetch_activity_metric_fact(931, metric_version=1)
+
+    assert with_cal is not None and with_cal["calories_kcal"] == 612.5
+    assert without_cal is not None and without_cal["calories_kcal"] is None

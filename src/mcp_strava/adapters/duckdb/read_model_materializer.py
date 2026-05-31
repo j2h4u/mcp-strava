@@ -78,6 +78,28 @@ _HR_REST_MISSING_MSG = (
 )
 
 
+def _detail_calories(detail_json: str | None) -> float | None:
+    """Pull Strava's `calories` (kcal) out of a DetailedActivity JSON blob.
+
+    Calories exist only in detail_json (DetailedActivity), never in the summary
+    or an activities column, so the materializer extracts them here. Returns None
+    when details are absent or the field is missing/non-numeric. Feeds the
+    activity_metric_facts.calories_kcal column -> the `calories` aggregate metric.
+    """
+    if not detail_json:
+        return None
+    try:
+        value = json.loads(detail_json).get("calories")
+    except (ValueError, TypeError):
+        return None
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
 def _activity_fact(
     repo: DuckDBRepository,
     dirty_row,
@@ -184,6 +206,7 @@ def _activity_fact(
         "hrr_pct": hrr,
         "anomaly_count": 0,
         "distance_m": activity.distance,
+        "calories_kcal": _detail_calories(activity.detail_json),
         "moving_time_s": activity.moving_time,
         "elapsed_time_s": activity.elapsed_time,
         "elevation_gain_m": activity.total_elevation_gain,

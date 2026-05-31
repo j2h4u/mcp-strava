@@ -57,6 +57,7 @@ AGGREGATE_METRIC_BUNDLES: dict[str, tuple[str, ...]] = {
     "weekly_digest": (
         "trimp",
         "distance_km",
+        "calories",
         "moving_time_min",
         "elapsed_time_min",
         "elevation_m",
@@ -73,6 +74,7 @@ AGGREGATE_METRIC_BUNDLES: dict[str, tuple[str, ...]] = {
     "monthly_digest": (
         "trimp",
         "distance_km",
+        "calories",
         "moving_time_min",
         "elevation_m",
         "active_days",
@@ -86,6 +88,7 @@ AGGREGATE_METRIC_BUNDLES: dict[str, tuple[str, ...]] = {
     "period_comparison": (
         "trimp",
         "distance_km",
+        "calories",
         "moving_time_min",
         "elapsed_time_min",
         "elevation_m",
@@ -147,6 +150,7 @@ _CALCULATION_BY_METRIC_ID = {
     "gear_distance_km": "Total mirrored Strava gear distance in meters divided by 1000 when the detailed gear payload provides distance.",
     "gear_primary": "Boolean primary-gear flag copied from the detailed Strava gear payload when Strava marks a shoe as primary.",
     "distance_km": "Activity distance_m from the mirror divided by 1000.",
+    "calories": "Strava's reported calories (kcal) per activity, summed over the period.",
     "moving_time_min": "Activity moving_time_s from the mirror divided by 60.",
     "elapsed_time_min": "Activity elapsed_time_s from the mirror divided by 60.",
     "elevation_m": "Activity total elevation gain in meters from the mirrored Strava activity.",
@@ -358,6 +362,24 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         "sum",
         "higher_is_more",
         ["list_workouts", "get_workout_detail", "compare_periods"],
+    ),
+    # Raw kcal passthrough; mirrors distance_km (sum metric). Aggregate metadata
+    # in _AGGREGATE_METADATA_BY_METRIC_ID, fact column in the activity_metric_facts
+    # _fact_table block, value source activity_metric_facts.calories_kcal.
+    # Aggregate/digest-only (weekly/monthly digest + period comparison) — NOT a
+    # per-workout row metric, so exposed_in omits list_workouts/get_workout_detail
+    # (those tool payloads are hand-built and would have to emit it). Digest and
+    # compare exposure come from AGGREGATE_METRIC_BUNDLES membership below.
+    "calories": _metric(
+        "calories",
+        "Calories",
+        "kcal",
+        "activity",
+        "activity",
+        "both",
+        "sum",
+        "higher_is_more",
+        ["compare_periods"],
     ),
     "moving_time_min": _metric(
         "moving_time_min",
@@ -1110,6 +1132,17 @@ _AGGREGATE_METADATA_BY_METRIC_ID: dict[str, dict[str, Any]] = {
         sample_size_column="activity_count",
         supported_scopes=("both",),
     ),
+    # value_column has no unit conversion (kcal stays kcal), so unlike distance_km
+    # it needs NO _METRIC_VALUE_EXPRESSIONS entry — the aggregate sums calories_kcal
+    # directly (same as trimp). Reads v_activity_aggregate_facts.calories_kcal.
+    "calories": _agg(
+        "sum",
+        "activity_summary_fact",
+        denominator="calories_kcal",
+        value_column="calories_kcal",
+        sample_size_column="activity_count",
+        supported_scopes=("both",),
+    ),
     "moving_time_min": _agg(
         "sum",
         "activity_summary_fact",
@@ -1604,6 +1637,7 @@ MATERIALIZED_FACT_COLUMN_REGISTRY: dict[str, dict[str, FactColumnDefinition]] = 
             ("hrr_pct", "metric", ("hrr_pct",), "Heart-rate reserve percent."),
             ("anomaly_count", "metric", ("hr_anomaly_count",), "Heart-rate anomaly count."),
             ("distance_m", "metric", ("distance_km",), "Mirrored distance in meters."),
+            ("calories_kcal", "metric", ("calories",), "Strava-reported calories in kcal (from detail_json)."),
             ("moving_time_s", "metric", ("moving_time_min",), "Mirrored moving time in seconds."),
             ("elapsed_time_s", "metric", ("elapsed_time_min",), "Mirrored elapsed time in seconds."),
             ("elevation_gain_m", "metric", ("elevation_m",), "Mirrored elevation gain in meters."),

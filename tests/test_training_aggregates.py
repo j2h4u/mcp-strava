@@ -715,7 +715,7 @@ def test_registry_aggregate_modes_return_expected_values(tmp_path: Path) -> None
         query_training_aggregates(
             conn,
             AggregateRequest(
-                metric_ids=("distance_km", "avg_trimp_per_day", "fitness", "form_zone", "kudos_count"),
+                metric_ids=("distance_km", "calories", "avg_trimp_per_day", "fitness", "form_zone", "kudos_count"),
                 bucket="all_time",
                 start_day="2026-05-05",
                 end_day_exclusive="2026-06-01",
@@ -750,6 +750,14 @@ def test_registry_aggregate_modes_return_expected_values(tmp_path: Path) -> None
         "kudos_count",
     }
     assert _row(rows, "distance_km")["value"] == pytest.approx(29.0)
+    # calories is a full sum metric (kcal): the aggregate SQL runs end-to-end
+    # against v_activity_aggregate_facts.calories_kcal. This fixture seeds no
+    # calories, so the sum is NULL and completeness is unavailable — proving the
+    # query path and null handling; real-value extraction is covered by the
+    # materializer test, and SUM correctness mirrors distance_km's identical _agg.
+    _calories = _row(rows, "calories")
+    assert _calories["aggregation_mode"] == "sum" and _calories["unit"] == "kcal"
+    assert _calories["value"] is None and _calories["completeness_status"] == "unavailable"
     assert _row(rows, "avg_trimp_per_day")["value"] == pytest.approx(310.0 / 27.0)
     assert _row(rows, "avg_hr", sport_type="Run")["value"] == pytest.approx((140 * 100 + 160 * 300 + 150 * 200) / 600)
     assert _row(rows, "vertical_speed_m_per_h", sport_type="Run")["value"] == pytest.approx(600.0 / 4.0)

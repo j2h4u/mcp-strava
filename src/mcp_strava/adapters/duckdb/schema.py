@@ -181,6 +181,10 @@ CREATE TABLE activity_metric_facts (
     hrr_pct DOUBLE,
     anomaly_count BIGINT NOT NULL DEFAULT 0,
     distance_m DOUBLE,
+    -- Raw Strava kcal (DetailedActivity.calories, detail_json only — not a summary
+    -- field). Populated by the materializer from detail_json; surfaced through
+    -- v_activity_aggregate_facts and summed by the `calories` aggregate metric.
+    calories_kcal DOUBLE,
     moving_time_s BIGINT,
     elapsed_time_s BIGINT,
     elevation_gain_m DOUBLE,
@@ -353,6 +357,7 @@ SELECT
     f.hrr_pct,
     f.anomaly_count,
     f.distance_m,
+    f.calories_kcal,  -- raw kcal; backs the `calories` sum metric
     f.moving_time_s,
     f.elapsed_time_s,
     f.elevation_gain_m,
@@ -545,14 +550,18 @@ GROUP BY metric_version;
 
 
 def ensure_provenance_columns(conn) -> None:
-    """Additive migration: add HR provenance columns to activity_metric_facts
-    if they do not already exist. Safe to call on any existing DuckDB file."""
+    """Additive migration: add later-introduced activity_metric_facts columns
+    (HR provenance + calories) if they do not already exist. Safe to call on any
+    existing DuckDB file; new columns are NULL on old rows until re-materialized."""
     alterations = [
         "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS observed_min_hr BIGINT",
         "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS observed_max_hr BIGINT",
         "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS hr_zone_model VARCHAR",
         "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS hr_max_used BIGINT",
         "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS hr_rest_used BIGINT",
+        # Backfills the `calories` aggregate-metric column on DBs created before it
+        # existed (NULL until the activity's fact is re-materialized).
+        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS calories_kcal DOUBLE",
     ]
     for sql in alterations:
         conn.execute(sql)
