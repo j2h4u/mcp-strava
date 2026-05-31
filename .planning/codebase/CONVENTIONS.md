@@ -1,117 +1,204 @@
 ---
-analysis_date: 2026-05-26
-last_mapped_commit: ab203ab
+analysis_date: 2026-05-31
+last_mapped_commit: c80c39e
+scope: full-repo
 ---
 # Coding Conventions
 
-**Analysis Date:** 2026-05-26
-
-## Scope
-
-- This incremental map is scoped to `README.md`, `mcp-content/`, and `tests/`, with minimal command/config context from `pyproject.toml` and `Justfile`.
-- Use these conventions for work that touches scoped artifacts: product documentation in `README.md`, prompt content in `mcp-content/prompts/`, and pytest coverage in `tests/`.
-- Source-code conventions below are included only where the scoped tests enforce them by importing, monkeypatching, or AST-reading `src/mcp_strava/...` files from `tests/`.
+**Analysis Date:** 2026-05-31
 
 ## Naming Patterns
 
 **Files:**
-- Use lower-case Python test modules with underscores under `tests/`, for example `tests/test_mcp_surface.py`, `tests/test_read_model_queries.py`, and `tests/test_refresh_runtime.py`.
-- Keep reusable test-only protocol fixtures under `tests/fixtures/`, for example `tests/fixtures/fake_mcp_server.py`.
-- Keep MCP prompt content as lower-case, underscore-separated markdown files under `mcp-content/prompts/`, for example `mcp-content/prompts/strava_daily_training_brief.md`.
-- Do not place source tests or prompt content under generated cache directories such as `tests/__pycache__/`.
+- `snake_case.py` throughout — `training.py`, `cardiac_drift.py`, `hr_zones.py`
+- Test files prefixed `test_` — `test_metrics_pure.py`, `test_mcp_surface.py`
+- Shared test helpers use underscore-prefix or descriptive noun — `_fixtures_duckdb.py`
+- Adapter subdirectories use the external system name — `adapters/duckdb/`, `adapters/strava/`
 
 **Functions:**
-- Use `snake_case` for test helpers and test functions in `tests/`, for example `_create_fixture_db()`, `_repo_with_facts()`, `_install_product_service_spies()`, and `test_mcp_tool_allowlist_is_exact()`.
-- Prefix private test helpers with `_` and keep them local to the module that owns the fixture shape, as in `tests/test_application_services.py` and `tests/test_training_aggregates.py`.
-- Name behavior tests after the contract they lock, not just the implementation method, as in `tests/test_security_guards.py::test_product_service_registry_excludes_admin_debug_commands`.
-- Phase/UAT identifiers may appear in test names when they preserve planning traceability, as in `tests/test_refresh_runtime.py::test_run_once_completes_daily_refresh_per_REFRESH_01_STRAVA_03`.
+- `snake_case` everywhere — `calc_banister`, `build_freshness_metadata`, `open_fixture_db`
+- Pure domain functions prefixed `calc_` — `calc_cardiac_drift`, `calc_hr_recovery`, `calc_hrr_pct`
+- Builder functions prefixed `build_` — `build_refresh_collaborators`, `build_aggregate_query`
+- Predicate/guard functions use `is_` or `has_` — `is_significant`, `has_heartrate`
+- Private module helpers prefixed `_` — `_form_zone`, `_read_env_file`, `_parse_int`
 
 **Variables:**
-- Use explicit `snake_case` names for fixture resources and collaborators, for example `db_path`, `tmp_path`, `repo`, `transport`, `policy`, `clock`, `sleeper`, and `connection` in `tests/test_refresh_runtime.py`.
-- Use all-caps constants for expected contracts and forbidden surface terms, for example `EXPECTED_TOOL_NAMES` in `tests/test_mcp_surface.py`, `FORBIDDEN_KEYS` in `tests/test_metric_services.py`, and `REQUIRED_LOCAL_STATE_PATTERNS` in `tests/test_repo_hygiene.py`.
-- Prefer descriptive fixture filenames under `tmp_path`, for example `application-services.db` in `tests/test_application_services.py`, `read-model.db` in `tests/test_read_model_materialization.py`, and `strava.duckdb` in `tests/test_duckdb_repository.py`.
+- `snake_case` throughout; single-letter locals only for short loops (`d`, `f`, `fa`)
+- Constants in `Config` hierarchy use `UPPER_SNAKE` — `Config.Drift.THRESHOLD_DEFAULT`
+- Date strings always named `*_str` or `ds` when a local loop variable — `date_str`, `today_str`, `ds`
 
-**Types:**
-- Use `PascalCase` for fake collaborator classes in tests, for example `FakeClock`, `FakeSleeper`, `FakeStravaTransport`, `FakeWarmScriptClient`, and `FakeLiveSmokeClient` in `tests/test_refresh_runtime.py`, `tests/test_strava_adapter.py`, and `tests/test_mcp_test_client.py`.
-- Annotate test parameters and return values where the module already opts into typed tests, for example `tmp_path: Path`, `monkeypatch: pytest.MonkeyPatch`, and `capsys: pytest.CaptureFixture[str]` in `tests/test_cli_surface.py` and `tests/test_docker_runtime.py`.
-- Use `ServiceEnvelope`, `FreshnessMetadata`, `CompletenessMetadata`, `ServiceWarning`, and `ServiceRationale` in tests when constructing product-service outputs, as shown in `tests/test_cli_surface.py` and `tests/test_mcp_surface.py`.
+**Types / Classes:**
+- `PascalCase` for dataclasses and classes — `StravaActivity`, `DuckDBRepository`, `BanisterResult`
+- `UPPER_SNAKE` for module-level constants — `ACTIVITY_COUNT`, `CANONICAL_DUCKDB_RUNTIME_PATH`
+- `UPPER_SNAKE` for registry constants exported from modules — `METRIC_REGISTRY`, `SUPPORTED_AGGREGATE_BUCKETS`
+
+**Tests:**
+- Most tests: `test_<noun>_<verb>_<condition>` — `test_expected_duckdb_open_fails_closed_on_missing_file`
+- Spec-coded tests: `test_<DOMAIN_CODE>_<description>` — `test_APP_04_D_08_D_12_freshness_metadata_distinguishes_refresh_and_activity`
+  These codes (`APP_`, `INFRA_`, `SEC_`, `PERF_`) are traceability refs to the planning spec, not categories to invent. Use plain descriptive names for new tests unless a phase explicitly assigns codes.
 
 ## Code Style
 
-**Formatting:**
-- No formatter configuration is detected in scoped metadata; `pyproject.toml` contains pytest settings but no `black`, `ruff`, or formatter section.
-- Keep Python formatting conventional and readable in `tests/`: standard imports first, third-party imports next, local `mcp_strava` imports last, as in `tests/test_docker_runtime.py` and `tests/test_product_fact_bundles.py`.
-- Use `from __future__ import annotations` in new typed test modules when forward references or modern type syntax are used, matching `tests/test_mcp_test_client.py`, `tests/test_cli_surface.py`, and `tests/test_training_aggregates.py`.
-- Prefer double-quoted strings in new tests where surrounding files use them, such as `tests/test_refresh_runtime.py` and `tests/test_mcp_surface.py`; keep local quote style consistent when editing files that already use single quotes, such as `tests/test_settings.py`.
+**Formatter:** ruff format
+- `quote-style = "double"` — always double-quoted strings
+- `line-length = 120` — hard limit enforced by ruff format
+- No trailing commas in single-value tuples unless intentional
 
-**Linting:**
-- No linter configuration is detected in `pyproject.toml` or `Justfile`.
-- Existing static guard tests use `ast` directly for repository, CLI, product-boundary, and security rules in `tests/test_repository_boundary.py`, `tests/test_cli_surface.py`, and `tests/test_security_guards.py`.
+**Linter:** ruff check with `select = ["E4", "E7", "E9", "F", "I", "B", "UP"]`
+- E4/E7/E9: syntax/logic pycodestyle errors
+- F: pyflakes (unused imports, undefined names)
+- I: isort import ordering
+- B: flake8-bugbear likely-bug patterns
+- UP: pyupgrade → modern Python 3.14 idioms
 
-**Prompt Content:**
-- Keep prompt files in `mcp-content/prompts/` user-facing, concise, and scenario-specific.
-- Prompt content in `mcp-content/prompts/strava_daily_training_brief.md`, `mcp-content/prompts/strava_weekly_training_digest.md`, and `mcp-content/prompts/strava_shoe_mileage_watchdog.md` is Russian-language guidance for agent responses.
-- MCP prompts must list allowed Strava MCP tools explicitly and must not ask the user to run sync/admin/debug/raw SQL operations; `tests/test_mcp_surface.py` checks prompt names and content-backed exposure.
-- Prompt format guidance uses Telegram Markdown in `mcp-content/prompts/strava_daily_training_brief.md` and `mcp-content/prompts/strava_weekly_training_digest.md`.
+**Static typing:** pyright `typeCheckingMode = "standard"`, `pythonVersion = "3.14"`
+- `include = ["src"]` — only source tree is checked, not tests
+- New functions in `src/` must satisfy standard-mode pyright
+
+**Runtime:** Python 3.14 required (`requires-python = ">=3.14"`)
 
 ## Import Organization
 
-**Order:**
-1. Standard library imports, for example `json`, `sqlite3`, `urllib.request`, `datetime`, `pathlib.Path`, and `types.SimpleNamespace` in `tests/test_refresh_runtime.py`.
-2. Third-party imports, mainly `pytest` and `duckdb`, as in `tests/test_docker_runtime.py` and `tests/test_metric_registry.py`.
-3. Local package imports from `mcp_strava...` and cross-test fixture imports from `tests...`, as in `tests/test_product_fact_bundles.py` and `tests/test_read_model_materialization.py`.
+**Order (enforced by ruff I):**
+1. Standard library (`from __future__`, `import os`, `from pathlib import Path`)
+2. Third-party (`import duckdb`, `import pytest`)
+3. First-party (`from mcp_strava.constants import Config`)
+4. Relative (avoided — prefer absolute `mcp_strava.*` imports)
 
-**Path Aliases:**
-- `pyproject.toml` sets `pythonpath = ["src"]`, so tests import application code as `mcp_strava...` rather than modifying `sys.path`.
-- Subprocess tests that run module entrypoints set `PYTHONPATH=src` explicitly, as in `tests/test_security_guards.py::test_module_entrypoint_runs_from_source_tree_with_pythonpath`.
+**`from __future__ import annotations`:**
+- Used selectively, not universally — present in `types.py`, `sync.py`, `mcp_content.py`, and most test files
+- Add when forward references are needed in dataclass fields or when `X | Y` union syntax would fail at runtime
+
+**Path aliases:** None — `src/` is on `PYTHONPATH` via `pyproject.toml` `[tool.pytest.ini_options]` and `uv run`
+
+## Section Dividers
+
+Heavy use of Unicode box-drawing comment dividers to partition modules logically:
+
+```python
+# ─── Section Name ───           (thin, within a class or short block)
+# ═══════════════════════════    (thick, top-level module sections)
+```
+
+Examples in `types.py`: `# ─── Strava API Response Contracts ───`, `# ─── Per-Activity Metrics ───`
+Examples in `constants.py`: `# ═══════════════════════════════════════`
+
+Use these when a module has ≥2 clearly distinct concerns. Do not add them for single-concern files.
+
+## Constants Pattern
+
+All tunable parameters live in the `Config` class hierarchy in `src/mcp_strava/constants.py`:
+
+```python
+class Config:
+    class Drift:
+        THRESHOLD_DEFAULT = 10.0
+        MIN_CLUSTER_SIZE = 30
+    class Thresholds:
+        VEL_STOP = 0.15
+    class Metrics:
+        MIN_STREAM_POINTS = 120
+```
+
+Import always as `from mcp_strava.constants import Config`, then reference `Config.Drift.THRESHOLD_DEFAULT`.
+Never scatter magic numbers in domain functions — add to `Config` first.
+
+## Docstrings
+
+**Module-level:** Required. One-line summary + blank line + paragraph if needed:
+```python
+"""Per-activity metrics: pure domain functions over plain stream data.
+
+All functions take pre-fetched plain dict rows and return dataclasses or None.
+No storage imports — callers are responsible for fetching rows via the repository.
+"""
+```
+
+**Function-level:** One-line imperative summary. Elaborate inline if contract is non-obvious:
+```python
+def calc_cardiac_drift(rows, sport_type=None):
+    """Pure: Intra-activity cardiac drift using Jenks pace clustering.
+
+    Takes pre-fetched stream rows ({heartrate, velocity}) and returns
+    a CardiacDriftResult, or None if insufficient data.
+    """
+```
+
+No NumPy/Google-style Args/Returns sections — prose is preferred.
+
+## Type Annotations
+
+**Source (`src/`):**
+- Return type annotations present on public functions — `-> None`, `-> Settings`, `-> DuckDBRepository`
+- Parameter annotations on public functions; omitted on short private helpers
+- Dataclasses use full field annotations (`str | None`, `list[str]`, `tuple[str, ...]`)
+- `field(default=None, repr=False)` for private/repr-excluded fields
+
+**Tests:**
+- Test functions annotated `-> None` consistently
+- Fixture functions often unannotated or use `-> Path` / `-> DuckDBRepository`
 
 ## Error Handling
 
-**Patterns:**
-- Use `pytest.raises(..., match=...)` when testing fail-closed behavior and user-facing error text, as in `tests/test_mcp_surface.py`, `tests/test_docker_runtime.py`, `tests/test_strava_adapter.py`, and `tests/test_duckdb_migration.py`.
-- Use strict negative assertions for secret redaction and product-surface safety, for example `tests/test_strava_adapter.py::test_tokens_never_appear_in_errors_or_output_per_D10_D18` and `tests/test_cli_surface.py::test_admin_mirror_coverage_json_output`.
-- Preserve fail-closed behavior for missing/corrupt runtime data by asserting no file creation or non-zero return codes, as in `tests/test_docker_runtime.py::test_duckdb_preflight_missing_or_corrupt_file_fails_closed`.
-- For product and MCP boundaries, assert forbidden command names, fields, and advice phrases are absent rather than relying only on positive examples, as in `tests/test_mcp_surface.py`, `tests/test_metric_services.py`, and `tests/test_training_aggregates.py`.
+**Domain/validation errors:** Raise `ValueError` with a descriptive message including the env key name:
+```python
+raise ValueError(f"Invalid integer for {key}: {raw}") from exc
+raise ValueError("Invalid integer for MCP_STRAVA_HTTP_PORT: out of range")
+```
+
+**Infrastructure errors:** Raise `RuntimeError` with full context:
+```python
+raise RuntimeError("Expected DuckDB mirror does not exist")
+```
+
+**Named domain exceptions:** Custom exception classes for specific infrastructure states, e.g. `MirrorDbLocked` in `cli.py` — caught specifically, not as bare `Exception`
+
+**Resource cleanup:** Always `try/finally` around DuckDB connections:
+```python
+conn = open_fixture_db(db_path)
+try:
+    create_schema(conn)
+finally:
+    conn.close()
+```
+
+**Bare `except Exception`:** Used only in statistical/algorithmic fallback paths (`cardiac_drift.py`) where a failed cluster is recovered, not in I/O or service code.
+
+## Dataclass Design
+
+- `@dataclass` (mutable) for repository contracts and result objects
+- `@dataclass(frozen=True)` for settings/config objects (`AthleteSettings`, `Settings`)
+- `field(default_factory=list)` for mutable defaults
+- `dc_to_dict()` utility in `types.py` for serialization — do not implement `__dict__` or `asdict()` manually
+
+## Pure Function Design
+
+Metric functions in `src/mcp_strava/metrics.py` are pure — they:
+- Take plain `dict` rows (no repository arguments)
+- Return dataclasses or `None`
+- Have zero storage imports
+- Guard with `if len(rows) < Config.Metrics.MIN_STREAM_POINTS: return None`
+
+This is the canonical pattern for any new per-activity metric.
+
+## Module Exports
+
+`__all__` used when a module re-exports from submodules (`sync.py`). Otherwise not required.
+Avoid star imports (`from module import *`) — explicit named imports always.
 
 ## Logging
 
-**Framework:** `console`
-
-**Patterns:**
-- Tests capture CLI and worker output with `capsys` instead of a logging framework, as in `tests/test_cli_surface.py`, `tests/test_mcp_test_client.py`, and `tests/test_refresh_runtime.py`.
-- JSON command output should be asserted by parsing stdout with `json.loads()`, as in `tests/test_cli_surface.py` and `tests/test_phase4_e2e.py`.
-- Error and traceback visibility is tested through stderr when the behavior requires it, for example `tests/test_refresh_runtime.py::test_worker_logs_exception_message_and_traceback`.
-- Do not print secret-bearing env file contents; `tests/test_docker_runtime.py::test_prepare_runtime_never_prints_env_contents` and `tests/test_strava_adapter.py::test_tokens_never_appear_in_errors_or_output_per_D10_D18` lock that rule.
+No structured logging framework — not detected in source. CLI output via `print()` / `sys.stdout`. Background worker state written to a JSON health file (`MCP_STRAVA_REFRESH_HEALTH_PATH`), not logs.
 
 ## Comments
 
-**When to Comment:**
-- Use comments sparingly in tests; prefer descriptive helper names and assertion names in `tests/`.
-- Add comments only for domain-specific guard intent or fixture setup that would be unclear from the helper name, following the explicit contract style in `tests/test_security_guards.py`.
-- In `mcp-content/prompts/`, use bullets and short sections instead of inline implementation commentary.
-
-**JSDoc/TSDoc:**
-- Not applicable; scoped code is Python and Markdown in `tests/`, `mcp-content/`, and `README.md`.
-- Python tests under `tests/` generally do not use docstrings; test names and helper names carry the contract.
-
-## Function Design
-
-**Size:** Keep new tests focused on one contract per test function in `tests/`; if setup grows, extract private helpers such as `_create_fixture_db()` in `tests/test_repository_boundary.py` or `_aggregate_fixture()` in `tests/test_training_aggregates.py`.
-
-**Parameters:** Prefer explicit pytest fixtures (`tmp_path`, `monkeypatch`, `capsys`) and explicit service collaborators (`repo`, `transport`, `policy`, `clock`, `sleeper`) over implicit global state, matching `tests/test_refresh_runtime.py` and `tests/test_strava_adapter.py`.
-
-**Return Values:** Test helpers may return concrete resources such as `SQLiteRepository`, `Path`, `sqlite3.Connection`, `dict[str, object]`, or `ServiceEnvelope`; examples live in `tests/test_read_model_queries.py`, `tests/test_training_aggregates.py`, and `tests/test_cli_surface.py`.
-
-## Module Design
-
-**Exports:** Test modules in `tests/` are not public API; keep helpers private unless deliberately shared, as with `_aggregate_fixture()` in `tests/test_training_aggregates.py` and `_repo_with_facts()` in `tests/test_read_model_queries.py`.
-
-**Barrel Files:** `tests/__init__.py` is effectively empty; do not add shared test exports there unless a repeated cross-test helper becomes a deliberate package-level fixture.
-
-**Boundary Guards:**
-- Keep architectural and safety guard tests in purpose-named modules: repository access in `tests/test_repository_boundary.py`, CLI/product split in `tests/test_cli_surface.py`, security imports/surfaces in `tests/test_security_guards.py`, and repo state policy in `tests/test_repo_hygiene.py`.
-- Keep product prompt exposure checks with MCP surface tests in `tests/test_mcp_surface.py`, because prompt names and MCP tool names are part of the same user-facing surface.
+- Inline comments used for non-obvious math or threshold rationale, e.g.:
+  ```python
+  alpha = 1 - pow(0.5, 1.0 / tau)  # EWMA decay for tau-day half-life
+  ```
+- `# 💰 Summit` marks Strava premium-only fields in `types.py`
+- TODO/FIXME not used in source (none detected)
 
 ---
 
-*Convention analysis: 2026-05-26*
+*Convention analysis: 2026-05-31*

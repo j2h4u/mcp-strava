@@ -1,99 +1,91 @@
 ---
-analysis_date: 2026-05-26
-last_mapped_commit: ab203ab
-scope:
-  - README.md
-  - mcp-content
-  - tests
+analysis_date: 2026-05-31
+last_mapped_commit: c80c39e
+scope: full-repo
 ---
 # Technology Stack
 
-**Analysis Date:** 2026-05-26
+**Analysis Date:** 2026-05-31
 
 ## Languages
 
 **Primary:**
-- Python 3.14+ - Runtime package under `src/mcp_strava`, package metadata in `pyproject.toml`, and test coverage in `tests/*.py`. The Python version contract is declared in `pyproject.toml` and asserted by `tests/test_docker_runtime.py`.
+- Python 3.14 - All application code in `src/mcp_strava/`
 
 **Secondary:**
-- Markdown - Operator documentation in `README.md` and MCP prompt content in `mcp-content/prompts/strava_daily_training_brief.md`, `mcp-content/prompts/strava_weekly_training_digest.md`, and `mcp-content/prompts/strava_shoe_mileage_watchdog.md`.
-- TOML - Project metadata and pytest configuration in `pyproject.toml`; dependency lock data in `uv.lock`.
-- Justfile task syntax - Local command surface in `Justfile`.
-- Docker Compose / Dockerfile syntax - Container runtime contract is tested by `tests/test_docker_runtime.py` against `deploy/docker-compose.yml` and `deploy/Dockerfile`.
+- Bash - `deploy/Dockerfile`, `Justfile` shell recipes (via `set shell := ["bash", "-uc"]`)
+- YAML - `deploy/docker-compose.yml`, `deploy/gateway_register.py` catalog manipulation
+- Markdown - `mcp-content/prompts/*.md` (MCP prompt templates served at runtime)
 
 ## Runtime
 
 **Environment:**
-- CPython 3.14 - `pyproject.toml` declares `requires-python = ">=3.14"`; `tests/test_docker_runtime.py` asserts `sys.version_info[:2] == (3, 14)` and a `python:3.14-slim` container base.
-- Docker container runtime - `README.md` and `Justfile` run the product MCP server in Docker Compose, with the HTTP MCP endpoint checked at `http://127.0.0.1:8080/mcp`.
-- Local source runtime - `tests/test_phase01_validation.py` verifies `PYTHONPATH=src python -m mcp_strava` usage.
+- CPython 3.14 (minimum: `requires-python = ">=3.14"`)
+- Uses Python 3.14 idioms via ruff's `UP` ruleset (enforced)
 
 **Package Manager:**
-- `uv` - Required by `README.md`; `uv.lock` pins the resolved dependency graph.
-- `setuptools` - Build backend in `pyproject.toml`.
-- Lockfile: present at `uv.lock`.
+- `uv` for development (all Justfile recipes use `uv run`)
+- `pip install /app` for container image builds (no uv in container)
+- Lockfile: not present in repo (pip install from `pyproject.toml` constraints only)
 
 ## Frameworks
 
 **Core:**
-- `mcp` 1.27.1 - Provides FastMCP, streamable HTTP transport, tool annotations, and transport security. SDK feature contracts are asserted in `tests/test_mcp_sdk_contract.py`; product surface behavior is asserted in `tests/test_mcp_surface.py`.
+- `mcp>=1.27.1,<1.28` - MCP SDK; `FastMCP` used for HTTP server, tool registration, transport security
+  - Transport: `streamable-http` at `/mcp` path (`src/mcp_strava/interfaces/mcp_http.py`)
+  - Security: `TransportSecuritySettings` with DNS rebinding protection, host/origin allowlists
 
 **Testing:**
-- `pytest` 9.0.3 - Declared as the `test` extra in `pyproject.toml`, pinned in `uv.lock`, configured with `testpaths = ["tests"]` and `pythonpath = ["src"]`.
+- `pytest>=9` - test runner; config in `pyproject.toml` (`testpaths = ["tests"]`, `pythonpath = ["src"]`)
 
 **Build/Dev:**
-- `just` - Developer command runner in `Justfile`.
-- Docker Compose - Container build/start/smoke workflow in `Justfile`, with source contracts asserted by `tests/test_docker_runtime.py`.
-- `compileall` - `Justfile` `build` target compiles `src`, `deploy`, and `tests`.
+- `ruff>=0.15` - linter + formatter (`line-length = 120`, selects `E4/E7/E9,F,I,B,UP`)
+- `pyright>=1.1.390` - static type checker (`typeCheckingMode = "standard"`, `pythonVersion = "3.14"`)
+- `just` (Justfile) - task runner for lint, test, smoke, deploy recipes
+- `setuptools>=69` - build backend (`package-dir = {"" = "src"}`)
 
 ## Key Dependencies
 
 **Critical:**
-- `duckdb` 1.5.3 - Primary runtime storage/read-model engine. `pyproject.toml` requires `duckdb>=1.5.3,<1.6`, `uv.lock` pins 1.5.3, and `tests/test_duckdb_repository.py` covers repository behavior.
-- `mcp` 1.27.1 - MCP HTTP server and client tooling. `tests/test_mcp_surface.py` verifies exposed tools, prompts, read-only annotations, structured output, and short-lived response caching.
-- `PyYAML` 6.0.3 - Declared runtime dependency in `pyproject.toml` and pinned in `uv.lock` for YAML-backed deployment/configuration support.
+- `duckdb>=1.5.3,<1.6` - embedded analytical database used as the local Strava mirror (`src/mcp_strava/adapters/duckdb/`)
+- `mcp>=1.27.1,<1.28` - Model Context Protocol SDK; pins minor to avoid breaking changes
+- `PyYAML>=6.0.2,<7` - used in `deploy/gateway_register.py` for MCP gateway catalog manipulation
 
-**Infrastructure:**
-- `sqlite3` (stdlib) - SQLite mirror, migrations, compatibility input, and fixtures. README documents `data/strava.db`; tests cover SQLite repositories and migration behavior in `tests/test_full_fidelity_mirror.py`, `tests/test_repository_boundary.py`, and `tests/test_sqlite_safety.py`.
-- `urllib.request` / `urllib.error` (stdlib) - Strava HTTP and OAuth transport boundary, isolated by `tests/test_strava_adapter.py` and guarded by `tests/test_security_guards.py`.
-- `json` (stdlib) - CLI/MCP payloads, fake MCP server messages, Strava fixtures, and read-model test payloads across `tests/test_mcp_test_client.py`, `tests/fixtures/fake_mcp_server.py`, and `tests/test_refresh_runtime.py`.
-- `tomllib` (stdlib) - Metadata validation in `tests/test_phase01_validation.py` and `tests/test_docker_runtime.py`.
+**Standard library only for HTTP:**
+- Strava API calls use `urllib.request` + `urllib.error` exclusively — no requests/httpx dependency
+  (see `src/mcp_strava/adapters/strava/transport.py`, `src/mcp_strava/adapters/strava/token_refresh.py`)
 
 ## Configuration
 
 **Environment:**
-- Runtime settings are environment driven through `mcp_strava.settings`, with defaults and validation asserted in `tests/test_settings.py`.
-- Primary runtime setting: `MCP_STRAVA_DB_PATH`. Local defaults resolve to `data/strava.duckdb`; Docker profile defaults resolve to `/runtime/data/strava.duckdb`.
-- Token file setting: `MCP_STRAVA_TOKEN_PATH`, defaulting to `.env` locally and `/runtime/.env` in Docker.
-- HTTP settings: `MCP_STRAVA_RUNTIME_PROFILE`, `MCP_STRAVA_HTTP_HOST`, `MCP_STRAVA_HTTP_PORT`, `MCP_STRAVA_ALLOW_CONTAINER_BIND`, `MCP_STRAVA_ALLOWED_HOSTS`, and `MCP_STRAVA_ALLOWED_ORIGINS`.
-- Freshness and refresh settings: `MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS`, `MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS`, `MCP_STRAVA_REFRESH_INTERVAL_SECONDS`, `MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE`, and `MCP_STRAVA_READ_MODEL_BATCH_SIZE`.
-- Service/runtime settings seen in tests: `MCP_STRAVA_PROJECT_ROOT`, `MCP_STRAVA_REFRESH_WORKER_ENABLED`, and `MCP_STRAVA_SUPERVISOR_STATE_PATH`.
-- Strava credentials are file-backed in `.env` or `/opt/docker/mcp-strava/.env`: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_ACCESS_TOKEN`, `STRAVA_REFRESH_TOKEN`, and `STRAVA_EXPIRES_AT`.
-- `.env` file present - contains local environment configuration and secret material; contents are not read.
+- Settings loaded via `src/mcp_strava/settings.py` — reads from env vars (priority) then a `.env` file
+- Token file (`MCP_STRAVA_TOKEN_PATH`, default `/runtime/.env`) holds OAuth tokens and Strava client credentials separately from runtime settings
+- `MCP_STRAVA_*` namespace for all operational settings; `STRAVA_*` namespace for OAuth credentials (never mixed)
+- Key required configs:
+  - `MCP_STRAVA_DB_PATH` - path to DuckDB file
+  - `MCP_STRAVA_TOKEN_PATH` - path to token/credential file
+  - `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_ACCESS_TOKEN`, `STRAVA_REFRESH_TOKEN`, `STRAVA_EXPIRES_AT` (in token file)
+  - `MCP_STRAVA_HR_REST` - operator's resting heart rate (optional but required for some computations)
+- `MCP_STRAVA_RUNTIME_PROFILE`: `local` | `container` / `docker` / `live`
 
 **Build:**
-- `pyproject.toml` defines project metadata, build backend, dependencies, `src` package root, and pytest configuration.
-- `uv.lock` pins dependency versions.
-- `Justfile` defines Docker build/start/smoke tasks.
-- `tests/test_docker_runtime.py` asserts `deploy/Dockerfile`, `deploy/docker-compose.yml`, and `deploy/.dockerignore` runtime contracts.
+- `pyproject.toml` - single source of truth for package metadata, dependencies, ruff, pyright, pytest config
+- `deploy/Dockerfile` - `python:3.14-slim` base, installs package via `pip install /app`, runs as uid 1000:1000
+- `deploy/docker-compose.yml` - single-service compose, external `mcp-backends` network, volume mount at `/runtime`
 
 ## Platform Requirements
 
 **Development:**
-- Python 3.14+.
-- `uv`.
-- Docker with Compose.
-- `just`.
-- Local `.env` containing Strava OAuth credentials.
-- Network access to `https://www.strava.com` for OAuth/token refresh and Strava API reads.
-- Writable local storage under `data/` for DuckDB/SQLite mirror files and test fixtures.
+- Python 3.14+
+- `uv` for running lint/test/typecheck (`just check`, `just test`)
+- Docker + `docker compose` for integration smoke tests (`just test` builds and runs the container)
 
 **Production:**
-- Docker Compose service named `mcp-strava` on the local MCP network.
-- Runtime state under `/opt/docker/mcp-strava`, mounted into the container as `/runtime`.
-- Streamable HTTP MCP endpoint exposed on container port `8080`; `Justfile` smoke tasks access `http://127.0.0.1:8080/mcp`.
-- Local/container-network-safe HTTP settings with allowed hosts and origins enforced by the MCP transport security tests in `tests/test_mcp_surface.py`.
+- Docker container on `mcp-backends` external network
+- Volume mount: `/opt/docker/mcp-strava` → `/runtime` (holds DuckDB file and token env file)
+- Exposed port: 8080 (internal only — no host port published by default)
+- Healthcheck: `python -m mcp_strava.deploy.healthcheck` every 30s
 
 ---
 
-*Stack analysis: 2026-05-26*
+*Stack analysis: 2026-05-31*
