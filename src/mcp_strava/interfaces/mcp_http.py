@@ -80,6 +80,18 @@ def _data_shape(value: Any) -> dict[str, Any]:
     return {"type": type(value).__name__}
 
 
+def _warning_codes(warnings: Any) -> list[str]:
+    """Extract warning ``code`` strings for log lines.
+
+    Logging only ``warnings_count`` tells an operator a warning fired but not
+    which one — forcing a source dive. Emitting the codes alongside the count
+    keeps the log self-explanatory without bloating it with full messages.
+    """
+    if not isinstance(warnings, list):
+        return []
+    return [str(item.get("code", "unknown")) if isinstance(item, dict) else str(item) for item in warnings]
+
+
 def _emit_log(event: str, **fields: Any) -> None:
     print(json.dumps({"event": event, **fields}, ensure_ascii=False, sort_keys=True), file=sys.stderr, flush=True)
 
@@ -103,6 +115,7 @@ def _run_logged_tool(name: str, operation) -> dict[str, Any]:
         tool=name,
         duration_ms=round((time.perf_counter() - started) * 1000, 3),
         warnings_count=len(payload.get("warnings") or []),
+        warning_codes=_warning_codes(payload.get("warnings")),
         data_shape=_data_shape(payload.get("data")),
     )
     return payload
@@ -138,6 +151,7 @@ def _run_cached_logged_tool(name: str, arguments: dict[str, Any], operation) -> 
             cached=True,
             duration_ms=round((time.perf_counter() - started) * 1000, 3),
             warnings_count=len(payload.get("warnings") or []),
+            warning_codes=_warning_codes(payload.get("warnings")),
             data_shape=_data_shape(payload.get("data")),
         )
         return payload

@@ -270,7 +270,7 @@ async def run_basic_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, A
             "list_workouts": _data_shape(workouts.get("structuredContent", {}).get("data")),
         },
         "warnings": {
-            "list_workouts": len(workouts.get("structuredContent", {}).get("warnings") or []),
+            "list_workouts": _warning_digest(workouts),
         },
     }
 
@@ -444,7 +444,10 @@ async def measure_warm_tool_latency(
         "tools": tool_results,
     }
     if exceeded and raise_on_failure:
-        raise McpClientError(f"p95 threshold exceeded for tools: {', '.join(exceeded)}")
+        details = ", ".join(
+            f"{key} (p95={tool_results[key]['p95_ms']}ms > {tool_results[key]['threshold_ms']}ms)" for key in exceeded
+        )
+        raise McpClientError(f"p95 threshold exceeded for tools: {details}")
     return result
 
 
@@ -508,9 +511,7 @@ async def run_live_smoke(
         "data_shapes": {
             name: _data_shape(payload.get("structuredContent", {}).get("data")) for name, payload in payloads.items()
         },
-        "warnings": {
-            name: len(payload.get("structuredContent", {}).get("warnings") or []) for name, payload in payloads.items()
-        },
+        "warnings": {name: _warning_digest(payload) for name, payload in payloads.items()},
     }
 
 
@@ -698,3 +699,26 @@ def _data_shape(value: Any) -> dict[str, Any]:
         first_keys = sorted(first.keys())[:30] if isinstance(first, dict) else None
         return {"type": "list", "count": len(value), "first_keys": first_keys}
     return {"type": type(value).__name__}
+
+
+def _warning_digest(payload: dict[str, Any]) -> list[dict[str, str]]:
+    """Summarize a tool payload's warnings as ``[{code, severity}]``.
+
+    The smoke output previously reported only a count (e.g. ``1``), which forced
+    a source dive to learn what the warning actually was. Returning the stable
+    ``code`` (and ``severity``) makes the summary self-explanatory while keeping
+    the count derivable via ``len()``.
+    """
+    warnings = payload.get("structuredContent", {}).get("warnings") or []
+    digest: list[dict[str, str]] = []
+    for entry in warnings:
+        if isinstance(entry, dict):
+            digest.append(
+                {
+                    "code": str(entry.get("code", "unknown")),
+                    "severity": str(entry.get("severity", "warning")),
+                }
+            )
+        else:
+            digest.append({"code": str(entry), "severity": "warning"})
+    return digest

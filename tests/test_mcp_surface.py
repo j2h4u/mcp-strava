@@ -623,3 +623,15 @@ def test_get_workout_detail_missing_id_is_unavailable(monkeypatch) -> None:
     assert len(content) <= 1
     assert payload["completeness"]["status"] == "unavailable"
     assert any(warning["code"] == "workout_not_found" for warning in payload["warnings"])
+
+
+def test_warning_codes_surface_codes_for_logs() -> None:
+    from mcp_strava.interfaces.mcp_http import _warning_codes
+
+    warnings = [
+        {"code": "aggregate_rows_incomplete", "severity": "warning", "message": "ignored"},
+        {"code": "read_model_not_current", "severity": "warning"},
+    ]
+    assert _warning_codes(warnings) == ["aggregate_rows_incomplete", "read_model_not_current"]
+    assert _warning_codes([]) == []
+    assert _warning_codes(None) == []

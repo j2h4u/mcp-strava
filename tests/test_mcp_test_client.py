@@ -11,6 +11,7 @@ from mcp_strava.devtools.mcp_client.client import (
     EXPECTED_TOOL_NAMES,
     McpClientError,
     StdioMcpClient,
+    _warning_digest,
     default_warm_latency_calls,
     execute_script_steps,
     run_live_smoke,
@@ -192,6 +193,29 @@ def test_live_smoke_calls_each_product_bundle_through_training_aggregates() -> N
     ]
     assert aggregate_bundle_ids == list(EXPECTED_PRODUCT_BUNDLES)
     assert result["aggregate_bundles"] == list(EXPECTED_PRODUCT_BUNDLES)
+    # Warnings summary must be a list of digests (code/severity), not an opaque count.
+    assert all(isinstance(entries, list) for entries in result["warnings"].values())
+
+
+def test_warning_digest_surfaces_code_and_severity() -> None:
+    payload = {
+        "structuredContent": {
+            "warnings": [
+                {"code": "aggregate_rows_incomplete", "severity": "warning", "message": "ignored"},
+                {"code": "read_model_not_current", "severity": "error"},
+            ]
+        }
+    }
+
+    assert _warning_digest(payload) == [
+        {"code": "aggregate_rows_incomplete", "severity": "warning"},
+        {"code": "read_model_not_current", "severity": "error"},
+    ]
+
+
+def test_warning_digest_empty_when_no_warnings() -> None:
+    assert _warning_digest({"structuredContent": {"data": {}}}) == []
+    assert _warning_digest({}) == []
 
 
 def test_mcp_test_client_cli_call_tool(capsys) -> None:

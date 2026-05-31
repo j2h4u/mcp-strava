@@ -374,6 +374,11 @@ def test_admin_mirror_coverage_json_output(
     assert payload["status"] == "ok"
     for key in ("activities_with_streams", "stream_points", "gps_points", "channels", "backfill_needed"):
         assert key in payload
+    # Report must name WHICH activities/channels need backfill, not just a count, and stay bounded.
+    sample = payload["stream_channel_backfill_sample"]
+    assert isinstance(sample, list)
+    assert len(sample) <= 20
+    assert all({"activity_id", "missing_channels"} == set(entry) for entry in sample)
     rendered = json.dumps(payload, sort_keys=True)
     assert "summary_json" not in rendered
     assert "detail_json" not in rendered

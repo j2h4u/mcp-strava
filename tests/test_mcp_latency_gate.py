@@ -89,7 +89,9 @@ def test_measure_warm_tool_latency_fails_when_any_tool_exceeds_p95() -> None:
             p95_ms=1,
         )
 
-    with pytest.raises(McpClientError, match="p95"):
+    # The failure message must name the tool AND the measured p95 vs threshold,
+    # so an operator can act without re-running the gate.
+    with pytest.raises(McpClientError, match=r"get_fitness_state \(p95=.*ms > 1.*ms\)"):
         asyncio.run(run())
 
 

@@ -7,6 +7,9 @@ from contextlib import nullcontext
 from mcp_strava.adapters.duckdb.connection import MirrorConn
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 
+# Cap the per-activity backfill detail so the report stays bounded on large mirrors.
+_BACKFILL_SAMPLE_LIMIT = 20
+
 
 def _count(conn, sql: str, params=None) -> int:
     row = conn.execute(sql, params or []).fetchone()
@@ -107,5 +110,11 @@ def get_mirror_coverage_service(*, connection=None) -> dict:
         "activities_missing_channel_metadata": missing_metadata,
         "activities_missing_extra_values": missing_extra_values,
         "activities_with_missing_stream_channels": len(stream_channel_backfill),
+        # Surface *which* activities (and channels) need backfill, not just the count, so an
+        # operator can act without a separate DB query. Bounded sample, newest-first.
+        "stream_channel_backfill_sample": [
+            {"activity_id": item["activity_id"], "missing_channels": item["missing_channels"]}
+            for item in stream_channel_backfill[:_BACKFILL_SAMPLE_LIMIT]
+        ],
         "backfill_needed": backfill_needed,
     }
