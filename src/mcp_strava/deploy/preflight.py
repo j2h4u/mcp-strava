@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -98,9 +98,18 @@ def _lease_active(refresh_state: dict[str, Any]) -> bool:
     if expires_at is None:
         return True
     try:
-        return datetime.fromisoformat(str(expires_at)) > datetime.now()
+        expires = datetime.fromisoformat(str(expires_at))
     except ValueError:
+        # Unparseable timestamp — assume active so we never stomp a live refresh.
         return True
+    # Lease timestamps are written as naive-UTC (refresh.runtime._now_dt strips
+    # tzinfo from a UTC time). Compare against naive-UTC now — NOT datetime.now()
+    # (naive-local), which would skew by the host's UTC offset. If a value ever
+    # carries an offset (aware), normalise it to naive-UTC so the comparison can
+    # never mix aware/naive datetimes (which raises TypeError, not ValueError).
+    if expires.tzinfo is not None:
+        expires = expires.astimezone(UTC).replace(tzinfo=None)
+    return expires > datetime.now(UTC).replace(tzinfo=None)
 
 
 def _validate_duckdb_runtime_db(

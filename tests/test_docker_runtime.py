@@ -233,3 +233,30 @@ def test_owner_startup_passes_when_hr_rest_set(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("MCP_STRAVA_REFRESH_WORKER_ENABLED", "1")
     monkeypatch.setattr("mcp_strava.settings.get_settings", lambda: _fake_settings(53))
     service._require_hr_config_for_worker()  # must not raise
+
+
+def test_lease_active_uses_utc_and_tolerates_aware_timestamps() -> None:
+    """_lease_active compares in UTC and never mixes aware/naive datetimes.
+
+    Panel SRE finding: lease timestamps are written naive-UTC, but the check
+    compared against datetime.now() (naive-local) — a host-offset skew — and an
+    aware ISO string would raise TypeError (not caught by `except ValueError`),
+    crashing preflight. The fix normalises to naive-UTC on both sides.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from mcp_strava.deploy.preflight import _lease_active
+
+    now_utc = datetime.now(UTC).replace(tzinfo=None)
+    future = (now_utc + timedelta(minutes=5)).isoformat()
+    past = (now_utc - timedelta(minutes=5)).isoformat()
+    aware_future = (datetime.now(UTC) + timedelta(minutes=5)).isoformat()  # carries +00:00
+
+    assert _lease_active({"lease_owner": "w", "lease_expires_at": future}) is True
+    assert _lease_active({"lease_owner": "w", "lease_expires_at": past}) is False
+    # Aware (offset-carrying) timestamp must not raise TypeError and stays active.
+    assert _lease_active({"lease_owner": "w", "lease_expires_at": aware_future}) is True
+    # Owner/expiry edge cases.
+    assert _lease_active({"lease_owner": None, "lease_expires_at": future}) is False
+    assert _lease_active({"lease_owner": "w", "lease_expires_at": None}) is True
+    assert _lease_active({"lease_owner": "w", "lease_expires_at": "not-a-date"}) is True
