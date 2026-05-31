@@ -356,3 +356,103 @@ def test_duckdb_materializer_no_hr_columns_stay_at_defaults(tmp_path: Path) -> N
     assert fact["hr_recovery_pause_count"] == 0
     assert fact["hr_recovery_total_rest_sec"] == 0
     assert fact["cardiac_drift_pct"] is None
+
+
+def _seed_activity_with_hr(
+    repo: DuckDBRepository,
+    *,
+    activity_id: int,
+    day: str,
+    heartrates: list[int],
+) -> None:
+    """Seed one dirty activity whose stream HR samples are exactly ``heartrates``.
+
+    Lets a test pin the activity's own min/max/median HR (and thus the running
+    cross-activity max) to deterministic values. All samples are moving
+    (velocity 3.0) so no pauses are detected.
+    """
+    hr_max = max(heartrates)
+    hr_avg = round(sum(heartrates) / len(heartrates))
+    n = len(heartrates)
+    repo.upsert_activity_summary(
+        activity_id=activity_id,
+        date=f"{day}T06:00:00Z",
+        name=f"HR fixture {activity_id}",
+        sport_type="Run",
+        distance=6000.0,
+        moving_time=n,
+        elapsed_time=n + 100,
+        total_elevation_gain=80.0,
+        summary_json=(
+            f'{{"id":{activity_id},"name":"HR fixture","sport_type":"Run",'
+            f'"start_date_local":"{day}T06:00:00Z","distance":6000,'
+            f'"moving_time":{n},"elapsed_time":{n + 100},'
+            f'"total_elevation_gain":80,"average_heartrate":{hr_avg},'
+            f'"max_heartrate":{hr_max},"has_heartrate":true}}'
+        ),
+        synced_at=f"{day}T07:00:00Z",
+    )
+    repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
+    rows = [
+        {
+            "time_offset": idx,
+            "heartrate": hr,
+            "velocity": 3.0,
+            "altitude": 500.0 + idx * 0.1,
+            "cadence": 84,
+            "lat": 43.2,
+            "lng": 76.9,
+            "grade": 1.0,
+            "gap_speed": 3.1,
+            "gap_distance": idx * 3.0,
+            "is_moving": 1,
+            "values_json": "{}",
+        }
+        for idx, hr in enumerate(heartrates)
+    ]
+    repo.replace_stream_rows_and_channel_metadata(
+        activity_id,
+        rows=rows,
+        metadata=[
+            {
+                "channel_key": "heartrate",
+                "original_size": len(rows),
+                "resolution": "high",
+                "series_type": "distance",
+                "fetched_at": f"{day}T07:30:00Z",
+                "batch_id": "wr03-test",
+                "status": "available",
+                "error": None,
+            }
+        ],
+    )
+
+
+def test_duckdb_materializer_hrr_uses_per_activity_max_not_running_max(tmp_path: Path) -> None:
+    """%HRR uses the activity's OWN observed max, not the running cross-activity max.
+
+    Regression for WR-03: an easy effort that follows a hard peak day must not
+    have its %HRR deflated by the running cross-activity max. Day-1 is a hard
+    activity (max HR 190, which raises the running max). Day-2 is an easy
+    activity with its own max 150 and median 120. With hr_rest=53:
+        correct (per-activity max 150): (120-53)/(150-53)*100 = 69.1
+        buggy   (running max 190):      (120-53)/(190-53)*100 = 48.9
+    """
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+    with repo:
+        # Day 1 — hard activity pushes the running max HR to 190.
+        _seed_activity_with_hr(repo, activity_id=801, day="2026-05-20", heartrates=[150] * 160 + [190] * 20)
+        # Day 2 — easy activity: own max 150, median 120.
+        _seed_activity_with_hr(repo, activity_id=802, day="2026-05-21", heartrates=[120] * 175 + [150] * 5)
+        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+
+        easy_fact = repo.fetch_activity_metric_fact(802, metric_version=1)
+        running_max = repo.max_heartrate_to_date("2026-05-21")
+        per_activity_max = repo.activity_hr_range(802)[1]
+
+    assert running_max == 190, "running cross-activity max should be 190 (from day-1 hard effort)"
+    assert per_activity_max == 150, "day-2 activity's own observed max should be 150"
+    assert easy_fact is not None
+    assert easy_fact["hrr_pct"] == 69.1, (
+        f"hrr_pct must use per-activity max 150 (=69.1), not running max 190 (=48.9); got {easy_fact['hrr_pct']}"
+    )

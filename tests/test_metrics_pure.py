@@ -193,6 +193,49 @@ def test_calc_hr_recovery_rate_uses_sampled_rest_seconds():
     print(f"  OK: calc_hr_recovery WR-05 — sampled-seconds denominator (rate={result.median_rate})")
 
 
+def test_calc_hr_recovery_best_worst_share_one_rated_subset():
+    """best/worst/median/avg all derive from the same rate-bearing subset.
+
+    Regression for WR-06: ``rates``, ``best``, and ``worst`` must operate on one
+    shared ``rated`` list. Two pauses with deliberately different recovery rates
+    pin the contract — if a future change selected best/worst from a different
+    subset than ``rates``, these cross-checks would diverge (and a future nullable
+    rate would make max()/min() raise on a value rates had silently excluded).
+    """
+    MIN = Config.Metrics.MIN_STREAM_POINTS
+    STOP = Config.Thresholds.VEL_STOP
+
+    def _pause(start, first5_hr, last5_hr, mid_hr, length=40):
+        rows = []
+        for i in range(length):
+            if i < 5:
+                hr = first5_hr
+            elif i >= length - 5:
+                hr = last5_hr
+            else:
+                hr = mid_hr
+            rows.append({"time_offset": start + i, "heartrate": hr, "velocity": STOP - 0.01})
+        return rows
+
+    moving = [{"time_offset": i, "heartrate": 160, "velocity": 3.0} for i in range(MIN)]
+    # Pause A: drop 40 over 40 sampled seconds -> rate 40/(40/60) = 60.0
+    pause_a = _pause(MIN, first5_hr=160, last5_hr=120, mid_hr=140)
+    # Separator moving rows split the two pauses (velocity >= VEL_STOP).
+    sep = [{"time_offset": MIN + 40 + i, "heartrate": 160, "velocity": 3.0} for i in range(20)]
+    # Pause B: drop 10 over 40 sampled seconds -> rate 10/(40/60) = 15.0
+    pause_b = _pause(MIN + 60, first5_hr=150, last5_hr=140, mid_hr=145)
+
+    result = calc_hr_recovery(moving + pause_a + sep + pause_b)
+    assert result is not None
+    assert result.pauses_found == 2
+    assert result.best_rate == 60.0, f"best must be max rate (60.0); got {result.best_rate}"
+    assert result.worst_rate == 15.0, f"worst must be min rate (15.0); got {result.worst_rate}"
+    # median/avg of {15.0, 60.0} = 37.5 — proves best/worst/median share one subset
+    assert result.median_rate == 37.5
+    assert result.avg_rate == 37.5
+    print(f"  OK: calc_hr_recovery WR-06 — best/worst/median share one rated subset (best={result.best_rate})")
+
+
 # ─── calc_vertical_speed ───
 
 
@@ -256,25 +299,46 @@ def test_calc_vertical_speed_nonzero_leading_offset():
 # ─── calc_cardiac_drift ───
 
 
-def test_calc_cardiac_drift():
-    """calc_cardiac_drift(rows, sport_type=None): None guards and result shape."""
-    # Insufficient rows
+def test_calc_cardiac_drift_none_guard_and_flat_hr_is_zero_drift():
+    """Insufficient data -> None; flat HR -> exactly 0.0 weighted drift.
+
+    Replaces the prior hasattr-only smoke test with value assertions on a
+    deterministic fixture. With HR flat at 150 across the whole activity, every
+    cluster's early-vs-late medians are equal, so weighted drift is exactly 0.0
+    and the effort is never flagged significant.
+    """
+    # Insufficient rows still guard to None
     rows_short = _make_hr_vel_rows(Config.Metrics.MIN_STREAM_POINTS - 1)
     assert calc_cardiac_drift(rows_short) is None, "Should return None for < MIN_STREAM_POINTS rows"
 
-    # Sufficient rows — expect a CardiacDriftResult (drift_pct may be None on low-quality data)
-    rows_ok = _make_hr_vel_rows(Config.Metrics.MIN_STREAM_POINTS + 50, velocity=3.0, heartrate=145)
-    result = calc_cardiac_drift(rows_ok)
+    rows_flat = _make_hr_vel_rows(600, velocity=3.0, heartrate=150)
+    result = calc_cardiac_drift(rows_flat)
     assert result is not None, "Should return CardiacDriftResult for sufficient data"
-    # Result fields must be present (values may vary based on algorithm)
-    assert hasattr(result, "drift_pct")
-    assert hasattr(result, "is_significant")
-    assert hasattr(result, "quality")
+    assert result.drift_pct == 0.0, f"flat HR must give exactly 0.0 drift; got {result.drift_pct}"
+    assert result.is_significant is False
+    assert result.severity == "stable"
 
     # sport_type kwarg accepted — does not crash
-    result2 = calc_cardiac_drift(rows_ok, sport_type="Run")
-    assert result2 is not None
-    print(f"  OK: calc_cardiac_drift — drift_pct={result.drift_pct}, quality={result.quality}")
+    assert calc_cardiac_drift(rows_flat, sport_type="Run") is not None
+    print(f"  OK: calc_cardiac_drift flat — drift_pct={result.drift_pct}, severity={result.severity}")
+
+
+def test_calc_cardiac_drift_rising_hr_is_positive_and_significant():
+    """Rising HR at steady pace -> clearly positive, significant drift.
+
+    Deterministic-direction regression: HR ramps 140->170 across the activity at
+    a constant pace, so the late-segment median sits well above the early-segment
+    median. Weighted drift must be clearly positive and cross the significance
+    threshold (>=5% with full directional consistency).
+    """
+    n = 600
+    rows = [{"heartrate": 140 + (i / (n - 1)) * 30.0, "velocity": 3.0} for i in range(n)]
+    result = calc_cardiac_drift(rows)
+    assert result is not None
+    assert result.drift_pct is not None
+    assert result.drift_pct > 5.0, f"rising HR must drift >5%; got {result.drift_pct}"
+    assert result.is_significant is True
+    print(f"  OK: calc_cardiac_drift rising — drift_pct={result.drift_pct}, significant")
 
 
 # ─── calc_hrr_pct ───
@@ -301,3 +365,22 @@ def test_calc_hrr_pct():
     assert low == 20.0, f"Expected 20.0, got {low}"
 
     print("  OK: calc_hrr_pct — 66.7 confirmed, None guards pass")
+
+
+def test_calc_hrr_pct_accepts_decimal_inputs():
+    """calc_hrr_pct floats all three inputs, so DuckDB Decimal/str values work.
+
+    Regression for WR-04: the materializer can pass Decimal HR values read from
+    DuckDB. The pre-WR-04 code coerced only hr_max, so a Decimal/str hr_rest
+    raised TypeError mid-formula instead of being handled. All three inputs must
+    be floated up front and yield the same result as the plain-float path.
+    """
+    from decimal import Decimal
+
+    # Canonical case (150, 50, 200) -> 66.7, now via Decimal
+    assert calc_hrr_pct(Decimal("150"), Decimal("50"), Decimal("200")) == 66.7
+    # Mixed Decimal/int/str must not raise and must match the float path
+    assert calc_hrr_pct(Decimal("120"), 53, "150") == calc_hrr_pct(120.0, 53.0, 150.0)
+    # Guard path still holds with Decimal: hr_max <= hr_rest -> None
+    assert calc_hrr_pct(Decimal("150"), Decimal("200"), Decimal("200")) is None
+    print("  OK: calc_hrr_pct WR-04 — Decimal/str inputs coerced consistently")
