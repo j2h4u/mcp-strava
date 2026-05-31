@@ -6,6 +6,7 @@ derived metric. MCP tools expose filtered subsets through ``exposed_in``.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -1556,6 +1557,141 @@ class FactColumnDefinition:
     role: str
     metric_ids: tuple[str, ...] = ()
     description: str = ""
+    sql_type: str = ""
+    nullable: bool = True
+    default_sql: str | None = None
+
+
+_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_SUPPORTED_FACT_SQL_TYPES = frozenset({"BIGINT", "DOUBLE", "VARCHAR", "DATE"})
+_SUPPORTED_FACT_DEFAULT_SQL = frozenset({"0", "0.0", "'[]'"})
+
+
+def _sql(sql_type: str, *, nullable: bool = True, default_sql: str | None = None) -> tuple[str, bool, str | None]:
+    return sql_type, nullable, default_sql
+
+
+_MATERIALIZED_FACT_COLUMN_SQL_METADATA: dict[str, dict[str, tuple[str, bool, str | None]]] = {
+    "activity_metric_facts": {
+        "activity_id": _sql("BIGINT", nullable=False),
+        "activity_day": _sql("DATE", nullable=False),
+        "sport_type": _sql("VARCHAR", nullable=False),
+        "source_hash": _sql("VARCHAR", nullable=False),
+        "source_revision": _sql("BIGINT", nullable=False),
+        "metric_version": _sql("BIGINT", nullable=False),
+        "computed_at": _sql("VARCHAR", nullable=False),
+        "completeness_status": _sql("VARCHAR", nullable=False),
+        "missing_reasons_json": _sql("VARCHAR", nullable=False, default_sql="'[]'"),
+        "trimp": _sql("DOUBLE"),
+        "zone1_seconds": _sql("BIGINT", nullable=False, default_sql="0"),
+        "zone2_seconds": _sql("BIGINT", nullable=False, default_sql="0"),
+        "zone3_seconds": _sql("BIGINT", nullable=False, default_sql="0"),
+        "zone4_seconds": _sql("BIGINT", nullable=False, default_sql="0"),
+        "zone5_seconds": _sql("BIGINT", nullable=False, default_sql="0"),
+        "hr_recovery_pause_count": _sql("BIGINT", nullable=False, default_sql="0"),
+        "hr_recovery_total_rest_sec": _sql("BIGINT", nullable=False, default_sql="0"),
+        "hr_recovery_median_rate": _sql("DOUBLE"),
+        "hr_recovery_best_rate": _sql("DOUBLE"),
+        "hr_recovery_worst_rate": _sql("DOUBLE"),
+        "hr_recovery_avg_rate": _sql("DOUBLE"),
+        "vertical_speed_vmh": _sql("BIGINT"),
+        "vertical_speed_total_ascent_m": _sql("DOUBLE"),
+        "vertical_speed_duration_hours": _sql("DOUBLE"),
+        "cardiac_cost": _sql("DOUBLE"),
+        "adjusted_cardiac_cost": _sql("DOUBLE"),
+        "cardiac_drift_pct": _sql("DOUBLE"),
+        "cardiac_drift_severity": _sql("VARCHAR"),
+        "cardiac_drift_significant": _sql("BIGINT", nullable=False, default_sql="0"),
+        "cardiac_drift_quality": _sql("VARCHAR"),
+        "hrr_pct": _sql("DOUBLE"),
+        "anomaly_count": _sql("BIGINT", nullable=False, default_sql="0"),
+        "distance_m": _sql("DOUBLE"),
+        "calories_kcal": _sql("DOUBLE"),
+        "moving_time_s": _sql("BIGINT"),
+        "elapsed_time_s": _sql("BIGINT"),
+        "elevation_gain_m": _sql("DOUBLE"),
+        "heartrate_sample_count": _sql("BIGINT", nullable=False, default_sql="0"),
+        "stream_sample_count": _sql("BIGINT", nullable=False, default_sql="0"),
+        "observed_min_hr": _sql("BIGINT"),
+        "observed_max_hr": _sql("BIGINT"),
+        "hr_zone_model": _sql("VARCHAR"),
+        "hr_max_used": _sql("BIGINT"),
+        "hr_rest_used": _sql("BIGINT"),
+    },
+    "daily_load_facts": {
+        "day": _sql("DATE", nullable=False),
+        "scope": _sql("VARCHAR", nullable=False),
+        "sport_type": _sql("VARCHAR", nullable=False),
+        "metric_version": _sql("BIGINT", nullable=False),
+        "computed_at": _sql("VARCHAR", nullable=False),
+        "completeness_status": _sql("VARCHAR", nullable=False),
+        "missing_reasons_json": _sql("VARCHAR", nullable=False, default_sql="'[]'"),
+        "activity_count": _sql("BIGINT", nullable=False, default_sql="0"),
+        "stream_point_count": _sql("BIGINT", nullable=False, default_sql="0"),
+        "heartrate_point_count": _sql("BIGINT", nullable=False, default_sql="0"),
+        "observed_trimp": _sql("DOUBLE"),
+        "effective_trimp": _sql("DOUBLE", nullable=False, default_sql="0.0"),
+        "distance_m": _sql("DOUBLE", nullable=False, default_sql="0.0"),
+        "moving_time_s": _sql("BIGINT", nullable=False, default_sql="0"),
+        "elevation_gain_m": _sql("DOUBLE", nullable=False, default_sql="0.0"),
+        "zone4_seconds": _sql("BIGINT", nullable=False, default_sql="0"),
+        "zone5_seconds": _sql("BIGINT", nullable=False, default_sql="0"),
+        "high_zone_seconds": _sql("BIGINT", nullable=False, default_sql="0"),
+        "anomaly_count": _sql("BIGINT", nullable=False, default_sql="0"),
+    },
+    "training_model_daily": {
+        "day": _sql("DATE", nullable=False),
+        "scope": _sql("VARCHAR", nullable=False),
+        "sport_type": _sql("VARCHAR", nullable=False),
+        "metric_version": _sql("BIGINT", nullable=False),
+        "computed_at": _sql("VARCHAR", nullable=False),
+        "completeness_status": _sql("VARCHAR", nullable=False),
+        "missing_reasons_json": _sql("VARCHAR", nullable=False, default_sql="'[]'"),
+        "effective_trimp": _sql("DOUBLE", nullable=False, default_sql="0.0"),
+        "observed_trimp": _sql("DOUBLE"),
+        "fitness": _sql("DOUBLE"),
+        "fatigue": _sql("DOUBLE"),
+        "form": _sql("DOUBLE"),
+        "form_zone": _sql("VARCHAR"),
+        "acwr_zone": _sql("VARCHAR"),
+        "acwr": _sql("DOUBLE"),
+        "load_7d": _sql("DOUBLE"),
+        "load_28d": _sql("DOUBLE"),
+        "load_42d": _sql("DOUBLE"),
+        "input_days": _sql("BIGINT", nullable=False, default_sql="0"),
+        "missing_days": _sql("BIGINT", nullable=False, default_sql="0"),
+    },
+    "rolling_period_facts": {
+        "as_of_day": _sql("DATE", nullable=False),
+        "window_days": _sql("BIGINT", nullable=False),
+        "scope": _sql("VARCHAR", nullable=False),
+        "sport_type": _sql("VARCHAR", nullable=False),
+        "metric_version": _sql("BIGINT", nullable=False),
+        "computed_at": _sql("VARCHAR", nullable=False),
+        "completeness_status": _sql("VARCHAR", nullable=False),
+        "missing_reasons_json": _sql("VARCHAR", nullable=False, default_sql="'[]'"),
+        "activity_count": _sql("BIGINT", nullable=False, default_sql="0"),
+        "active_days": _sql("BIGINT", nullable=False, default_sql="0"),
+        "rest_days": _sql("BIGINT", nullable=False, default_sql="0"),
+        "observed_trimp": _sql("DOUBLE"),
+        "effective_trimp": _sql("DOUBLE", nullable=False, default_sql="0.0"),
+        "distance_m": _sql("DOUBLE", nullable=False, default_sql="0.0"),
+        "moving_time_s": _sql("BIGINT", nullable=False, default_sql="0"),
+        "elevation_gain_m": _sql("DOUBLE", nullable=False, default_sql="0.0"),
+        "high_zone_seconds": _sql("BIGINT", nullable=False, default_sql="0"),
+        "anomaly_count": _sql("BIGINT", nullable=False, default_sql="0"),
+        "fitness": _sql("DOUBLE"),
+        "fatigue": _sql("DOUBLE"),
+        "form": _sql("DOUBLE"),
+        "form_zone": _sql("VARCHAR"),
+        "acwr_zone": _sql("VARCHAR"),
+        "acwr": _sql("DOUBLE"),
+        "median_cardiac_cost": _sql("DOUBLE"),
+        "median_adjusted_cardiac_cost": _sql("DOUBLE"),
+        "median_hr_recovery": _sql("DOUBLE"),
+        "median_cardiac_drift_pct": _sql("DOUBLE"),
+    },
+}
 
 
 def _fact_column(
@@ -1567,12 +1703,18 @@ def _fact_column(
 ) -> FactColumnDefinition:
     if role not in FACT_COLUMN_ROLES:
         raise ValueError(f"Unknown fact column role: {role}")
+    sql_type, nullable, default_sql = _MATERIALIZED_FACT_COLUMN_SQL_METADATA.get(table_name, {}).get(
+        column_name, ("", True, None)
+    )
     return FactColumnDefinition(
         table_name=table_name,
         column_name=column_name,
         role=role,
         metric_ids=metric_ids,
         description=description,
+        sql_type=sql_type,
+        nullable=nullable,
+        default_sql=default_sql,
     )
 
 
@@ -1919,6 +2061,26 @@ AGGREGATE_QUERY_PROJECTION_COLUMNS: dict[str, FactColumnDefinition] = {
 }
 
 
+def _validate_sql_identifier(identifier: str) -> None:
+    if not _SQL_IDENTIFIER_RE.fullmatch(identifier):
+        raise ValueError(f"Unsafe SQL identifier: {identifier!r}")
+
+
+def _validate_fact_column_sql_metadata(definition: FactColumnDefinition) -> None:
+    _validate_sql_identifier(definition.table_name)
+    _validate_sql_identifier(definition.column_name)
+    if not definition.sql_type:
+        raise ValueError(f"{definition.table_name}.{definition.column_name} missing sql_type")
+    if definition.sql_type not in _SUPPORTED_FACT_SQL_TYPES:
+        raise ValueError(
+            f"{definition.table_name}.{definition.column_name} has unsupported sql_type: {definition.sql_type}"
+        )
+    if definition.default_sql is not None and definition.default_sql not in _SUPPORTED_FACT_DEFAULT_SQL:
+        raise ValueError(
+            f"{definition.table_name}.{definition.column_name} has unsafe default_sql: {definition.default_sql}"
+        )
+
+
 def _validate_fact_column_registry() -> None:
     unknown_tables = set(MATERIALIZED_FACT_COLUMN_REGISTRY) - set(MATERIALIZED_FACT_TABLES)
     if unknown_tables:
@@ -1926,11 +2088,21 @@ def _validate_fact_column_registry() -> None:
     missing_tables = set(MATERIALIZED_FACT_TABLES) - set(MATERIALIZED_FACT_COLUMN_REGISTRY)
     if missing_tables:
         raise ValueError(f"Missing materialized fact table registries: {sorted(missing_tables)}")
+    unknown_metadata_tables = set(_MATERIALIZED_FACT_COLUMN_SQL_METADATA) - set(MATERIALIZED_FACT_COLUMN_REGISTRY)
+    if unknown_metadata_tables:
+        raise ValueError(f"Unknown materialized fact SQL metadata tables: {sorted(unknown_metadata_tables)}")
 
     for table_name, columns in MATERIALIZED_FACT_COLUMN_REGISTRY.items():
+        metadata_columns = set(_MATERIALIZED_FACT_COLUMN_SQL_METADATA.get(table_name, {}))
+        unknown_metadata_columns = metadata_columns - set(columns)
+        if unknown_metadata_columns:
+            raise ValueError(
+                f"{table_name} has SQL metadata for unknown columns: {sorted(unknown_metadata_columns)}"
+            )
         for column_name, definition in columns.items():
             if definition.table_name != table_name or definition.column_name != column_name:
                 raise ValueError(f"Fact column key mismatch: {table_name}.{column_name}")
+            _validate_fact_column_sql_metadata(definition)
             unknown_metric_ids = set(definition.metric_ids) - set(METRIC_REGISTRY)
             if unknown_metric_ids:
                 raise ValueError(f"{table_name}.{column_name} references unknown metrics: {sorted(unknown_metric_ids)}")
@@ -2069,6 +2241,38 @@ def materialized_fact_column_names(table_name: str) -> frozenset[str]:
     if table_name not in MATERIALIZED_FACT_COLUMN_REGISTRY:
         raise ValueError(f"Unknown materialized fact table: {table_name}")
     return frozenset(MATERIALIZED_FACT_COLUMN_REGISTRY[table_name])
+
+
+def _materialized_fact_column_definition(table_name: str, column_name: str) -> FactColumnDefinition:
+    if table_name not in MATERIALIZED_FACT_COLUMN_REGISTRY:
+        raise ValueError(f"Unknown materialized fact table: {table_name}")
+    if column_name not in MATERIALIZED_FACT_COLUMN_REGISTRY[table_name]:
+        raise ValueError(f"Unknown materialized fact column: {table_name}.{column_name}")
+    return MATERIALIZED_FACT_COLUMN_REGISTRY[table_name][column_name]
+
+
+def materialized_fact_column_definition_sql(table_name: str, column_name: str) -> str:
+    definition = _materialized_fact_column_definition(table_name, column_name)
+    parts = [definition.column_name, definition.sql_type]
+    if not definition.nullable:
+        parts.append("NOT NULL")
+    if definition.default_sql is not None:
+        parts.extend(("DEFAULT", definition.default_sql))
+    return " ".join(parts)
+
+
+def activity_metric_facts_table_sql() -> str:
+    columns = [
+        f"    {materialized_fact_column_definition_sql('activity_metric_facts', column_name)}"
+        for column_name in MATERIALIZED_FACT_COLUMN_REGISTRY["activity_metric_facts"]
+    ]
+    columns.append("    PRIMARY KEY (activity_id, metric_version)")
+    return "CREATE TABLE activity_metric_facts (\n" + ",\n".join(columns) + "\n);"
+
+
+def activity_metric_fact_add_column_sql(column_name: str) -> str:
+    column_definition = materialized_fact_column_definition_sql("activity_metric_facts", column_name)
+    return f"ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS {column_definition}"
 
 
 def aggregate_query_allowed_columns() -> frozenset[str]:
