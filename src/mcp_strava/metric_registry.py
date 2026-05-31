@@ -2241,7 +2241,7 @@ def materialized_fact_column_names(table_name: str) -> frozenset[str]:
     return frozenset(MATERIALIZED_FACT_COLUMN_REGISTRY[table_name])
 
 
-def _materialized_fact_column_definition(table_name: str, column_name: str) -> FactColumnDefinition:
+def materialized_fact_column_definition(table_name: str, column_name: str) -> FactColumnDefinition:
     if table_name not in MATERIALIZED_FACT_COLUMN_REGISTRY:
         raise ValueError(f"Unknown materialized fact table: {table_name}")
     if column_name not in MATERIALIZED_FACT_COLUMN_REGISTRY[table_name]:
@@ -2250,7 +2250,7 @@ def _materialized_fact_column_definition(table_name: str, column_name: str) -> F
 
 
 def materialized_fact_column_definition_sql(table_name: str, column_name: str) -> str:
-    definition = _materialized_fact_column_definition(table_name, column_name)
+    definition = materialized_fact_column_definition(table_name, column_name)
     parts = [definition.column_name, definition.sql_type]
     if not definition.nullable:
         parts.append("NOT NULL")

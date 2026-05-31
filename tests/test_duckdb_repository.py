@@ -390,6 +390,15 @@ def test_ensure_provenance_columns_adds_registry_owned_late_activity_columns() -
         )
 
 
+def test_activity_metric_fact_late_columns_are_safe_for_additive_migration() -> None:
+    from mcp_strava.adapters.duckdb.schema import ACTIVITY_METRIC_FACT_LATE_COLUMNS
+    from mcp_strava.metric_registry import materialized_fact_column_definition
+
+    for column_name in ACTIVITY_METRIC_FACT_LATE_COLUMNS:
+        definition = materialized_fact_column_definition("activity_metric_facts", column_name)
+        assert definition.nullable or definition.default_sql is not None, column_name
+
+
 def test_safe_identifier_rejects_sql_injection() -> None:
     """_safe_identifier accepts bare identifiers and rejects anything else.
 

@@ -1,7 +1,5 @@
 """Metric registry contract tests for Phase 05 plan 05-01."""
 
-import inspect
-
 import duckdb
 import pytest
 
@@ -380,7 +378,9 @@ def test_schema_activity_metric_fact_ddl_is_registry_generated():
     from mcp_strava.metric_registry import activity_metric_facts_table_sql
 
     assert schema.activity_metric_facts_table_sql is activity_metric_facts_table_sql
-    assert "CREATE TABLE activity_metric_facts (" not in inspect.getsource(schema)
+    generated_table_sql = activity_metric_facts_table_sql()
+    assert generated_table_sql in schema.DUCKDB_SCHEMA_SQL
+    assert schema.DUCKDB_SCHEMA_SQL.count(generated_table_sql) == 1
 
 
 def test_materialized_fact_column_registry_has_sql_metadata():

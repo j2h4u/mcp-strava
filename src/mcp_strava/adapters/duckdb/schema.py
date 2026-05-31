@@ -1,6 +1,10 @@
 """DuckDB schema inventory for the primary Strava mirror."""
 
-from mcp_strava.metric_registry import activity_metric_fact_add_column_sql, activity_metric_facts_table_sql
+from mcp_strava.metric_registry import (
+    activity_metric_fact_add_column_sql,
+    activity_metric_facts_table_sql,
+    materialized_fact_column_definition,
+)
 
 DUCKDB_TABLES: tuple[str, ...] = (
     "activities",
@@ -516,6 +520,11 @@ def ensure_provenance_columns(conn) -> None:
     (HR provenance + calories) if they do not already exist. Safe to call on any
     existing DuckDB file; new columns are NULL on old rows until re-materialized."""
     for column_name in ACTIVITY_METRIC_FACT_LATE_COLUMNS:
+        definition = materialized_fact_column_definition("activity_metric_facts", column_name)
+        if not definition.nullable and definition.default_sql is None:
+            raise RuntimeError(
+                f"Unsafe additive migration for activity_metric_facts.{column_name}: NOT NULL without DEFAULT"
+            )
         sql = activity_metric_fact_add_column_sql(column_name)
         conn.execute(sql)
 
