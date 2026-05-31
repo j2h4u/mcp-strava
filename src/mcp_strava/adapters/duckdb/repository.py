@@ -8,6 +8,8 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+import duckdb
+
 from mcp_strava.adapters.duckdb.connection import duckdb_process_lock, open_expected_mirror_db, open_fixture_db
 from mcp_strava.adapters.duckdb.schema import ensure_provenance_columns
 from mcp_strava.constants import TRAINING_SPORTS, Config
@@ -176,11 +178,18 @@ class DuckDBRepository:
         return repo
 
     def _ensure_schema_extensions(self) -> None:
-        """Additive migration: ensure provenance columns exist on live DB."""
+        """Additive migration: ensure provenance columns exist on a live DB.
+
+        On a fresh DB the ``activity_metric_facts`` table does not exist yet, so
+        the ALTER raises ``CatalogException`` — that case is expected and ignored
+        (``create_schema`` runs later). Any other failure (permission, IO, schema
+        corruption) is a real problem and must surface rather than be swallowed
+        into a later, harder-to-diagnose column-not-found error.
+        """
         try:
             ensure_provenance_columns(self.conn)
-        except Exception:
-            # Table may not exist yet (fresh DB before create_schema); that is fine.
+        except duckdb.CatalogException:
+            # Table not created yet (fresh DB before create_schema) — expected.
             pass
 
     def __enter__(self) -> DuckDBRepository:

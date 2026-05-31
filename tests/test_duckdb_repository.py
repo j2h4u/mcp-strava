@@ -299,3 +299,31 @@ def test_duckdb_repository_fact_upserts_queries_and_dirty_clear(tmp_path: Path) 
         assert sorted(rolling_by_window) == [7]
         assert rolling_by_window[7]["active_days"] == 1
         assert repo.read_model_status(metric_version=1)["status"] == "current"
+
+
+def test_ensure_schema_extensions_swallows_missing_table_but_surfaces_real_errors(monkeypatch) -> None:
+    """_ensure_schema_extensions ignores the fresh-DB CatalogException, not real errors.
+
+    Panel SRE/QA finding: the previous `except Exception: pass` hid genuine
+    failures (permission, IO, corruption) behind the expected fresh-DB case.
+    The narrowed catch must swallow only the missing-table CatalogException and
+    let any other failure propagate.
+    """
+    import duckdb
+
+    from mcp_strava.adapters.duckdb import repository as repo_mod
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    # Fresh in-memory connection with no schema: the provenance ALTER hits a
+    # missing activity_metric_facts table -> CatalogException, which is expected
+    # and must be swallowed so construction still succeeds.
+    repo = DuckDBRepository.from_connection(duckdb.connect(":memory:"))
+    assert repo is not None
+
+    # A non-catalog failure must propagate, not be silently swallowed.
+    def _boom(_conn) -> None:
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(repo_mod, "ensure_provenance_columns", _boom)
+    with pytest.raises(RuntimeError, match="disk on fire"):
+        DuckDBRepository.from_connection(duckdb.connect(":memory:"))
