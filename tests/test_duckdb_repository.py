@@ -329,6 +329,64 @@ def test_ensure_schema_extensions_swallows_missing_table_but_surfaces_real_error
         DuckDBRepository.from_connection(duckdb.connect(":memory:"))
 
 
+def test_ensure_provenance_columns_adds_registry_owned_late_activity_columns() -> None:
+    import duckdb
+
+    from mcp_strava.adapters.duckdb.schema import ACTIVITY_METRIC_FACT_LATE_COLUMNS, ensure_provenance_columns
+    from mcp_strava.metric_registry import MATERIALIZED_FACT_COLUMN_REGISTRY
+
+    expected_late_columns = (
+        "observed_min_hr",
+        "observed_max_hr",
+        "hr_zone_model",
+        "hr_max_used",
+        "hr_rest_used",
+        "calories_kcal",
+    )
+    assert ACTIVITY_METRIC_FACT_LATE_COLUMNS == expected_late_columns
+
+    conn = duckdb.connect(":memory:")
+    conn.execute(
+        """
+        CREATE TABLE activity_metric_facts (
+            activity_id BIGINT NOT NULL,
+            metric_version BIGINT NOT NULL,
+            PRIMARY KEY (activity_id, metric_version)
+        )
+        """
+    )
+
+    ensure_provenance_columns(conn)
+
+    rows = conn.execute(
+        """
+        SELECT column_name, data_type, is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_name = 'activity_metric_facts'
+          AND column_name IN (
+              'observed_min_hr',
+              'observed_max_hr',
+              'hr_zone_model',
+              'hr_max_used',
+              'hr_rest_used',
+              'calories_kcal'
+          )
+        ORDER BY ordinal_position
+        """
+    ).fetchall()
+    added_columns = {str(name): (str(data_type), str(is_nullable) == "YES", default_sql) for name, data_type, is_nullable, default_sql in rows}
+
+    assert tuple(added_columns) == expected_late_columns
+    registry_columns = MATERIALIZED_FACT_COLUMN_REGISTRY["activity_metric_facts"]
+    for column_name in expected_late_columns:
+        registry_column = registry_columns[column_name]
+        assert added_columns[column_name] == (
+            registry_column.sql_type,
+            registry_column.nullable,
+            registry_column.default_sql,
+        )
+
+
 def test_safe_identifier_rejects_sql_injection() -> None:
     """_safe_identifier accepts bare identifiers and rejects anything else.
 

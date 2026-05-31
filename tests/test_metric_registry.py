@@ -1,9 +1,12 @@
 """Metric registry contract tests for Phase 05 plan 05-01."""
 
+import inspect
+
 import duckdb
 import pytest
 
-from mcp_strava.adapters.duckdb.schema import create_schema
+from mcp_strava.adapters.duckdb import schema
+from mcp_strava.adapters.duckdb.schema import DUCKDB_TABLES, DUCKDB_VIEWS, create_schema
 from mcp_strava.metric_registry import (
     AGGREGATE_METRIC_BUNDLES,
     AGGREGATE_MODES,
@@ -284,6 +287,100 @@ def test_materialized_fact_column_registry_matches_duckdb_schema():
             ).fetchall()
             schema_columns = {str(row[0]) for row in rows}
             assert schema_columns == set(materialized_fact_column_names(table_name)), table_name
+
+
+def test_activity_metric_fact_schema_matches_registry_metadata():
+    with duckdb.connect(database=":memory:") as conn:
+        create_schema(conn)
+        rows = conn.execute(
+            """
+            SELECT column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_name = 'activity_metric_facts'
+            ORDER BY ordinal_position
+            """
+        ).fetchall()
+        schema_columns = {
+            str(name): {
+                "data_type": str(data_type),
+                "nullable": str(is_nullable) == "YES",
+                "default_sql": default_sql,
+            }
+            for name, data_type, is_nullable, default_sql in rows
+        }
+        registry_columns = MATERIALIZED_FACT_COLUMN_REGISTRY["activity_metric_facts"]
+
+        assert list(schema_columns) == list(registry_columns)
+        for column_name in (
+            "activity_id",
+            "activity_day",
+            "missing_reasons_json",
+            "zone1_seconds",
+            "cardiac_drift_significant",
+            "anomaly_count",
+            "heartrate_sample_count",
+            "calories_kcal",
+        ):
+            registry_column = registry_columns[column_name]
+            schema_column = schema_columns[column_name]
+            assert schema_column["data_type"] == registry_column.sql_type
+            assert schema_column["nullable"] is registry_column.nullable
+            assert schema_column["default_sql"] == registry_column.default_sql
+
+        primary_key_columns = [
+            str(row[0])
+            for row in conn.execute(
+                """
+                SELECT kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                  ON tc.constraint_name = kcu.constraint_name
+                WHERE tc.table_name = 'activity_metric_facts'
+                  AND tc.constraint_type = 'PRIMARY KEY'
+                ORDER BY kcu.ordinal_position
+                """
+            ).fetchall()
+        ]
+        assert primary_key_columns == ["activity_id", "metric_version"]
+
+
+def test_duckdb_schema_smoke_keeps_tables_views_and_activity_index():
+    with duckdb.connect(database=":memory:") as conn:
+        create_schema(conn)
+        table_names = {
+            str(row[0])
+            for row in conn.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'main'
+                  AND table_type = 'BASE TABLE'
+                """
+            ).fetchall()
+        }
+        view_names = {
+            str(row[0])
+            for row in conn.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'main'
+                  AND table_type = 'VIEW'
+                """
+            ).fetchall()
+        }
+        index_names = {str(row[4]) for row in conn.execute("SELECT * FROM duckdb_indexes()").fetchall()}
+
+    assert set(DUCKDB_TABLES).issubset(table_names)
+    assert set(DUCKDB_VIEWS).issubset(view_names)
+    assert "idx_duckdb_activity_metric_day_sport_version" in index_names
+
+
+def test_schema_activity_metric_fact_ddl_is_registry_generated():
+    from mcp_strava.metric_registry import activity_metric_facts_table_sql
+
+    assert schema.activity_metric_facts_table_sql is activity_metric_facts_table_sql
+    assert "CREATE TABLE activity_metric_facts (" not in inspect.getsource(schema)
 
 
 def test_materialized_fact_column_registry_has_sql_metadata():
