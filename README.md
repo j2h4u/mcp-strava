@@ -131,3 +131,9 @@ Live Docker state is expected under `/opt/docker/mcp-strava`:
 ## MCP Boundary
 
 The MCP server is read-only and factual. It does not expose sync, admin, debug, raw SQL, token, or raw Strava API tools. Agents receive metrics and freshness facts, then perform their own interpretation.
+
+## License
+
+Copyright (c) 2026 Maksim Brashchenko.
+
+This project is available for noncommercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). Commercial use requires a separate written commercial license; see [COMMERCIAL.md](COMMERCIAL.md).
