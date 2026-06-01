@@ -10,6 +10,18 @@ Strava [announced an official MCP connector for Claude](https://press.strava.com
 
 `mcp-strava` is the local, self-hosted option: it keeps a DuckDB mirror on your machine, exposes prepared aggregate bundles and CLI reports, and keeps operational controls out of the MCP surface.
 
+## Own Your Data
+
+`mcp-strava` uses a full local mirror instead of proxying every question to Strava on demand. The mirror is the product boundary: once your supported Strava history is mirrored, your training facts are queryable on your machine, repeatable across runs, and available for custom analysis without spending API quota on every prompt.
+
+That choice gives you:
+
+- A durable local copy of activities, streams, kudos, gear facts, and derived read-model facts.
+- Fast historical questions over DuckDB, including daily, weekly, monthly, all-time, and per-sport aggregates.
+- Reproducible metrics such as training impulse (TRIMP), fitness, fatigue, form, acute:chronic workload ratio (ACWR), cardiac drift, recovery, and sport-efficiency summaries.
+- Evidence metadata with freshness, completeness, warnings, and rationale, so agents can say what is known and what is missing.
+- A read-only MCP product surface that never exposes sync, raw SQL, token refresh, or admin controls.
+
 ## What You Can Use It For
 
 - **Daily training brief:** current fitness state, recent workouts, load, form, freshness, and notable data gaps.
