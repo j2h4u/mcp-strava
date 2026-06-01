@@ -1,15 +1,58 @@
 # mcp-strava
 
-Local Strava mirror and MCP training-metrics server.
+Personal Strava analytics for daily training briefs, weekly digests, period comparison, and MCP agents.
 
-`mcp-strava` keeps Strava activities, streams, kudos, and derived training metrics in a local DuckDB database, then exposes read-only MCP tools for agents that need workout facts, period comparisons, and fitness-state projections.
+`mcp-strava` turns a local Strava mirror into structured training facts: recent workouts, workout-level metrics, rolling load, fitness/fatigue/form, sport-by-sport aggregates, and date-range comparisons. It exposes those facts through a read-only MCP server, so an agent can explain your training week without getting access to sync controls, raw SQL, or Strava tokens.
 
-## What It Does
+## What You Can Use It For
 
-- Mirrors Strava activities and sensor streams into DuckDB.
+- **Daily training brief:** current fitness state, recent workouts, load, form, freshness, and notable data gaps.
+- **Weekly digest:** weekly load, volume, efficiency, sport breakdowns, current-week workouts, and current-vs-previous week trends.
+- **Period comparison:** compare two arbitrary date ranges across distance, training impulse (TRIMP), time, elevation, HR, cardiac cost, drift, recovery, and model-state metrics.
+- **Training aggregates:** query prepared metrics by day, week, month, year, all-time, globally or per sport.
+- **Workout analysis:** inspect one workout with factual intensity, heart-rate, drift, recovery, elevation, kudos, and gear facts when available.
+- **Fitness projection:** simulate named load scenarios to see projected fitness, fatigue, and form through a target date.
+
+## MCP Tools
+
+| Tool | Use it for |
+|---|---|
+| `get_fitness_state` | Current load, fitness, fatigue, form, acute:chronic workload ratio (ACWR), freshness, and model context. |
+| `list_workouts` | Recent or filtered workouts with factual volume and intensity metrics. |
+| `get_workout_detail` | Detailed metrics for a specific workout id. |
+| `compare_periods` | Side-by-side date-range comparison, optionally filtered by sport. |
+| `project_fitness_state` | Forward fitness-state projections for training-load scenarios. |
+| `get_training_aggregates` | Bucketed aggregate facts for dashboards, digests, and custom analysis. |
+
+## Ready-Made Reports
+
+| Surface | Command or prompt | What it returns |
+|---|---|---|
+| CLI daily brief | `uv run python -m mcp_strava report daily` | Daily facts for current state, recent workouts, 14-day load, sport mix, freshness, and read-model status. |
+| CLI weekly digest | `uv run python -m mcp_strava weekly` | Weekly load, volume, efficiency, sport breakdowns, current-week activities, and week-over-week trends. |
+| MCP daily prompt | `strava_daily_training_brief` | A daily Russian brief scenario backed only by factual MCP metrics. |
+| MCP weekly prompt | `strava_weekly_training_digest` | A weekly Russian digest scenario using period-comparison metrics. |
+| MCP shoe watchdog | `strava_shoe_mileage_watchdog` | Shoe and gear mileage facts for replacement review. |
+
+## Aggregate Bundles
+
+`get_training_aggregates` can query individual metrics, or use prepared bundles:
+
+| Bundle | Focus |
+|---|---|
+| `daily_brief` | Fitness, fatigue, form, ACWR, weekly load, active/rest days, recent efficiency, and kudos. |
+| `weekly_digest` | TRIMP, distance, calories, time, elevation, active days, HR, cardiac cost, drift, and recovery. |
+| `monthly_digest` | Monthly volume, 28/90-day load context, and model-state metrics. |
+| `period_comparison` | Metrics selected for current-vs-previous or arbitrary period comparisons. |
+| `sport_efficiency` | HR, recovery, vertical speed, cardiac cost, drift, and efficiency by sport. |
+| `historical_facts` | Calendar context, streaks, zone labels, kudos, and long-horizon factual context. |
+
+## How It Works
+
+- Mirrors Strava activities, streams, kudos, and gear facts into DuckDB.
 - Materializes read-model facts for fast MCP tool calls.
-- Exposes factual MCP tools only: workouts, workout detail, period comparison, current fitness state, fitness-state projection, and prepared training aggregates.
 - Keeps sync, backfill, SQL, token refresh, and deployment operations below the MCP surface.
+- Returns freshness, completeness, warnings, and rationale with product responses so agents know what evidence they are using.
 
 ## Requirements
 
@@ -99,6 +142,18 @@ This builds the image, starts the `mcp-strava` container, waits for health, and 
 ## Useful Commands
 
 ```bash
+# Daily training brief
+uv run python -m mcp_strava report daily
+
+# Weekly digest
+uv run python -m mcp_strava weekly
+
+# Recent workouts
+uv run python -m mcp_strava workouts recent --limit 10
+
+# Analyze the latest workout
+uv run python -m mcp_strava workout analyze latest
+
 # Full local validation: pytest, Docker build/start, MCP smoke
 just test
 
