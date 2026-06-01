@@ -1,11 +1,11 @@
 ---
-analysis_date: 2026-05-31
-last_mapped_commit: c80c39e
+analysis_date: 2026-06-01
+last_mapped_commit: d16b5fd
 scope: full-repo
 ---
 # External Integrations
 
-**Analysis Date:** 2026-05-31
+**Analysis Date:** 2026-06-01
 
 ## APIs & External Services
 
@@ -49,7 +49,7 @@ scope: full-repo
   - DuckDB holds an exclusive file lock when writing; admin commands require stopping the container (`just admin`)
 
 **File Storage:**
-- Token/credential file at `MCP_STRAVA_TOKEN_PATH` (default `/runtime/.env` in container, `~/.env` or project root locally)
+- Token/credential file at `MCP_STRAVA_TOKEN_PATH` (default project-root `.env`; compose sets `/runtime/.env` in the container)
   - Contains `STRAVA_*` OAuth tokens; written atomically on each refresh
   - `.env.lock` sidecar file used for `fcntl` cross-process serialization
 
@@ -101,6 +101,7 @@ scope: full-repo
 - `MCP_STRAVA_ALLOW_CONTAINER_BIND` - must be `1` to allow `0.0.0.0` bind in container profile
 - `MCP_STRAVA_ALLOWED_HOSTS` / `MCP_STRAVA_ALLOWED_ORIGINS` - DNS rebinding protection lists
 - `MCP_STRAVA_HR_REST` - resting heart rate (operator physiology; kept out of git)
+- `MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS` / `MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS` - stale-data warning and maximum-age thresholds
 - `MCP_STRAVA_REFRESH_WORKER_ENABLED` / `MCP_STRAVA_REFRESH_POLL_SECONDS` / `MCP_STRAVA_REFRESH_INTERVAL_SECONDS`
 - In token file: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_ACCESS_TOKEN`, `STRAVA_REFRESH_TOKEN`, `STRAVA_EXPIRES_AT`
 
@@ -118,4 +119,4 @@ scope: full-repo
 
 ---
 
-*Integration audit: 2026-05-31*
+*Integration audit: 2026-06-01*

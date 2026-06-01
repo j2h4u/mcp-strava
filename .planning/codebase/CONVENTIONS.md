@@ -1,11 +1,11 @@
 ---
-analysis_date: 2026-05-31
-last_mapped_commit: c80c39e
+analysis_date: 2026-06-01
+last_mapped_commit: d16b5fd
 scope: full-repo
 ---
 # Coding Conventions
 
-**Analysis Date:** 2026-05-31
+**Analysis Date:** 2026-06-01
 
 ## Naming Patterns
 
@@ -201,4 +201,4 @@ No structured logging framework — not detected in source. CLI output via `prin
 
 ---
 
-*Convention analysis: 2026-05-31*
+*Convention analysis: 2026-06-01*

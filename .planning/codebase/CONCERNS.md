@@ -1,11 +1,11 @@
 ---
-analysis_date: 2026-05-31
-last_mapped_commit: c80c39e
+analysis_date: 2026-06-01
+last_mapped_commit: d16b5fd
 scope: full-repo
 ---
 # Codebase Concerns
 
-**Analysis Date:** 2026-05-31
+**Analysis Date:** 2026-06-01
 
 ---
 
@@ -16,12 +16,6 @@ scope: full-repo
 - Files: `src/mcp_strava/constants.py:118-130`
 - Impact: Callers importing `TRAINING_SPORTS`, `RUNNING_SPORTS`, etc. from `constants` still work, but the dual-import path is confusing and the noqa markers suppress real lint rules rather than fixing the cause. New code should import from `mcp_strava.sports` directly.
 - Fix approach: Audit callers of `from mcp_strava.constants import TRAINING_SPORTS` (and similar) — most already import from `sports.py` — then drop the re-export block and the noqa markers.
-
-**mcp_http.py noqa F401 on load_prompt import:**
-- Issue: `from mcp_strava.mcp_content import MCP_PROMPT_NAMES, load_prompt  # noqa: F401` at line 26 suppresses an "imported but unused" warning. `load_prompt` is imported for its side-effect or anticipated future use, not an active call in the module.
-- Files: `src/mcp_strava/interfaces/mcp_http.py:26`
-- Impact: Minor — suppressed lint marker hides whether `load_prompt` is actually used or just dead weight.
-- Fix approach: Either invoke `load_prompt` explicitly during server startup (if needed for prompt registration), or remove the import.
 
 **`CURRENT_METRIC_VERSION = 1` is hardcoded in repository and never incremented:**
 - Issue: `CURRENT_METRIC_VERSION = 1` is defined in `src/mcp_strava/adapters/duckdb/repository.py:27` and passed throughout the materializer and read-model queries. There is no mechanism to bump it short of a manual code edit. When metric definitions change (e.g., new columns in `activity_metric_facts`), all old facts remain at version 1 and the staleness logic depends on version mismatches to trigger re-materialization.
@@ -36,16 +30,16 @@ scope: full-repo
 - Fix approach: Import `duckdb.DuckDBPyConnection` and annotate `conn: duckdb.DuckDBPyConnection`. Guard with `TYPE_CHECKING` if needed to avoid a runtime import cost.
 
 **`aggregate_queries.py` and `repository.py` are oversized single-file modules:**
-- Issue: `aggregate_queries.py` is 1,277 lines with 50+ top-level functions. `repository.py` is 2,266 lines. Both were assembled during the Phase 8–13 migration with the intent to split later.
+- Issue: `aggregate_queries.py` is 1,273 lines with 50+ top-level functions. `repository.py` is 2,295 lines. Both were assembled during the Phase 8–13 migration with the intent to split later.
 - Files: `src/mcp_strava/adapters/duckdb/aggregate_queries.py`, `src/mcp_strava/adapters/duckdb/repository.py`
 - Impact: Merge conflicts are more likely; comprehension requires scrolling across 2,000+ lines. Finding the right function requires knowing the file well.
 - Fix approach: `aggregate_queries.py` could be split into `status_queries.py` (the `_query_*_status` family) and `metric_queries.py` (the `_build_*_query`, `_query_metric` family). `repository.py` could extract stream/activity read methods into `activity_reads.py`.
 
-**`metric_registry.py` is 2,191 lines of declarative data:**
-- Issue: The metric registry is a single 2,191-line Python file that is purely data (metric definitions, fact-column definitions, status-fact definitions). It was intentionally kept monolithic during Phase 10 to avoid import-order issues, but no plan exists to split it.
-- Files: `src/mcp_strava/application/metric_registry.py`
-- Impact: Any edit to a metric definition requires loading the full 2K-line file mentally. Pyright takes longer to type-check it.
-- Fix approach: Consider splitting into `metric_registry_definitions.py` (MetricDefinition records), `fact_column_registry.py` (FactColumnDefinition records), and keeping `metric_registry.py` as the public API that imports from both.
+**`metric_registry.py` is 2,427 lines of declarative data and SQL metadata:**
+- Issue: The metric registry is a single 2,427-line Python file containing metric definitions, aggregate metadata, fact-column definitions, status-fact definitions, and the Phase 14 registry-owned SQL rendering helpers. It was intentionally kept monolithic while registry ownership stabilized, but no plan exists to split it.
+- Files: `src/mcp_strava/metric_registry.py`
+- Impact: Any edit to metric semantics or fact-column SQL requires loading the full 2K+ line file mentally. Pyright also spends longer in this module.
+- Fix approach: Consider splitting into `metric_registry_definitions.py` (MetricDefinition records), `fact_column_registry.py` (FactColumnDefinition records + SQL rendering), and keeping `metric_registry.py` as the public API that imports from both.
 
 ---
 
@@ -182,4 +176,4 @@ scope: full-repo
 
 ---
 
-*Concerns audit: 2026-05-31*
+*Concerns audit: 2026-06-01*

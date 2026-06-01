@@ -1,11 +1,11 @@
 ---
-analysis_date: 2026-05-31
-last_mapped_commit: c80c39e
+analysis_date: 2026-06-01
+last_mapped_commit: d16b5fd
 scope: full-repo
 ---
 # Codebase Structure
 
-**Analysis Date:** 2026-05-31
+**Analysis Date:** 2026-06-01
 
 ## Directory Layout
 
@@ -41,7 +41,7 @@ mcp-strava/
 │   ├── fixtures/             # Fake MCP server and other test fixtures
 │   ├── conftest.py           # Shared pytest fixtures
 │   ├── _fixtures_duckdb.py   # DuckDB fixture helpers
-│   └── test_*.py             # Test modules (36 files)
+│   └── test_*.py             # Test modules (34 files)
 ├── deploy/                   # Docker deployment files
 │   ├── docker-compose.yml    # Container orchestration
 │   ├── Dockerfile            # Image definition
@@ -131,7 +131,7 @@ mcp-strava/
 - `deploy/docker-compose.yml`: container runtime configuration
 
 **Core Logic:**
-- `src/mcp_strava/adapters/duckdb/repository.py`: all DuckDB reads/writes (2267 lines — largest file)
+- `src/mcp_strava/adapters/duckdb/repository.py`: all DuckDB reads/writes (2295 lines)
 - `src/mcp_strava/cli.py`: all operator commands
 - `src/mcp_strava/application/metric_services.py`: primary MCP tool backends
 - `src/mcp_strava/refresh/runtime.py`: refresh stage orchestration
@@ -140,7 +140,7 @@ mcp-strava/
 - `src/mcp_strava/metrics.py`: pure metric computation
 
 **Schema:**
-- `src/mcp_strava/adapters/duckdb/schema.py`: `DUCKDB_SCHEMA_SQL`, `DUCKDB_TABLES`, `DATE_COLUMNS`
+- `src/mcp_strava/adapters/duckdb/schema.py`: static schema, `DUCKDB_TABLES`, `DATE_COLUMNS`, and additive migration policy; `activity_metric_facts` column SQL is generated from `src/mcp_strava/metric_registry.py`
 
 **Testing:**
 - `tests/conftest.py`: shared fixtures (in-memory DuckDB, settings overrides)
@@ -188,8 +188,9 @@ mcp-strava/
 
 **New metric computation:**
 1. Pure function with no DuckDB/Strava dependency → `src/mcp_strava/metrics.py` or new root-level module
-2. If stored in read model → add column to schema DDL in `adapters/duckdb/schema.py`, update materializer in `adapters/duckdb/read_model_materializer.py`, add repo fetch method in `adapters/duckdb/repository.py`
-3. Tests: `tests/test_metrics_pure.py` for pure functions; `tests/test_read_model_materialization.py` for materializer
+2. If stored in `activity_metric_facts` → add SQL metadata to `src/mcp_strava/metric_registry.py`; `adapters/duckdb/schema.py` consumes the generated DDL/add-column SQL and keeps the safety policy
+3. Update materializer in `adapters/duckdb/read_model_materializer.py`, add repository fetch/query methods as needed, and add aggregate metadata if the metric is exposed through aggregate tools
+4. Tests: `tests/test_metrics_pure.py` for pure functions; `tests/test_read_model_materialization.py` and `tests/test_schema_drift.py` for materializer/schema behavior
 
 **New DuckDB read query:**
 1. Add method to `DuckDBRepository` in `src/mcp_strava/adapters/duckdb/repository.py`
@@ -247,4 +248,4 @@ mcp-strava/
 
 ---
 
-*Structure analysis: 2026-05-31*
+*Structure analysis: 2026-06-01*

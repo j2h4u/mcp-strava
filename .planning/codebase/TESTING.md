@@ -1,11 +1,11 @@
 ---
-analysis_date: 2026-05-31
-last_mapped_commit: c80c39e
+analysis_date: 2026-06-01
+last_mapped_commit: d16b5fd
 scope: full-repo
 ---
 # Testing Patterns
 
-**Analysis Date:** 2026-05-31
+**Analysis Date:** 2026-06-01
 
 ## Test Framework
 
@@ -20,7 +20,7 @@ scope: full-repo
 
 **Run Commands:**
 ```bash
-uv run pytest -q                              # Run all 295+ tests (quiet)
+uv run pytest -q                              # Run all 357 tests as of Phase 14 UAT
 uv run pytest -q tests/test_mcp_surface.py   # Single file
 just test                                     # Full suite + docker build + smoke
 just check                                    # lint + fmt-check + typecheck (no tests)
@@ -71,6 +71,7 @@ tests/
 ├── test_refresh_runtime.py
 ├── test_repo_hygiene.py
 ├── test_repository_boundary.py
+├── test_schema_drift.py
 ├── test_security_guards.py
 ├── test_settings.py
 ├── test_smoke.py
@@ -332,4 +333,4 @@ def _set_refresh_state(repo: DuckDBRepository, **values: str | None) -> None:
 
 ---
 
-*Testing analysis: 2026-05-31*
+*Testing analysis: 2026-06-01*

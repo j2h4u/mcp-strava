@@ -1,11 +1,11 @@
 ---
-analysis_date: 2026-05-31
-last_mapped_commit: c80c39e
+analysis_date: 2026-06-01
+last_mapped_commit: d16b5fd
 scope: full-repo
 ---
 # Technology Stack
 
-**Analysis Date:** 2026-05-31
+**Analysis Date:** 2026-06-01
 
 ## Languages
 
@@ -59,7 +59,7 @@ scope: full-repo
 
 **Environment:**
 - Settings loaded via `src/mcp_strava/settings.py` — reads from env vars (priority) then a `.env` file
-- Token file (`MCP_STRAVA_TOKEN_PATH`, default `/runtime/.env`) holds OAuth tokens and Strava client credentials separately from runtime settings
+- Token file (`MCP_STRAVA_TOKEN_PATH`, default `<project-root>/.env`; compose sets `/runtime/.env`) holds OAuth tokens and Strava client credentials separately from runtime settings
 - `MCP_STRAVA_*` namespace for all operational settings; `STRAVA_*` namespace for OAuth credentials (never mixed)
 - Key required configs:
   - `MCP_STRAVA_DB_PATH` - path to DuckDB file
@@ -88,4 +88,4 @@ scope: full-repo
 
 ---
 
-*Stack analysis: 2026-05-31*
+*Stack analysis: 2026-06-01*

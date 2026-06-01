@@ -8,7 +8,7 @@ Local Strava mirror and MCP training-metrics server.
 
 - Mirrors Strava activities and sensor streams into DuckDB.
 - Materializes read-model facts for fast MCP tool calls.
-- Exposes factual MCP tools only: workouts, workout detail, period comparison, current fitness state, and fitness-state projection.
+- Exposes factual MCP tools only: workouts, workout detail, period comparison, current fitness state, fitness-state projection, and prepared training aggregates.
 - Keeps sync, backfill, SQL, token refresh, and deployment operations below the MCP surface.
 
 ## Requirements
@@ -97,8 +97,8 @@ This builds the image, starts the `mcp-strava` container, waits for health, and 
 ## Useful Commands
 
 ```bash
-# Direct MCP smoke inside Docker
-just smoke
+# Full local validation: pytest, Docker build/start, MCP smoke
+just test
 
 # Full MCP smoke
 just mcp-smoke-full
@@ -121,7 +121,6 @@ Live Docker state is expected under `/opt/docker/mcp-strava`:
 |---|---|
 | `/opt/docker/mcp-strava/data/strava.duckdb` | DuckDB mirror and read-model facts |
 | `/opt/docker/mcp-strava/.env` | Strava OAuth credentials |
-| `/opt/docker/mcp-strava/live.env` | Optional operator env overlay |
 
 ## Strava Notes
 

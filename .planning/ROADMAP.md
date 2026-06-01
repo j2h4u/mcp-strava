@@ -2,7 +2,7 @@
 
 ## Overview
 
-This roadmap refactors the current CLI-first codebase into a layered service architecture while preserving the existing Strava mirror. The first milestone established package/settings, repository, Strava adapter, application/CLI, MCP, and Docker boundaries. The v1.1 milestone added a full-fidelity mirror layer, DuckDB primary runtime storage, materialized derived metrics, aggregate analytics, and factual product bundles so MCP and CLI reads consume prepared facts instead of recomputing expensive stream-derived metrics on request.
+This roadmap refactors the original CLI-first codebase into a layered service architecture while preserving the local Strava mirror. The first milestone established package/settings, repository, Strava adapter, application/CLI, MCP, and Docker boundaries. The v1.1 milestone added a full-fidelity mirror layer, DuckDB primary runtime storage, materialized derived metrics, aggregate analytics, and factual product bundles so MCP and CLI reads consume prepared facts instead of recomputing expensive stream-derived metrics on request. Phase 14 completed the first metric-platform source-of-truth slice by moving `activity_metric_facts` SQL metadata into the metric registry.
 
 ## Phases
 
@@ -20,8 +20,13 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: MCP HTTP Surface & Docker Hardening** - Expose read-only MCP tools and finalize local-safe container/runtime boundaries. (completed 2026-05-22)
 - [x] **Phase 6: Full-Fidelity Strava Mirror** - Preserve Strava stream data in lossless normalized SQLite structures, generalize stream ingestion, unify GPS storage, and backfill missing stream channels safely. (completed 2026-05-24)
 - [x] **Phase 7: Materialized Metrics Read Model** - Persist derived activity, daily load, model, and rolling-window facts beside the Strava mirror so MCP tools aggregate prepared facts under sub-500ms latency targets. (completed 2026-05-24)
-- [ ] **Phase 8: DuckDB Primary Storage & Aggregate Analytics Surface** - Migrate the primary local mirror from SQLite to DuckDB and expose bucketed aggregate analytics for MCP period and metric queries.
+- [x] **Phase 8: DuckDB Primary Storage & Aggregate Analytics Surface** - Migrate the primary local mirror from SQLite to DuckDB and expose bucketed aggregate analytics for MCP period and metric queries. (completed 2026-05-25)
 - [x] **Phase 9: Product factual bundles and CLI read-model consolidation** - Expose factual daily, weekly, historical, status, kudos, and supported gear facts through shared read-model application services for MCP and CLI. (completed 2026-05-26)
+- [x] **Phase 10: Materialize unwired training metrics and enforce core/domain storage boundary** - Compute previously registered-but-empty stream metrics and enforce pure core/domain boundaries. (completed 2026-05-29)
+- [x] **Phase 11: Tidy materializer repository access** - Move materializer inline SQL call sites behind named DuckDBRepository methods. (completed 2026-05-29)
+- [x] **Phase 12: Decouple db.py into focused modules** - Split residual db.py coupling into focused connection, auth, and Strava adapter paths. (completed 2026-05-30)
+- [x] **Phase 13: Lint and type-check cleanup** - Bring ruff and pyright gates to green. (completed 2026-05-31)
+- [x] **Phase 14: Metric Platform registry-owned fact schema** - Generate `activity_metric_facts` schema and late additive migrations from registry-owned SQL metadata. (completed 2026-05-31)
 
 ## Phase Details
 
@@ -195,7 +200,7 @@ Plans:
   - Domain-specific metrics such as TRIMP, cardiac cost, drift, HR recovery, fitness, fatigue, and form remain explicit metric facts; DuckDB handles aggregation, not domain interpretation.
   - Avoid a permanent SQLite + DuckDB dual-primary design; any SQLite bridge is transitional migration tooling only.
 
-**Plans:** 7/8 plans executed
+**Plans:** 8/8 plans complete
 
 Plans:
 
@@ -206,12 +211,12 @@ Plans:
   - [x] `08-05-PLAN.md` — Metric registry aggregate semantics, bundles, denominators, and docs
   - [x] `08-06-PLAN.md` — DuckDB aggregate views/query builders and aggregate application service
   - [x] `08-07-PLAN.md` — `get_training_aggregates` MCP tool and `compare_periods` aggregate-layer rewrite
-  - [ ] `08-08-PLAN.md` — Docker-first smoke, MCP smoke, 100 ms p95, live cutover, rollback image tag, and rollback validation
+  - [x] `08-08-PLAN.md` — Docker-first smoke, MCP smoke, 100 ms p95, live cutover, rollback image tag, and rollback validation
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12 -> 13 -> 14
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -222,8 +227,13 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | 5. MCP HTTP Surface & Docker Hardening | 6/6 | Complete    | 2026-05-22 |
 | 6. Full-Fidelity Strava Mirror | 4/4 | Complete    | 2026-05-24 |
 | 7. Materialized Metrics Read Model | 6/6 | Complete    | 2026-05-24 |
-| 8. DuckDB Primary Storage & Aggregate Analytics Surface | 7/8 | In Progress|  |
+| 8. DuckDB Primary Storage & Aggregate Analytics Surface | 8/8 | Complete    | 2026-05-25 |
 | 9. Product factual bundles and CLI read-model consolidation | 4/4 | Complete    | 2026-05-26 |
+| 10. Materialize unwired training metrics and enforce core/domain storage boundary | 4/4 | Complete | 2026-05-29 |
+| 11. Tidy materializer repository access | 1/1 | Complete | 2026-05-29 |
+| 12. Decouple db.py into focused modules | 5/5 | Complete | 2026-05-30 |
+| 13. Lint and type-check cleanup | 4/4 | Complete | 2026-05-31 |
+| 14. Metric Platform registry-owned fact schema | 3/3 | Complete | 2026-05-31 |
 
 ### Phase 9: Product factual bundles and CLI read-model consolidation
 
@@ -275,7 +285,8 @@ Plans:
 
 **Goal:** Split `src/mcp_strava/db.py` (237 lines mixing five concerns: connection management `DbConn`/`ReadConn`/thread-local pool, repository factories, token/OAuth `_CompatTokenProvider`/`refresh_token`, Strava HTTP `api_request`/`get_zones`/`_build_transport`, and clock/sleeper) into focused modules — move token/OAuth into a dedicated auth module, route HTTP through `adapters/strava`, fold connection management into `adapters/duckdb/connection` — then migrate all callers. `just test` must stay green. This is the last meaningful coupling hotspot after Phase 10.
 **Requirements**: Core/domain separation — residual `db.py` coupling (extends PROJECT.md core/domain goal)
-**Depends on:** Phase 10**Plans:** 5/5 plans complete
+**Depends on:** Phase 10
+**Plans:** 5/5 plans complete
 
 - [x] TBD (run /gsd-plan-phase 12 to break down) (completed 2026-05-30)
 
@@ -288,10 +299,10 @@ Plans:
 
 Plans:
 
-- [ ] `13-01-PLAN.md` — Widen DuckDB fetch boundary (Row alias + Any) and annotate dc_to_dict — clears ~326-error bulk cluster (Wave 1)
-- [ ] `13-02-PLAN.md` — None-guard sweep and D-04 one-offs — reaches 0 pyright errors (Wave 2)
-- [ ] `13-03-PLAN.md` — Pin typeCheckingMode = standard and remove vestigial noqa: BLE001 (Wave 2, parallel)
-- [ ] `13-04-PLAN.md` — D-08 gate verification: just check + just test both green (Wave 3)
+- [x] `13-01-PLAN.md` — Widen DuckDB fetch boundary (Row alias + Any) and annotate dc_to_dict — clears ~326-error bulk cluster (Wave 1)
+- [x] `13-02-PLAN.md` — None-guard sweep and D-04 one-offs — reaches 0 pyright errors (Wave 2)
+- [x] `13-03-PLAN.md` — Pin typeCheckingMode = standard and remove vestigial noqa: BLE001 (Wave 2, parallel)
+- [x] `13-04-PLAN.md` — D-08 gate verification: just check + just test both green (Wave 3)
 
 ### Phase 14: Metric Platform registry-owned fact schema
 

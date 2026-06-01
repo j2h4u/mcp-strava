@@ -5,7 +5,7 @@
 
 ## v1 Requirements
 
-Requirements for the initial refactor milestone. Each requirement maps to roadmap phases and must preserve the existing `data/strava.db` mirror.
+Requirements for the initial refactor milestone. These are historical requirements from the SQLite-era foundation work; later milestones moved the active runtime to DuckDB while preserving the same data-safety intent.
 
 ### Foundation
 
@@ -15,15 +15,15 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 ### Data Safety
 
-- [x] **SAFE-01**: Operator can run a migration preflight that verifies required SQLite tables, schema version, row counts, and database readability before any schema change
-- [x] **SAFE-02**: Operator gets a timestamped backup of `data/strava.db` before any migration that can alter the schema
+- [x] **SAFE-01**: Operator can run a migration preflight that verifies required mirror tables, schema version, row counts, and database readability before any schema change
+- [x] **SAFE-02**: Operator gets a timestamped backup of the durable mirror before any migration that can alter the schema
 - [x] **SAFE-03**: Developer can verify post-migration row-count parity and key report parity against the pre-migration database state
 - [x] **SAFE-04**: Service fails closed instead of silently creating an empty replacement database when an existing mirror is expected but missing or invalid
 
 ### Repository
 
-- [x] **REPO-01**: Application services can read activities, streams, zones, kudos, and sync metadata through a SQLite repository port instead of direct `sqlite3` calls in core logic
-- [x] **REPO-02**: SQLite adapter keeps reads and writes behind explicit repository methods with WAL, busy timeout, and short transaction discipline
+- [x] **REPO-01**: Application services can read activities, streams, zones, kudos, and sync metadata through a repository boundary instead of direct storage calls in core logic
+- [x] **REPO-02**: Storage adapters keep reads and writes behind explicit repository methods with controlled transaction discipline
 - [x] **REPO-03**: Missing-HR and missing-stream activities are represented explicitly as partial or unknown data instead of being treated as rest days
 
 ### Strava Adapter
@@ -56,7 +56,7 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 - [x] **REFRESH-01**: Mirror refresh runtime can perform one normal refresh per local day when internally requested, while avoiding Strava API calls on days with no product use
 - [x] **REFRESH-02**: Request-time freshness checks can mark data stale and schedule or signal first-use refresh work without making MCP clients trigger sync
-- [x] **REFRESH-03**: Refresh runtime uses locks/checkpoints so concurrent CLI, MCP, and refresh reads do not corrupt SQLite state
+- [x] **REFRESH-03**: Refresh runtime uses locks/checkpoints so concurrent CLI, MCP, and refresh work do not corrupt mirror state
 
 ### Docker Readiness
 
@@ -66,18 +66,18 @@ Requirements for the initial refactor milestone. Each requirement maps to roadma
 
 ### Testing
 
-- [x] **TEST-01**: Tests cover migration backup/preflight/post-check behavior against a copied SQLite database
+- [x] **TEST-01**: Tests cover migration backup/preflight/post-check behavior against copied or temporary mirror databases
 - [x] **TEST-02**: Tests cover Strava rate-limit/retry/checkpoint behavior without live Strava API calls
 - [x] **TEST-03**: Tests cover MCP tool allowlist and prove forbidden sync/admin/debug tools are absent
 - [x] **TEST-04**: Tests cover freshness metadata, missing-HR handling, and core daily/weekly report parity
 
 ## v1.1 Requirements
 
-Requirements for the Full-Fidelity Strava Mirror milestone. This milestone changes the mirror contract from "analytics projection first" to "lossless normalized stream mirror first, projections second" while preserving the existing SQLite database.
+Requirements for the Full-Fidelity Strava Mirror milestone. This milestone changed the mirror contract from "analytics projection first" to "lossless normalized stream mirror first, projections second"; Phase 8 then carried the preserved mirror into DuckDB primary runtime storage.
 
 ### Lossless Mirror
 
-- [x] **MIRROR-01**: Operator can preserve Strava activity summary, activity detail, stream channel values, and stream channel metadata in queryable SQLite structures with fetch, request, and schema-version metadata
+- [x] **MIRROR-01**: Operator can preserve Strava activity summary, activity detail, stream channel values, and stream channel metadata in queryable mirror structures with fetch, request, and schema-version metadata
 - [x] **MIRROR-02**: Developer can treat current analytics columns as hot-path projections while full stream channel values remain available for audit and future reprocessing
 
 ### Stream Ingestion
@@ -111,6 +111,17 @@ Requirements for the Full-Fidelity Strava Mirror milestone. This milestone chang
 
 - [x] **TEST-05**: Tests prove lossless normalized stream retention, all-channel ingestion, mixed GPS migration, and coverage reporting against temp or copied databases without live Strava API calls
 - [x] **TEST-06**: Tests and live Docker smoke cover read-model materialization, query shape, MCP boundary guards, and warm p95 performance
+
+## Metric Platform Requirements
+
+Requirements promoted after v1.1 to reduce drift between metric semantics,
+materialized fact schema, aggregate query behavior, and product surfaces.
+
+### Registry Source of Truth
+
+- [x] **REGISTRY-01**: `activity_metric_facts` fact-column SQL metadata is owned by the metric registry, and DuckDB table DDL is generated from that registry — validated in Phase 14
+- [x] **REGISTRY-02**: Late additive `activity_metric_facts` migrations use registry-rendered SQL while `schema.py` keeps an explicit allowlist policy and rejects unsafe `NOT NULL` without `DEFAULT` additions — validated in Phase 14
+- [ ] **REGISTRY-03**: Future materialized fact tables, aggregate query source grammar, computed metric dispatch, and rematerialization/backfill flows are planned only after explicit metric-platform design gates
 
 ## v2 Requirements
 
@@ -201,6 +212,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | READMODEL-04 | Phase 7 | Complete |
 | PERF-01 | Phase 7 | Complete |
 | TEST-06 | Phase 7 | Complete |
+| REGISTRY-01 | Phase 14 | Complete |
+| REGISTRY-02 | Phase 14 | Complete |
+| REGISTRY-03 | Future | Deferred |
 | ANALYTICS-01 | Future | Deferred |
 | ANALYTICS-02 | Future | Deferred |
 | ANALYTICS-03 | Future | Deferred |
@@ -216,9 +230,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 - v1.1 requirements: 16 total
 - Mapped to phases: 16
 - Unmapped: 0
+- metric-platform requirements: 3 total
+- Mapped to phases: 2
+- Deferred: 1
 - v2 requirements: 7 total
 - Deferred: 7
 
 ---
 *Requirements defined: 2026-05-20*
-*Last updated: 2026-05-24 for Phase 7 read-model verification*
+*Last updated: 2026-06-01 after Phase 14 registry-owned schema verification*

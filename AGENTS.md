@@ -5,7 +5,7 @@
 
 mcp-strava is a local Strava mirror and training analytics service for one primary user. It is a service-shaped Python codebase with core training logic, a DuckDB primary-storage repository, a Strava API adapter, and separate CLI and HTTP MCP control surfaces.
 
-The long-term shape is a Docker-packaged local MCP server connected to the user's local MCP network. The MCP surface should expose workouts, analytics, reports, and recommendations, not operational sync/admin controls.
+The current runtime shape is a Docker-packaged local MCP server connected to the user's local MCP network. The MCP surface exposes read-only factual training tools and prompts, not operational sync/admin controls.
 
 **Core Value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
 
@@ -13,9 +13,9 @@ The long-term shape is a Docker-packaged local MCP server connected to the user'
 
 - **Data preservation**: The DuckDB mirror `data/strava.duckdb` must not be deleted or overwritten during refactor; schema work requires backup/preflight/verification.
 - **Rate limits**: Strava API calls are expensive and rate-limited; avoid plans that require full resync unless explicitly approved.
-- **MCP boundary**: MCP exposes workouts, analytics, reports, and recommendations only; operational sync/admin/debug capabilities stay below the MCP surface.
-- **Sync policy**: The local mirror should refresh automatically at least once per day; request-time freshness checks belong in core/application logic, not in MCP tool design.
-- **Deployment target**: Future runtime should fit Docker and the local MCP gateway/network, but the first milestone should establish clean service boundaries before full rollout.
+- **MCP boundary**: MCP exposes factual workouts, analytics, reports, projections, and prepared aggregates only; operational sync/admin/debug capabilities stay below the MCP surface.
+- **Sync policy**: The local mirror refreshes through internal runtime policy; request-time freshness checks belong in core/application logic, not in MCP tool design.
+- **Deployment target**: Runtime should fit Docker and the local MCP gateway/network while keeping default serving local/container-network safe.
 - **Local-first security**: Default HTTP serving must be local/container-network safe and avoid public unauthenticated exposure.
 - **Testing**: Existing behavior must remain verifiable with `just test`; new boundaries need targeted tests for repositories, migrations, freshness, and MCP tools.
 <!-- GSD:project-end -->
@@ -44,11 +44,10 @@ The long-term shape is a Docker-packaged local MCP server connected to the user'
 - `json`, `dataclasses`, `typing` (stdlib) - Serialization and typed data contracts across `cli.py`, `db.py`, `sync.py`, and `types.py`.
 - Local filesystem state - `.env` for secrets/config, `data/strava.duckdb` for the DuckDB mirror, and `references/` for supporting research notes.
 ## Configuration
-- Typed settings resolve from environment variables in `src/mcp_strava/settings.py` (cached `Settings`).
-- Storage path: `MCP_STRAVA_DB_PATH` (default `data/strava.duckdb`; canonical container path `/runtime/data/strava.duckdb`).
-- Other keys: `MCP_STRAVA_TOKEN_PATH`, `MCP_STRAVA_RUNTIME_PROFILE`, HTTP binding (`MCP_STRAVA_HTTP_HOST/PORT`, `MCP_STRAVA_ALLOW_CONTAINER_BIND`, `MCP_STRAVA_ALLOWED_HOSTS/ORIGINS`), freshness (`MCP_STRAVA_FRESHNESS_WARN/MAX_AGE_HOURS`), and refresh (`MCP_STRAVA_REFRESH_INTERVAL_SECONDS`, batch sizes).
-- Required Strava auth variables: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REFRESH_TOKEN`, `STRAVA_ACCESS_TOKEN`; token refresh persists updated values back to the token file.
-- `Justfile` defines the local command surface; `just test` runs `uv run pytest -q`.
+- Typed settings resolve in `src/mcp_strava/settings.py`; treat that module, `.planning/codebase/INTEGRATIONS.md`, and `deploy/docker-compose.yml` as the env-var reference, not `AGENTS.md`.
+- The DuckDB mirror lives at `data/strava.duckdb` locally and `/runtime/data/strava.duckdb` in the container.
+- Strava OAuth credentials are local secret/config file state; token refresh persists updated values back to that file. Never print token-file contents in summaries or logs.
+- `Justfile` defines the local command surface; `just test` runs pytest, Docker build/start, and MCP smoke.
 - `.gitignore` excludes `.env` and `data/` database files.
 ## Platform Requirements
 - Python 3.14+ with `uv` available.
@@ -129,7 +128,8 @@ Strava API ──► refresh/ + sync.py ──► DuckDB mirror (data/strava.duc
 | Component | Responsibility | File |
 |-----------|----------------|------|
 | CLI dispatcher | Parse product + `admin` subcommands and print JSON/tabular output | `src/mcp_strava/cli.py` |
-| Application services | Freshness, metric services, product facts, aggregates, mirror coverage | `src/mcp_strava/application/` |
+| Application services | Freshness, metric services, product facts, aggregates, mirror coverage, product registry | `src/mcp_strava/application/` |
+| Metric registry | Metric IDs, aggregate metadata, status facts, and registry-owned fact-column SQL metadata | `src/mcp_strava/metric_registry.py` |
 | Core training | Banister model, progressive signal, weekly plan, forward simulation | `src/mcp_strava/training.py` |
 | Core metrics | Enrichment, decoupling, HR recovery, vertical speed | `src/mcp_strava/metrics.py` |
 | Drift algorithm | Pure Jenks-based cardiac drift implementation used by metrics | `src/mcp_strava/cardiac_drift.py` |
@@ -137,7 +137,7 @@ Strava API ──► refresh/ + sync.py ──► DuckDB mirror (data/strava.duc
 | Typed contracts | Dataclasses for payloads, metrics, plans, reports, serialization | `src/mcp_strava/types.py` |
 | DB facade | Thin re-export of repository factories, auth, API requests, TRIMP history | `src/mcp_strava/db.py` |
 | Sync + refresh | Incremental ingest, backfill, scheduling, freshness policy | `src/mcp_strava/sync.py`, `src/mcp_strava/refresh/` |
-| DuckDB adapter | Connection, schema, repository, read-model materializer, aggregate queries | `src/mcp_strava/adapters/duckdb/` |
+| DuckDB adapter | Connection, schema, repository, read-model materializer, aggregate queries, generated fact-schema integration | `src/mcp_strava/adapters/duckdb/` |
 | MCP HTTP surface | Six read-only product tools over MCP | `src/mcp_strava/interfaces/mcp_http.py` |
 | Deploy/runtime | Single-owner service, preflight, runtime prep, healthcheck, entrypoint | `src/mcp_strava/deploy/` |
 | Settings | Typed env-driven runtime configuration | `src/mcp_strava/settings.py` |
@@ -147,6 +147,7 @@ Strava API ──► refresh/ + sync.py ──► DuckDB mirror (data/strava.duc
 - `adapters/duckdb/` owns all persistence; `adapters/strava/` owns Strava HTTP/auth.
 - `db.py` is a thin facade over the DuckDB repository factories and Strava transport.
 - `application/` orchestrates computed outputs from core primitives instead of reimplementing formulas.
+- `metric_registry.py` owns metric IDs, aggregate metadata, status facts, and `activity_metric_facts` SQL metadata consumed by the DuckDB schema layer.
 - `cardiac_drift.py` keeps the expensive Jenks-based drift algorithm isolated.
 - MCP exposes exactly six read-only product tools; sync/admin/debug stay below the MCP surface.
 ## Layers
@@ -156,7 +157,7 @@ Strava API ──► refresh/ + sync.py ──► DuckDB mirror (data/strava.duc
 - Depends on: `application/`, `db.py`, `sync.py`, `refresh/`, `types.py`
 - Used by: direct CLI invocation
 - Purpose: request-time orchestration and freshness gating.
-- Location: `src/mcp_strava/application/` (`freshness.py`, `metric_services.py`, `product_facts.py`, `aggregate_services.py`, `mirror_coverage.py`, `registry.py`, `metric_registry.py`)
+- Location: `src/mcp_strava/application/` (`freshness.py`, `metric_services.py`, `product_facts.py`, `aggregate_services.py`, `mirror_coverage.py`, `registry.py`) plus root-level `metric_registry.py`
 - Depends on: core modules and the DuckDB repository
 - Used by: `cli.py` and `interfaces/mcp_http.py`
 - Purpose: compute derived training and analytics signals.
@@ -209,8 +210,8 @@ Strava API ──► refresh/ + sync.py ──► DuckDB mirror (data/strava.duc
 - Triggers: the service process
 - Responsibilities: expose the six read-only product tools over MCP HTTP
 - Location: `Justfile` / `tests/`
-- Triggers: `just test` → `uv run pytest -q`
-- Responsibilities: run the pytest suite against `tests/`
+- Triggers: `just test`
+- Responsibilities: run pytest, build/start the Docker service, and execute MCP smoke against the container
 ## Architectural Constraints
 - **Single-owner DuckDB:** exactly one process owns the DuckDB file; the runtime is DuckDB-only with a per-thread-connection policy. No separate child processes.
 - **MCP boundary:** MCP exposes only the six read-only product tools; sync/admin/debug stay below MCP (CLI `admin` subcommands).
