@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1 \
     MCP_STRAVA_HTTP_PORT=8080 \
     MCP_STRAVA_ALLOW_CONTAINER_BIND=1 \
     MCP_STRAVA_DB_PATH=/runtime/data/strava.duckdb \
-    MCP_STRAVA_TOKEN_PATH=/runtime/.env \
+    MCP_STRAVA_PROJECT_ROOT=/runtime \
     MCP_STRAVA_REFRESH_INTERVAL_SECONDS=3600 \
     MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE=50
 
@@ -16,7 +16,7 @@ WORKDIR /app
 COPY pyproject.toml /app/pyproject.toml
 COPY src /app/src
 COPY mcp-content /app/mcp-content
-RUN pip install --no-cache-dir /app
+RUN pip install --disable-pip-version-check --root-user-action=ignore --no-cache-dir /app
 
 RUN groupadd --gid 1000 mcp \
     && useradd --uid 1000 --gid 1000 --create-home mcp
