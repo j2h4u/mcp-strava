@@ -208,31 +208,31 @@ def test_owner_startup_fails_fast_when_worker_enabled_and_hr_rest_unset(
 ) -> None:
     """Eager guard: an enabled refresh worker without HR_REST aborts at startup,
     not lazily on the first materialization pass."""
-    from mcp_strava.deploy import service
+    from mcp_strava.deploy import refresh_scheduler
 
     monkeypatch.setenv("MCP_STRAVA_REFRESH_WORKER_ENABLED", "1")
     monkeypatch.setattr("mcp_strava.settings.get_settings", lambda: _fake_settings(None))
     with pytest.raises(RuntimeError, match="MCP_STRAVA_HR_REST"):
-        service._require_hr_config_for_worker()
+        refresh_scheduler.require_hr_config_for_worker()
 
 
 def test_owner_startup_allows_unset_hr_rest_when_worker_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A read-only runtime (worker disabled) does not need HR_REST."""
-    from mcp_strava.deploy import service
+    from mcp_strava.deploy import refresh_scheduler
 
     monkeypatch.setenv("MCP_STRAVA_REFRESH_WORKER_ENABLED", "0")
     monkeypatch.setattr("mcp_strava.settings.get_settings", lambda: _fake_settings(None))
-    service._require_hr_config_for_worker()  # must not raise
+    refresh_scheduler.require_hr_config_for_worker()  # must not raise
 
 
 def test_owner_startup_passes_when_hr_rest_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    from mcp_strava.deploy import service
+    from mcp_strava.deploy import refresh_scheduler
 
     monkeypatch.setenv("MCP_STRAVA_REFRESH_WORKER_ENABLED", "1")
     monkeypatch.setattr("mcp_strava.settings.get_settings", lambda: _fake_settings(53))
-    service._require_hr_config_for_worker()  # must not raise
+    refresh_scheduler.require_hr_config_for_worker()  # must not raise
 
 
 def test_lease_active_uses_utc_and_tolerates_aware_timestamps() -> None:

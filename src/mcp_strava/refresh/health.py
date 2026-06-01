@@ -108,9 +108,9 @@ def check_refresh_health() -> None:
     file exists yet (worker has not completed a first cycle — the Docker
     start-period covers that window). Does not open DuckDB.
     """
-    from mcp_strava.deploy.service import _refresh_worker_enabled
+    from mcp_strava.deploy.runtime_options import refresh_worker_enabled
 
-    if not _refresh_worker_enabled():
+    if not refresh_worker_enabled():
         return
     path = health_path()
     if not path.exists():

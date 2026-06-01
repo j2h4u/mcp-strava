@@ -30,26 +30,26 @@ def _calls_named(tree: ast.AST, name: str) -> list[ast.Call]:
 
 
 def test_duckdb_service_does_not_launch_standalone_refresh_worker(monkeypatch: pytest.MonkeyPatch) -> None:
-    from mcp_strava.deploy import service
+    from mcp_strava.deploy import supervisor_state
 
     monkeypatch.setenv("MCP_STRAVA_DB_PATH", "/runtime/data/strava.duckdb")
     monkeypatch.setenv("MCP_STRAVA_REFRESH_WORKER_ENABLED", "1")
 
-    specs = service._child_specs()
+    specs = supervisor_state.child_specs()
 
     commands = [" ".join(spec.command) for spec in specs]
     assert not any("mcp_strava.refresh.worker" in command for command in commands)
 
 
 def test_service_state_records_single_owner_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from mcp_strava.deploy import service
+    from mcp_strava.deploy import supervisor_state
 
     state_path = tmp_path / "supervisor.json"
     monkeypatch.setenv("MCP_STRAVA_SUPERVISOR_STATE_PATH", str(state_path))
     monkeypatch.setenv("MCP_STRAVA_DB_PATH", "/runtime/data/strava.duckdb")
     process = SimpleNamespace(pid=os.getpid())
 
-    service._write_state([service.ChildProcess(name="mcp-http", process=process)])
+    supervisor_state.write_state([supervisor_state.ChildProcess(name="mcp-http", process=process)])
 
     payload = json.loads(state_path.read_text(encoding="utf-8"))
     assert payload["owner"]["pid"] == os.getpid()
