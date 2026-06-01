@@ -145,7 +145,7 @@ def test_token_provider_atomic_write_keeps_original_on_replace_failure_per_D10(t
     original = token_path.read_text(encoding="utf-8")
     provider = FileTokenProvider(token_path, refresh_transport=FakeTokenRefreshTransport(), clock=FakeClock())
 
-    def _broken_replace(src, dst):
+    def _broken_replace(_src, _dst):
         raise OSError("replace failed")
 
     monkeypatch.setattr("os.replace", _broken_replace)

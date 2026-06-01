@@ -43,7 +43,7 @@ class _FakeTransport:
         self._refresh_raises = raises
 
 
-def _make_response(data: Any, rate_dict: dict | None = None) -> StravaResponse:
+def _make_response(data: Any, _rate_dict: dict | None = None) -> StravaResponse:
     rate_info = StravaRateInfo(
         overall_short=(5, 100),
         overall_long=(50, 1000),

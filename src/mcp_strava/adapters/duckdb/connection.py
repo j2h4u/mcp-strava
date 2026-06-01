@@ -62,7 +62,7 @@ class MirrorConn:
         self.conn = open_expected_mirror_db(_db_path())
         return self.conn
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, _exc_type, _exc_val, _exc_tb):
         self.conn.close()
 
 
@@ -106,7 +106,7 @@ class ReadConn:
             connections[self._path] = conn
         return conn
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, _exc_val, _exc_tb):
         if exc_type is not None:
             conn = _thread_read_connections().pop(self._path, None)
             if conn is not None:

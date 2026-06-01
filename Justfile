@@ -21,6 +21,11 @@ fmt-check:
 typecheck:
     uv run pyright src
 
+# Dead-code scan. Keep separate from `check` so false positives can be triaged
+# without blocking routine lint/type cleanup.
+dead-code:
+    uv run vulture src tests --min-confidence 80
+
 # Auto-fix lint findings + formatting
 fix:
     uv run ruff check --fix src tests
