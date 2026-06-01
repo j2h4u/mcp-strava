@@ -86,6 +86,8 @@ Tokens refresh automatically. To verify credentials manually:
 MCP_STRAVA_TOKEN_PATH=.env uv run python -m mcp_strava admin token-refresh
 ```
 
+After the token file exists, routine token refresh and Strava rate-limit handling are automatic.
+
 ## Local Docker Usage
 
 ```bash
@@ -121,12 +123,6 @@ Live Docker state is expected under `/opt/docker/mcp-strava`:
 |---|---|
 | `/opt/docker/mcp-strava/data/strava.duckdb` | DuckDB mirror and read-model facts |
 | `/opt/docker/mcp-strava/.env` | Strava OAuth credentials |
-
-## Strava Notes
-
-- Access tokens expire after roughly six hours; the refresh token is used automatically.
-- Strava rate limits are enforced by Strava and surfaced through response headers. Avoid full backfills unless needed.
-- If Strava returns `429`, wait for the current rate-limit window before retrying.
 
 ## MCP Boundary
 
