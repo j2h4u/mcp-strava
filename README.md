@@ -4,6 +4,12 @@ Personal Strava analytics for daily training briefs, weekly digests, period comp
 
 `mcp-strava` turns a local Strava mirror into structured training facts: recent workouts, workout-level metrics, rolling load, fitness/fatigue/form, sport-by-sport aggregates, and date-range comparisons. It exposes those facts through a read-only MCP server, so an agent can explain your training week without getting access to sync controls, raw SQL, or Strava tokens.
 
+## Official Strava MCP Connector
+
+Strava [announced an official MCP connector for Claude](https://press.strava.com/articles/strava-launches-mcp-connector) on June 1, 2026. It is rolling out to Strava subscribers and provides read-only Claude access to Strava training history, streams, GPS, power, clubs, and events.
+
+`mcp-strava` is the local, self-hosted option: it keeps a DuckDB mirror on your machine, exposes prepared aggregate bundles and CLI reports, and keeps operational controls out of the MCP surface.
+
 ## What You Can Use It For
 
 - **Daily training brief:** current fitness state, recent workouts, load, form, freshness, and notable data gaps.
