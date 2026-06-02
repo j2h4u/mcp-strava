@@ -1,4 +1,4 @@
-# mcp-strava
+# Coach's view of your training
 
 Give an AI agent a coach's view of your training — over your own Strava data, even on a free Strava account.
 
