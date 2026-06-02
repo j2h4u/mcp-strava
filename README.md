@@ -139,6 +139,10 @@ just test
 
 This builds the image, starts the `mcp-strava` container, waits for health, and runs a direct MCP smoke test against the product server at `http://127.0.0.1:8080/mcp`.
 
+## Configuration
+
+A local run needs no configuration beyond your Strava credentials and resting heart rate. Server settings (paths, host/port, prompt language, refresh behavior, security allowlists) are environment variables with sensible defaults — see [docs/tech/configuration.md](docs/tech/configuration.md).
+
 ## Useful Commands
 
 ```bash
