@@ -36,7 +36,7 @@ That choice gives you:
 | `get_workout_detail` | Detailed metrics for a specific workout id. |
 | `compare_periods` | Side-by-side date-range comparison, optionally filtered by sport. |
 | `project_fitness_state` | Forward fitness-state projections for training-load scenarios. |
-| `get_training_aggregates` | Bucketed aggregate facts for dashboards, digests, and custom analysis. |
+| `get_training_aggregates` | Bucketed aggregate facts for dashboards, digests, and custom analysis. Ships prepared metric bundles for common views (daily brief, weekly digest, sport efficiency, and more). |
 
 ## Ready-Made Reports
 
@@ -47,19 +47,6 @@ That choice gives you:
 | MCP daily prompt | `strava_daily_training_brief` | A daily Russian brief scenario backed only by factual MCP metrics. |
 | MCP weekly prompt | `strava_weekly_training_digest` | A weekly Russian digest scenario using period-comparison metrics. |
 | MCP shoe watchdog | `strava_shoe_mileage_watchdog` | Shoe and gear mileage facts for replacement review. |
-
-## Aggregate Bundles
-
-`get_training_aggregates` can query individual metrics, or use prepared bundles:
-
-| Bundle | Focus |
-|---|---|
-| `daily_brief` | Fitness, fatigue, form, ACWR, weekly load, active/rest days, recent efficiency, and kudos. |
-| `weekly_digest` | TRIMP, distance, calories, time, elevation, active days, HR, cardiac cost, drift, and recovery. |
-| `monthly_digest` | Monthly volume, 28/90-day load context, and model-state metrics. |
-| `period_comparison` | Metrics selected for current-vs-previous or arbitrary period comparisons. |
-| `sport_efficiency` | HR, recovery, vertical speed, cardiac cost, drift, and efficiency by sport. |
-| `historical_facts` | Calendar context, streaks, zone labels, kudos, and long-horizon factual context. |
 
 ## How It Works
 
