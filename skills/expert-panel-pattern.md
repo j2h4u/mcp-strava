@@ -58,6 +58,25 @@ After all perspectives are in:
 - Build the answer from the synthesis
 - Key output: what to do NOW vs what to defer (design-time), or a clear recommendation with its caveats (runtime)
 
+### 5. Kaizen gate (mandatory)
+
+Nothing leaves the panel without passing a final pragmatic review. Experts — and agents
+especially — drift toward over-engineering, so a sober **Kaizen master** has the last word
+and can send the synthesis back to be trimmed.
+
+Challenge the synthesized output against:
+- **YAGNI** — is each part needed *now*, or are we solving an imagined future problem?
+- **Simplicity** — is this the simplest thing that works? Fewer moving parts wins.
+- **Gold-plating / premature abstraction** — strip anything built "just in case": speculative config knobs, unused extensibility, layers with no present consumer.
+- **Proportionality** — does the complexity match the actual problem and its blast radius?
+- **Poka-yoke** — prefer error-proofing by design over adding process.
+
+Mode-specific:
+- **Design-time:** ship the clear 80%, defer the uncertain 20%. A knob nobody will set should be a constant; a test that guards an impossible regression is noise.
+- **Runtime:** give the user the simplest actionable answer the facts support. Don't manufacture nuance or caveats the data doesn't warrant — one clear recommendation beats a hedged committee memo.
+
+If the output fails the gate, return to synthesis (or re-scope) and cut until it passes.
+
 ## Anti-Patterns
 
 - Don't give all experts the same questions — they'll produce redundant answers
