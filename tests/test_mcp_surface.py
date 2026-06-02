@@ -254,6 +254,23 @@ def test_mcp_prompts_are_content_backed_and_do_not_expand_tool_surface() -> None
     assert "/opt/data/skills" not in text
 
 
+def test_prompt_language_setting_selects_localized_prompt() -> None:
+    from mcp_strava.interfaces import mcp_http
+    from mcp_strava.settings import load_settings
+
+    def _cyrillic(text: str) -> bool:
+        return any("Ѐ" <= ch <= "ӿ" for ch in text)
+
+    def _daily_prompt_text(language: str) -> str:
+        settings = load_settings(environ={"MCP_STRAVA_PROMPT_LANGUAGE": language})
+        server = mcp_http.build_mcp_server(settings)
+        return asyncio.run(server.get_prompt("strava_daily_training_brief")).messages[0].content.text
+
+    # ru config serves the Russian variant; the default (en) serves the Cyrillic-free original.
+    assert _cyrillic(_daily_prompt_text("ru"))
+    assert not _cyrillic(_daily_prompt_text("en"))
+
+
 def test_validate_http_settings_and_transport_security() -> None:
     from mcp_strava.interfaces import mcp_http
 

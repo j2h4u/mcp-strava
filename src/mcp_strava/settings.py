@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from mcp_strava.hr_zones import DEFAULT_MODEL_ID, known_model_ids
+from mcp_strava.mcp_content import DEFAULT_PROMPT_LANGUAGE, SUPPORTED_PROMPT_LANGUAGES
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class Settings:
     database_path: Path
     token_path: Path
     runtime_profile: str
+    prompt_language: str
     athlete: AthleteSettings
     http: HttpSettings
     freshness: FreshnessSettings
@@ -68,6 +70,7 @@ _KEYS = {
     "MCP_STRAVA_PROJECT_ROOT",
     "MCP_STRAVA_HR_REST",
     "MCP_STRAVA_HR_ZONE_MODEL",
+    "MCP_STRAVA_PROMPT_LANGUAGE",
 }
 
 _CacheKey = tuple[tuple[tuple[str, str], ...], str | None, str | None]
@@ -231,6 +234,12 @@ def load_settings(
     if hr_zone_model not in known_model_ids():
         raise ValueError(f"Unknown MCP_STRAVA_HR_ZONE_MODEL: {hr_zone_model}; known: {known_model_ids()}")
 
+    prompt_language = resolve("MCP_STRAVA_PROMPT_LANGUAGE", DEFAULT_PROMPT_LANGUAGE).strip().lower()
+    if prompt_language not in SUPPORTED_PROMPT_LANGUAGES:
+        raise ValueError(
+            f"Unknown MCP_STRAVA_PROMPT_LANGUAGE: {prompt_language}; supported: {SUPPORTED_PROMPT_LANGUAGES}"
+        )
+
     _validate_ranges(
         http_port,
         warn_age_hours,
@@ -244,6 +253,7 @@ def load_settings(
         database_path=database_path,
         token_path=token_path,
         runtime_profile=runtime_profile,
+        prompt_language=prompt_language,
         athlete=AthleteSettings(
             hr_rest=hr_rest,
             hr_zone_model=hr_zone_model,

@@ -13,6 +13,12 @@ MCP_PROMPT_NAMES = (
 
 _CONTENT_ENV = "MCP_STRAVA_MCP_CONTENT_PATH"
 
+# Prompt language. English is the canonical default and lives in the bare
+# ``<name>.md`` file; every other supported language is a ``<name>_<lang>.md``
+# sibling. Keep this list in sync with the shipped ``mcp-content/prompts`` files.
+SUPPORTED_PROMPT_LANGUAGES = ("en", "ru")
+DEFAULT_PROMPT_LANGUAGE = "en"
+
 
 def content_root() -> Path:
     candidates: list[Path] = []
@@ -31,10 +37,18 @@ def content_root() -> Path:
     return candidates[0]
 
 
-def load_prompt(name: str) -> str:
+def _prompt_filename(name: str, language: str) -> str:
+    if language == DEFAULT_PROMPT_LANGUAGE:
+        return f"{name}.md"
+    return f"{name}_{language}.md"
+
+
+def load_prompt(name: str, language: str = DEFAULT_PROMPT_LANGUAGE) -> str:
     if name not in MCP_PROMPT_NAMES:
         raise ValueError(f"Unknown MCP prompt: {name}")
-    path = content_root() / "prompts" / f"{name}.md"
+    if language not in SUPPORTED_PROMPT_LANGUAGES:
+        raise ValueError(f"Unsupported MCP prompt language: {language}; supported: {SUPPORTED_PROMPT_LANGUAGES}")
+    path = content_root() / "prompts" / _prompt_filename(name, language)
     if not path.exists():
         raise FileNotFoundError(f"MCP prompt content not found: {path}")
     return path.read_text(encoding="utf-8").strip()

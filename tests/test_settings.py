@@ -25,6 +25,16 @@ def test_load_settings_defaults() -> None:
     assert settings.refresh.interval_seconds == 3600
     assert settings.refresh.stream_backfill_batch_size == 50
     assert settings.refresh.read_model_batch_size == 25
+    assert settings.prompt_language == "en"
+
+
+def test_prompt_language_defaults_overrides_and_rejects_invalid() -> None:
+    root = Path("/tmp/project")
+    assert load_settings(environ={}, project_root=root).prompt_language == "en"
+    # Case-insensitive, normalized to lowercase.
+    assert load_settings(environ={"MCP_STRAVA_PROMPT_LANGUAGE": "RU"}, project_root=root).prompt_language == "ru"
+    with pytest.raises(ValueError, match="MCP_STRAVA_PROMPT_LANGUAGE"):
+        load_settings(environ={"MCP_STRAVA_PROMPT_LANGUAGE": "fr"}, project_root=root)
 
 
 def test_load_settings_defaults_to_current_working_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

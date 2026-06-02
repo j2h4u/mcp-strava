@@ -227,7 +227,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         description="Daily training brief scenario using factual Strava MCP metrics.",
     )
     def strava_daily_training_brief() -> str:
-        return load_prompt("strava_daily_training_brief")
+        return load_prompt("strava_daily_training_brief", resolved_settings.prompt_language)
 
     @server.prompt(
         name="strava_weekly_training_digest",
@@ -235,7 +235,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         description="Weekly training digest scenario using period comparison metrics.",
     )
     def strava_weekly_training_digest() -> str:
-        return load_prompt("strava_weekly_training_digest")
+        return load_prompt("strava_weekly_training_digest", resolved_settings.prompt_language)
 
     @server.prompt(
         name="strava_shoe_mileage_watchdog",
@@ -243,7 +243,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         description="Shoe-mileage review scenario that only reports facts exposed by the MCP surface.",
     )
     def strava_shoe_mileage_watchdog() -> str:
-        return load_prompt("strava_shoe_mileage_watchdog")
+        return load_prompt("strava_shoe_mileage_watchdog", resolved_settings.prompt_language)
 
     @server.tool(
         name="get_fitness_state",
