@@ -27,6 +27,10 @@ Every tool wraps its metrics with `freshness`, `completeness`, `warnings`, and `
 - Surface `warnings` (e.g. `read_model_not_current`, `workout_not_found`); never silently drop them.
 - Expand abbreviations (TRIMP, ACWR, HRR, CC) on first use and explain what a number means in context.
 
+## Hard, multi-disciplinary calls
+
+When a question spans several disciplines at once — statistics, physiology, coaching, and data quality (e.g. "am I overtrained and should I back off before the race?") — reason as a small **expert panel** over the facts instead of from a single viewpoint: take each perspective, note where they agree and disagree, then synthesize. See [expert-panel-pattern.md](expert-panel-pattern.md) for the roster and process.
+
 ## Boundaries
 
 - **Facts, not coaching.** The server never diagnoses, prescribes, or gives medical advice. Interpretation, narrative, and judgement are yours.
