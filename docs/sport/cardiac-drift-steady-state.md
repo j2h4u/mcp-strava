@@ -1,5 +1,7 @@
 # Cardiac Drift: Steady-State Requirement
 
+_For athletes, coaches, and developers: why decoupling (Pa:Hr) requires constant pace, and why this athlete's variable-pace training makes it N/A. A distinct metric from cardiac cost._
+
 ## Definition (all sources unanimous)
 
 Cardiac drift (cardiovascular drift, Pa:Hr decoupling) is HR increase during **prolonged exercise at CONSTANT intensity/pace**. Without steady-state, the metric measures something else entirely — pace change, not cardiovascular drift.

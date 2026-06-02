@@ -1,6 +1,11 @@
 # Cardiac Cost: Cross-Activity Normalization Research
 
-**Date:** May 2026  
+_For athletes, coaches, and developers: why `mcp-strava` tracks cardiac cost per sport instead of normalizing it across activity types._
+
+**Question:** Can Cardiac Cost (CC = HR / velocity) be normalized to compare across locomotion types (Run, Walk, Hike)?
+**Answer:** No. No published method normalizes CC across activities — track it per sport. Details and sources below.
+
+**Date:** May 2026
 **Context:** False alarm — CC trend showed +32% growth because a single Hike (CC=159)
 was mixed with Runs (CC≈68) in the same trend window. Investigation into whether
 CC can be normalized across locomotion types.
@@ -50,10 +55,12 @@ CC can be normalized across locomotion types.
 - Our CC_adj (elevation coefficient 0.45) only corrects for gradient, not locomotion type.
 
 ### 4. No published normalization formula exists
-- **PCI (Physiological Cost Index)** = (HR_exercise − HR_rest) / speed — used in clinical
-  gait analysis, but still doesn't normalize walk vs run.
-- **%HRR-based CC** = %HRR / velocity — partially normalizes for HR range, but still
-  gives different scales: 50% HRR at 1 m/s (walk) = 50, 50% HRR at 3 m/s (run) = 17.
+
+| Approach | Formula | Limitation |
+|---|---|---|
+| Physiological Cost Index (PCI) | (HR_ex − HR_rest) / speed | Clinical gait analysis; doesn't normalize walk↔run |
+| %HRR-based CC | %HRR / velocity | 50% HRR at 1 m/s (walk) = 50 vs 50% HRR at 3 m/s (run) = 17 |
+| CC_adj (elevation) | CC − 0.45 × epkm | Fixes gradient, not locomotion type |
 
 ## Conclusion
 
@@ -77,5 +84,14 @@ treats them as separate activities with different physiological determinants.
 | Hike  | 104–159   | 100–160 |
 
 Run and Walk CC overlap (both forward locomotion on flat/moderate terrain).
-Hike CC is 2× higher even after elevation adjustment — terrain, rough ground,
-and different biomechanics dominate.
+Hike CC is ~2× higher; even after elevation adjustment (coefficient 0.45),
+Hike CC ≈ 104 vs Run ≈ 64 — still 1.6×. Terrain, rough ground, and different
+biomechanics dominate.
+
+## References
+
+1. Billat V et al. (2020). "Pacing Strategy Affects the Sub-Elite Marathoner's Cardiac Drift and Performance." *Frontiers in Physiology*. PMID: 32140116.
+2. Minetti AE et al. (2002). "Energy cost of walking and running at extreme uphill and downhill slopes." *Journal of Applied Physiology*. PMID: 12183501.
+3. Sabater Pastor F (2021). "Performance factors of prolonged running: a particular focus on running economy and fatigue." PhD thesis, Université de Lyon. HAL: tel-03726471.
+4. Zimmermann P et al. (2022). "The Energetic Costs of Uphill Locomotion in Trail Running." *Life* 12(12):2070. PMC9787284.
+5. Souto Filho JM et al. (2024). "Heart rate cost as a tool for monitoring recovery between acute training sessions." *Human Movement* 25(4):44–52. DOI: 10.5114/hm/195376.

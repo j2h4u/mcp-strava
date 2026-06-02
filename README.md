@@ -198,10 +198,9 @@ The MCP server is read-only and factual. It does not expose sync, admin, debug, 
 **Reference**
 - [Strava Kudos API field notes](docs/tech/kudos-api.md) — endpoint behavior for kudos data.
 
-**Sport science & methodology**
-- [Cardiac cost: cross-activity normalization research](docs/sport/cardiac-cost-cross-activity-research.md)
-- [Cross-activity cardiac cost normalization — research summary](docs/sport/cross-activity-cc-research.md)
-- [Cardiac drift: steady-state requirement](docs/sport/cardiac-drift-steady-state.md)
+**Sport science & methodology** — cardiac cost and cardiac drift are different metrics, tracked independently; see each file's scope note.
+- [Cardiac cost: cross-activity normalization research](docs/sport/cardiac-cost-normalization-research.md) — why cardiac cost is tracked per sport, not normalized across activities.
+- [Cardiac drift: steady-state requirement](docs/sport/cardiac-drift-steady-state.md) — why decoupling needs a constant pace to be meaningful.
 
 **Project**
 - [Contributing](CONTRIBUTING.md) — contribution workflow.
