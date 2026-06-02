@@ -62,11 +62,7 @@ _KEYS = {
     "MCP_STRAVA_ALLOW_CONTAINER_BIND",
     "MCP_STRAVA_ALLOWED_HOSTS",
     "MCP_STRAVA_ALLOWED_ORIGINS",
-    "MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS",
-    "MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS",
     "MCP_STRAVA_REFRESH_INTERVAL_SECONDS",
-    "MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE",
-    "MCP_STRAVA_READ_MODEL_BATCH_SIZE",
     "MCP_STRAVA_PROJECT_ROOT",
     "MCP_STRAVA_HR_REST",
     "MCP_STRAVA_HR_ZONE_MODEL",
@@ -77,6 +73,15 @@ _CacheKey = tuple[tuple[tuple[str, str], ...], str | None, str | None]
 
 _CACHED_SETTINGS: dict[_CacheKey, Settings] = {}
 CANONICAL_DUCKDB_RUNTIME_PATH = Path("/runtime/data/strava.duckdb")
+
+# Internal tuning constants. These were previously MCP_STRAVA_* env vars, but
+# they are not user-facing configuration: no operator tunes them, and they are
+# exercised only through injected settings/fakes in tests. They stay as typed
+# settings fields populated from these fixed defaults.
+FRESHNESS_WARN_AGE_HOURS = 12
+FRESHNESS_MAX_AGE_HOURS = 24
+STREAM_BACKFILL_BATCH_SIZE = 50
+READ_MODEL_BATCH_SIZE = 25
 
 
 def _read_env_file(env_file: Path) -> dict[str, str]:
@@ -103,31 +108,11 @@ def _parse_int(raw: str, key: str) -> int:
         raise ValueError(f"Invalid integer for {key}: {raw}") from exc
 
 
-def _validate_ranges(
-    http_port: int,
-    warn_age_hours: int,
-    max_age_hours: int,
-    refresh_interval_seconds: int,
-    stream_backfill_batch_size: int,
-    read_model_batch_size: int,
-) -> None:
+def _validate_ranges(http_port: int, refresh_interval_seconds: int) -> None:
     if http_port < 1 or http_port > 65535:
         raise ValueError("Invalid integer for MCP_STRAVA_HTTP_PORT: out of range")
-    if warn_age_hours < 0:
-        raise ValueError("Invalid integer for MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS: out of range")
-    if max_age_hours < 0:
-        raise ValueError("Invalid integer for MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS: out of range")
-    if warn_age_hours > max_age_hours:
-        raise ValueError(
-            "Invalid freshness settings: MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS "
-            "must be <= MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS"
-        )
     if refresh_interval_seconds < 60:
         raise ValueError("Invalid integer for MCP_STRAVA_REFRESH_INTERVAL_SECONDS: out of range")
-    if stream_backfill_batch_size < 1:
-        raise ValueError("Invalid integer for MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE: out of range")
-    if read_model_batch_size < 1:
-        raise ValueError("Invalid integer for MCP_STRAVA_READ_MODEL_BATCH_SIZE: out of range")
 
 
 def _parse_bool(raw: str) -> bool:
@@ -205,25 +190,9 @@ def load_settings(
             "http://127.0.0.1,http://localhost,http://[::1]",
         )
     )
-    warn_age_hours = _parse_int(
-        resolve("MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS", "12"),
-        "MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS",
-    )
-    max_age_hours = _parse_int(
-        resolve("MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS", "24"),
-        "MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS",
-    )
     refresh_interval_seconds = _parse_int(
         resolve("MCP_STRAVA_REFRESH_INTERVAL_SECONDS", "3600"),
         "MCP_STRAVA_REFRESH_INTERVAL_SECONDS",
-    )
-    stream_backfill_batch_size = _parse_int(
-        resolve("MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE", "50"),
-        "MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE",
-    )
-    read_model_batch_size = _parse_int(
-        resolve("MCP_STRAVA_READ_MODEL_BATCH_SIZE", "25"),
-        "MCP_STRAVA_READ_MODEL_BATCH_SIZE",
     )
 
     hr_rest_raw = resolve("MCP_STRAVA_HR_REST", "").strip()
@@ -240,14 +209,7 @@ def load_settings(
             f"Unknown MCP_STRAVA_PROMPT_LANGUAGE: {prompt_language}; supported: {SUPPORTED_PROMPT_LANGUAGES}"
         )
 
-    _validate_ranges(
-        http_port,
-        warn_age_hours,
-        max_age_hours,
-        refresh_interval_seconds,
-        stream_backfill_batch_size,
-        read_model_batch_size,
-    )
+    _validate_ranges(http_port, refresh_interval_seconds)
 
     return Settings(
         database_path=database_path,
@@ -266,13 +228,13 @@ def load_settings(
             allowed_origins=allowed_origins,
         ),
         freshness=FreshnessSettings(
-            warn_age_hours=warn_age_hours,
-            max_age_hours=max_age_hours,
+            warn_age_hours=FRESHNESS_WARN_AGE_HOURS,
+            max_age_hours=FRESHNESS_MAX_AGE_HOURS,
         ),
         refresh=RefreshSettings(
             interval_seconds=refresh_interval_seconds,
-            stream_backfill_batch_size=stream_backfill_batch_size,
-            read_model_batch_size=read_model_batch_size,
+            stream_backfill_batch_size=STREAM_BACKFILL_BATCH_SIZE,
+            read_model_batch_size=READ_MODEL_BATCH_SIZE,
         ),
     )
 
