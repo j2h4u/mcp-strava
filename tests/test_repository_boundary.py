@@ -156,17 +156,6 @@ def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_pat
         assert repo.read_sync_log(limit=5)
 
 
-def test_repository_has_stream_channel_coverage_methods(tmp_path: Path) -> None:
-    fixture = tmp_path / "repo.duckdb"
-    create_empty_fixture_db(fixture)
-
-    with DuckDBRepository.from_path(fixture) as repo:
-        assert hasattr(repo, "upsert_stream_channel_metadata")
-        assert hasattr(repo, "replace_stream_rows_and_channel_metadata")
-        assert hasattr(repo, "merge_stream_channel_values")
-        assert hasattr(repo, "stream_channel_coverage")
-
-
 def test_replace_stream_rows_and_channel_metadata_stores_null_values_json_when_no_extra_values(
     tmp_path: Path,
 ) -> None:

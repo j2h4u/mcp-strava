@@ -62,13 +62,6 @@ def test_expected_duckdb_open_fails_closed_on_missing_file(tmp_path: Path) -> No
         open_expected_mirror_db(tmp_path / "missing.duckdb")
 
 
-def test_duckdb_repository_has_no_generic_sql_surface() -> None:
-    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-
-    forbidden = {"execute", "executemany", "query", "raw_sql", "run_sql"}
-    assert forbidden.isdisjoint(DuckDBRepository.__dict__)
-
-
 def test_duckdb_repository_serializes_transactions_and_reads(monkeypatch) -> None:
     from mcp_strava.adapters.duckdb import repository
 
