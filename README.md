@@ -1,26 +1,10 @@
 # mcp-strava
 
-Personal Strava analytics for daily training briefs, weekly digests, period comparison, and MCP agents.
+Give an AI agent a coach's view of your training — over your own Strava data, even on a free Strava account.
 
-`mcp-strava` turns a local Strava mirror into structured training facts: recent workouts, workout-level metrics, rolling load, fitness/fatigue/form, sport-by-sport aggregates, and date-range comparisons. It exposes those facts through a read-only MCP server, so an agent can explain your training week without getting access to sync controls, raw SQL, or Strava tokens.
+`mcp-strava` connects your Strava account to an AI agent so it can act as your coach and sports physiologist: it reads your real training history and answers questions like "am I overtraining?", "how does this month compare to last?", or "what should this week look like?" — grounded in your actual workouts, not guesses.
 
-## Official Strava MCP Connector
-
-Strava [announced an official MCP connector for Claude](https://press.strava.com/articles/strava-launches-mcp-connector) on June 1, 2026. It is rolling out to Strava subscribers and provides read-only Claude access to Strava training history, streams, GPS, power, clubs, and events.
-
-`mcp-strava` is the local, self-hosted option: it keeps a DuckDB mirror on your machine, exposes prepared aggregate bundles and CLI reports, and keeps operational controls out of the MCP surface.
-
-## Own Your Data
-
-`mcp-strava` uses a full local mirror instead of proxying every question to Strava on demand. The mirror is the product boundary: once your supported Strava history is mirrored, your training facts are queryable on your machine, repeatable across runs, and available for custom analysis without spending API quota on every prompt.
-
-That choice gives you:
-
-- A durable local copy of activities, streams, kudos, gear facts, and derived read-model facts.
-- Fast historical questions over DuckDB, including daily, weekly, monthly, all-time, and per-sport aggregates.
-- Reproducible metrics such as training impulse (TRIMP), fitness, fatigue, form, acute:chronic workload ratio (ACWR), cardiac drift, recovery, and sport-efficiency summaries.
-- Evidence metadata with freshness, completeness, warnings, and rationale, so agents can say what is known and what is missing.
-- A read-only MCP product surface that never exposes sync, raw SQL, token refresh, or admin controls.
+It works with any Strava account, including the free tier. You bring your own Strava API credentials, so you don't need a paid Strava subscription to give an agent full read access to your training history.
 
 ## What You Can Use It For
 
@@ -30,6 +14,20 @@ That choice gives you:
 - **Training aggregates:** query prepared metrics by day, week, month, year, all-time, globally or per sport.
 - **Workout analysis:** inspect one workout with factual intensity, heart-rate, drift, recovery, elevation, kudos, and gear facts when available.
 - **Fitness projection:** simulate named load scenarios to see projected fitness, fatigue, and form through a target date.
+
+## Why Local
+
+Instead of proxying every question to Strava on demand, `mcp-strava` builds a full local mirror of your Strava history and serves the agent from that. Once your supported history is mirrored, your training facts are queryable on your machine, repeatable across runs, and available for custom analysis without spending API quota on every prompt.
+
+That choice gives you:
+
+- A durable local copy of activities, streams, kudos, gear facts, and derived read-model facts.
+- Fast historical questions, including daily, weekly, monthly, all-time, and per-sport aggregates.
+- Reproducible metrics such as training impulse (TRIMP), fitness, fatigue, form, acute:chronic workload ratio (ACWR), cardiac drift, recovery, and sport-efficiency summaries.
+- Evidence metadata with freshness, completeness, warnings, and rationale, so agents can say what is known and what is missing.
+- A read-only MCP surface that never exposes sync, raw SQL, token refresh, or admin controls.
+
+**How it compares to the official connector.** Strava [announced an official MCP connector for Claude](https://press.strava.com/articles/strava-launches-mcp-connector) on June 1, 2026, providing read-only access to training history, streams, GPS, power, clubs, and events — but it is rolling out to Strava *subscribers*. `mcp-strava` is the self-hosted alternative: it works on any account including the free tier, keeps a local mirror on your machine, and adds prepared aggregate bundles and CLI reports on top.
 
 ## MCP Tools
 
