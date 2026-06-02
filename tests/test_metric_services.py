@@ -241,9 +241,7 @@ def _read_model_current() -> dict[str, object]:
     }
 
 
-def test_get_fitness_state_service_returns_metric_bundle_envelope(
-    tmp_path: Path
-) -> None:
+def test_get_fitness_state_service_returns_metric_bundle_envelope(tmp_path: Path) -> None:
     from mcp_strava.application.metric_services import get_fitness_state_service
 
     repo = _repo_with_facts(tmp_path / "fitness.db")
@@ -290,9 +288,7 @@ def test_get_fitness_state_service_returns_metric_bundle_envelope(
     _walk_no_cyrillic_or_coaching_text(payload["data"])
 
 
-def test_list_workouts_service_respects_filters_and_returns_compact_rows(
-    tmp_path: Path
-) -> None:
+def test_list_workouts_service_respects_filters_and_returns_compact_rows(tmp_path: Path) -> None:
     from mcp_strava.application.metric_services import list_workouts_service
 
     repo = _repo_with_facts(tmp_path / "workouts.db")
@@ -350,7 +346,6 @@ def test_read_path_reuses_connection_and_checks_schema_once(tmp_path: Path, monk
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
     from mcp_strava.application.metric_services import list_workouts_service
 
-
     # Build a read-model fixture DB on disk, then release it so the runtime
     # ReadConn path opens it exactly as production does.
     repo = _repo_with_facts(tmp_path / "reuse.db")
@@ -389,9 +384,7 @@ def test_read_path_reuses_connection_and_checks_schema_once(tmp_path: Path, monk
         duckdb_conn.reset_thread_connections()
 
 
-def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reasons(
-    tmp_path: Path
-) -> None:
+def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reasons(tmp_path: Path) -> None:
     from mcp_strava.application.metric_services import get_workout_detail_service
 
     repo = _repo_with_facts(tmp_path / "detail.db")
@@ -451,9 +444,7 @@ def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reaso
                 assert isinstance(evidence, dict)
 
 
-def test_compare_periods_service_includes_global_and_per_sport_comparisons(
-    tmp_path: Path
-) -> None:
+def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_path: Path) -> None:
     from mcp_strava.application.metric_services import compare_periods_service
 
     db_path = _aggregate_fixture(tmp_path / "compare.duckdb")
@@ -675,9 +666,7 @@ def test_compare_periods_service_delegates_to_bounded_all_time_aggregates(monkey
     assert [warning["code"] for warning in payload["warnings"]] == ["aggregate_rows_incomplete"]
 
 
-def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(
-    tmp_path: Path
-) -> None:
+def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_path: Path) -> None:
     from mcp_strava.application.metric_services import compare_periods_service
 
     db_path = _aggregate_fixture(tmp_path / "compare-run.duckdb")
@@ -704,9 +693,7 @@ def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(
     assert trimp["period_b"]["sample_size"] == 1
 
 
-def test_project_fitness_state_service_supports_standard_scenarios(
-    tmp_path: Path
-) -> None:
+def test_project_fitness_state_service_supports_standard_scenarios(tmp_path: Path) -> None:
     from mcp_strava.application.metric_services import project_fitness_state_service
 
     repo = _repo_with_facts(tmp_path / "project.db")
