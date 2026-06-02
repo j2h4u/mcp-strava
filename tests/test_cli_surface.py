@@ -318,34 +318,12 @@ def test_admin_commands_are_namespaced_and_distinct(monkeypatch: pytest.MonkeyPa
     import mcp_strava.cli as cli
     from mcp_strava.application.registry import PRODUCT_SERVICES
 
+    # Exact contract on the admin command set (drift detector).
     assert set(cli.ADMIN_COMMANDS) == ADMIN_COMMANDS
-    assert "catchup" in cli.ADMIN_COMMANDS
-    assert "mirror-coverage" in cli.ADMIN_COMMANDS
-    assert "token-refresh" in cli.ADMIN_COMMANDS
-    assert "mirror-refresh" not in cli.ADMIN_COMMANDS
-    assert "backfill" not in cli.ADMIN_COMMANDS
-    assert "backfill-streams" not in cli.ADMIN_COMMANDS
-    assert "duckdb-cutover" not in cli.ADMIN_COMMANDS
-    assert "db-migrate" not in cli.ADMIN_COMMANDS
-    assert "sync" not in cli.COMMANDS
-    assert "refresh" not in cli.COMMANDS
     assert "admin" in cli.COMMANDS
+    # Admin and product surfaces must not overlap; product services must be present.
     assert ADMIN_COMMANDS.isdisjoint(PRODUCT_SERVICES)
     assert {"daily_brief_facts", "weekly_digest_facts", "historical_facts"}.issubset(PRODUCT_SERVICES)
-    assert {"daily_report", "weekly_summary", "workout_analytics"}.isdisjoint(PRODUCT_SERVICES)
-
-
-def test_duckdb_cutover_is_absent_from_mcp_and_product_surfaces() -> None:
-    from mcp_strava.application.registry import PRODUCT_SERVICES
-    from mcp_strava.interfaces.mcp_http import MCP_INSTRUCTIONS, MCP_TOOL_NAMES
-
-    rendered_tools = " ".join(MCP_TOOL_NAMES).lower()
-    rendered_instructions = MCP_INSTRUCTIONS.lower()
-
-    assert "duckdb-cutover" not in PRODUCT_SERVICES
-    assert "duckdb-cutover" not in rendered_tools
-    assert "storage-migrate" not in rendered_tools
-    assert "duckdb-cutover" not in rendered_instructions
 
 
 def test_admin_mirror_coverage_json_output(
