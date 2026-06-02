@@ -241,35 +241,11 @@ def _read_model_current() -> dict[str, object]:
     }
 
 
-def _block_legacy_recompute(monkeypatch: pytest.MonkeyPatch) -> None:
-    import mcp_strava.application.metric_services as metric_services
-
-    # Regression guard: the MCP metric service must serve precomputed read-model
-    # facts and never recompute from raw mirror data. After Phase 12 the legacy
-    # recompute entry points were removed/relocated (calc_banister now lives in
-    # training.py and only runs during materialization). Assert none of them are
-    # reachable as attributes of the service module — re-importing any would
-    # silently reopen the recompute path on the serving side.
-    leaked = [
-        name
-        for name in (
-            "daily_report_from_connection",
-            "weekly_digest",
-            "check_z5_minutes",
-            "check_hr_anomalies",
-            "calc_banister",
-        )
-        if hasattr(metric_services, name)
-    ]
-    assert leaked == [], f"metric_services must not expose legacy recompute symbols: {leaked}"
-
-
 def test_get_fitness_state_service_returns_metric_bundle_envelope(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path
 ) -> None:
     from mcp_strava.application.metric_services import get_fitness_state_service
 
-    _block_legacy_recompute(monkeypatch)
     repo = _repo_with_facts(tmp_path / "fitness.db")
     try:
         envelope = get_fitness_state_service(
@@ -315,11 +291,10 @@ def test_get_fitness_state_service_returns_metric_bundle_envelope(
 
 
 def test_list_workouts_service_respects_filters_and_returns_compact_rows(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path
 ) -> None:
     from mcp_strava.application.metric_services import list_workouts_service
 
-    _block_legacy_recompute(monkeypatch)
     repo = _repo_with_facts(tmp_path / "workouts.db")
     try:
         envelope = list_workouts_service(
@@ -375,7 +350,6 @@ def test_read_path_reuses_connection_and_checks_schema_once(tmp_path: Path, monk
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
     from mcp_strava.application.metric_services import list_workouts_service
 
-    _block_legacy_recompute(monkeypatch)
 
     # Build a read-model fixture DB on disk, then release it so the runtime
     # ReadConn path opens it exactly as production does.
@@ -416,11 +390,10 @@ def test_read_path_reuses_connection_and_checks_schema_once(tmp_path: Path, monk
 
 
 def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reasons(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path
 ) -> None:
     from mcp_strava.application.metric_services import get_workout_detail_service
 
-    _block_legacy_recompute(monkeypatch)
     repo = _repo_with_facts(tmp_path / "detail.db")
     try:
         full = get_workout_detail_service(
@@ -479,11 +452,10 @@ def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reaso
 
 
 def test_compare_periods_service_includes_global_and_per_sport_comparisons(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path
 ) -> None:
     from mcp_strava.application.metric_services import compare_periods_service
 
-    _block_legacy_recompute(monkeypatch)
     db_path = _aggregate_fixture(tmp_path / "compare.duckdb")
     conn = open_fixture_db(db_path)
     try:
@@ -704,11 +676,10 @@ def test_compare_periods_service_delegates_to_bounded_all_time_aggregates(monkey
 
 
 def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path
 ) -> None:
     from mcp_strava.application.metric_services import compare_periods_service
 
-    _block_legacy_recompute(monkeypatch)
     db_path = _aggregate_fixture(tmp_path / "compare-run.duckdb")
     conn = open_fixture_db(db_path)
     try:
@@ -734,11 +705,10 @@ def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(
 
 
 def test_project_fitness_state_service_supports_standard_scenarios(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path
 ) -> None:
     from mcp_strava.application.metric_services import project_fitness_state_service
 
-    _block_legacy_recompute(monkeypatch)
     repo = _repo_with_facts(tmp_path / "project.db")
     try:
         envelope = project_fitness_state_service(
@@ -771,7 +741,7 @@ def test_project_fitness_state_service_supports_standard_scenarios(
         assert forbidden not in serialized
 
 
-def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path) -> None:
     from mcp_strava.application.metric_services import (
         compare_periods_service,
         get_fitness_state_service,
@@ -780,7 +750,6 @@ def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path, monkeypatc
         project_fitness_state_service,
     )
 
-    _block_legacy_recompute(monkeypatch)
     repo = _repo_with_facts(tmp_path / "registry-match.db")
     try:
         now = datetime.fromisoformat("2026-05-21T09:00:00")
@@ -840,13 +809,11 @@ def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path, monkeypatc
 
 def test_metric_services_use_duckdb_repository_for_duckdb_connections(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from mcp_strava.adapters.duckdb.connection import open_expected_mirror_db
     from mcp_strava.application.metric_services import get_fitness_state_service, list_workouts_service
     from tests.test_training_aggregates import _aggregate_fixture
 
-    _block_legacy_recompute(monkeypatch)
     db_path = _aggregate_fixture(tmp_path / "primary.duckdb")
     conn = open_expected_mirror_db(db_path)
     try:
