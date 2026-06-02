@@ -24,8 +24,6 @@ That choice gives you:
 - A durable local copy of activities, streams, kudos, gear facts, and derived read-model facts.
 - Fast historical questions, including daily, weekly, monthly, all-time, and per-sport aggregates.
 - Reproducible metrics such as training impulse (TRIMP), fitness, fatigue, form, acute:chronic workload ratio (ACWR), cardiac drift, recovery, and sport-efficiency summaries.
-- Evidence metadata with freshness, completeness, warnings, and rationale, so agents can say what is known and what is missing.
-- A read-only MCP surface that never exposes sync, raw SQL, token refresh, or admin controls.
 
 **How it compares to the official connector.** Strava [announced an official MCP connector for Claude](https://press.strava.com/articles/strava-launches-mcp-connector) on June 1, 2026, providing read-only access to training history, streams, GPS, power, clubs, and events — but it is rolling out to Strava *subscribers*. `mcp-strava` is the self-hosted alternative: it works on any account including the free tier, keeps a local mirror on your machine, and adds prepared aggregate bundles and CLI reports on top.
 
@@ -67,7 +65,6 @@ That choice gives you:
 
 - Mirrors Strava activities, streams, kudos, and gear facts into DuckDB.
 - Materializes read-model facts for fast MCP tool calls.
-- Keeps sync, backfill, SQL, token refresh, and deployment operations below the MCP surface.
 - Returns freshness, completeness, warnings, and rationale with product responses so agents know what evidence they are using.
 
 ## Requirements
