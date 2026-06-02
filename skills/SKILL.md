@@ -1,6 +1,6 @@
 ---
 name: strava
-description: Answer questions about the user's own Strava training history through a read-only MCP server — daily training briefs, fitness/fatigue/form and overtraining (ACWR) checks, week-over-week or arbitrary period comparisons, single-workout deep dives, forward fitness projections, and gear/shoe mileage. Use when the user asks about their running, cycling, hiking, or other training: recent workouts, load, form, freshness, trends, or questions like "am I overtraining", "how does this week compare", or "where will my fitness be".
+description: Answer questions about the user's own Strava training history through a read-only MCP server — daily training briefs, fitness/fatigue/form and overtraining (ACWR) checks, week-over-week or arbitrary period comparisons, single-workout deep dives, forward fitness projections, and gear/shoe mileage. Use when the user asks about their running, cycling, hiking, or other training — recent workouts, load, form, freshness, trends, or questions like "am I overtraining", "how does this week compare", or "where will my fitness be".
 ---
 
 # strava
