@@ -187,6 +187,31 @@ Live Docker state is expected under `/opt/docker/mcp-strava`:
 
 The MCP server is read-only and factual. It does not expose sync, admin, debug, raw SQL, token, or raw Strava API tools. Agents receive metrics and freshness facts, then perform their own interpretation.
 
+## Documentation
+
+**Usage**
+- [Configuration](docs/tech/configuration.md) — server environment variables and their defaults.
+
+**Operations**
+- [Deployment runbook](docs/tech/deployment.md) — gateway registration, DuckDB compaction, rollback, secret handling.
+
+**Reference**
+- [Strava Kudos API field notes](docs/tech/kudos-api.md) — endpoint behavior for kudos data.
+
+**Sport science & methodology**
+- [Cardiac cost: cross-activity normalization research](docs/sport/cardiac-cost-cross-activity-research.md)
+- [Cross-activity cardiac cost normalization — research summary](docs/sport/cross-activity-cc-research.md)
+- [Cardiac drift: steady-state requirement](docs/sport/cardiac-drift-steady-state.md)
+
+**Project**
+- [Contributing](CONTRIBUTING.md) — contribution workflow.
+- [Agent & project notes](AGENTS.md) — project context and constraints for AI coding agents.
+- [Commercial licensing](COMMERCIAL.md) — terms for commercial use.
+
+**Development**
+- [Strava MCP skill definition](skills/SKILL.md) — agent-facing tool/skill spec.
+- [Expert panel pattern](skills/expert-panel-pattern.md) — multi-expert review process used in this repo.
+
 ## License
 
 Copyright (c) 2026 Maksim Brashchenko.
