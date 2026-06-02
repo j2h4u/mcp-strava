@@ -11,7 +11,7 @@ It works with any Strava account, including the free tier. You bring your own St
 - **Daily training brief:** current fitness state, recent workouts, load, form, freshness, and notable data gaps.
 - **Weekly digest:** weekly load, volume, efficiency, sport breakdowns, current-week workouts, and current-vs-previous week trends.
 - **Period comparison:** compare two arbitrary date ranges across distance, training impulse (TRIMP), time, elevation, HR, cardiac cost, drift, recovery, and model-state metrics.
-- **Training aggregates:** query prepared metrics by day, week, month, year, all-time, globally or per sport.
+- **Training trends:** see how your training evolves over time — by day, week, month, year, or all-time, overall or per sport.
 - **Workout analysis:** inspect one workout with factual intensity, heart-rate, drift, recovery, elevation, kudos, and gear facts when available.
 - **Fitness projection:** simulate named load scenarios to see projected fitness, fatigue, and form through a target date.
 
