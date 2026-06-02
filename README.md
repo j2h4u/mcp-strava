@@ -44,8 +44,8 @@ That choice gives you:
 |---|---|---|
 | CLI daily brief | `uv run python -m mcp_strava report daily` | Daily facts for current state, recent workouts, 14-day load, sport mix, freshness, and read-model status. |
 | CLI weekly digest | `uv run python -m mcp_strava weekly` | Weekly load, volume, efficiency, sport breakdowns, current-week activities, and week-over-week trends. |
-| MCP daily prompt | `strava_daily_training_brief` | A daily Russian brief scenario backed only by factual MCP metrics. |
-| MCP weekly prompt | `strava_weekly_training_digest` | A weekly Russian digest scenario using period-comparison metrics. |
+| MCP daily prompt | `strava_daily_training_brief` | A daily brief scenario backed only by factual MCP metrics. |
+| MCP weekly prompt | `strava_weekly_training_digest` | A weekly digest scenario using period-comparison metrics. |
 | MCP shoe watchdog | `strava_shoe_mileage_watchdog` | Shoe and gear mileage facts for replacement review. |
 
 ## How It Works

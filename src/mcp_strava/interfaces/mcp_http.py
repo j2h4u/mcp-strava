@@ -224,7 +224,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
     @server.prompt(
         name="strava_daily_training_brief",
         title="Strava Daily Training Brief",
-        description="Daily Russian training brief scenario using factual Strava MCP metrics.",
+        description="Daily training brief scenario using factual Strava MCP metrics.",
     )
     def strava_daily_training_brief() -> str:
         return load_prompt("strava_daily_training_brief")
@@ -232,7 +232,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
     @server.prompt(
         name="strava_weekly_training_digest",
         title="Strava Weekly Training Digest",
-        description="Weekly Russian training digest scenario using period comparison metrics.",
+        description="Weekly training digest scenario using period comparison metrics.",
     )
     def strava_weekly_training_digest() -> str:
         return load_prompt("strava_weekly_training_digest")
