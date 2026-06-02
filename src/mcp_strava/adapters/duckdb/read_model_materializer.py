@@ -11,7 +11,7 @@ from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 from mcp_strava.metrics import calc_cardiac_drift, calc_hr_recovery, calc_hrr_pct, calc_vertical_speed
 from mcp_strava.settings import Settings, get_settings
-from mcp_strava.training import calc_banister_series
+from mcp_strava.training import acwr_zone, calc_banister_series, form_zone
 
 ROLLING_WINDOWS = MATERIALIZED_ROLLING_WINDOW_DAYS
 
@@ -45,26 +45,6 @@ def _adjusted_cardiac_cost(cc: float | None, distance_m: float | None, elevation
         return None
     elevation_per_km = float(elevation_m or 0.0) / (float(distance_m) / 1000.0)
     return round(float(cc) - Config.Efficiency.CC_ELEV_COEFF * elevation_per_km, 3)
-
-
-def _form_zone(form: float) -> str:
-    if form < -5:
-        return "tired"
-    if form < 10:
-        return "normal"
-    return "fresh"
-
-
-def _acwr_zone(acwr: float | None) -> str:
-    if acwr is None:
-        return "unknown"
-    if 0.8 <= acwr <= 1.3:
-        return "sweet_spot"
-    if 1.3 < acwr <= Config.Thresholds.ACWR_DANGER:
-        return "caution"
-    if acwr > Config.Thresholds.ACWR_DANGER:
-        return "danger"
-    return "undertrained"
 
 
 def _median_or_none(values: list[Any]) -> float | None:
@@ -302,8 +282,8 @@ def _materialize_model_facts(
                 "fitness": fitness,
                 "fatigue": fatigue,
                 "form": form,
-                "form_zone": _form_zone(form),
-                "acwr_zone": _acwr_zone(acwr),
+                "form_zone": form_zone(form),
+                "acwr_zone": acwr_zone(acwr),
                 "acwr": acwr,
                 "load_7d": fatigue,
                 "load_28d": None,

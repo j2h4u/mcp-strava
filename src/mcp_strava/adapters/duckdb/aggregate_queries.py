@@ -10,6 +10,7 @@ from typing import Any
 from mcp_strava.adapters.duckdb.schema import create_aggregate_views
 from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.metric_registry import (
+    DEFAULT_AGGREGATE_QUANTILES,
     METRIC_REGISTRY,
     STATUS_FACT_REGISTRY,
     SUPPORTED_AGGREGATE_BUCKETS,
@@ -103,7 +104,6 @@ _METRIC_VALUE_EXPRESSIONS = {
     "elapsed_time_min": "elapsed_time_s / 60.0",
     "elevation_m": "elevation_gain_m",
 }
-_QUANTILE_LABELS = ("p25", "median", "p75")
 
 
 def validate_aggregate_request(request: AggregateRequest) -> tuple[MetricDefinition, ...]:
@@ -1092,8 +1092,8 @@ def _quantiles_from_group(row: dict[str, Any]) -> dict[str, float] | None:
         median = row.get("value")
         if median is None:
             return None
-        return {"p25": float(median), "median": float(median), "p75": float(median)}
-    return {label: float(value) for label, value in zip(_QUANTILE_LABELS, values, strict=False)}
+        return {label: float(median) for label in DEFAULT_AGGREGATE_QUANTILES}
+    return {label: float(value) for label, value in zip(DEFAULT_AGGREGATE_QUANTILES, values, strict=False)}
 
 
 def _missing_reasons(row: dict[str, Any]) -> list[str]:

@@ -52,7 +52,7 @@ def calc_banister(daily_trimp, today_str=None):
         fitness=round(fitness, 1),
         fatigue=round(fatigue, 1),
         form=form,
-        form_zone=_form_zone(form),
+        form_zone=form_zone(form),
     )
 
 
@@ -85,13 +85,26 @@ def calc_banister_series(daily_trimp, end_date=None):
     return series
 
 
-def _form_zone(form):
+def form_zone(form: float) -> str:
     """Classify form into stable, agent-friendly training zones."""
-    if form < -5:
+    if form < Config.Thresholds.FORM_TIRED_BELOW:
         return "tired"
-    if form < 10:
+    if form < Config.Thresholds.FORM_NORMAL_BELOW:
         return "normal"
     return "fresh"
+
+
+def acwr_zone(acwr: float | None) -> str:
+    """Classify acute:chronic workload ratio into agent-friendly load zones."""
+    if acwr is None:
+        return "unknown"
+    if Config.Thresholds.ACWR_SWEET_LOW <= acwr <= Config.Thresholds.ACWR_SWEET_HIGH:
+        return "sweet_spot"
+    if Config.Thresholds.ACWR_SWEET_HIGH < acwr <= Config.Thresholds.ACWR_DANGER:
+        return "caution"
+    if acwr > Config.Thresholds.ACWR_DANGER:
+        return "danger"
+    return "undertrained"
 
 
 # ---------------------------------------------------------------------------

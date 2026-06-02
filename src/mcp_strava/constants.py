@@ -48,6 +48,10 @@ class Config:
         PACE_CV_MAX = 0.25  # CV above which decoupling is invalid
         # (run→walk structural change, intervals)
         ACWR_DANGER = 1.35  # age-adjusted: injury risk at 1.3+ for 50+ athletes
+        ACWR_SWEET_LOW = 0.8  # acute:chronic workload ratio sweet-spot lower bound
+        ACWR_SWEET_HIGH = 1.3  # acute:chronic workload ratio sweet-spot upper bound
+        FORM_TIRED_BELOW = -5  # form below this => "tired"
+        FORM_NORMAL_BELOW = 10  # form below this (and >= tired) => "normal"; at/above => "fresh"
 
     class Efficiency:
         """Cardiac efficiency and analytics parameters."""
