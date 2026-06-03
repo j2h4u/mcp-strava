@@ -3,12 +3,13 @@
 All tests use plain dict rows — no database connection, no repository.
 """
 
-from mcp_strava.constants import Config
+from mcp_strava.constants import WALK_TRIMP_DISCOUNT, Config
 from mcp_strava.metrics import (
     calc_cardiac_drift,
     calc_hr_recovery,
     calc_hrr_pct,
     calc_vertical_speed,
+    discounted_effective_trimp,
 )
 
 # ─── Helpers ───
@@ -384,3 +385,52 @@ def test_calc_hrr_pct_accepts_decimal_inputs():
     # Guard path still holds with Decimal: hr_max <= hr_rest -> None
     assert calc_hrr_pct(Decimal("150"), Decimal("200"), Decimal("200")) is None
     print("  OK: calc_hrr_pct WR-04 — Decimal/str inputs coerced consistently")
+
+
+# ─── Walk TRIMP discount (per-sport daily effective TRIMP) ───
+
+
+def test_walk_trimp_discount_constant_is_half():
+    """WALK_TRIMP_DISCOUNT is the developer-authored 0.5 multiplier applied to the
+    Walk-sport portion of a day's TRIMP. It lives in constants.py (a fingerprinted
+    compute module) so editing it auto-recomputes the read model."""
+    assert WALK_TRIMP_DISCOUNT == 0.5
+
+
+def test_discounted_effective_trimp_run_only_unchanged():
+    """A Run-only day is unaffected: Run carries the full 1.0 multiplier, so the
+    day's effective TRIMP equals its raw observed TRIMP."""
+    assert discounted_effective_trimp({"Run": 100.0}) == 100.0
+
+
+def test_discounted_effective_trimp_walk_only_halved():
+    """A Walk-only day is discounted by WALK_TRIMP_DISCOUNT (0.5): 80 raw -> 40."""
+    assert discounted_effective_trimp({"Walk": 80.0}) == 40.0
+
+
+def test_discounted_effective_trimp_mixed_run_and_walk():
+    """Mixed day: only the Walk portion is discounted. Run 100 (full) + Walk 80
+    (0.5x = 40) -> 140."""
+    assert discounted_effective_trimp({"Run": 100.0, "Walk": 80.0}) == 140.0
+
+
+def test_discounted_effective_trimp_empty_is_zero():
+    """No activity -> 0.0 (float), not None."""
+    assert discounted_effective_trimp({}) == 0.0
+
+
+def test_discounted_effective_trimp_rounds_once_at_the_end():
+    """Round ONCE on the final total, not per-sport, so there is no per-sport
+    rounding drift. Raw Walk 81 -> 40.5 discounted, Run 100.04 -> 100.04;
+    summed = 140.54, rounded once -> 140.5. (Per-sport rounding would round
+    100.04 -> 100.0 first and yield 140.5 too here, so pick values where the
+    difference is visible: Walk 25 -> 12.5, Walk 25 cannot co-exist with itself
+    in a dict, so use a fractional raw that only a single final round preserves.)
+    """
+    # Walk raw 81.0 -> 40.5 ; Run raw 0.34 -> 0.34 ; sum 40.84 -> round once -> 40.8.
+    # Per-sport rounding would give round(40.5,1)+round(0.34,1)=40.5+0.3=40.8 as well,
+    # so use a case where intermediate rounding visibly differs:
+    # Walk raw 0.25 -> 0.125 (would round to 0.1 per-sport) ; Run raw 0.04 -> 0.04
+    # single final round: round(0.125 + 0.04, 1) = round(0.165, 1) = 0.2
+    # per-sport round: round(0.125,1)=0.1 ; round(0.04,1)=0.0 ; sum=0.1  (DIFFERS)
+    assert discounted_effective_trimp({"Walk": 0.25, "Run": 0.04}) == 0.2

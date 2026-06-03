@@ -510,3 +510,201 @@ def test_logic_version_seed_skips_on_import_error_and_reads_fall_back(monkeypatc
     count = conn.execute("SELECT COUNT(*) FROM read_model_logic_version").fetchone()[0]
     assert count == 0
     assert repo.current_metric_version() == 1  # fact-table-max (empty) -> 1, no crash
+
+
+# ─── Walk TRIMP discount: per-sport daily aggregation + effective-trimp wiring ───
+
+
+def _seed_hr_activity_with_streams(
+    repo,
+    *,
+    activity_id: int,
+    day: str,
+    sport_type: str,
+    heartrate: int = 150,
+) -> None:
+    """Seed one HR-bearing activity (summary + 180 HR stream points) so its day is
+    OBSERVED. Constant heartrate keeps the per-activity TRIMP deterministic and
+    lets a Walk and a Run on the same day produce comparable raw TRIMP."""
+    repo.upsert_activity_summary(
+        activity_id=activity_id,
+        date=f"{day}T06:00:00Z",
+        name=f"{sport_type} {activity_id}",
+        sport_type=sport_type,
+        distance=6000.0,
+        moving_time=1800,
+        elapsed_time=1900,
+        total_elevation_gain=120.0,
+        summary_json=(
+            f'{{"id":{activity_id},"name":"{sport_type}","sport_type":"{sport_type}",'
+            f'"start_date_local":"{day}T06:00:00Z","distance":6000,"moving_time":1800,'
+            '"elapsed_time":1900,"total_elevation_gain":120,"has_heartrate":true}'
+        ),
+        synced_at=f"{day}T07:00:00Z",
+    )
+    repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
+    rows = [
+        {
+            "time_offset": idx * 10,
+            "heartrate": heartrate,
+            "velocity": 3.0,
+            "altitude": 500.0,
+            "cadence": 84,
+            "lat": 43.2,
+            "lng": 76.9,
+            "grade": 1.0,
+            "gap_speed": 3.1,
+            "gap_distance": idx * 30.0,
+            "is_moving": 1,
+            "values_json": "{}",
+        }
+        for idx in range(180)
+    ]
+    repo.replace_stream_rows_and_channel_metadata(
+        activity_id,
+        rows=rows,
+        metadata=[
+            {
+                "channel_key": "heartrate",
+                "original_size": len(rows),
+                "resolution": "high",
+                "series_type": "distance",
+                "fetched_at": f"{day}T07:30:00Z",
+                "batch_id": "walk-discount-test",
+                "status": "available",
+                "error": None,
+            }
+        ],
+    )
+
+
+def _zone_bounds_for(repo, end_day: str):
+    """Resolve the same session-level zone bounds the materializer uses, so test
+    TRIMP math matches production aggregation."""
+    from mcp_strava.hr_zones import get_zone_model
+    from mcp_strava.settings import get_settings
+
+    athlete = get_settings().athlete
+    global_hr_max = repo.max_heartrate_to_date(end_day)
+    return get_zone_model(athlete.hr_zone_model).zone_bounds(hr_max=int(global_hr_max), hr_rest=athlete.hr_rest)
+
+
+def test_observed_trimp_history_by_sport_breaks_down_same_range_as_total(tmp_path: Path) -> None:
+    """observed_trimp_history_by_sport returns {day -> {sport -> raw trimp}} over
+    the SAME date range / bounds as observed_trimp_history, and the per-sport raw
+    values for a day sum (rounded) to that day's undiscounted observed total."""
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from tests._fixtures_duckdb import create_empty_fixture_db
+
+    fixture = tmp_path / "by_sport.duckdb"
+    create_empty_fixture_db(fixture)
+    with DuckDBRepository.from_path(fixture) as repo:
+        _seed_hr_activity_with_streams(repo, activity_id=801, day="2026-05-21", sport_type="Run")
+        _seed_hr_activity_with_streams(repo, activity_id=802, day="2026-05-21", sport_type="Walk")
+        bounds = _zone_bounds_for(repo, "2026-05-21")
+
+        total = repo.observed_trimp_history(bounds=bounds, since_day="2026-05-21", until_day="2026-05-21")
+        by_sport = repo.observed_trimp_history_by_sport(bounds=bounds, since_day="2026-05-21", until_day="2026-05-21")
+
+    assert set(by_sport) == set(total), "by-sport and total must cover the same days"
+    day_map = by_sport["2026-05-21"]
+    assert set(day_map) == {"Run", "Walk"}
+    # The undiscounted per-day sum (rounded) equals the observed total for that day.
+    assert round(sum(day_map.values()), 1) == total["2026-05-21"]
+
+
+def test_daily_load_points_discount_walk_portion_only(tmp_path: Path) -> None:
+    """For an OBSERVED day with a Run + a Walk, effective_trimp is the Run TRIMP
+    (full) plus 0.5 * the Walk TRIMP, while observed_trimp stays the undiscounted
+    daily sum. A Run-only day is unchanged (effective == observed)."""
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.constants import WALK_TRIMP_DISCOUNT
+    from tests._fixtures_duckdb import create_empty_fixture_db
+
+    fixture = tmp_path / "discount.duckdb"
+    create_empty_fixture_db(fixture)
+    with DuckDBRepository.from_path(fixture) as repo:
+        # Walk day (2026-05-21): Run + Walk. Run-only day (2026-05-22): control.
+        _seed_hr_activity_with_streams(repo, activity_id=811, day="2026-05-21", sport_type="Run")
+        _seed_hr_activity_with_streams(repo, activity_id=812, day="2026-05-21", sport_type="Walk")
+        _seed_hr_activity_with_streams(repo, activity_id=813, day="2026-05-22", sport_type="Run")
+        bounds = _zone_bounds_for(repo, "2026-05-22")
+
+        by_sport = repo.observed_trimp_history_by_sport(bounds=bounds, since_day="2026-05-21", until_day="2026-05-22")
+        points = {p.date: p for p in repo.daily_load_points_between("2026-05-21", "2026-05-22", bounds=bounds)}
+
+    run_raw = by_sport["2026-05-21"]["Run"]
+    walk_raw = by_sport["2026-05-21"]["Walk"]
+    expected_walk_day_effective = round(run_raw + WALK_TRIMP_DISCOUNT * walk_raw, 1)
+    expected_walk_day_observed = round(run_raw + walk_raw, 1)
+
+    walk_day = points["2026-05-21"]
+    assert walk_day.status == "OBSERVED"
+    assert walk_day.effective_trimp == expected_walk_day_effective
+    assert walk_day.observed_trimp == expected_walk_day_observed
+    # The discount actually lowered effective below observed (the Walk was present).
+    assert walk_day.effective_trimp < walk_day.observed_trimp
+
+    run_day = points["2026-05-22"]
+    assert run_day.status == "OBSERVED"
+    assert run_day.effective_trimp == run_day.observed_trimp  # Run-only day unchanged
+
+
+def test_walk_discount_recomputes_end_to_end_on_fingerprint_mismatch(tmp_path: Path) -> None:
+    """Zero-knob END-TO-END proof (option a): a forced stored!=live logic-fingerprint
+    mismatch at the materialize chokepoint must FIRE the full recompute PIPELINE —
+    not merely re-run the discount arithmetic. Concretely:
+
+      1. Seed a Walk-containing day + a Run, materialize once at version N (=1).
+      2. Write a DELIBERATELY-WRONG stored logic_fingerprint into the sidecar so
+         stored != live (compute_logic_fingerprint()).
+      3. Drive materialize_read_model_stage and assert the recompute actually fires:
+         (1) current_metric_version() advances to N+1,
+         (2) activities were enqueued for recompute (dirty/enqueued > 0),
+         (3) the re-materialized daily effective_trimp for the walk day equals
+             discounted_effective_trimp(...) for the current WALK_TRIMP_DISCOUNT.
+
+    This proves the fingerprint -> bump -> enqueue -> re-materialize PIPELINE, which
+    a patched-constant test (option b) cannot — monkeypatching the in-memory constant
+    does not change inspect.getsource text, so it cannot drive a real mismatch.
+    """
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.metrics import discounted_effective_trimp
+    from mcp_strava.refresh._sync_ops import materialize_read_model_stage
+    from tests._fixtures_duckdb import create_empty_fixture_db
+
+    fixture = tmp_path / "walk_e2e.duckdb"
+    create_empty_fixture_db(fixture)
+    with DuckDBRepository.from_path(fixture) as repo:
+        _seed_hr_activity_with_streams(repo, activity_id=821, day="2026-05-21", sport_type="Run")
+        _seed_hr_activity_with_streams(repo, activity_id=822, day="2026-05-21", sport_type="Walk")
+        bounds = _zone_bounds_for(repo, "2026-05-21")
+        by_sport = repo.observed_trimp_history_by_sport(bounds=bounds, since_day="2026-05-21", until_day="2026-05-21")
+        expected_effective = discounted_effective_trimp(by_sport["2026-05-21"])
+
+        # First cycle: stored == live (seed adopted current) -> normal materialize at N=1.
+        materialize_read_model_stage(repo, "2026-05-24T12:00:00", None)
+        assert repo.current_metric_version() == 1
+
+        # Force a logic-edit signal: overwrite the stored fingerprint with a wrong
+        # value so the next chokepoint sees stored != live (exactly how editing
+        # WALK_TRIMP_DISCOUNT in source would look — stored stale, live moved on).
+        repo.bump_logic_version(1, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
+
+        dirty_before = len(repo.dirty_activity_rows())
+        result = materialize_read_model_stage(repo, "2026-05-24T13:00:00", None)
+
+        bumped = repo.current_metric_version()
+        # The re-materialized daily fact at the bumped version carries the discount.
+        walk_day_facts = repo.fetch_daily_load_facts("2026-05-21", "2026-05-22", scope="all")
+        walk_day_fact = next(f for f in walk_day_facts if str(f["day"]) == "2026-05-21")
+
+    # (1) version advanced to N+1
+    assert bumped == 2, "fingerprint mismatch must bump metric_version to N+1"
+    # (2) the mass-enqueue fired (every activity re-queued, then materialized/cleared)
+    assert dirty_before >= 1
+    assert result.get("activities_materialized", 0) >= 1
+    # (3) the re-materialized walk-day effective_trimp reflects the current discount
+    assert walk_day_fact["metric_version"] == 2
+    assert walk_day_fact["effective_trimp"] == expected_effective
+    assert walk_day_fact["effective_trimp"] < walk_day_fact["observed_trimp"]
