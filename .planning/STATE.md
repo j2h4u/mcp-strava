@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: verifying
-stopped_at: Completed 15-06 gap-closure (WR-01..04 hardened)
-last_updated: "2026-06-04T00:00:00.000Z"
-last_activity: 2026-06-04 -- 15-06 complete (WR-01..04 advisory WARNINGs hardened via TDD)
+stopped_at: Completed 15-06 gap-closure (WR-01..04 advisory WARNINGs hardened via TDD)
+last_updated: "2026-06-03T20:09:35.456Z"
+last_activity: 2026-06-03
 progress:
   total_phases: 15
   completed_phases: 15
   total_plans: 65
-  completed_plans: 65
+  completed_plans: 66
   percent: 100
 ---
 
@@ -25,16 +25,16 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 ## Current Position
 
-Phase: 15 (self-invalidating-read-model-source-fingerprint-auto-recompu) — EXECUTING
-Plan: 5 of 5 (+ 15-06 gap-closure)
+Phase: 15
+Plan: Not started
 Status: Phase complete; 15-06 gap-closure hardened the 4 advisory WARNINGs — ready for re-verification
-Last activity: 2026-06-04 -- 15-06 complete (WR-01..04 advisory WARNINGs hardened via TDD)
+Last activity: 2026-06-03
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 52
+- Total plans completed: 58
 - Average duration: 0 min
 - Total execution time: 0.0 hours
 
@@ -55,6 +55,7 @@ Last activity: 2026-06-04 -- 15-06 complete (WR-01..04 advisory WARNINGs hardene
 | 12 | 5 | - | - |
 | 13 | 4 | - | - |
 | 14 | 3 | - | - |
+| 15 | 6 | - | - |
 
 **Recent Trend:**
 

@@ -235,7 +235,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 12. Decouple db.py into focused modules | 5/5 | Complete | 2026-05-30 |
 | 13. Lint and type-check cleanup | 4/4 | Complete | 2026-05-31 |
 | 14. Metric Platform registry-owned fact schema | 3/3 | Complete | 2026-05-31 |
-| 15. Self-invalidating read-model + walk discount + time fields | 5/5 | Complete   | 2026-06-03 |
+| 15. Self-invalidating read-model + walk discount + time fields | 6/5 | Complete    | 2026-06-03 |
 
 ### Phase 9: Product factual bundles and CLI read-model consolidation
 
@@ -337,7 +337,7 @@ No backlog items currently.
 **Goal:** Changing an internal metric constant, formula, or computed field makes the DuckDB materialized read-model recompute affected facts automatically on the next refresh cycle — via a source-derived logic fingerprint, with no manual version bump and no manually-triggered recompute (versioning fully encapsulated). Built on that mechanism: add a configurable `WALK_TRIMP_DISCOUNT` (internal constant, no env) applied to daily `effective_trimp` via per-sport aggregation, and surface `start_time_local` (HH:MM) plus a read-time relative-time field on workout payloads. Full design (expert-panel, Kaizen-trimmed): see this phase's CONTEXT.md.
 **Requirements**: Zero-knob read-model auto-invalidation (developer ergonomics); port forgotten Hermes `WALK_TRIMP_DISCOUNT` so walks stop counting at full TRIMP in the Banister load model; finer workout time granularity (start HH:MM + relative "Nd Hh"/"Hh Mm" ago)
 **Depends on:** Phase 14
-**Plans:** 5/5 plans complete
+**Plans:** 6/5 plans complete
 
 Plans:
 
