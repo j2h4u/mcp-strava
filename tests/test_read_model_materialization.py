@@ -125,6 +125,87 @@ def test_duckdb_materializer_rolls_back_facts_and_keeps_dirty_rows_on_failure(tm
     assert activity_fact_count == 0
 
 
+def test_WR_03_record_failed_run_commits_under_process_lock(tmp_path: Path, monkeypatch) -> None:
+    """WR-03: the failed-run bookkeeping write must honor duckdb_process_lock().
+
+    Every other repository write commits via _commit_if_standalone / _execute,
+    which acquire the single-writer process lock. _record_failed_run previously
+    committed via a raw repo.conn.commit() with NO lock, so its INSERT+commit could
+    interleave with another writer's transaction. We instrument the shared process
+    lock and assert it is HELD at the moment the failed-run record commits.
+    """
+    import threading
+
+    from mcp_strava.adapters.duckdb import repository as repo_module
+
+    class TrackingLock:
+        def __init__(self) -> None:
+            self._lock = threading.RLock()
+            self.depth = 0
+
+        def acquire(self, *args, **kwargs):
+            acquired = self._lock.acquire(*args, **kwargs)
+            if acquired:
+                self.depth += 1
+            return acquired
+
+        def release(self) -> None:
+            self.depth -= 1
+            self._lock.release()
+
+        def __enter__(self):
+            self.acquire()
+            return self
+
+        def __exit__(self, *_exc) -> None:
+            self.release()
+
+        @property
+        def held(self) -> bool:
+            return self.depth > 0
+
+    tracking = TrackingLock()
+    monkeypatch.setattr(repo_module, "duckdb_process_lock", lambda: tracking)
+
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+
+    # Record every standalone (depth==0) commit routed through the lock-aware
+    # repository helper, and whether the process lock was HELD as it committed. The
+    # buggy version committed the failed-run record via a raw repo.conn.commit()
+    # and never reached _commit_if_standalone at depth 0, so this list stays empty
+    # -> RED. (The success path commits inside repo.begin(), i.e. depth>0.)
+    commit_under_lock: list[bool] = []
+
+    class FailingDailyFactRepo(DuckDBRepository):
+        def upsert_daily_load_fact(self, *args, **kwargs):
+            raise RuntimeError("daily fact failed")
+
+        def _commit_if_standalone(self) -> None:
+            if self._transaction_depth == 0:
+                # The real helper does `with duckdb_process_lock(): conn.commit()`.
+                # Acquire the tracking lock ourselves to record held-state, then
+                # delegate (RLock is reentrant, so the nested acquire is fine).
+                with tracking:
+                    commit_under_lock.append(tracking.held)
+                    super()._commit_if_standalone()
+            else:
+                super()._commit_if_standalone()
+
+    with repo:
+        _seed_dirty_activity_with_streams(repo)
+        failing_repo = FailingDailyFactRepo(repo.conn)
+
+        with pytest.raises(RuntimeError, match="daily fact failed"):
+            materialize_read_model(failing_repo, metric_version=1, now="2026-05-24T12:00:00")
+
+    # The failed-run record must commit through the lock-aware helper under the lock.
+    assert commit_under_lock, (
+        "_record_failed_run must commit through the lock-aware repository helper "
+        "(_commit_if_standalone), not via a raw unlocked repo.conn.commit()"
+    )
+    assert all(commit_under_lock), "every failed-run commit must run under duckdb_process_lock()"
+
+
 # ---------------------------------------------------------------------------
 # Helpers for new metric-column tests
 # ---------------------------------------------------------------------------
