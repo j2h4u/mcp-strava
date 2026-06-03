@@ -465,12 +465,15 @@ def _sync_kudos(repo, transport, now_iso: str, window_days: int | None = None) -
     rows = repo.conn.execute(query, params).fetchall()
     fetched = 0
     for row in rows:
-        response = transport.fetch(f"/activities/{row['id']}/kudos?per_page=100")
+        # raw DB-API rows are positional tuples (SELECT a.id, a.name) — index by
+        # position, not key. row[0] = activity id, row[1] = name (unused here).
+        activity_id = row[0]
+        response = transport.fetch(f"/activities/{activity_id}/kudos?per_page=100")
         if not isinstance(response.data, list):
             continue
         for athlete in response.data:
             repo.upsert_kudos(
-                row["id"],
+                activity_id,
                 athlete.get("firstname", ""),
                 athlete.get("lastname", ""),
                 now_iso,

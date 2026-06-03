@@ -1593,3 +1593,39 @@ def test_chokepoint_bump_and_enqueue_are_atomic_on_enqueue_failure(tmp_path):
         "or the next cycle would see stored == live and never recompute"
     )
     assert stored["logic_fingerprint"] != cached_logic_fingerprint()
+
+
+def test_sync_kudos_indexes_raw_rows_positionally(tmp_path):
+    """Regression: _sync_kudos read raw DB-API rows with row['id'].
+
+    repo.conn.execute(...).fetchall() yields positional tuples, so the string
+    key raised `TypeError: tuple indices must be integers or slices, not str`
+    on every refresh cycle for any activity with kudos_count > 0 — silently
+    wedging the worker (healthcheck red) while the MCP read surface stayed ok.
+    The body was never exercised because other tests monkeypatch _sync_kudos.
+    """
+    from mcp_strava.refresh._sync_ops import _sync_kudos, sync_summaries
+
+    repo = _repo(tmp_path)
+    # Seed activity 500 through the real summary path, then mark it as having
+    # kudos so the _sync_kudos SELECT picks it up.
+    sync_summaries(repo, FakeStravaTransport(), "2026-05-29T00:00:00")
+    repo.conn.execute("UPDATE activities SET summary_json = json_object('kudos_count', 2) WHERE id = 500")
+
+    class _KudosTransport:
+        def __init__(self):
+            self.calls: list[str] = []
+
+        def fetch(self, path: str) -> StravaResponse:
+            self.calls.append(path)
+            return StravaResponse(
+                data=[{"firstname": "Ada", "lastname": "Lovelace"}],
+                rate_info=StravaRateInfo(),
+                status=200,
+            )
+
+    transport = _KudosTransport()
+    fetched = _sync_kudos(repo, transport, "2026-05-29T00:00:00")
+
+    assert fetched == 1
+    assert transport.calls == ["/activities/500/kudos?per_page=100"]
