@@ -1586,8 +1586,7 @@ def test_chokepoint_bump_and_enqueue_are_atomic_on_enqueue_failure(tmp_path):
         durable_version = repo.current_metric_version()
 
     assert durable_version == 1, (
-        "bump+enqueue must be atomic: a failed enqueue must NOT durably advance the version, "
-        f"got {durable_version}"
+        f"bump+enqueue must be atomic: a failed enqueue must NOT durably advance the version, got {durable_version}"
     )
     assert stored["logic_fingerprint"] == "STALE_WRONG_FINGERPRINT", (
         "the stored fingerprint must NOT have advanced to live on a failed enqueue, "

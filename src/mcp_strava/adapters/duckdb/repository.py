@@ -643,7 +643,9 @@ class DuckDBRepository:
         last_day = str(rows[-1]["activity_day"])
         claimed_ids = {int(r["activity_id"]) for r in rows if str(r["activity_day"]) == last_day}
         remainder = self._fetchall(
-            base_sql.replace("WHERE d.metric_version = ?", "WHERE d.metric_version = ? AND d.activity_day = CAST(? AS DATE)"),
+            base_sql.replace(
+                "WHERE d.metric_version = ?", "WHERE d.metric_version = ? AND d.activity_day = CAST(? AS DATE)"
+            ),
             [metric_version, last_day],
         )
         for row in remainder:
