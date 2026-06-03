@@ -4,13 +4,13 @@ milestone: v1.1
 milestone_name: milestone
 status: executing
 stopped_at: Completed 15-01-PLAN.md (source-text logic fingerprint)
-last_updated: "2026-06-03T15:30:42.060Z"
+last_updated: "2026-06-03T15:44:29.637Z"
 last_activity: 2026-06-03 -- 15-01 complete (source-text logic fingerprint)
 progress:
   total_phases: 15
   completed_phases: 14
   total_plans: 65
-  completed_plans: 63
+  completed_plans: 64
   percent: 93
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 ## Current Position
 
 Phase: 15 (self-invalidating-read-model-source-fingerprint-auto-recompu) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-06-03 -- 15-01 complete (source-text logic fingerprint)
 
@@ -109,6 +109,7 @@ Last activity: 2026-06-03 -- 15-01 complete (source-text logic fingerprint)
 | Phase 14 P03 | 11 min | 1 tasks | 3 files |
 | Phase 15 P02 | 16min | 3 tasks | 3 files |
 | Phase 15 P03 | 28min | 4 tasks | 14 files |
+| Phase 15 P04 | 8min | 1 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -203,6 +204,7 @@ Recent decisions affecting current work:
 - [Phase 15]: COMPUTE_SOURCE_MODULES is the FULL recursive mcp_strava import closure of the materializer (14 modules), not a hand-picked compute subset — coverage is automatic-by-construction; a completeness AST-walk test fails on any drift. compute_logic_fingerprint() = sha256 over sorted name\x00source\x00 pairs; runtime import_module inside the fn avoids the repository->schema->metric_registry cycle.
 - [Phase ?]: [Phase 15]: metric_version is now system-managed via the read_model_logic_version singleton (id=1). Seed adopts the CURRENT live fingerprint at construction so deploy = no recompute; current_metric_version() memoizes the resolved int and bump_logic_version() is the single guaranteed memo-invalidation point (cycle-2 HIGH). Fingerprint compute in the seed is guarded by its own try/except (log-warn-skip); 15-03 owns the stored-is-None self-heal.
 - [Phase ?]: [Phase 15]: 15-03 wired the fingerprint detector to the recompute — the materialize chokepoint compares stored vs live source fingerprint and on mismatch bumps metric_version + mass-enqueues (wiring the orphan enqueue_metric_version_recompute); the version is re-resolved INTERNALLY post-bump so enqueue N+1 == materialize N+1 (cycle-2 stale-version guard). CURRENT_METRIC_VERSION deleted; all paths source repo.current_metric_version(). Unseeded sidecar self-heals via adopt-current (no restart). R11: metric_version=current pinned across all aggregate + status reads.
+- [Phase ?]: [Phase 15]: 15-04 ported WALK_TRIMP_DISCOUNT=0.5 — the Walk-sport portion of daily TRIMP is discounted in effective_trimp via a pure per-sport domain fn (round once at the end); observed_trimp stays raw, Banister consumes effective. Constant lives in constants.py (a fingerprinted compute module) so editing it auto-recomputes — proven end-to-end by a forced stored!=live fingerprint mismatch driving version bump + mass-enqueue + re-materialize (option a, not a patched constant).
 
 ### Roadmap Evolution
 
@@ -235,7 +237,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-03T15:30:29.025Z
+Last session: 2026-06-03T15:44:10.361Z
 Stopped at: Completed 15-01-PLAN.md (source-text logic fingerprint)
 Resume file: None
 
