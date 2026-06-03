@@ -343,15 +343,15 @@ Plans:
 
 **Wave 1**
 - [ ] 15-01-PLAN.md — source-text logic fingerprint (`COMPUTE_SOURCE_MODULES` + `compute_logic_fingerprint()`) + determinism/completeness tests (TDD)
-- [ ] 15-02-PLAN.md — `read_model_logic_version` sidecar table + version helpers + idempotent seed-at-current migration
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 15-03-PLAN.md — fingerprint trigger at the materialize chokepoint, delete `CURRENT_METRIC_VERSION`, source the int from `repo.current_metric_version()`, R11 aggregate version pin, observability
+- [ ] 15-02-PLAN.md — `read_model_logic_version` sidecar table + version helpers + idempotent seed-at-current migration
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 15-04-PLAN.md — `WALK_TRIMP_DISCOUNT` per-sport daily discount on `effective_trimp` (TDD); first end-to-end zero-knob proof
+- [ ] 15-03-PLAN.md — fingerprint trigger at the materialize chokepoint, delete `CURRENT_METRIC_VERSION`, source the int from `repo.current_metric_version()`, R11 aggregate version pin, observability
 
-**Wave 4** *(blocked on Wave 3 completion)*
+**Wave 4** *(both blocked on Wave 3 / 15-03 completion; 15-04 and 15-05 each depend ONLY on 15-03 and run in parallel — 15-05 was relaxed from depending on 15-04)*
+- [ ] 15-04-PLAN.md — `WALK_TRIMP_DISCOUNT` per-sport daily discount on `effective_trimp` (TDD); first end-to-end zero-knob proof
 - [ ] 15-05-PLAN.md — materialize `start_time_local` (HH:MM) + read-time `relative_time` field; packaged-install fingerprint smoke
 
 Cross-cutting constraints:
