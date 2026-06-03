@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: executing
+status: verifying
 stopped_at: Completed 15-01-PLAN.md (source-text logic fingerprint)
-last_updated: "2026-06-03T15:44:29.637Z"
+last_updated: "2026-06-03T16:26:02.158Z"
 last_activity: 2026-06-03 -- 15-01 complete (source-text logic fingerprint)
 progress:
   total_phases: 15
-  completed_phases: 14
+  completed_phases: 15
   total_plans: 65
-  completed_plans: 64
-  percent: 93
+  completed_plans: 65
+  percent: 100
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 Phase: 15 (self-invalidating-read-model-source-fingerprint-auto-recompu) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-03 -- 15-01 complete (source-text logic fingerprint)
 
 ## Performance Metrics
@@ -110,6 +110,8 @@ Last activity: 2026-06-03 -- 15-01 complete (source-text logic fingerprint)
 | Phase 15 P02 | 16min | 3 tasks | 3 files |
 | Phase 15 P03 | 28min | 4 tasks | 14 files |
 | Phase 15 P04 | 8min | 1 tasks | 5 files |
+| Phase 15 P05 | 38min | 3 tasks | 12 files |
+| Phase 15 P05 | 38min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -205,6 +207,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 15]: metric_version is now system-managed via the read_model_logic_version singleton (id=1). Seed adopts the CURRENT live fingerprint at construction so deploy = no recompute; current_metric_version() memoizes the resolved int and bump_logic_version() is the single guaranteed memo-invalidation point (cycle-2 HIGH). Fingerprint compute in the seed is guarded by its own try/except (log-warn-skip); 15-03 owns the stored-is-None self-heal.
 - [Phase ?]: [Phase 15]: 15-03 wired the fingerprint detector to the recompute — the materialize chokepoint compares stored vs live source fingerprint and on mismatch bumps metric_version + mass-enqueues (wiring the orphan enqueue_metric_version_recompute); the version is re-resolved INTERNALLY post-bump so enqueue N+1 == materialize N+1 (cycle-2 stale-version guard). CURRENT_METRIC_VERSION deleted; all paths source repo.current_metric_version(). Unseeded sidecar self-heals via adopt-current (no restart). R11: metric_version=current pinned across all aggregate + status reads.
 - [Phase ?]: [Phase 15]: 15-04 ported WALK_TRIMP_DISCOUNT=0.5 — the Walk-sport portion of daily TRIMP is discounted in effective_trimp via a pure per-sport domain fn (round once at the end); observed_trimp stays raw, Banister consumes effective. Constant lives in constants.py (a fingerprinted compute module) so editing it auto-recomputes — proven end-to-end by a forced stored!=live fingerprint mismatch driving version bump + mass-enqueue + re-materialize (option a, not a patched constant).
+- [Phase ?]: [Phase 15]: 15-05 added finer workout time fields — start_time_local (HH:MM) materialized as an additive fact column parsed via fromisoformat+strftime (shared metrics.parse_local_hhmm, not a [11:16] slice); plus a read-time relative_time ('Hh Mm' <24h / 'Nd Hh' from 1d, '1d 0h' at the boundary) computed against now and never stored. The new column auto-backfills via the fingerprint recompute (no manual version bump). Two getsource smokes (unconditional local + real docker compose exec) prove the fingerprint computes under both editable and packaged pip-install layouts.
+- [Phase ?]: [Phase 15]: Live dev DB migration gap surfaced at 15-05 — preflight enforces read_model_logic_version (15-02) but runs before the repository self-heal seed, so a pre-Phase-15 DB crash-loops. Worked around for the dev instance via the in-code seed (DuckDBRepository.from_path runs ensure_provenance_columns + _seed_logic_version) after backup; durable preflight-vs-seed ordering fix deferred to the deploy layer.
 
 ### Roadmap Evolution
 
@@ -237,7 +241,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-03T15:44:10.361Z
+Last session: 2026-06-03T16:25:46.061Z
 Stopped at: Completed 15-01-PLAN.md (source-text logic fingerprint)
 Resume file: None
 

@@ -27,7 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12: Decouple db.py into focused modules** - Split residual db.py coupling into focused connection, auth, and Strava adapter paths. (completed 2026-05-30)
 - [x] **Phase 13: Lint and type-check cleanup** - Bring ruff and pyright gates to green. (completed 2026-05-31)
 - [x] **Phase 14: Metric Platform registry-owned fact schema** - Generate `activity_metric_facts` schema and late additive migrations from registry-owned SQL metadata. (completed 2026-05-31)
-- [ ] **Phase 15: Self-invalidating read-model, walk TRIMP discount, and workout time fields** - Auto-recompute materialized facts when metric code/constants change (source-derived fingerprint, no manual version knob); apply a configurable walk TRIMP discount; surface workout start time and relative-time.
+- [x] **Phase 15: Self-invalidating read-model, walk TRIMP discount, and workout time fields** - Auto-recompute materialized facts when metric code/constants change (source-derived fingerprint, no manual version knob); apply a configurable walk TRIMP discount; surface workout start time and relative-time. (completed 2026-06-03)
 
 ## Phase Details
 
@@ -235,7 +235,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 12. Decouple db.py into focused modules | 5/5 | Complete | 2026-05-30 |
 | 13. Lint and type-check cleanup | 4/4 | Complete | 2026-05-31 |
 | 14. Metric Platform registry-owned fact schema | 3/3 | Complete | 2026-05-31 |
-| 15. Self-invalidating read-model + walk discount + time fields | 4/5 | In Progress|  |
+| 15. Self-invalidating read-model + walk discount + time fields | 5/5 | Complete   | 2026-06-03 |
 
 ### Phase 9: Product factual bundles and CLI read-model consolidation
 
@@ -337,7 +337,7 @@ No backlog items currently.
 **Goal:** Changing an internal metric constant, formula, or computed field makes the DuckDB materialized read-model recompute affected facts automatically on the next refresh cycle — via a source-derived logic fingerprint, with no manual version bump and no manually-triggered recompute (versioning fully encapsulated). Built on that mechanism: add a configurable `WALK_TRIMP_DISCOUNT` (internal constant, no env) applied to daily `effective_trimp` via per-sport aggregation, and surface `start_time_local` (HH:MM) plus a read-time relative-time field on workout payloads. Full design (expert-panel, Kaizen-trimmed): see this phase's CONTEXT.md.
 **Requirements**: Zero-knob read-model auto-invalidation (developer ergonomics); port forgotten Hermes `WALK_TRIMP_DISCOUNT` so walks stop counting at full TRIMP in the Banister load model; finer workout time granularity (start HH:MM + relative "Nd Hh"/"Hh Mm" ago)
 **Depends on:** Phase 14
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 
@@ -356,7 +356,7 @@ Plans:
 **Wave 4** *(both blocked on Wave 3 / 15-03 completion; 15-04 and 15-05 each depend ONLY on 15-03 and run in parallel — 15-05 was relaxed from depending on 15-04)*
 
 - [x] 15-04-PLAN.md — `WALK_TRIMP_DISCOUNT` per-sport daily discount on `effective_trimp` (TDD); first end-to-end zero-knob proof
-- [ ] 15-05-PLAN.md — materialize `start_time_local` (HH:MM) + read-time `relative_time` field; packaged-install fingerprint smoke
+- [x] 15-05-PLAN.md — materialize `start_time_local` (HH:MM) + read-time `relative_time` field; packaged-install fingerprint smoke
 
 Cross-cutting constraints:
 
