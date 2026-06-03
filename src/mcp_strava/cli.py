@@ -294,7 +294,9 @@ def cmd_catchup(args):
         refresh_policy = RefreshPolicy()
         conn_context = MirrorConn() if db_path is None else DuckDBRepository.from_path(db_path)
         with conn_context as conn:
-            repo = DuckDBRepository.from_connection(conn) if db_path is None else conn
+            # MirrorConn yields a raw DuckDBConn (wrap it in a repository);
+            # DuckDBRepository.from_path yields the repository itself.
+            repo = conn if isinstance(conn, DuckDBRepository) else DuckDBRepository.from_connection(conn)
             stream_result = backfill_stream_channels(
                 repo,
                 transport,

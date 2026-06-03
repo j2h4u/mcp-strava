@@ -3,7 +3,7 @@
 import json
 from datetime import date, datetime, timedelta
 from statistics import median
-from typing import Any
+from typing import Any, cast
 
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.constants import Config
@@ -53,7 +53,7 @@ def _adjusted_cardiac_cost(cc: float | None, distance_m: float | None, elevation
     return round(float(cc) - Config.Efficiency.CC_ELEV_COEFF * elevation_per_km, 3)
 
 
-def _median_or_none(values: list[Any]) -> float | None:
+def _median_or_none(values: list[float | None]) -> float | None:
     numeric = [float(value) for value in values if value is not None]
     return round(float(median(numeric)), 3) if numeric else None
 
@@ -75,10 +75,13 @@ def _detail_calories(detail_json: str | None) -> float | None:
     if not detail_json:
         return None
     try:
-        value = json.loads(detail_json).get("calories")
+        parsed = cast("object", json.loads(detail_json))
     except ValueError, TypeError:
         return None
-    if value is None:
+    if not isinstance(parsed, dict):
+        return None
+    value: object = parsed.get("calories")
+    if value is None or not isinstance(value, (int, float, str)):
         return None
     try:
         return float(value)
@@ -100,8 +103,13 @@ def _start_time_local(summary_json: str | None) -> str | None:
     if not summary_json:
         return None
     try:
-        start_date_local = json.loads(summary_json).get("start_date_local")
+        parsed = cast("object", json.loads(summary_json))
     except ValueError, TypeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    start_date_local: object = parsed.get("start_date_local")
+    if start_date_local is not None and not isinstance(start_date_local, str):
         return None
     return parse_local_hhmm(start_date_local)
 

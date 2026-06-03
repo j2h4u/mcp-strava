@@ -7,11 +7,16 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict, cast
 
 import duckdb
 
-from mcp_strava.adapters.duckdb.connection import duckdb_process_lock, open_expected_mirror_db, open_fixture_db
+from mcp_strava.adapters.duckdb.connection import (
+    DuckDBConn,
+    duckdb_process_lock,
+    open_expected_mirror_db,
+    open_fixture_db,
+)
 from mcp_strava.adapters.duckdb.schema import ensure_provenance_columns
 from mcp_strava.constants import Config
 from mcp_strava.metrics import discounted_effective_trimp
@@ -27,7 +32,114 @@ from mcp_strava.types import (
     RepositorySyncLogEntry,
 )
 
-Row = dict[str, Any]
+# The generic DB-API row boundary. A raw row out of DuckDB is a heterogeneous
+# mapping of column name -> cell value whose static shape the fetch helpers
+# cannot know, so the honest type is ``dict[str, object]`` — NOT ``dict[str,
+# Any]``. ``object`` keeps the values opaque (so a stray ``row["x"] + 1`` is a
+# type error, not silently ``Any``) while still allowing the ``str(...)`` /
+# ``bool(...)`` narrowing the repository does. Each public read method then casts
+# this generic row to a precise ``TypedDict`` (the *RowDict types below) via
+# ``_one``/``_all``, so the unavoidable ``Any -> typed`` narrowing happens
+# exactly once, at the ``_fetchall``/``_fetchone`` consumption boundary.
+Row = dict[str, object]
+
+
+# ─── Typed row shapes (per-query result contracts) ───
+#
+# These TypedDicts describe the column shape each read query returns. Casting the
+# generic ``Row`` to one of these (via ``_one``/``_all``) lets ``row["id"]`` stay
+# (no caller churn) while typing the access precisely: ``int(row["id"])`` is then
+# ``int(int)``, not ``int(Any)``. Numeric cells are typed ``int | None`` /
+# ``float | None`` because aggregates (SUM/AVG) and outer-joined columns can be
+# SQL NULL; the repository narrows the None with ``or 0`` / ``is not None``.
+
+
+class _IdRow(TypedDict):
+    id: int
+
+
+class _DayCountRow(TypedDict):
+    """``day``/``c`` grouped-count rows from the daily-load count queries."""
+
+    day: object
+    c: int
+
+
+class _TrimpDayRow(TypedDict):
+    day: object
+    trimp: float | None
+
+
+class _TrimpDaySportRow(TypedDict):
+    day: object
+    sport: object
+    trimp: float | None
+
+
+class _DirtyActivityRow(TypedDict):
+    """A row of ``metric_dirty_activities`` (``SELECT *``); the materialization
+    variant additionally carries the joined ``source_hash`` column."""
+
+    activity_id: int
+    activity_day: object
+    metric_version: int
+    source_revision: int
+    reason: str
+    queued_at: object
+    attempt_count: int
+    last_error: str | None
+    source_hash: str
+
+
+class _SourceStateRow(TypedDict):
+    activity_id: int
+    activity_day: object
+    summary_hash: str
+    detail_hash: str
+    streams_hash: str
+    channels_hash: str
+    source_hash: str
+    source_revision: int
+    changed_at: object
+
+
+class _SourceRevisionRow(TypedDict):
+    source_hash: str
+    source_revision: int
+
+
+class _SourceComponents(TypedDict):
+    """Computed provenance hashes for one activity (all values are strings)."""
+
+    activity_day: str
+    summary_hash: str
+    detail_hash: str
+    streams_hash: str
+    channels_hash: str
+    source_hash: str
+
+
+class _LogicVersionRow(TypedDict):
+    metric_version: int
+    logic_fingerprint: str
+    changed_at: object
+
+
+class _ScalarVersionRow(TypedDict):
+    v: int | None
+
+
+class _LeaseRow(TypedDict):
+    lease_owner: str | None
+    lease_expires_at: object
+
+
+class _ChannelStatusRow(TypedDict):
+    status: str
+
+
+class _ValuesJsonRow(TypedDict):
+    values_json: object
 
 
 def _emit(event: str, **fields: object) -> None:
@@ -117,7 +229,10 @@ def _loads_json_if_possible(value: object) -> object:
     if not stripped or stripped[0] not in "[{":
         return value
     try:
-        return json.loads(stripped)
+        # json.loads returns Any; pin it to object here so the parsed value stays
+        # opaque to callers (this helper feeds the semantic-hash canonicalizer,
+        # which treats every node as object) instead of leaking Any outward.
+        return cast("object", json.loads(stripped))
     except json.JSONDecodeError:
         return value
 
@@ -174,11 +289,57 @@ def _normalize_cell(value: object) -> object:
     return value
 
 
+# ─── Typed cell accessors (object -> scalar narrowing) ───
+#
+# A raw row's cell is ``object`` (see ``Row`` above). For the wide, all-nullable
+# aggregate/stream rows — where a per-shape TypedDict would be ~20 near-identical
+# "every column is ``int|float|None``" definitions — these helpers narrow a single
+# cell instead. They are the structured-row analogue of casting to a TypedDict:
+# explicit, centralized, and (unlike a bare cast) they validate at runtime, so a
+# column that is unexpectedly non-numeric fails loudly here rather than silently
+# coercing. ``None`` collapses to ``default`` (SQL NULL from an empty SUM/AVG or
+# an outer join), matching the ``int(x or 0)`` idiom they replace.
+
+
+def _as_int(value: object, default: int = 0) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, (float, str)):
+        return int(value)
+    raise TypeError(f"expected an int-like cell, got {type(value).__name__}")
+
+
+def _as_float(value: object, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    if isinstance(value, (int, float, str)):
+        return float(value)
+    raise TypeError(f"expected a float-like cell, got {type(value).__name__}")
+
+
+def _as_str(value: object) -> str:
+    return str(value)
+
+
+def _as_int_opt(value: object) -> int | None:
+    """Narrow a nullable cell to ``int | None`` (preserve SQL NULL as None)."""
+    return None if value is None else _as_int(value)
+
+
+def _as_str_opt(value: object) -> str | None:
+    """Narrow a nullable cell to ``str | None`` (preserve SQL NULL as None)."""
+    return None if value is None else str(value)
+
+
 @dataclass
 class DuckDBRepository:
     """Focused DuckDB repository with explicit unit-of-work lifetime."""
 
-    conn: Any
+    conn: DuckDBConn
     _transaction_depth: int = field(default=0, init=False, repr=False)
     _transaction_lock_held: bool = field(default=False, init=False, repr=False)
     _read_model_enabled_cache: bool | None = field(default=None, init=False, repr=False)
@@ -197,7 +358,7 @@ class DuckDBRepository:
         return repo
 
     @classmethod
-    def from_connection(cls, conn: Any) -> DuckDBRepository:
+    def from_connection(cls, conn: DuckDBConn) -> DuckDBRepository:
         repo = cls(conn=conn)
         repo._ensure_schema_extensions()
         return repo
@@ -339,8 +500,14 @@ class DuckDBRepository:
                 row = result.fetchone()
         if row is None:
             return None
+        # ``result.description`` is typed ``list[tuple[str, ...]]`` (the typed conn
+        # gives us column names for free); the cell tuple is ``tuple[Any, ...]``, so
+        # the single ``Any -> object`` narrowing is pinned here by casting the row.
         columns = [item[0] for item in result.description]
-        return {column: _normalize_cell(value) for column, value in zip(columns, row, strict=False)}
+        return {
+            column: _normalize_cell(value)
+            for column, value in zip(columns, cast("tuple[object, ...]", row), strict=False)
+        }
 
     def _fetchall(self, sql: str, params: Iterable[object] | None = None) -> list[Row]:
         if self._transaction_depth > 0:
@@ -351,15 +518,43 @@ class DuckDBRepository:
                 result = self.conn.execute(sql, list(params or []))
                 rows = result.fetchall()
         columns = [item[0] for item in result.description]
-        return [{column: _normalize_cell(value) for column, value in zip(columns, row, strict=False)} for row in rows]
+        return [
+            {
+                column: _normalize_cell(value)
+                for column, value in zip(columns, cast("tuple[object, ...]", row), strict=False)
+            }
+            for row in rows
+        ]
 
-    def _scalar(self, sql: str, params: Iterable[object] | None = None) -> Any | None:
+    @staticmethod
+    def _one[T](row: Row | None) -> T | None:
+        """Narrow a generic fetched row to a per-query ``TypedDict`` shape ``T``.
+
+        The cast is the documented contract that the SELECT's column list matches
+        ``T``; it is a no-op at runtime (the dict is unchanged), so ``row["key"]``
+        access keeps working while the type checker now sees the precise field
+        types. Centralizing it here keeps the ``Any``/``object``-to-typed step in
+        one auditable place instead of scattered inline casts.
+        """
+        return cast("T | None", row)
+
+    @staticmethod
+    def _all[T](rows: list[Row]) -> list[T]:
+        """List counterpart of :meth:`_one` — narrow each fetched row to ``T``."""
+        return cast("list[T]", rows)
+
+    def _scalar(self, sql: str, params: Iterable[object] | None = None) -> object | None:
+        # Single-column scalar reads. ``fetchone()`` yields ``tuple[Any, ...] | None``;
+        # casting the tuple to ``tuple[object, ...]`` narrows ``row[0]`` from ``Any``
+        # to ``object`` here, so every ``_scalar`` caller works against an opaque
+        # value it must explicitly coerce (``int(...)``/``str(...)``) rather than a
+        # silently-propagating ``Any``.
         if self._transaction_depth > 0:
             row = self.conn.execute(sql, list(params or [])).fetchone()
         else:
             with duckdb_process_lock():
                 row = self.conn.execute(sql, list(params or [])).fetchone()
-        return row[0] if row is not None else None
+        return cast("tuple[object, ...]", row)[0] if row is not None else None
 
     def _scalar_int(self, sql: str, params: Iterable[object] | None = None) -> int:
         """Run a scalar COUNT/aggregate query and return a plain ``int``.
@@ -386,7 +581,9 @@ class DuckDBRepository:
         _safe_identifier(table)
         with duckdb_process_lock():
             rows = self.conn.execute(f"PRAGMA table_info('{table}')").fetchall()
-        return {str(row[1]) for row in rows}
+        # PRAGMA table_info returns (cid, name, type, ...); column 1 is the name.
+        # Cast the row tuple so ``row[1]`` is ``object`` (then ``str(...)``), not ``Any``.
+        return {str(cast("tuple[object, ...]", row)[1]) for row in rows}
 
     def _table_exists(self, table: str) -> bool:
         with duckdb_process_lock():
@@ -404,7 +601,7 @@ class DuckDBRepository:
     def _next_id(self, table: str) -> int:
         _safe_identifier(table)
         value = self._scalar(f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table}")
-        return int(value or 1)
+        return _as_int(value, default=1)
 
     def _now_iso(self) -> str:
         return datetime.now(UTC).replace(tzinfo=None).isoformat()
@@ -420,7 +617,7 @@ class DuckDBRepository:
             self._read_model_enabled_cache = self._table_exists("activity_source_state")
         return self._read_model_enabled_cache
 
-    def _read_activity_source_components(self, activity_id: int) -> dict[str, Any] | None:
+    def _read_activity_source_components(self, activity_id: int) -> _SourceComponents | None:
         activity = self._fetchone(
             """
             SELECT id, activity_day, date, name, sport_type, distance, moving_time,
@@ -437,7 +634,7 @@ class DuckDBRepository:
         detail_hash = _semantic_json_hash(activity.get("detail_json"))
 
         stream_columns = sorted(self._table_columns("streams"))
-        streams: list[dict[str, Any]] = []
+        streams: list[Row] = []
         if stream_columns:
             quoted_cols = ", ".join(stream_columns)
             rows = self._fetchall(
@@ -495,13 +692,15 @@ class DuckDBRepository:
         if components is None:
             return False
 
-        existing = self._fetchone(
-            """
-            SELECT source_hash, source_revision
-            FROM activity_source_state
-            WHERE activity_id = ?
-            """,
-            [activity_id],
+        existing: _SourceRevisionRow | None = self._one(
+            self._fetchone(
+                """
+                SELECT source_hash, source_revision
+                FROM activity_source_state
+                WHERE activity_id = ?
+                """,
+                [activity_id],
+            )
         )
         if existing is not None and existing["source_hash"] == components["source_hash"]:
             return False
@@ -575,7 +774,7 @@ class DuckDBRepository:
 
     def dirty_activity_rows(
         self, metric_version: int | None = None, activity_id: int | None = None
-    ) -> list[dict[str, Any]]:
+    ) -> list[_DirtyActivityRow]:
         where: list[str] = []
         params: list[object] = []
         if metric_version is not None:
@@ -585,14 +784,16 @@ class DuckDBRepository:
             where.append("activity_id = ?")
             params.append(activity_id)
         where_sql = "WHERE " + " AND ".join(where) if where else ""
-        return self._fetchall(
-            f"""
-            SELECT *
-            FROM metric_dirty_activities
-            {where_sql}
-            ORDER BY activity_day, activity_id, metric_version
-            """,
-            params,
+        return self._all(
+            self._fetchall(
+                f"""
+                SELECT *
+                FROM metric_dirty_activities
+                {where_sql}
+                ORDER BY activity_day, activity_id, metric_version
+                """,
+                params,
+            )
         )
 
     def mark_dirty_activity_attempt_failed(
@@ -624,10 +825,10 @@ class DuckDBRepository:
         )
         for row in rows:
             self.enqueue_metric_dirty_activity(
-                activity_id=int(row["activity_id"]),
-                activity_day=str(row["activity_day"]),
+                activity_id=_as_int(row["activity_id"]),
+                activity_day=_as_str(row["activity_day"]),
                 metric_version=metric_version,
-                source_revision=int(row["source_revision"]),
+                source_revision=_as_int(row["source_revision"]),
                 reason=reason,
                 queued_at=queued_at,
             )
@@ -638,7 +839,7 @@ class DuckDBRepository:
         self,
         metric_version: int,
         limit: int | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[_DirtyActivityRow]:
         base_sql = """
             SELECT d.*, s.source_hash
             FROM metric_dirty_activities d
@@ -647,9 +848,9 @@ class DuckDBRepository:
             ORDER BY d.activity_day, d.activity_id
         """
         if limit is None:
-            return self._fetchall(base_sql, [metric_version])
+            return self._all(self._fetchall(base_sql, [metric_version]))
 
-        rows = self._fetchall(base_sql + " LIMIT ?", [metric_version, limit])
+        rows: list[_DirtyActivityRow] = self._all(self._fetchall(base_sql + " LIMIT ?", [metric_version, limit]))
         if not rows:
             return rows
 
@@ -661,25 +862,27 @@ class DuckDBRepository:
         # activity for each day in the batch is materialized together. Rows are
         # ordered by (activity_day, activity_id), so only the LAST day in the
         # limited slice can be partially cut; pull in its remaining dirty rows.
-        last_day = str(rows[-1]["activity_day"])
-        claimed_ids = {int(r["activity_id"]) for r in rows if str(r["activity_day"]) == last_day}
-        remainder = self._fetchall(
-            base_sql.replace(
-                "WHERE d.metric_version = ?", "WHERE d.metric_version = ? AND d.activity_day = CAST(? AS DATE)"
-            ),
-            [metric_version, last_day],
+        last_day = _as_str(rows[-1]["activity_day"])
+        claimed_ids = {_as_int(r["activity_id"]) for r in rows if _as_str(r["activity_day"]) == last_day}
+        remainder: list[_DirtyActivityRow] = self._all(
+            self._fetchall(
+                base_sql.replace(
+                    "WHERE d.metric_version = ?", "WHERE d.metric_version = ? AND d.activity_day = CAST(? AS DATE)"
+                ),
+                [metric_version, last_day],
+            )
         )
         for row in remainder:
-            if int(row["activity_id"]) not in claimed_ids:
+            if _as_int(row["activity_id"]) not in claimed_ids:
                 rows.append(row)
         return rows
 
-    def clear_dirty_activity_rows(self, rows: Iterable[Row]) -> int:
+    def clear_dirty_activity_rows(self, rows: Iterable[_DirtyActivityRow]) -> int:
         count = 0
         for row in rows:
-            activity_id = int(row["activity_id"])
-            activity_day = str(row["activity_day"])
-            metric_version = int(row["metric_version"])
+            activity_id = _as_int(row["activity_id"])
+            activity_day = _as_str(row["activity_day"])
+            metric_version = _as_int(row["metric_version"])
             existing = self._fetchone(
                 """
                 SELECT 1
@@ -699,13 +902,15 @@ class DuckDBRepository:
                 count += 1
         return count
 
-    def source_state_for_activity(self, activity_id: int) -> dict[str, Any] | None:
-        return self._fetchone(
-            "SELECT * FROM activity_source_state WHERE activity_id = ?",
-            [activity_id],
+    def source_state_for_activity(self, activity_id: int) -> _SourceStateRow | None:
+        return self._one(
+            self._fetchone(
+                "SELECT * FROM activity_source_state WHERE activity_id = ?",
+                [activity_id],
+            )
         )
 
-    def _upsert_fact(self, table: str, values: dict[str, Any], conflict_columns: tuple[str, ...]) -> None:
+    def _upsert_fact(self, table: str, values: dict[str, object], conflict_columns: tuple[str, ...]) -> None:
         _safe_identifier(table)
         columns = tuple(_safe_identifier(col) for col in values)
         for col in conflict_columns:
@@ -721,23 +926,23 @@ class DuckDBRepository:
         """
         self._execute(sql, [values[col] for col in columns])
 
-    def upsert_activity_metric_fact(self, values: dict[str, Any]) -> None:
+    def upsert_activity_metric_fact(self, values: dict[str, object]) -> None:
         self._upsert_fact("activity_metric_facts", values, ("activity_id", "metric_version"))
 
-    def upsert_daily_load_fact(self, values: dict[str, Any]) -> None:
+    def upsert_daily_load_fact(self, values: dict[str, object]) -> None:
         self._upsert_fact("daily_load_facts", values, ("day", "scope", "sport_type", "metric_version"))
 
-    def upsert_training_model_daily_fact(self, values: dict[str, Any]) -> None:
+    def upsert_training_model_daily_fact(self, values: dict[str, object]) -> None:
         self._upsert_fact("training_model_daily", values, ("day", "scope", "sport_type", "metric_version"))
 
-    def upsert_rolling_period_fact(self, values: dict[str, Any]) -> None:
+    def upsert_rolling_period_fact(self, values: dict[str, object]) -> None:
         self._upsert_fact(
             "rolling_period_facts",
             values,
             ("as_of_day", "window_days", "scope", "sport_type", "metric_version"),
         )
 
-    def record_read_model_refresh_run(self, values: dict[str, Any]) -> int:
+    def record_read_model_refresh_run(self, values: dict[str, object]) -> int:
         payload = dict(values)
         payload.setdefault("id", self._next_id("read_model_refresh_runs"))
         columns = tuple(payload.keys())
@@ -746,7 +951,7 @@ class DuckDBRepository:
             f"INSERT INTO read_model_refresh_runs ({', '.join(columns)}) VALUES ({placeholders})",
             [payload[col] for col in columns],
         )
-        return int(payload["id"])
+        return _as_int(payload["id"])
 
     # Read-model logic version (system-managed metric_version source of truth)
     def _max_fact_metric_version(self) -> int | None:
@@ -768,18 +973,20 @@ class DuckDBRepository:
         )
         if row is None or row.get("v") is None:
             return None
-        return int(row["v"])
+        return _as_int(row["v"])
 
-    def current_logic_version(self) -> dict[str, Any] | None:
+    def current_logic_version(self) -> _LogicVersionRow | None:
         """Return the singleton sidecar row ({metric_version, logic_fingerprint,
         changed_at}) or None when the table is empty/absent (unseeded DB)."""
         try:
-            return self._fetchone(
-                """
-                SELECT metric_version, logic_fingerprint, changed_at
-                FROM read_model_logic_version
-                WHERE id=1
-                """
+            return self._one(
+                self._fetchone(
+                    """
+                    SELECT metric_version, logic_fingerprint, changed_at
+                    FROM read_model_logic_version
+                    WHERE id=1
+                    """
+                )
             )
         except duckdb.CatalogException:
             # Sidecar table absent (partially-migrated DB) — treat as unseeded.
@@ -891,14 +1098,16 @@ class DuckDBRepository:
             params,
         )
 
-        dirty_count = int(dirty["dirty_count"] or 0) if dirty else 0
+        dirty_count = _as_int(dirty["dirty_count"]) if dirty else 0
         last_materialized_at = None
         if run and run["last_materialized_at"]:
             last_materialized_at = str(run["last_materialized_at"])
         elif facts_summary and facts_summary["last_materialized_at"]:
             last_materialized_at = str(facts_summary["last_materialized_at"])
+        # metric_versions_present is a DuckDB LIST aggregate — an opaque ``object``
+        # cell. Narrow it to a concrete list before iterating/coercing the elements.
         raw_versions = facts_summary["metric_versions_present"] if facts_summary else None
-        versions: list[int] = sorted(int(v) for v in raw_versions) if raw_versions else []
+        versions: list[int] = sorted(_as_int(v) for v in raw_versions) if isinstance(raw_versions, list) else []
 
         status = "current"
         stale_reason = None
@@ -1095,7 +1304,7 @@ class DuckDBRepository:
         )
         by_window: dict[int, dict[str, Any]] = {}
         for row in rows:
-            window = int(row["window_days"])
+            window = _as_int(row["window_days"])
             by_window.setdefault(window, row)
         return by_window
 
@@ -1212,7 +1421,7 @@ class DuckDBRepository:
             LIMIT 1
             """
         )
-        return int(row["id"]) if row and row["id"] is not None else None
+        return _as_int(row["id"]) if row and row["id"] is not None else None
 
     def upsert_activity_summary(
         self,
@@ -1344,7 +1553,7 @@ class DuckDBRepository:
             """,
             params,
         )
-        return {str(row["day"]): round(float(row["trimp"]), 1) for row in rows}
+        return {str(row["day"]): round(_as_float(row["trimp"]), 1) for row in rows}
 
     def observed_trimp_history_by_sport(
         self,
@@ -1396,14 +1605,14 @@ class DuckDBRepository:
         by_sport: dict[str, dict[str, float]] = {}
         for row in rows:
             day = str(row["day"])
-            by_sport.setdefault(day, {})[str(row["sport"])] = round(float(row["trimp"]), 1)
+            by_sport.setdefault(day, {})[str(row["sport"])] = round(_as_float(row["trimp"]), 1)
         return by_sport
 
     def daily_load_status(self, day: str) -> RepositoryDailyLoadStatus:
-        activity_count = int(
-            self._scalar("SELECT COUNT(*) FROM activities WHERE activity_day = CAST(? AS DATE)", [day]) or 0
+        activity_count = _as_int(
+            self._scalar("SELECT COUNT(*) FROM activities WHERE activity_day = CAST(? AS DATE)", [day])
         )
-        stream_count = int(
+        stream_count = _as_int(
             self._scalar(
                 """
                 SELECT COUNT(*)
@@ -1413,9 +1622,8 @@ class DuckDBRepository:
                 """,
                 [day],
             )
-            or 0
         )
-        hr_count = int(
+        hr_count = _as_int(
             self._scalar(
                 """
                 SELECT COUNT(*)
@@ -1426,7 +1634,6 @@ class DuckDBRepository:
                 """,
                 [day],
             )
-            or 0
         )
         if activity_count == 0:
             status = "REST"
@@ -1472,7 +1679,7 @@ class DuckDBRepository:
             [start_day, end_day, *sport_params],
         )
         for row in act_rows:
-            daily_activity_counts[str(row["day"])] = int(row["c"])
+            daily_activity_counts[str(row["day"])] = _as_int(row["c"])
 
         stream_rows = self._fetchall(
             """
@@ -1488,7 +1695,7 @@ class DuckDBRepository:
             [start_day, end_day, *sport_params],
         )
         for row in stream_rows:
-            daily_stream_counts[str(row["day"])] = int(row["c"])
+            daily_stream_counts[str(row["day"])] = _as_int(row["c"])
 
         hr_rows = self._fetchall(
             """
@@ -1505,7 +1712,7 @@ class DuckDBRepository:
             [start_day, end_day, *sport_params],
         )
         for row in hr_rows:
-            daily_hr_counts[str(row["day"])] = int(row["c"])
+            daily_hr_counts[str(row["day"])] = _as_int(row["c"])
 
         observed_trimp = self.observed_trimp_history(
             bounds=bounds,
@@ -1580,7 +1787,7 @@ class DuckDBRepository:
 
     def activity_moving_time(self, activity_id: int) -> int | None:
         row = self._fetchone("SELECT moving_time FROM activities WHERE id = ?", [activity_id])
-        return int(row["moving_time"]) if row and row["moving_time"] is not None else None
+        return _as_int(row["moving_time"]) if row and row["moving_time"] is not None else None
 
     def stream_hr_velocity_rows(self, activity_id: int, min_velocity: float) -> list[dict[str, Any]]:
         return self._fetchall(
@@ -1621,14 +1828,14 @@ class DuckDBRepository:
             """,
             [activity_id],
         )
-        return (float(row["avg_hr"]), int(row["n"] or 0)) if row and row["avg_hr"] is not None else (None, 0)
+        return (_as_float(row["avg_hr"]), _as_int(row["n"])) if row and row["avg_hr"] is not None else (None, 0)
 
     def activity_avg_velocity(self, activity_id: int) -> float | None:
         row = self._fetchone(
             "SELECT AVG(velocity) AS avg_vel FROM streams WHERE activity_id=? AND velocity IS NOT NULL",
             [activity_id],
         )
-        return float(row["avg_vel"]) if row and row["avg_vel"] is not None else None
+        return _as_float(row["avg_vel"]) if row and row["avg_vel"] is not None else None
 
     def stream_hr_time_rows(self, activity_id: int) -> list[dict[str, Any]]:
         return self._fetchall(
@@ -1665,7 +1872,7 @@ class DuckDBRepository:
             [activity_id],
         )
         assert row is not None, "aggregate COUNT always returns a row"
-        return int(row["stream_count"] or 0), int(row["hr_count"] or 0)
+        return _as_int(row["stream_count"]), _as_int(row["hr_count"])
 
     def zone_seconds_for_activity(self, activity_id: int, bounds: list[int]) -> tuple[int, int, int, int, int]:
         """Return (z1, z2, z3, z4, z5) second counts using precomputed zone bounds.
@@ -1688,7 +1895,7 @@ class DuckDBRepository:
             [b[0], b[0], b[1], b[1], b[2], b[2], b[3], b[-2], activity_id],
         )
         assert row is not None, "SUM aggregate always returns a row"
-        z = [int(row[f"z{idx}"] or 0) for idx in range(1, 6)]
+        z = [_as_int(row[f"z{idx}"]) for idx in range(1, 6)]
         return z[0], z[1], z[2], z[3], z[4]
 
     def daily_fact_sums(self, activity_day: str, metric_version: int) -> dict[str, Any]:
@@ -1788,7 +1995,7 @@ class DuckDBRepository:
             "SELECT " + build_trimp_sql(bounds) + " FROM streams WHERE activity_id = ?",
             [activity_id],
         )
-        return round(float(row["trimp"]), 1) if row and row["trimp"] is not None else 0.0
+        return round(_as_float(row["trimp"]), 1) if row and row["trimp"] is not None else 0.0
 
     def max_heartrate_to_date(self, activity_day: str) -> int | None:
         """Return the running max heartrate observed up to and including activity_day.
@@ -1808,7 +2015,7 @@ class DuckDBRepository:
             """,
             [activity_day],
         )
-        return int(row["hr_max"]) if row and row["hr_max"] is not None else None
+        return _as_int(row["hr_max"]) if row and row["hr_max"] is not None else None
 
     def activity_hr_range(self, activity_id: int) -> tuple[int | None, int | None]:
         """Return (min_hr, max_hr) from stream heartrate samples for an activity.
@@ -1827,7 +2034,7 @@ class DuckDBRepository:
             [activity_id],
         )
         if row and row["min_hr"] is not None:
-            return int(row["min_hr"]), int(row["max_hr"])
+            return _as_int(row["min_hr"]), _as_int(row["max_hr"])
         return None, None
 
     def activity_cc(self, activity_id: int, min_velocity: float) -> float | None:
@@ -1839,9 +2046,9 @@ class DuckDBRepository:
             """,
             [activity_id, min_velocity],
         )
-        if not row or not row["avg_hr"] or not row["avg_vel"] or float(row["avg_vel"]) <= 0:
+        if not row or not row["avg_hr"] or not row["avg_vel"] or _as_float(row["avg_vel"]) <= 0:
             return None
-        return round(float(row["avg_hr"]) / float(row["avg_vel"]), 2)
+        return round(_as_float(row["avg_hr"]) / _as_float(row["avg_vel"]), 2)
 
     def activity_median_heartrate(self, activity_id: int) -> float | None:
         row = self._fetchone(
@@ -1852,19 +2059,18 @@ class DuckDBRepository:
             """,
             [activity_id],
         )
-        return float(row["median_hr"]) if row and row["median_hr"] is not None else None
+        return _as_float(row["median_hr"]) if row and row["median_hr"] is not None else None
 
     def max_heartrate(self) -> float | None:
         row = self._fetchone("SELECT MAX(heartrate) AS hr FROM streams WHERE heartrate IS NOT NULL")
-        return float(row["hr"]) if row and row["hr"] is not None else None
+        return _as_float(row["hr"]) if row and row["hr"] is not None else None
 
     def activity_z5_seconds(self, activity_id: int, z5_threshold: int) -> int:
-        return int(
+        return _as_int(
             self._scalar(
                 "SELECT COUNT(*) AS sec FROM streams WHERE activity_id = ? AND heartrate >= ?",
                 [activity_id, z5_threshold],
             )
-            or 0
         )
 
     def activity_efficiency_rows(self) -> list[dict[str, Any]]:
@@ -1895,7 +2101,7 @@ class DuckDBRepository:
             """,
             [*sports, start_day, end_day],
         )
-        return float(row["km"] or 0.0) if row else 0.0
+        return _as_float(row["km"]) if row else 0.0
 
     def insert_stream_rows_chunked(
         self,
@@ -2147,7 +2353,7 @@ class DuckDBRepository:
         since: str | None = None,
         limit: int | None = None,
         requested_channels: Iterable[str],
-    ) -> list[dict]:
+    ) -> list[dict[str, object]]:
         channel_list = list(requested_channels)
         rows = self._fetchall(
             """
@@ -2159,11 +2365,11 @@ class DuckDBRepository:
             """,
             [since, since],
         )
-        results: list[dict] = []
+        results: list[dict[str, object]] = []
         for row in rows:
             if limit is not None and len(results) >= limit:
                 break
-            activity_id = int(row["id"])
+            activity_id = _as_int(row["id"])
             missing_channels: list[str] = []
             metadata_missing = False
             for channel in channel_list:
@@ -2225,11 +2431,11 @@ class DuckDBRepository:
             """
         )
         return {
-            "channels": int(row["channels"] or 0) if row else 0,
-            "activities_with_channel_metadata": int(row["activities_with_channel_metadata"] or 0) if row else 0,
-            "available_channels": int(row["available_channels"] or 0) if row else 0,
-            "unavailable_channels": int(row["unavailable_channels"] or 0) if row else 0,
-            "error_channels": int(row["error_channels"] or 0) if row else 0,
+            "channels": _as_int(row["channels"]) if row else 0,
+            "activities_with_channel_metadata": _as_int(row["activities_with_channel_metadata"]) if row else 0,
+            "available_channels": _as_int(row["available_channels"]) if row else 0,
+            "unavailable_channels": _as_int(row["unavailable_channels"]) if row else 0,
+            "error_channels": _as_int(row["error_channels"]) if row else 0,
         }
 
     # Mirror coverage counts (owned here so the application layer never runs raw
@@ -2345,7 +2551,7 @@ class DuckDBRepository:
             query += " AND a.date >= date('now', ?)"
             params.append(f"-{window_days} days")
         query += " ORDER BY a.date DESC"
-        return [int(row["id"]) for row in self._fetchall(query, params)]
+        return [_as_int(row["id"]) for row in self._fetchall(query, params)]
 
     def upsert_kudos(self, activity_id: int, firstname: str, lastname: str, fetched_at: str) -> None:
         self._execute(
@@ -2410,13 +2616,13 @@ class DuckDBRepository:
             RepositorySyncLogEntry(
                 timestamp=str(row["timestamp"]),
                 status=str(row["status"]),
-                activities_seen=row["activities_seen"],
-                activities_new=row["activities_new"],
-                streams_fetched=row["streams_fetched"],
-                details_fetched=row["details_fetched"],
-                api_calls=row["api_calls"],
-                error=row["error"],
-                kudos_fetched=row["kudos_fetched"],
+                activities_seen=_as_int_opt(row["activities_seen"]),
+                activities_new=_as_int_opt(row["activities_new"]),
+                streams_fetched=_as_int_opt(row["streams_fetched"]),
+                details_fetched=_as_int_opt(row["details_fetched"]),
+                api_calls=_as_int_opt(row["api_calls"]),
+                error=_as_str_opt(row["error"]),
+                kudos_fetched=_as_int_opt(row["kudos_fetched"]),
             )
             for row in rows
         ]
@@ -2430,16 +2636,16 @@ class DuckDBRepository:
             row = self._fetchone("SELECT * FROM refresh_state WHERE id = 1")
         assert row is not None, "refresh_state row must exist after INSERT"
         return RefreshStateRow(
-            id=int(row["id"]),
-            last_success_at=row["last_success_at"],
-            last_attempt_at=row["last_attempt_at"],
-            last_status=row["last_status"],
-            last_error_code=row["last_error_code"],
-            lease_owner=row["lease_owner"],
-            lease_expires_at=row["lease_expires_at"],
-            backoff_until=row["backoff_until"],
-            checkpoint_stage=row["checkpoint_stage"],
-            checkpoint_cursor=row["checkpoint_cursor"],
+            id=_as_int(row["id"]),
+            last_success_at=_as_str_opt(row["last_success_at"]),
+            last_attempt_at=_as_str_opt(row["last_attempt_at"]),
+            last_status=_as_str_opt(row["last_status"]),
+            last_error_code=_as_str_opt(row["last_error_code"]),
+            lease_owner=_as_str_opt(row["lease_owner"]),
+            lease_expires_at=_as_str_opt(row["lease_expires_at"]),
+            backoff_until=_as_str_opt(row["backoff_until"]),
+            checkpoint_stage=_as_str_opt(row["checkpoint_stage"]),
+            checkpoint_cursor=_as_str_opt(row["checkpoint_cursor"]),
         )
 
     def acquire_refresh_lease(self, owner: str, expires_at: str, now: str) -> bool:
@@ -2574,11 +2780,11 @@ class DuckDBRepository:
         )
         return [
             RefreshRequestRow(
-                id=int(row["id"]),
+                id=_as_int(row["id"]),
                 reason=str(row["reason"]),
                 requested_for_day=str(row["requested_for_day"]),
                 requested_at=str(row["requested_at"]),
-                consumed_at=row["consumed_at"],
+                consumed_at=_as_str_opt(row["consumed_at"]),
             )
             for row in rows
         ]

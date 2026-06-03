@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, cast
 
+from mcp_strava.adapters.duckdb.connection import DuckDBConn
 from mcp_strava.adapters.duckdb.schema import create_aggregate_views
 from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.metric_registry import (
@@ -76,6 +77,44 @@ class AggregateRow:
     read_model_freshness: dict[str, Any] | None = None
     scope: str = "global"
     sport_type: str | None = None
+
+
+@dataclass
+class _DistributionGroup:
+    """Typed accumulator for one (bucket_start, sport_type) distribution group.
+
+    Replaces an ad-hoc ``dict[str, Any]`` accumulator: the per-group running
+    counts/lists are now precisely typed (so ``+=``/``.extend`` are checked), and
+    ``as_row()`` projects back to the ``dict[str, object]`` row contract that
+    ``_aggregate_row_from_group`` consumes — keeping the public grouping shape
+    unchanged while removing the ``Any``."""
+
+    bucket_start: object
+    output_sport_type: str | None
+    distribution: dict[str, int] = field(default_factory=dict)
+    activity_count: int = 0
+    sample_size: int = 0
+    null_count: int = 0
+    excluded_count: int = 0
+    metric_version_count: int = 0
+    materialized_at: str | None = None
+    completeness_statuses: list[object] = field(default_factory=list)
+    missing_reason_payloads: list[object] = field(default_factory=list)
+
+    def as_row(self) -> dict[str, object]:
+        return {
+            "bucket_start": self.bucket_start,
+            "output_sport_type": self.output_sport_type,
+            "distribution": self.distribution,
+            "activity_count": self.activity_count,
+            "sample_size": self.sample_size,
+            "null_count": self.null_count,
+            "excluded_count": self.excluded_count,
+            "metric_version_count": self.metric_version_count,
+            "materialized_at": self.materialized_at,
+            "completeness_statuses": self.completeness_statuses,
+            "missing_reason_payloads": self.missing_reason_payloads,
+        }
 
 
 _VERSION_STATUS_VIEW = "v_metric_version_status"
@@ -151,7 +190,9 @@ def build_aggregate_query(
     return AggregateQuery(statement=statement, params=tuple(params), metric_id=metric.metric_id, bucket=request.bucket)
 
 
-def query_training_aggregates(conn, request: AggregateRequest, *, metric_version: int) -> list[AggregateRow]:
+def query_training_aggregates(
+    conn: DuckDBConn, request: AggregateRequest, *, metric_version: int
+) -> list[AggregateRow]:
     """Aggregate read pinned to a single metric_version (R11).
 
     metric_version is resolved by the CALLER (aggregate_services.py) from
@@ -170,7 +211,7 @@ def query_training_aggregates(conn, request: AggregateRequest, *, metric_version
     return sorted(rows, key=lambda row: (row.bucket_start, row.metric_id, row.sport_type or ""))
 
 
-def query_status_facts(conn, *, as_of_day: str, metric_version: int) -> list[StatusFact]:
+def query_status_facts(conn: DuckDBConn, *, as_of_day: str, metric_version: int) -> list[StatusFact]:
     """Status-fact read pinned to a single metric_version (R11): every status
     query that touches activity_metric_facts filters `metric_version = ?` so
     status facts are current-only, never a blend across versions."""
@@ -179,7 +220,9 @@ def query_status_facts(conn, *, as_of_day: str, metric_version: int) -> list[Sta
     return [_query_status_fact(conn, definition, as_of, metric_version) for definition in STATUS_FACT_REGISTRY.values()]
 
 
-def _query_status_fact(conn, definition: StatusFactDefinition, as_of: date, metric_version: int) -> StatusFact:
+def _query_status_fact(
+    conn: DuckDBConn, definition: StatusFactDefinition, as_of: date, metric_version: int
+) -> StatusFact:
     code = definition.code
     if code == "stale_mirror_data":
         return _query_stale_mirror_status(conn, definition, as_of)
@@ -202,22 +245,27 @@ def _query_status_fact(conn, definition: StatusFactDefinition, as_of: date, metr
     return _status_fact(definition, "unavailable", {}, ["unsupported_status_fact"])
 
 
-def _query_stale_mirror_status(conn, definition: StatusFactDefinition, as_of: date) -> StatusFact:
-    row = conn.execute(
-        """
+def _query_stale_mirror_status(conn: DuckDBConn, definition: StatusFactDefinition, as_of: date) -> StatusFact:
+    # fetchone() is tuple[Any, ...] | None; cast once to object-cells so every
+    # positional row[N] read below is opaque rather than Any.
+    row = cast(
+        "tuple[object, ...] | None",
+        conn.execute(
+            """
         SELECT last_success_at
         FROM refresh_state
         ORDER BY id
         LIMIT 1
         """
-    ).fetchone()
+        ).fetchone(),
+    )
     if row is None or row[0] is None:
         return _status_fact(definition, "unavailable", {}, ["refresh_state_missing"])
     last_success_day = _day_from_timestamp(row[0])
     if last_success_day is None:
         return _status_fact(definition, "unavailable", {"last_success_at": row[0]}, ["last_success_missing"])
     age_days = max(0, (as_of - last_success_day).days)
-    threshold_days = int(definition.threshold["max_age_days"])
+    threshold_days = _as_int(_obj_dict(definition.threshold)["max_age_days"])
     evidence = {
         "last_success_at": str(row[0]),
         "age_days": age_days,
@@ -226,7 +274,7 @@ def _query_stale_mirror_status(conn, definition: StatusFactDefinition, as_of: da
     return _status_fact(definition, "active" if age_days > threshold_days else "inactive", evidence)
 
 
-def _query_stale_read_model_status(conn, definition: StatusFactDefinition, as_of: date) -> StatusFact:
+def _query_stale_read_model_status(conn: DuckDBConn, definition: StatusFactDefinition, as_of: date) -> StatusFact:
     row = conn.execute(
         """
         SELECT MAX(finished_at) AS last_materialized_at
@@ -235,8 +283,8 @@ def _query_stale_read_model_status(conn, definition: StatusFactDefinition, as_of
         """
     ).fetchone()
     dirty_row = conn.execute("SELECT COUNT(*) FROM metric_dirty_activities").fetchone()
-    dirty_count = int(dirty_row[0] or 0) if dirty_row is not None else 0
-    last_materialized_at = row[0] if row is not None else None
+    dirty_count = _as_int(_scalar_cell(dirty_row))
+    last_materialized_at = _scalar_cell(row)
     if last_materialized_at is None:
         return _status_fact(
             definition,
@@ -253,7 +301,7 @@ def _query_stale_read_model_status(conn, definition: StatusFactDefinition, as_of
             ["read_model_unavailable"],
         )
     age_days = max(0, (as_of - last_materialized_day).days)
-    threshold_days = int(definition.threshold["max_age_days"])
+    threshold_days = _as_int(_obj_dict(definition.threshold)["max_age_days"])
     evidence = {
         "last_materialized_at": str(last_materialized_at),
         "age_days": age_days,
@@ -263,7 +311,7 @@ def _query_stale_read_model_status(conn, definition: StatusFactDefinition, as_of
 
 
 def _query_missing_sample_status(
-    conn,
+    conn: DuckDBConn,
     definition: StatusFactDefinition,
     as_of: date,
     sample_column: str,
@@ -285,7 +333,7 @@ def _query_missing_sample_status(
         """,
         [start.isoformat(), as_of.isoformat(), metric_version],
     ).fetchall()
-    activity_ids = [int(row[0]) for row in rows]
+    activity_ids = [_as_int(_scalar_cell(row)) for row in rows]
     evidence = {
         "activity_count": len(activity_ids),
         "activity_ids": activity_ids,
@@ -294,14 +342,16 @@ def _query_missing_sample_status(
     return _status_fact(definition, "active" if activity_ids else "inactive", evidence)
 
 
-def _query_excessive_z5_status(conn, definition: StatusFactDefinition, as_of: date, metric_version: int) -> StatusFact:
+def _query_excessive_z5_status(
+    conn: DuckDBConn, definition: StatusFactDefinition, as_of: date, metric_version: int
+) -> StatusFact:
     start = _lookback_start(definition, as_of)
     total = _activity_fact_count(conn, start, as_of, metric_version)
     if total == 0:
         return _status_fact(definition, "unavailable", {}, ["no_activity_facts"])
-    threshold = int(definition.threshold["zone5_seconds"])
+    threshold = _as_int(_obj_dict(definition.threshold)["zone5_seconds"])
     if "z5_lower_bound_bpm" in definition.threshold:
-        z5_lower_bound = int(definition.threshold["z5_lower_bound_bpm"])
+        z5_lower_bound = _as_int(_obj_dict(definition.threshold)["z5_lower_bound_bpm"])
     else:
         from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 
@@ -332,20 +382,22 @@ def _query_excessive_z5_status(conn, definition: StatusFactDefinition, as_of: da
     if row is None:
         return _status_fact(definition, "inactive", {"threshold_seconds": threshold})
     evidence = {
-        "activity_id": int(row[0]),
-        "activity_day": _to_iso(row[1]),
-        "zone5_seconds": int(row[2] or 0),
+        "activity_id": _as_int(_scalar_cell(row, 0)),
+        "activity_day": _to_iso(_scalar_cell(row, 1)),
+        "zone5_seconds": _as_int(_scalar_cell(row, 2)),
         "z5_lower_bound_bpm": z5_lower_bound,
     }
     return _status_fact(definition, "active", evidence)
 
 
-def _query_hr_anomaly_status(conn, definition: StatusFactDefinition, as_of: date, metric_version: int) -> StatusFact:
+def _query_hr_anomaly_status(
+    conn: DuckDBConn, definition: StatusFactDefinition, as_of: date, metric_version: int
+) -> StatusFact:
     start = _lookback_start(definition, as_of)
     total = _activity_fact_count(conn, start, as_of, metric_version)
     if total == 0:
         return _status_fact(definition, "unavailable", {}, ["no_activity_facts"])
-    threshold = int(definition.threshold["hr_anomaly_count"])
+    threshold = _as_int(_obj_dict(definition.threshold)["hr_anomaly_count"])
     row = conn.execute(
         """
         SELECT activity_id, activity_day, anomaly_count
@@ -362,20 +414,22 @@ def _query_hr_anomaly_status(conn, definition: StatusFactDefinition, as_of: date
     if row is None:
         return _status_fact(definition, "inactive", {"threshold_count": threshold})
     evidence = {
-        "activity_id": int(row[0]),
-        "activity_day": _to_iso(row[1]),
-        "hr_anomaly_count": int(row[2] or 0),
-        "jump_bpm": int(definition.threshold["jump_bpm"]),
+        "activity_id": _as_int(_scalar_cell(row, 0)),
+        "activity_day": _to_iso(_scalar_cell(row, 1)),
+        "hr_anomaly_count": _as_int(_scalar_cell(row, 2)),
+        "jump_bpm": _as_int(_obj_dict(definition.threshold)["jump_bpm"]),
     }
     return _status_fact(definition, "active", evidence)
 
 
-def _query_cardiac_drift_status(conn, definition: StatusFactDefinition, as_of: date, metric_version: int) -> StatusFact:
+def _query_cardiac_drift_status(
+    conn: DuckDBConn, definition: StatusFactDefinition, as_of: date, metric_version: int
+) -> StatusFact:
     start = _lookback_start(definition, as_of)
     total = _activity_fact_count(conn, start, as_of, metric_version)
     if total == 0:
         return _status_fact(definition, "unavailable", {}, ["no_activity_facts"])
-    qualities = tuple(str(value) for value in definition.threshold["quality"])
+    qualities = tuple(str(value) for value in cast("list[object]", _obj_dict(definition.threshold)["quality"]))
     placeholders = ",".join("?" for _ in qualities)
     row = conn.execute(
         f"""
@@ -393,23 +447,23 @@ def _query_cardiac_drift_status(conn, definition: StatusFactDefinition, as_of: d
             start.isoformat(),
             as_of.isoformat(),
             metric_version,
-            int(definition.threshold["cardiac_drift_significant"]),
+            _as_int(_obj_dict(definition.threshold)["cardiac_drift_significant"]),
             *qualities,
         ],
     ).fetchone()
     if row is None:
         return _status_fact(definition, "inactive", {"quality": list(qualities)})
     evidence = {
-        "activity_id": int(row[0]),
-        "activity_day": _to_iso(row[1]),
-        "cardiac_drift_significant": int(row[2] or 0),
-        "cardiac_drift_quality": str(row[3]),
+        "activity_id": _as_int(_scalar_cell(row, 0)),
+        "activity_day": _to_iso(_scalar_cell(row, 1)),
+        "cardiac_drift_significant": _as_int(_scalar_cell(row, 2)),
+        "cardiac_drift_quality": str(_scalar_cell(row, 3)),
     }
     return _status_fact(definition, "active", evidence)
 
 
 def _query_high_load_hike_status(
-    conn, definition: StatusFactDefinition, as_of: date, metric_version: int
+    conn: DuckDBConn, definition: StatusFactDefinition, as_of: date, metric_version: int
 ) -> StatusFact:
     start = _lookback_start(definition, as_of)
     rows = conn.execute(
@@ -427,16 +481,18 @@ def _query_high_load_hike_status(
     ).fetchall()
     if len(rows) < 2:
         return _status_fact(definition, "unavailable", {"hike_day_count": len(rows)}, ["insufficient_hike_history"])
-    threshold = float(definition.threshold["combined_trimp"])
+    threshold = _as_float(_obj_dict(definition.threshold)["combined_trimp"])
     best_pair: tuple[object, object, float] | None = None
     for previous, current in zip(rows, rows[1:], strict=False):
-        previous_day = _coerce_day(previous[0])
-        current_day = _coerce_day(current[0])
+        prev_day_cell = _scalar_cell(previous, 0)
+        curr_day_cell = _scalar_cell(current, 0)
+        previous_day = _coerce_day(prev_day_cell)
+        current_day = _coerce_day(curr_day_cell)
         if previous_day is None or current_day is None or (current_day - previous_day).days != 1:
             continue
-        combined = float(previous[1] or 0.0) + float(current[1] or 0.0)
+        combined = _as_float(_scalar_cell(previous, 1)) + _as_float(_scalar_cell(current, 1))
         if best_pair is None or combined > best_pair[2]:
-            best_pair = (previous[0], current[0], combined)
+            best_pair = (prev_day_cell, curr_day_cell, combined)
     if best_pair is None:
         return _status_fact(definition, "inactive", {"hike_day_count": len(rows)})
     evidence = {
@@ -447,7 +503,7 @@ def _query_high_load_hike_status(
 
 
 def _query_running_volume_jump_status(
-    conn, definition: StatusFactDefinition, as_of: date, metric_version: int
+    conn: DuckDBConn, definition: StatusFactDefinition, as_of: date, metric_version: int
 ) -> StatusFact:
     week_start = as_of - timedelta(days=as_of.weekday())
     current_start = week_start
@@ -464,17 +520,19 @@ def _query_running_volume_jump_status(
           AND activity_day >= CAST(? AS DATE)
           AND activity_day < CAST(? AS DATE)
     """
-    previous = float(
-        conn.execute(
-            query, [*running_sports, metric_version, previous_start.isoformat(), previous_end.isoformat()]
-        ).fetchone()[0]
-        or 0.0
+    previous = _as_float(
+        _scalar_cell(
+            conn.execute(
+                query, [*running_sports, metric_version, previous_start.isoformat(), previous_end.isoformat()]
+            ).fetchone()
+        )
     )
-    current = float(
-        conn.execute(
-            query, [*running_sports, metric_version, current_start.isoformat(), current_end.isoformat()]
-        ).fetchone()[0]
-        or 0.0
+    current = _as_float(
+        _scalar_cell(
+            conn.execute(
+                query, [*running_sports, metric_version, current_start.isoformat(), current_end.isoformat()]
+            ).fetchone()
+        )
     )
     if previous <= 0:
         return _status_fact(
@@ -499,7 +557,9 @@ def _query_running_volume_jump_status(
         "previous_week_start": previous_start.isoformat(),
     }
     return _status_fact(
-        definition, "active" if increase_pct >= float(definition.threshold["caution_pct"]) else "inactive", evidence
+        definition,
+        "active" if increase_pct >= _as_float(_obj_dict(definition.threshold)["caution_pct"]) else "inactive",
+        evidence,
     )
 
 
@@ -525,11 +585,11 @@ def _status_fact(
 
 
 def _lookback_start(definition: StatusFactDefinition, as_of: date) -> date:
-    lookback_days = int(definition.window.get("lookback_days", 1))
+    lookback_days = _as_int(_obj_dict(definition.window).get("lookback_days"), default=1)
     return as_of - timedelta(days=max(lookback_days - 1, 0))
 
 
-def _activity_fact_count(conn, start: date, as_of: date, metric_version: int) -> int:
+def _activity_fact_count(conn: DuckDBConn, start: date, as_of: date, metric_version: int) -> int:
     row = conn.execute(
         """
         SELECT COUNT(*)
@@ -540,7 +600,7 @@ def _activity_fact_count(conn, start: date, as_of: date, metric_version: int) ->
         """,
         [start.isoformat(), as_of.isoformat(), metric_version],
     ).fetchone()
-    return int(row[0] or 0) if row is not None else 0
+    return _as_int(_scalar_cell(row))
 
 
 def _day_from_timestamp(value: object) -> date | None:
@@ -641,7 +701,7 @@ def _to_iso(value: object) -> str:
 
 
 def _effective_range_for_metric(
-    conn, request: AggregateRequest, metric: MetricDefinition, metric_version: int
+    conn: DuckDBConn | None, request: AggregateRequest, metric: MetricDefinition, metric_version: int
 ) -> tuple[date, date]:
     if request.window_days is not None and request.as_of_day is not None:
         as_of = _parse_day(request.as_of_day, "as_of_day")
@@ -668,7 +728,7 @@ def _effective_range_for_metric(
         f"SELECT MIN({day_column}) AS start_day FROM {view} WHERE {' AND '.join(where)}",
         params,
     ).fetchone()
-    start = row[0] if row is not None else None
+    start = _scalar_cell(row)
     if start is None:
         activity_row = conn.execute(
             """
@@ -678,7 +738,7 @@ def _effective_range_for_metric(
             """,
             [end_day.isoformat()],
         ).fetchone()
-        start = activity_row[0] if activity_row is not None else None
+        start = _scalar_cell(activity_row)
     if start is None:
         return end_day, end_day
     if isinstance(start, date):
@@ -699,7 +759,7 @@ def _view_has_sport(source: str) -> bool:
 
 
 def _query_metric(
-    conn,
+    conn: DuckDBConn,
     request: AggregateRequest,
     metric: MetricDefinition,
     effective_start: date,
@@ -806,7 +866,7 @@ def _quantile_expression(metric: MetricDefinition) -> str:
 
 
 def _query_distribution(
-    conn,
+    conn: DuckDBConn,
     request: AggregateRequest,
     metric: MetricDefinition,
     effective_start: date,
@@ -854,43 +914,39 @@ def _query_distribution(
         GROUP BY bucket_start, output_sport_type, category
         ORDER BY bucket_start, output_sport_type, category
     """
-    grouped: dict[tuple[str, str | None], dict[str, Any]] = {}
+    grouped: dict[tuple[str, str | None], _DistributionGroup] = {}
     for row in _rows(conn.execute(statement, params)):
         bucket_start = _to_iso(row["bucket_start"])
-        sport_type = row["output_sport_type"]
+        sport_cell = row["output_sport_type"]
+        sport_type = sport_cell if isinstance(sport_cell, str) else None
         key = (bucket_start, sport_type)
-        current = grouped.setdefault(
-            key,
-            {
-                "bucket_start": row["bucket_start"],
-                "output_sport_type": sport_type,
-                "distribution": {},
-                "activity_count": 0,
-                "sample_size": 0,
-                "null_count": 0,
-                "excluded_count": 0,
-                "metric_version_count": 0,
-                "materialized_at": None,
-                "completeness_statuses": [],
-                "missing_reason_payloads": [],
-            },
-        )
+        current = grouped.get(key)
+        if current is None:
+            current = _DistributionGroup(bucket_start=row["bucket_start"], output_sport_type=sport_type)
+            grouped[key] = current
         category = row["category"]
         if category is not None:
-            current["distribution"][str(category)] = int(row["category_count"] or 0)
-        current["activity_count"] += int(row["activity_count"] or 0)
-        current["sample_size"] += int(row["sample_size"] or 0)
-        current["null_count"] += int(row["null_count"] or 0)
-        current["metric_version_count"] = max(current["metric_version_count"], int(row["metric_version_count"] or 0))
-        current["materialized_at"] = _max_text(current["materialized_at"], row["materialized_at"])
-        current["completeness_statuses"].extend(row["completeness_statuses"] or [])
-        current["missing_reason_payloads"].extend(row["missing_reason_payloads"] or [])
+            current.distribution[str(category)] = _as_int(row["category_count"])
+        current.activity_count += _as_int(row["activity_count"])
+        current.sample_size += _as_int(row["sample_size"])
+        current.null_count += _as_int(row["null_count"])
+        current.metric_version_count = max(current.metric_version_count, _as_int(row["metric_version_count"]))
+        current.materialized_at = _max_text(current.materialized_at, row["materialized_at"])
+        statuses = row["completeness_statuses"]
+        if isinstance(statuses, list):
+            current.completeness_statuses.extend(cast("list[object]", statuses))
+        payloads = row["missing_reason_payloads"]
+        if isinstance(payloads, list):
+            current.missing_reason_payloads.extend(cast("list[object]", payloads))
 
-    return [_aggregate_row_from_group(metric, request, effective_start, effective_end, row) for row in grouped.values()]
+    return [
+        _aggregate_row_from_group(metric, request, effective_start, effective_end, group.as_row())
+        for group in grouped.values()
+    ]
 
 
 def _query_hr_zone_distribution(
-    conn,
+    conn: DuckDBConn,
     request: AggregateRequest,
     metric: MetricDefinition,
     effective_start: date,
@@ -943,16 +999,68 @@ def _query_hr_zone_distribution(
         GROUP BY bucket_start, output_sport_type
         ORDER BY bucket_start, output_sport_type
     """
-    rows = []
+    rows: list[AggregateRow] = []
     for row in _rows(conn.execute(statement, params)):
-        row["distribution"] = {f"z{idx}": float(row[f"z{idx}"] or 0.0) for idx in range(1, 6)}
+        row["distribution"] = {f"z{idx}": _as_float(row[f"z{idx}"]) for idx in range(1, 6)}
         rows.append(_aggregate_row_from_group(metric, request, effective_start, effective_end, row))
     return rows
 
 
-def _rows(result) -> list[dict[str, Any]]:
-    columns = [item[0] for item in result.description]
-    return [dict(zip(columns, row, strict=False)) for row in result.fetchall()]
+def _rows(result: DuckDBConn) -> list[dict[str, object]]:
+    # The fetched cell tuple is ``tuple[Any, ...]``; cast it to ``tuple[object,
+    # ...]`` so the assembled row maps column -> opaque ``object`` rather than
+    # leaking ``Any`` into every downstream ``row[...]`` access. Callers coerce
+    # each cell explicitly (``_to_iso``/``int``/``float``) at the point of use.
+    columns: list[str] = [item[0] for item in result.description]
+    return [dict(zip(columns, cast("tuple[object, ...]", row), strict=False)) for row in result.fetchall()]
+
+
+def _scalar_cell(row: tuple[Any, ...] | None, index: int = 0) -> object:
+    """Return one cell from a raw ``fetchone()`` tuple as opaque ``object``.
+
+    Centralizes the ``Any -> object`` narrowing for the status-fact queries, which
+    read positional aggregate columns off a single fetched row. The bare DB-API
+    tuple is ``tuple[Any, ...]``; this hands back an ``object`` the caller coerces
+    (``int``/``float``/``str``/``_to_iso``) explicitly.
+    """
+    if row is None:
+        return None
+    return cast("tuple[object, ...]", row)[index]
+
+
+# ─── Typed cell accessors (object -> scalar narrowing) ───
+#
+# Mirror of the repository's accessors: each coerces a single opaque ``object``
+# cell to a concrete scalar, collapsing SQL NULL to the default. They consume the
+# ``object`` cells produced by ``_rows``/``_scalar_cell`` and by ``_obj_dict``
+# (below), so the unavoidable ``Any`` is narrowed once and never re-widens.
+
+
+def _as_int(value: object, default: int = 0) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float, str)):
+        return int(value)
+    raise TypeError(f"expected an int-like cell, got {type(value).__name__}")
+
+
+def _as_float(value: object, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    if isinstance(value, (int, float, str)):
+        return float(value)
+    raise TypeError(f"expected a float-like cell, got {type(value).__name__}")
+
+
+def _obj_dict(value: dict[str, Any]) -> dict[str, object]:
+    """View an ``Any``-valued registry dict (``StatusFactDefinition.threshold`` /
+    ``.window``) as ``dict[str, object]`` so element reads are opaque ``object``
+    (then coerced via ``_as_int``/``_as_float``) instead of leaking ``Any``. The
+    registry dicts are shared contracts in ``types.py`` (out of this wave's
+    scope); narrowing them at the read site keeps the typing local."""
+    return cast("dict[str, object]", value)
 
 
 def _bucket_expression(request: AggregateRequest, day_column: str, effective_start: date) -> str:
@@ -1064,29 +1172,32 @@ def _aggregate_row_from_group(
     request: AggregateRequest,
     effective_start: date,
     effective_end: date,
-    row: dict[str, Any],
+    row: dict[str, object],
 ) -> AggregateRow:
     bucket_start = _to_iso(row["bucket_start"])
     bucket_end = _bucket_end(bucket_start, request, effective_end)
     value = _aggregate_value(metric, row)
-    distribution = row.get("distribution") if metric.aggregate_mode == "distribution" else None
+    raw_distribution = row.get("distribution") if metric.aggregate_mode == "distribution" else None
+    distribution = raw_distribution if isinstance(raw_distribution, dict) else None
     quantiles = _quantiles(metric, row)
     missing_reasons = _missing_reasons(row)
-    excluded_count = int(row.get("excluded_count") or 0)
-    null_count = int(row.get("null_count") or 0)
+    excluded_count = _as_int(row.get("excluded_count"))
+    null_count = _as_int(row.get("null_count"))
     if excluded_count:
         missing_reasons.append("missing_denominator")
-    row_count = int(row.get("row_count") or 0)
-    if isinstance(distribution, dict) and row_count == 0:
-        row_count = sum(distribution.values())
+    row_count = _as_int(row.get("row_count"))
+    if distribution is not None and row_count == 0:
+        row_count = sum(_as_int(count) for count in distribution.values())
+    statuses = row.get("completeness_statuses")
     completeness = _completeness_status(
         value=value,
         distribution=distribution,
         row_count=row_count,
         null_count=null_count,
         excluded_count=excluded_count,
-        statuses=row.get("completeness_statuses") or [],
+        statuses=statuses if isinstance(statuses, list) else [],
     )
+    sport_type = row.get("output_sport_type")
     return AggregateRow(
         bucket_start=bucket_start,
         bucket_end=bucket_end,
@@ -1099,33 +1210,31 @@ def _aggregate_row_from_group(
         value=value,
         quantiles=quantiles,
         distribution=distribution,
-        sample_size=int(row.get("sample_size") or 0),
-        activity_count=int(row.get("activity_count") or 0),
+        sample_size=_as_int(row.get("sample_size")),
+        activity_count=_as_int(row.get("activity_count")),
         null_count=null_count,
         excluded_count=excluded_count,
         completeness_status=completeness,
         missing_reasons=sorted(set(missing_reasons)),
-        metric_version_status=_metric_version_status(metric, int(row.get("metric_version_count") or 0)),
+        metric_version_status=_metric_version_status(metric, _as_int(row.get("metric_version_count"))),
         materialized_at=str(row["materialized_at"]) if row.get("materialized_at") else None,
         mirror_freshness=None,
         read_model_freshness=None,
         scope=request.scope,
-        sport_type=row.get("output_sport_type"),
+        sport_type=sport_type if isinstance(sport_type, str) else None,
     )
 
 
-def _aggregate_value(metric: MetricDefinition, row: dict[str, Any]) -> float | int | str | None:
+def _aggregate_value(metric: MetricDefinition, row: dict[str, object]) -> float | int | str | None:
     if metric.aggregate_mode == "distribution":
         return None
     value = row.get("value")
     if value is None:
         return None
-    if metric.metric_id in {"moving_time_min", "elapsed_time_min"}:
-        return float(value)
-    return float(value)
+    return _as_float(value)
 
 
-def _quantiles(metric: MetricDefinition, row: dict[str, Any]) -> dict[str, float] | None:
+def _quantiles(metric: MetricDefinition, row: dict[str, object]) -> dict[str, float] | None:
     if metric.aggregate_mode != "quantile":
         return None
     value = row.get("value")
@@ -1134,24 +1243,28 @@ def _quantiles(metric: MetricDefinition, row: dict[str, Any]) -> dict[str, float
     return _quantiles_from_group(row)
 
 
-def _quantiles_from_group(row: dict[str, Any]) -> dict[str, float] | None:
+def _quantiles_from_group(row: dict[str, object]) -> dict[str, float] | None:
     # The quantile list is fetched by a focused follow-up query to keep the row contract stable.
     values = row.get("quantile_values")
     if not values:
         median = row.get("value")
         if median is None:
             return None
-        return {label: float(median) for label in DEFAULT_AGGREGATE_QUANTILES}
-    return {label: float(value) for label, value in zip(DEFAULT_AGGREGATE_QUANTILES, values, strict=False)}
+        median_value = _as_float(median)
+        return {label: median_value for label in DEFAULT_AGGREGATE_QUANTILES}
+    if not isinstance(values, list):
+        return None
+    return {label: _as_float(value) for label, value in zip(DEFAULT_AGGREGATE_QUANTILES, values, strict=False)}
 
 
-def _missing_reasons(row: dict[str, Any]) -> list[str]:
+def _missing_reasons(row: dict[str, object]) -> list[str]:
     reasons: list[str] = []
-    for payload in row.get("missing_reason_payloads") or []:
+    payloads = row.get("missing_reason_payloads")
+    for payload in payloads if isinstance(payloads, list) else []:
         if payload is None:
             continue
         try:
-            parsed = json.loads(str(payload))
+            parsed = cast("object", json.loads(str(payload)))
         except json.JSONDecodeError:
             parsed = [str(payload)]
         if isinstance(parsed, list):

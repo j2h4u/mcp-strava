@@ -3,11 +3,17 @@
 import threading
 from pathlib import Path
 from threading import RLock
-from typing import Any
 
 import duckdb
 
 from mcp_strava.settings import get_settings
+
+# The concrete DuckDB connection type. Carrying it through every helper (instead
+# of a bare ``Any``) is what lets the row-fetch chain — ``conn.execute(...)
+# .fetchall()`` / ``.description`` — type as ``list[tuple[Any, ...]]`` and the
+# fully-typed description tuples, narrowing the unavoidable ``Any`` down to just
+# the individual cell values rather than the whole connection surface.
+DuckDBConn = duckdb.DuckDBPyConnection
 
 _DUCKDB_PROCESS_LOCK = RLock()
 
@@ -20,7 +26,7 @@ def duckdb_process_lock() -> RLock:
     return _DUCKDB_PROCESS_LOCK
 
 
-def _connect_or_translate_lock(path: Path, *, read_only: bool):
+def _connect_or_translate_lock(path: Path, *, read_only: bool) -> DuckDBConn:
     try:
         return duckdb.connect(database=str(path), read_only=read_only)
     except duckdb.IOException as exc:
@@ -29,14 +35,14 @@ def _connect_or_translate_lock(path: Path, *, read_only: bool):
         raise
 
 
-def open_expected_mirror_db(path: str | Path, read_only: bool = False):
+def open_expected_mirror_db(path: str | Path, read_only: bool = False) -> DuckDBConn:
     db_path = Path(path)
     if not db_path.exists():
         raise RuntimeError(f"Expected DuckDB mirror does not exist: {db_path}")
     return _connect_or_translate_lock(db_path, read_only=read_only)
 
 
-def open_fixture_db(path: str | Path):
+def open_fixture_db(path: str | Path) -> DuckDBConn:
     db_path = Path(path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     return _connect_or_translate_lock(db_path, read_only=False)
@@ -58,11 +64,11 @@ class MirrorConn:
     fail-closed expected-mirror check is always applied.
     """
 
-    def __enter__(self):
+    def __enter__(self) -> DuckDBConn:
         self.conn = open_expected_mirror_db(_db_path())
         return self.conn
 
-    def __exit__(self, _exc_type, _exc_val, _exc_tb):
+    def __exit__(self, _exc_type: object, _exc_val: object, _exc_tb: object) -> None:
         self.conn.close()
 
 
@@ -79,8 +85,8 @@ class MirrorConn:
 _thread_state = threading.local()
 
 
-def _thread_read_connections() -> dict[str, Any]:
-    connections = getattr(_thread_state, "read_connections", None)
+def _thread_read_connections() -> dict[str, DuckDBConn]:
+    connections: dict[str, DuckDBConn] | None = getattr(_thread_state, "read_connections", None)
     if connections is None:
         connections = {}
         _thread_state.read_connections = connections
@@ -97,7 +103,7 @@ class ReadConn:
     ``reset_thread_connections()`` for shutdown and per-test isolation.
     """
 
-    def __enter__(self):
+    def __enter__(self) -> DuckDBConn:
         self._path = _db_path()
         connections = _thread_read_connections()
         conn = connections.get(self._path)
@@ -106,7 +112,7 @@ class ReadConn:
             connections[self._path] = conn
         return conn
 
-    def __exit__(self, exc_type, _exc_val, _exc_tb):
+    def __exit__(self, exc_type: object, _exc_val: object, _exc_tb: object) -> bool:
         if exc_type is not None:
             conn = _thread_read_connections().pop(self._path, None)
             if conn is not None:
@@ -119,7 +125,7 @@ class ReadConn:
 
 def reset_thread_connections() -> None:
     """Close and clear this thread's cached read connections (tests, shutdown)."""
-    connections = getattr(_thread_state, "read_connections", None)
+    connections: dict[str, DuckDBConn] | None = getattr(_thread_state, "read_connections", None)
     if not connections:
         return
     for conn in list(connections.values()):
