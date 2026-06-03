@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-stopped_at: Phase 14 verified and complete
-last_updated: "2026-06-03T14:34:26.725Z"
-last_activity: 2026-06-03 -- Phase 15 execution started
+stopped_at: Completed 15-01-PLAN.md (source-text logic fingerprint)
+last_updated: "2026-06-03T14:55:17.318Z"
+last_activity: 2026-06-03 -- 15-01 complete (source-text logic fingerprint)
 progress:
   total_phases: 15
   completed_phases: 14
   total_plans: 65
-  completed_plans: 61
-  percent: 94
+  completed_plans: 62
+  percent: 93
 ---
 
 # Project State
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 ## Current Position
 
 Phase: 15 (self-invalidating-read-model-source-fingerprint-auto-recompu) — EXECUTING
-Plan: 2 of 5
-Status: Executing Phase 15
+Plan: 3 of 5
+Status: Ready to execute
 Last activity: 2026-06-03 -- 15-01 complete (source-text logic fingerprint)
 
 ## Performance Metrics
@@ -107,6 +107,7 @@ Last activity: 2026-06-03 -- 15-01 complete (source-text logic fingerprint)
 | Phase 14 P01 | 12 min | 2 tasks | 2 files |
 | Phase 14 P02 | 10 min | 3 tasks | 3 files |
 | Phase 14 P03 | 11 min | 1 tasks | 3 files |
+| Phase 15 P02 | 16min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -199,6 +200,7 @@ Recent decisions affecting current work:
 - [Phase ?]: typeCheckingMode = standard pinned explicitly in [tool.pyright] — D-05
 - [Phase ?]: BLE001 noqa comments removed from refresh/worker.py and refresh/health.py — D-07
 - [Phase 15]: COMPUTE_SOURCE_MODULES is the FULL recursive mcp_strava import closure of the materializer (14 modules), not a hand-picked compute subset — coverage is automatic-by-construction; a completeness AST-walk test fails on any drift. compute_logic_fingerprint() = sha256 over sorted name\x00source\x00 pairs; runtime import_module inside the fn avoids the repository->schema->metric_registry cycle.
+- [Phase ?]: [Phase 15]: metric_version is now system-managed via the read_model_logic_version singleton (id=1). Seed adopts the CURRENT live fingerprint at construction so deploy = no recompute; current_metric_version() memoizes the resolved int and bump_logic_version() is the single guaranteed memo-invalidation point (cycle-2 HIGH). Fingerprint compute in the seed is guarded by its own try/except (log-warn-skip); 15-03 owns the stored-is-None self-heal.
 
 ### Roadmap Evolution
 
@@ -231,7 +233,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-03
+Last session: 2026-06-03T14:54:52.331Z
 Stopped at: Completed 15-01-PLAN.md (source-text logic fingerprint)
 Resume file: None
 
