@@ -407,3 +407,106 @@ def test_safe_identifier_rejects_sql_injection() -> None:
     for bad in ["facts; DROP TABLE x", "a'b", "a b", "a-b", "", "1abc", "x)", "a,b"]:
         with pytest.raises(ValueError):
             _safe_identifier(bad)
+
+
+def _fresh_logic_version_repo():
+    """Fresh in-memory mirror with full schema + a seeded logic-version sidecar."""
+    import duckdb
+
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    conn = duckdb.connect(":memory:")
+    create_schema(conn)
+    return DuckDBRepository.from_connection(conn), conn
+
+
+def test_logic_version_seed_adopts_current_fingerprint_on_fresh_db() -> None:
+    """Fresh DB: from_connection seeds exactly one sidecar row whose fingerprint
+    equals the live compute_logic_fingerprint() and whose version is >= 1.
+
+    Seed = current by construction means the first refresh after deploy sees
+    stored == live and does NOT recompute (no recompute side effect from deploy).
+    """
+    from mcp_strava.metric_registry import compute_logic_fingerprint
+
+    repo, conn = _fresh_logic_version_repo()
+    count = conn.execute("SELECT COUNT(*) FROM read_model_logic_version").fetchone()[0]
+    assert count == 1
+
+    stored = repo.current_logic_version()
+    assert stored is not None
+    assert stored["logic_fingerprint"] == compute_logic_fingerprint()
+    assert int(stored["metric_version"]) >= 1
+    assert repo.current_metric_version() == int(stored["metric_version"])
+
+
+def test_logic_version_helpers_round_trip_via_bump() -> None:
+    """bump_logic_version advances both fields; the read helpers reflect them."""
+    repo, _conn = _fresh_logic_version_repo()
+    v = repo.current_metric_version()
+
+    repo.bump_logic_version(v + 1, "deadbeef", "2026-06-03T01:02:03")
+
+    stored = repo.current_logic_version()
+    assert stored is not None
+    assert int(stored["metric_version"]) == v + 1
+    assert stored["logic_fingerprint"] == "deadbeef"
+    assert stored["changed_at"] == "2026-06-03T01:02:03"
+    assert repo.current_metric_version() == v + 1
+
+
+def test_bump_logic_version_invalidates_current_metric_version_memo() -> None:
+    """cycle-2 HIGH: populating the memo at v then bumping to v+1 on the SAME
+    repo must yield v+1 — the memo cannot serve the stale pre-bump version.
+
+    Without memo invalidation, materialize would run at v while dirty rows queue
+    at v+1 and the self-invalidation would silently no-op.
+    """
+    repo, _conn = _fresh_logic_version_repo()
+
+    v = repo.current_metric_version()  # populates the memo at v
+    repo.bump_logic_version(v + 1, "feedface", "2026-06-03T02:00:00")
+
+    # Same instance, memo must have been cleared inside bump_logic_version().
+    assert repo.current_metric_version() == v + 1
+
+
+def test_logic_version_seed_is_idempotent_across_constructions() -> None:
+    """Calling from_connection twice on the same DB does not insert a 2nd row."""
+    import duckdb
+
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    conn = duckdb.connect(":memory:")
+    create_schema(conn)
+    DuckDBRepository.from_connection(conn)
+    DuckDBRepository.from_connection(conn)
+
+    count = conn.execute("SELECT COUNT(*) FROM read_model_logic_version").fetchone()[0]
+    assert count == 1
+
+
+def test_logic_version_seed_skips_on_import_error_and_reads_fall_back(monkeypatch) -> None:
+    """ImportError safety: if compute_logic_fingerprint raises inside the seed,
+    from_connection() still succeeds (does not propagate), the sidecar is left
+    unseeded, and current_metric_version() returns the fact-table fallback (1 on
+    an empty DB) rather than crashing. Adoption then self-heals at 15-03.
+    """
+    import duckdb
+
+    import mcp_strava.metric_registry as mr
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    def _boom() -> str:
+        raise ImportError("simulated missing compute module")
+
+    monkeypatch.setattr(mr, "compute_logic_fingerprint", _boom)
+
+    conn = duckdb.connect(":memory:")
+    create_schema(conn)
+    repo = DuckDBRepository.from_connection(conn)  # must NOT raise
+
+    assert repo.current_logic_version() is None  # left unseeded
+    count = conn.execute("SELECT COUNT(*) FROM read_model_logic_version").fetchone()[0]
+    assert count == 0
+    assert repo.current_metric_version() == 1  # fact-table-max (empty) -> 1, no crash
