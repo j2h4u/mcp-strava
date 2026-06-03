@@ -30,6 +30,12 @@ Row = dict[str, Any]
 
 CURRENT_METRIC_VERSION = 1
 
+
+def _emit(event: str, **fields: object) -> None:
+    """Emit a structured JSON diagnostic event to stdout (house log style)."""
+    print(json.dumps({"event": event, **fields}, ensure_ascii=False), flush=True)
+
+
 # A few internal queries must interpolate table/column names (DuckDB does not
 # parameterize identifiers). All current callers pass schema-defined literals,
 # never Strava-sourced strings — but this guard rejects anything that is not a
@@ -177,6 +183,11 @@ class DuckDBRepository:
     _transaction_depth: int = field(default=0, init=False, repr=False)
     _transaction_lock_held: bool = field(default=False, init=False, repr=False)
     _read_model_enabled_cache: bool | None = field(default=None, init=False, repr=False)
+    # One-shot memo for current_metric_version(): the unseeded fallback scans 4
+    # UNION ALL'd fact tables, so the resolved version is cached for the repo
+    # lifetime. None is the sentinel for "not yet resolved"; bump_logic_version()
+    # resets it to None so a post-bump read re-reads the freshly-written sidecar.
+    _current_metric_version_cache: int | None = field(default=None, init=False, repr=False)
 
     @classmethod
     def from_path(cls, db_path: str | Path, expected_mirror: bool = False) -> DuckDBRepository:
@@ -206,6 +217,56 @@ class DuckDBRepository:
         except duckdb.CatalogException:
             # Table not created yet (fresh DB before create_schema) — expected.
             pass
+        self._seed_logic_version()
+
+    def _seed_logic_version(self) -> None:
+        """Idempotently seed the read_model_logic_version singleton with the
+        CURRENT live fingerprint, so the first refresh after deploy sees
+        stored == live and does NOT recompute (adopt-current by construction).
+
+        Robustness: compute_logic_fingerprint() does runtime source reads
+        (import_module + inspect.getsource) that can raise ImportError or an
+        OSError — neither is a duckdb.CatalogException, so the constructor-level
+        guard would NOT catch them. They are wrapped here in their own
+        try/except Exception (log-warn-skip): on failure the sidecar is left
+        unseeded and current_metric_version() falls back to the fact-table max,
+        so reads stay safe. Adoption then self-heals at the 15-03 materialize
+        chokepoint (stored is None -> adopt-current, no dirty enqueue).
+        """
+        # CREATE IF NOT EXISTS so the seed path works on a live pre-15-02 DB that
+        # predates create_schema's DDL; idempotent and order-independent.
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS read_model_logic_version (
+                id BIGINT PRIMARY KEY,
+                metric_version BIGINT NOT NULL,
+                logic_fingerprint VARCHAR NOT NULL,
+                changed_at VARCHAR NOT NULL
+            )
+            """
+        )
+        existing = self.conn.execute("SELECT 1 FROM read_model_logic_version WHERE id=1").fetchone()
+        if existing is not None:
+            return
+        try:
+            from mcp_strava.metric_registry import compute_logic_fingerprint
+
+            fingerprint = compute_logic_fingerprint()
+            seed_version = self._max_fact_metric_version() or 1
+            self.conn.execute(
+                """
+                INSERT INTO read_model_logic_version (id, metric_version, logic_fingerprint, changed_at)
+                VALUES (1, ?, ?, ?)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                [seed_version, fingerprint, self._now_iso()],
+            )
+        except Exception as exc:  # noqa: BLE001 — log-warn-skip; reads fall back, 15-03 self-heals
+            _emit(
+                "read_model_logic_version_seed_skipped",
+                error_type=type(exc).__name__,
+                error=str(exc)[:200],
+            )
 
     def __enter__(self) -> DuckDBRepository:
         return self
@@ -644,6 +705,87 @@ class DuckDBRepository:
             [payload[col] for col in columns],
         )
         return int(payload["id"])
+
+    # Read-model logic version (system-managed metric_version source of truth)
+    def _max_fact_metric_version(self) -> int | None:
+        """Max metric_version present across the four fact tables, or None when
+        all are empty. Used as the seed/fallback when the sidecar is unseeded."""
+        row = self._fetchone(
+            """
+            SELECT MAX(metric_version) AS v
+            FROM (
+                SELECT metric_version FROM activity_metric_facts
+                UNION ALL
+                SELECT metric_version FROM daily_load_facts
+                UNION ALL
+                SELECT metric_version FROM training_model_daily
+                UNION ALL
+                SELECT metric_version FROM rolling_period_facts
+            ) all_facts
+            """
+        )
+        if row is None or row.get("v") is None:
+            return None
+        return int(row["v"])
+
+    def current_logic_version(self) -> dict[str, Any] | None:
+        """Return the singleton sidecar row ({metric_version, logic_fingerprint,
+        changed_at}) or None when the table is empty/absent (unseeded DB)."""
+        try:
+            return self._fetchone(
+                """
+                SELECT metric_version, logic_fingerprint, changed_at
+                FROM read_model_logic_version
+                WHERE id=1
+                """
+            )
+        except duckdb.CatalogException:
+            # Sidecar table absent (partially-migrated DB) — treat as unseeded.
+            return None
+
+    def current_metric_version(self) -> int:
+        """Return the system-managed metric_version.
+
+        Source of truth is the read_model_logic_version sidecar. When the sidecar
+        is unseeded (a transient seed failure left it empty/absent), fall back to
+        the max metric_version present across fact tables, else 1 — so reads never
+        break on a partially-migrated DB. The resolved value is memoized for the
+        repo lifetime to avoid re-scanning the 4-table UNION per call;
+        bump_logic_version() clears the memo so a post-bump read sees the new int.
+        """
+        if self._current_metric_version_cache is not None:
+            return self._current_metric_version_cache
+        stored = self.current_logic_version()
+        if stored is not None:
+            resolved = int(stored["metric_version"])
+        else:
+            resolved = self._max_fact_metric_version() or 1
+        self._current_metric_version_cache = resolved
+        return resolved
+
+    def bump_logic_version(self, metric_version: int, logic_fingerprint: str, changed_at: str) -> None:
+        """Upsert the singleton sidecar row to (metric_version, fingerprint, ts).
+
+        After the upsert commits, invalidate the current_metric_version memo on
+        THIS repo instance (cycle-2 HIGH): the recompute path bumps to N+1 and
+        immediately needs current_metric_version() to return N+1 so the
+        materialize version and the enqueued dirty rows agree. Clearing the memo
+        here is the single guaranteed point that closes that — callers never have
+        to remember to reset it.
+        """
+        self._execute(
+            """
+            INSERT INTO read_model_logic_version (id, metric_version, logic_fingerprint, changed_at)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+                metric_version=excluded.metric_version,
+                logic_fingerprint=excluded.logic_fingerprint,
+                changed_at=excluded.changed_at
+            """,
+            [metric_version, logic_fingerprint, changed_at],
+        )
+        self._commit_if_standalone()
+        self._current_metric_version_cache = None
 
     # Read-model fact queries
     def read_model_status(self, metric_version: int | None = None) -> dict[str, Any]:
