@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: completed
+status: executing
 stopped_at: Phase 14 verified and complete
-last_updated: "2026-06-03T13:55:19.274Z"
-last_activity: 2026-06-03 -- Phase 15 planning complete
+last_updated: "2026-06-03T14:34:26.725Z"
+last_activity: 2026-06-03 -- Phase 15 execution started
 progress:
-  total_phases: 14
+  total_phases: 15
   completed_phases: 14
-  total_plans: 60
-  completed_plans: 60
-  percent: 100
+  total_plans: 65
+  completed_plans: 61
+  percent: 94
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Phase 14 — metric-platform-registry-owned-fact-schema
+**Current focus:** Phase 15 — self-invalidating-read-model-source-fingerprint-auto-recompu
 
 ## Current Position
 
-Phase: 14
-Plan: Not started
-Status: complete
-Last activity: 2026-06-03 -- Phase 15 planning complete
+Phase: 15 (self-invalidating-read-model-source-fingerprint-auto-recompu) — EXECUTING
+Plan: 2 of 5
+Status: Executing Phase 15
+Last activity: 2026-06-03 -- 15-01 complete (source-text logic fingerprint)
 
 ## Performance Metrics
 
@@ -198,6 +198,7 @@ Recent decisions affecting current work:
 - [Phase ?]: constants.py re-export block uses noqa: E402,F401,I001 — ruff --fix is destructive on aliased re-exports at module tail
 - [Phase ?]: typeCheckingMode = standard pinned explicitly in [tool.pyright] — D-05
 - [Phase ?]: BLE001 noqa comments removed from refresh/worker.py and refresh/health.py — D-07
+- [Phase 15]: COMPUTE_SOURCE_MODULES is the FULL recursive mcp_strava import closure of the materializer (14 modules), not a hand-picked compute subset — coverage is automatic-by-construction; a completeness AST-walk test fails on any drift. compute_logic_fingerprint() = sha256 over sorted name\x00source\x00 pairs; runtime import_module inside the fn avoids the repository->schema->metric_registry cycle.
 
 ### Roadmap Evolution
 
@@ -230,8 +231,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-31T12:33:00.140Z
-Stopped at: Phase 14 verified and complete
+Last session: 2026-06-03
+Stopped at: Completed 15-01-PLAN.md (source-text logic fingerprint)
 Resume file: None
 
 ### Post-milestone admin-CLI cleanup (tasks 10-13) — CLOSED 2026-05-28

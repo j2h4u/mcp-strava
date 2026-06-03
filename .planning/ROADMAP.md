@@ -342,7 +342,7 @@ No backlog items currently.
 Plans:
 
 **Wave 1**
-- [ ] 15-01-PLAN.md — source-text logic fingerprint (`COMPUTE_SOURCE_MODULES` + `compute_logic_fingerprint()`) + determinism/completeness tests (TDD)
+- [x] 15-01-PLAN.md — source-text logic fingerprint (`COMPUTE_SOURCE_MODULES` + `compute_logic_fingerprint()`) + determinism/completeness tests (TDD)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 15-02-PLAN.md — `read_model_logic_version` sidecar table + version helpers + idempotent seed-at-current migration
