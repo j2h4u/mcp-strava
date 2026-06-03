@@ -124,3 +124,12 @@ SPORT_RUN = "Run"
 SPORT_WALK = "Walk"
 SPORT_HIKE = "Hike"
 SPORT_TRAILRUN = "TrailRun"
+
+# Walk TRIMP discount: a walk should not count at full training load in the
+# Banister model. The Walk-sport portion of a day's TRIMP is multiplied by this
+# factor when computing the day's EFFECTIVE TRIMP (observed stays the raw sum).
+# 0.5 means walks contribute at half their measured heart-rate load.
+# This is a developer-authored constant (never input-derived). It lives here in
+# constants.py — a module in COMPUTE_SOURCE_MODULES — so editing this value flips
+# the logic fingerprint and auto-recomputes the read model (zero-knob).
+WALK_TRIMP_DISCOUNT = 0.5

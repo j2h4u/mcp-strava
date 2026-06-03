@@ -4,8 +4,10 @@ All functions take pre-fetched plain dict rows and return dataclasses or None.
 No storage imports — callers are responsible for fetching rows via the repository.
 """
 
+from collections.abc import Mapping
+
 from mcp_strava.cardiac_drift import cardiac_drift as _drift_algo
-from mcp_strava.constants import Config
+from mcp_strava.constants import SPORT_WALK, WALK_TRIMP_DISCOUNT, Config
 from mcp_strava.types import CardiacDriftResult, HrRecovery, VerticalSpeed
 
 # ─── Intra-Activity Cardiac Drift ───
@@ -260,3 +262,30 @@ def calc_hrr_pct(median_hr, hr_rest, hr_max):
     if hr_max_f <= hr_rest_f:
         return None
     return round((median_hr_f - hr_rest_f) / (hr_max_f - hr_rest_f) * 100, 1)
+
+
+# ─── Walk TRIMP discount (per-sport daily effective TRIMP) ───
+
+
+def discounted_effective_trimp(by_sport: Mapping[str, float]) -> float:
+    """Pure: a single day's EFFECTIVE TRIMP from its per-sport RAW daily TRIMP.
+
+    Each sport's raw TRIMP is multiplied by WALK_TRIMP_DISCOUNT if the sport is a
+    Walk, else by 1.0 (full load). The multiplied values are summed and rounded
+    ONCE at the end — no per-sport intermediate rounding, so there is no rounding
+    drift when several sports share a day.
+
+    Args:
+        by_sport: {sport_type -> observed raw daily TRIMP} for ONE day.
+
+    Returns:
+        The discounted daily effective TRIMP (float). Empty input -> 0.0.
+
+    Examples (WALK_TRIMP_DISCOUNT == 0.5):
+        {"Run": 100}             -> 100.0   (unchanged)
+        {"Walk": 80}             -> 40.0    (0.5x)
+        {"Run": 100, "Walk": 80} -> 140.0   (100 + 40)
+        {}                       -> 0.0
+    """
+    total = sum(raw * (WALK_TRIMP_DISCOUNT if sport == SPORT_WALK else 1.0) for sport, raw in by_sport.items())
+    return round(float(total), 1)

@@ -691,18 +691,34 @@ def test_walk_discount_recomputes_end_to_end_on_fingerprint_mismatch(tmp_path: P
         # WALK_TRIMP_DISCOUNT in source would look — stored stale, live moved on).
         repo.bump_logic_version(1, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
 
-        dirty_before = len(repo.dirty_activity_rows())
+        # The N=1 cycle already cleared the dirty queue, so it is empty here; the
+        # mass-enqueue we are proving happens INSIDE the stage (the chokepoint
+        # re-queues every activity at N+1 before re-materializing). We assert the
+        # enqueue + recompute fired via the run record below, not a pre-stage count.
         result = materialize_read_model_stage(repo, "2026-05-24T13:00:00", None)
 
+        # Activities the chokepoint re-materialized at the bumped version (proves
+        # the mass-enqueue then ran through materialization, not a stale no-op).
+        materialized_at_bump = int(
+            repo.conn.execute(
+                """
+                SELECT activities_materialized FROM read_model_refresh_runs
+                WHERE status = 'ok' AND metric_version = 2 ORDER BY id DESC LIMIT 1
+                """
+            ).fetchone()[0]
+        )
+
         bumped = repo.current_metric_version()
-        # The re-materialized daily fact at the bumped version carries the discount.
-        walk_day_facts = repo.fetch_daily_load_facts("2026-05-21", "2026-05-22", scope="all")
+        # The re-materialized daily fact at the BUMPED version carries the discount.
+        # Pin to metric_version=2 — the table still holds the v1 row from the first
+        # cycle, and an unpinned fetch would ambiguously return both versions.
+        walk_day_facts = repo.fetch_daily_load_facts("2026-05-21", "2026-05-22", scope="all", metric_version=2)
         walk_day_fact = next(f for f in walk_day_facts if str(f["day"]) == "2026-05-21")
 
     # (1) version advanced to N+1
     assert bumped == 2, "fingerprint mismatch must bump metric_version to N+1"
-    # (2) the mass-enqueue fired (every activity re-queued, then materialized/cleared)
-    assert dirty_before >= 1
+    # (2) the mass-enqueue + recompute fired: both seed activities re-materialized at N+1
+    assert materialized_at_bump >= 2
     assert result.get("activities_materialized", 0) >= 1
     # (3) the re-materialized walk-day effective_trimp reflects the current discount
     assert walk_day_fact["metric_version"] == 2

@@ -14,6 +14,7 @@ import duckdb
 from mcp_strava.adapters.duckdb.connection import duckdb_process_lock, open_expected_mirror_db, open_fixture_db
 from mcp_strava.adapters.duckdb.schema import ensure_provenance_columns
 from mcp_strava.constants import Config
+from mcp_strava.metrics import discounted_effective_trimp
 from mcp_strava.sports import SPORT_TRAINING as TRAINING_SPORTS
 from mcp_strava.types import (
     ALLOWED_REASON_CODES,
@@ -1302,6 +1303,59 @@ class DuckDBRepository:
         )
         return {str(row["day"]): round(float(row["trimp"]), 1) for row in rows}
 
+    def observed_trimp_history_by_sport(
+        self,
+        *,
+        bounds: list[int],
+        since_day: str | None = None,
+        until_day: str | None = None,
+        sport_filter: str | None = None,
+    ) -> dict[str, dict[str, float]]:
+        """Return daily RAW TRIMP broken down per sport: {day -> {sport -> trimp}}.
+
+        Sibling of observed_trimp_history that adds sport_type to the GROUP BY.
+        It MUST share the same date-range / bounds / sport_filter parameters and
+        the same build_trimp_sql + _sport_where_clause as observed_trimp_history,
+        so the per-sport breakdown stays aligned with the per-day total (the raw
+        per-sport values for a day sum to that day's undiscounted observed total).
+
+        The discount itself is NOT applied here — these are the UNDISCOUNTED raw
+        per-sport values; discounted_effective_trimp() in metrics.py owns the
+        Walk multiplier. This method only supplies the per-sport map it consumes.
+        """
+        where = ["s.heartrate IS NOT NULL"]
+        params: list[object] = []
+        if since_day is not None:
+            where.append("a.activity_day >= CAST(? AS DATE)")
+            params.append(since_day)
+        if until_day is not None:
+            where.append("a.activity_day <= CAST(? AS DATE)")
+            params.append(until_day)
+        sport_sql, sport_params = self._sport_where_clause(sport_filter)
+        params.extend(sport_params)
+        rows = self._fetchall(
+            """
+            SELECT a.activity_day AS day,
+                   a.sport_type AS sport,
+                   """
+            + build_trimp_sql(bounds, alias="s.")
+            + """
+            FROM activities a
+            JOIN streams s ON a.id = s.activity_id
+            WHERE """
+            + " AND ".join(where)
+            + sport_sql
+            + """
+            GROUP BY day, sport
+            """,
+            params,
+        )
+        by_sport: dict[str, dict[str, float]] = {}
+        for row in rows:
+            day = str(row["day"])
+            by_sport.setdefault(day, {})[str(row["sport"])] = round(float(row["trimp"]), 1)
+        return by_sport
+
     def daily_load_status(self, day: str) -> RepositoryDailyLoadStatus:
         activity_count = int(
             self._scalar("SELECT COUNT(*) FROM activities WHERE activity_day = CAST(? AS DATE)", [day]) or 0
@@ -1416,6 +1470,15 @@ class DuckDBRepository:
             until_day=end_day,
             sport_filter=sport_filter,
         )
+        # Per-sport raw daily TRIMP over the SAME range/bounds, used to discount the
+        # Walk portion when assembling effective_trimp below. observed_trimp stays
+        # the undiscounted per-day sum; only effective carries the Walk discount.
+        observed_trimp_by_sport = self.observed_trimp_history_by_sport(
+            bounds=bounds,
+            since_day=start_day,
+            until_day=end_day,
+            sport_filter=sport_filter,
+        )
         points: list[DailyLoadPoint] = []
         current = date.fromisoformat(start_day)
         end = date.fromisoformat(end_day)
@@ -1439,7 +1502,12 @@ class DuckDBRepository:
             else:
                 status = "OBSERVED"
                 observed = round(observed_trimp.get(current_text, 0.0), 1)
-                effective = observed
+                # effective applies the Walk discount per-sport: the Walk portion of
+                # this day's TRIMP counts at WALK_TRIMP_DISCOUNT, every other sport at
+                # full load. observed (above) stays the undiscounted daily sum, so the
+                # daily fact carries raw observed_trimp and discounted effective_trimp;
+                # the Banister series downstream consumes effective_trimp.
+                effective = discounted_effective_trimp(observed_trimp_by_sport.get(current_text, {}))
             points.append(
                 DailyLoadPoint(
                     date=current_text,
