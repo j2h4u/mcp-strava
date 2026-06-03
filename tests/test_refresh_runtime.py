@@ -1531,3 +1531,66 @@ def test_chokepoint_adopts_current_when_sidecar_unseeded(tmp_path):
     # pre-existing seed dirty rows, never multiplied by a version bump.
     assert version_after_adopt == version_after_noop, "adopt then match -> version must not bump"
     assert dirty_before >= 1
+
+
+def test_chokepoint_bump_and_enqueue_are_atomic_on_enqueue_failure(tmp_path):
+    """WR-01 atomicity: on a fingerprint mismatch the stage bumps the logic version
+    AND mass-enqueues the recompute. If the enqueue fails AFTER the bump (process
+    crash, lease loss, OOM mid-step), the bump must NOT durably land on its own —
+    otherwise the stored fingerprint advances to live while the dirty queue is never
+    populated, so the next cycle sees stored == live and silently never recomputes
+    (the exact under-invalidation this phase exists to prevent).
+
+    We inject a failure inside enqueue_metric_version_recompute (it runs AFTER the
+    bump in the chokepoint) and assert, by reopening the DB in a fresh repository,
+    that the durably-stored logic version is still the PRE-bump one — so the next
+    cycle still detects the mismatch and recomputes.
+    """
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.metric_registry import cached_logic_fingerprint
+    from mcp_strava.refresh._sync_ops import materialize_read_model_stage
+    from tests._fixtures_duckdb import create_empty_fixture_db
+
+    class EnqueueExplodesRepo(DuckDBRepository):
+        def enqueue_metric_version_recompute(self, *args, **kwargs):
+            # Simulate a crash/abort AFTER bump_logic_version has run but while the
+            # mass-enqueue is in flight.
+            raise RuntimeError("enqueue crashed mid-recompute")
+
+    fixture = tmp_path / "atomic.duckdb"
+    create_empty_fixture_db(fixture)
+
+    # Seed + adopt-current with a normal repo so stored == live at version 1.
+    with DuckDBRepository.from_path(fixture) as repo:
+        _seed_one_dirty_activity(repo)
+        materialize_read_model_stage(repo, "2026-05-24T12:00:00", None)
+        version_before = repo.current_metric_version()
+        stored_fp_before = repo.current_logic_version()["logic_fingerprint"]
+    assert version_before == 1
+    assert stored_fp_before == cached_logic_fingerprint(), "precondition: stored == live before the edit"
+
+    # Now drive a mismatch: stale the stored fingerprint, then run the chokepoint
+    # through a repo whose enqueue explodes after the bump.
+    with EnqueueExplodesRepo.from_path(fixture) as repo:
+        repo.bump_logic_version(1, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
+        repo._current_metric_version_cache = None
+        with pytest.raises(RuntimeError, match="enqueue crashed mid-recompute"):
+            materialize_read_model_stage(repo, "2026-05-24T13:00:00", None)
+
+    # Reopen fresh: the bump+enqueue must have been atomic. The durably-stored
+    # version must still be the stale-but-pre-bump version (1) with the STALE
+    # fingerprint — NOT advanced to 2 with the live fingerprint. So the next cycle
+    # still sees stored (STALE) != live and will recompute.
+    with DuckDBRepository.from_path(fixture) as repo:
+        stored = repo.current_logic_version()
+        durable_version = repo.current_metric_version()
+
+    assert durable_version == 1, (
+        "bump+enqueue must be atomic: a failed enqueue must NOT durably advance the version, "
+        f"got {durable_version}"
+    )
+    assert stored["logic_fingerprint"] == "STALE_WRONG_FINGERPRINT", (
+        "the stored fingerprint must NOT have advanced to live on a failed enqueue, "
+        "or the next cycle would see stored == live and never recompute"
+    )
+    assert stored["logic_fingerprint"] != cached_logic_fingerprint()
