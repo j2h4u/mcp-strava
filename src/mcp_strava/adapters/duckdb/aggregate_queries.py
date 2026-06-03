@@ -143,49 +143,62 @@ def validate_aggregate_request(request: AggregateRequest) -> tuple[MetricDefinit
     return definitions
 
 
-def build_aggregate_query(metric: MetricDefinition, request: AggregateRequest) -> AggregateQuery:
-    effective_start, effective_end = _effective_range_for_metric(None, request, metric)
-    statement, params = _build_numeric_query(metric, request, effective_start, effective_end)
+def build_aggregate_query(
+    metric: MetricDefinition, request: AggregateRequest, metric_version: int = 1
+) -> AggregateQuery:
+    effective_start, effective_end = _effective_range_for_metric(None, request, metric, metric_version)
+    statement, params = _build_numeric_query(metric, request, effective_start, effective_end, metric_version)
     return AggregateQuery(statement=statement, params=tuple(params), metric_id=metric.metric_id, bucket=request.bucket)
 
 
-def query_training_aggregates(conn, request: AggregateRequest) -> list[AggregateRow]:
+def query_training_aggregates(conn, request: AggregateRequest, *, metric_version: int) -> list[AggregateRow]:
+    """Aggregate read pinned to a single metric_version (R11).
+
+    metric_version is resolved by the CALLER (aggregate_services.py) from
+    repo.current_metric_version() so it is consistent with the rest of the
+    request. Every fact SELECT below filters `metric_version = ?` — point reads,
+    aggregate reads, and the all-time range derivation all see only-current rows,
+    so a mixed-version DB never blends old + new into one number.
+    """
     create_aggregate_views(conn)
     definitions = validate_aggregate_request(request)
     rows: list[AggregateRow] = []
     for metric in definitions:
         for scoped_request in _scoped_requests_for_metric(request, metric):
-            effective_start, effective_end = _effective_range_for_metric(conn, scoped_request, metric)
-            rows.extend(_query_metric(conn, scoped_request, metric, effective_start, effective_end))
+            effective_start, effective_end = _effective_range_for_metric(conn, scoped_request, metric, metric_version)
+            rows.extend(_query_metric(conn, scoped_request, metric, effective_start, effective_end, metric_version))
     return sorted(rows, key=lambda row: (row.bucket_start, row.metric_id, row.sport_type or ""))
 
 
-def query_status_facts(conn, *, as_of_day: str) -> list[StatusFact]:
+def query_status_facts(conn, *, as_of_day: str, metric_version: int) -> list[StatusFact]:
+    """Status-fact read pinned to a single metric_version (R11): every status
+    query that touches activity_metric_facts filters `metric_version = ?` so
+    status facts are current-only, never a blend across versions."""
     create_aggregate_views(conn)
     as_of = _parse_day(as_of_day, "as_of_day")
-    return [_query_status_fact(conn, definition, as_of) for definition in STATUS_FACT_REGISTRY.values()]
+    return [_query_status_fact(conn, definition, as_of, metric_version) for definition in STATUS_FACT_REGISTRY.values()]
 
 
-def _query_status_fact(conn, definition: StatusFactDefinition, as_of: date) -> StatusFact:
+def _query_status_fact(conn, definition: StatusFactDefinition, as_of: date, metric_version: int) -> StatusFact:
     code = definition.code
     if code == "stale_mirror_data":
         return _query_stale_mirror_status(conn, definition, as_of)
     if code == "stale_read_model_facts":
         return _query_stale_read_model_status(conn, definition, as_of)
     if code == "missing_hr":
-        return _query_missing_sample_status(conn, definition, as_of, "heartrate_sample_count")
+        return _query_missing_sample_status(conn, definition, as_of, "heartrate_sample_count", metric_version)
     if code == "missing_streams":
-        return _query_missing_sample_status(conn, definition, as_of, "stream_sample_count")
+        return _query_missing_sample_status(conn, definition, as_of, "stream_sample_count", metric_version)
     if code == "excessive_z5_exposure":
-        return _query_excessive_z5_status(conn, definition, as_of)
+        return _query_excessive_z5_status(conn, definition, as_of, metric_version)
     if code == "hr_anomaly_burst":
-        return _query_hr_anomaly_status(conn, definition, as_of)
+        return _query_hr_anomaly_status(conn, definition, as_of, metric_version)
     if code == "cardiac_drift_significant_quality":
-        return _query_cardiac_drift_status(conn, definition, as_of)
+        return _query_cardiac_drift_status(conn, definition, as_of, metric_version)
     if code == "consecutive_high_load_hikes":
-        return _query_high_load_hike_status(conn, definition, as_of)
+        return _query_high_load_hike_status(conn, definition, as_of, metric_version)
     if code == "running_volume_jump":
-        return _query_running_volume_jump_status(conn, definition, as_of)
+        return _query_running_volume_jump_status(conn, definition, as_of, metric_version)
     return _status_fact(definition, "unavailable", {}, ["unsupported_status_fact"])
 
 
@@ -254,9 +267,10 @@ def _query_missing_sample_status(
     definition: StatusFactDefinition,
     as_of: date,
     sample_column: str,
+    metric_version: int,
 ) -> StatusFact:
     start = _lookback_start(definition, as_of)
-    total = _activity_fact_count(conn, start, as_of)
+    total = _activity_fact_count(conn, start, as_of, metric_version)
     if total == 0:
         return _status_fact(definition, "unavailable", {}, ["no_activity_facts"])
     rows = conn.execute(
@@ -265,10 +279,11 @@ def _query_missing_sample_status(
         FROM activity_metric_facts
         WHERE activity_day >= CAST(? AS DATE)
           AND activity_day <= CAST(? AS DATE)
+          AND metric_version = ?
           AND {sample_column} <= 0
         ORDER BY activity_day, activity_id
         """,
-        [start.isoformat(), as_of.isoformat()],
+        [start.isoformat(), as_of.isoformat(), metric_version],
     ).fetchall()
     activity_ids = [int(row[0]) for row in rows]
     evidence = {
@@ -279,9 +294,9 @@ def _query_missing_sample_status(
     return _status_fact(definition, "active" if activity_ids else "inactive", evidence)
 
 
-def _query_excessive_z5_status(conn, definition: StatusFactDefinition, as_of: date) -> StatusFact:
+def _query_excessive_z5_status(conn, definition: StatusFactDefinition, as_of: date, metric_version: int) -> StatusFact:
     start = _lookback_start(definition, as_of)
-    total = _activity_fact_count(conn, start, as_of)
+    total = _activity_fact_count(conn, start, as_of, metric_version)
     if total == 0:
         return _status_fact(definition, "unavailable", {}, ["no_activity_facts"])
     threshold = int(definition.threshold["zone5_seconds"])
@@ -307,11 +322,12 @@ def _query_excessive_z5_status(conn, definition: StatusFactDefinition, as_of: da
         FROM activity_metric_facts
         WHERE activity_day >= CAST(? AS DATE)
           AND activity_day <= CAST(? AS DATE)
+          AND metric_version = ?
           AND zone5_seconds > ?
         ORDER BY zone5_seconds DESC, activity_day DESC
         LIMIT 1
         """,
-        [start.isoformat(), as_of.isoformat(), threshold],
+        [start.isoformat(), as_of.isoformat(), metric_version, threshold],
     ).fetchone()
     if row is None:
         return _status_fact(definition, "inactive", {"threshold_seconds": threshold})
@@ -324,9 +340,9 @@ def _query_excessive_z5_status(conn, definition: StatusFactDefinition, as_of: da
     return _status_fact(definition, "active", evidence)
 
 
-def _query_hr_anomaly_status(conn, definition: StatusFactDefinition, as_of: date) -> StatusFact:
+def _query_hr_anomaly_status(conn, definition: StatusFactDefinition, as_of: date, metric_version: int) -> StatusFact:
     start = _lookback_start(definition, as_of)
-    total = _activity_fact_count(conn, start, as_of)
+    total = _activity_fact_count(conn, start, as_of, metric_version)
     if total == 0:
         return _status_fact(definition, "unavailable", {}, ["no_activity_facts"])
     threshold = int(definition.threshold["hr_anomaly_count"])
@@ -336,11 +352,12 @@ def _query_hr_anomaly_status(conn, definition: StatusFactDefinition, as_of: date
         FROM activity_metric_facts
         WHERE activity_day >= CAST(? AS DATE)
           AND activity_day <= CAST(? AS DATE)
+          AND metric_version = ?
           AND anomaly_count >= ?
         ORDER BY anomaly_count DESC, activity_day DESC
         LIMIT 1
         """,
-        [start.isoformat(), as_of.isoformat(), threshold],
+        [start.isoformat(), as_of.isoformat(), metric_version, threshold],
     ).fetchone()
     if row is None:
         return _status_fact(definition, "inactive", {"threshold_count": threshold})
@@ -353,9 +370,9 @@ def _query_hr_anomaly_status(conn, definition: StatusFactDefinition, as_of: date
     return _status_fact(definition, "active", evidence)
 
 
-def _query_cardiac_drift_status(conn, definition: StatusFactDefinition, as_of: date) -> StatusFact:
+def _query_cardiac_drift_status(conn, definition: StatusFactDefinition, as_of: date, metric_version: int) -> StatusFact:
     start = _lookback_start(definition, as_of)
-    total = _activity_fact_count(conn, start, as_of)
+    total = _activity_fact_count(conn, start, as_of, metric_version)
     if total == 0:
         return _status_fact(definition, "unavailable", {}, ["no_activity_facts"])
     qualities = tuple(str(value) for value in definition.threshold["quality"])
@@ -366,12 +383,19 @@ def _query_cardiac_drift_status(conn, definition: StatusFactDefinition, as_of: d
         FROM activity_metric_facts
         WHERE activity_day >= CAST(? AS DATE)
           AND activity_day <= CAST(? AS DATE)
+          AND metric_version = ?
           AND cardiac_drift_significant >= ?
           AND cardiac_drift_quality IN ({placeholders})
         ORDER BY activity_day DESC, activity_id DESC
         LIMIT 1
         """,
-        [start.isoformat(), as_of.isoformat(), int(definition.threshold["cardiac_drift_significant"]), *qualities],
+        [
+            start.isoformat(),
+            as_of.isoformat(),
+            metric_version,
+            int(definition.threshold["cardiac_drift_significant"]),
+            *qualities,
+        ],
     ).fetchone()
     if row is None:
         return _status_fact(definition, "inactive", {"quality": list(qualities)})
@@ -384,7 +408,9 @@ def _query_cardiac_drift_status(conn, definition: StatusFactDefinition, as_of: d
     return _status_fact(definition, "active", evidence)
 
 
-def _query_high_load_hike_status(conn, definition: StatusFactDefinition, as_of: date) -> StatusFact:
+def _query_high_load_hike_status(
+    conn, definition: StatusFactDefinition, as_of: date, metric_version: int
+) -> StatusFact:
     start = _lookback_start(definition, as_of)
     rows = conn.execute(
         """
@@ -392,11 +418,12 @@ def _query_high_load_hike_status(conn, definition: StatusFactDefinition, as_of: 
         FROM activity_metric_facts
         WHERE activity_day >= CAST(? AS DATE)
           AND activity_day <= CAST(? AS DATE)
+          AND metric_version = ?
           AND sport_type = 'Hike'
         GROUP BY activity_day
         ORDER BY activity_day
         """,
-        [start.isoformat(), as_of.isoformat()],
+        [start.isoformat(), as_of.isoformat(), metric_version],
     ).fetchall()
     if len(rows) < 2:
         return _status_fact(definition, "unavailable", {"hike_day_count": len(rows)}, ["insufficient_hike_history"])
@@ -419,7 +446,9 @@ def _query_high_load_hike_status(conn, definition: StatusFactDefinition, as_of: 
     return _status_fact(definition, "active" if best_pair[2] > threshold else "inactive", evidence)
 
 
-def _query_running_volume_jump_status(conn, definition: StatusFactDefinition, as_of: date) -> StatusFact:
+def _query_running_volume_jump_status(
+    conn, definition: StatusFactDefinition, as_of: date, metric_version: int
+) -> StatusFact:
     week_start = as_of - timedelta(days=as_of.weekday())
     current_start = week_start
     current_end = as_of + timedelta(days=1)
@@ -431,15 +460,21 @@ def _query_running_volume_jump_status(conn, definition: StatusFactDefinition, as
         SELECT COALESCE(SUM(distance_m), 0.0) / 1000.0 AS distance_km
         FROM activity_metric_facts
         WHERE sport_type IN ({placeholders})
+          AND metric_version = ?
           AND activity_day >= CAST(? AS DATE)
           AND activity_day < CAST(? AS DATE)
     """
     previous = float(
-        conn.execute(query, [*running_sports, previous_start.isoformat(), previous_end.isoformat()]).fetchone()[0]
+        conn.execute(
+            query, [*running_sports, metric_version, previous_start.isoformat(), previous_end.isoformat()]
+        ).fetchone()[0]
         or 0.0
     )
     current = float(
-        conn.execute(query, [*running_sports, current_start.isoformat(), current_end.isoformat()]).fetchone()[0] or 0.0
+        conn.execute(
+            query, [*running_sports, metric_version, current_start.isoformat(), current_end.isoformat()]
+        ).fetchone()[0]
+        or 0.0
     )
     if previous <= 0:
         return _status_fact(
@@ -494,15 +529,16 @@ def _lookback_start(definition: StatusFactDefinition, as_of: date) -> date:
     return as_of - timedelta(days=max(lookback_days - 1, 0))
 
 
-def _activity_fact_count(conn, start: date, as_of: date) -> int:
+def _activity_fact_count(conn, start: date, as_of: date, metric_version: int) -> int:
     row = conn.execute(
         """
         SELECT COUNT(*)
         FROM activity_metric_facts
         WHERE activity_day >= CAST(? AS DATE)
           AND activity_day <= CAST(? AS DATE)
+          AND metric_version = ?
         """,
-        [start.isoformat(), as_of.isoformat()],
+        [start.isoformat(), as_of.isoformat(), metric_version],
     ).fetchone()
     return int(row[0] or 0) if row is not None else 0
 
@@ -604,7 +640,9 @@ def _to_iso(value: object) -> str:
     return str(value)
 
 
-def _effective_range_for_metric(conn, request: AggregateRequest, metric: MetricDefinition) -> tuple[date, date]:
+def _effective_range_for_metric(
+    conn, request: AggregateRequest, metric: MetricDefinition, metric_version: int
+) -> tuple[date, date]:
     if request.window_days is not None and request.as_of_day is not None:
         as_of = _parse_day(request.as_of_day, "as_of_day")
         return as_of - timedelta(days=request.window_days - 1), as_of + timedelta(days=1)
@@ -618,8 +656,11 @@ def _effective_range_for_metric(conn, request: AggregateRequest, metric: MetricD
     source = str(metric.aggregate_source)
     day_column = _SOURCE_DAY_COLUMNS[source]
     view = _SOURCE_VIEWS[source]
-    where = [f"{day_column} < CAST(? AS DATE)"]
-    params: list[object] = [end_day.isoformat()]
+    # Pin the all-time range derivation to the current version too (R11): an
+    # unpinned MIN() would let a stale-version fact widen the range and pull old
+    # rows into the bucket. The fact views expose metric_version.
+    where = [f"{day_column} < CAST(? AS DATE)", "metric_version = ?"]
+    params: list[object] = [end_day.isoformat(), metric_version]
     if request.sport_filter is not None and _view_has_sport(source):
         where.append("sport_type = ?")
         params.append(request.sport_filter)
@@ -663,11 +704,12 @@ def _query_metric(
     metric: MetricDefinition,
     effective_start: date,
     effective_end: date,
+    metric_version: int,
 ) -> list[AggregateRow]:
     if metric.aggregate_mode == "distribution":
-        rows = _query_distribution(conn, request, metric, effective_start, effective_end)
+        rows = _query_distribution(conn, request, metric, effective_start, effective_end, metric_version)
     else:
-        statement, params = _build_numeric_query(metric, request, effective_start, effective_end)
+        statement, params = _build_numeric_query(metric, request, effective_start, effective_end, metric_version)
         fetched = _rows(conn.execute(statement, params))
         rows = [_aggregate_row_from_group(metric, request, effective_start, effective_end, row) for row in fetched]
     return _with_empty_rows(rows, metric, request, effective_start, effective_end)
@@ -678,6 +720,7 @@ def _build_numeric_query(
     request: AggregateRequest,
     effective_start: date,
     effective_end: date,
+    metric_version: int,
 ) -> tuple[str, list[object]]:
     source = str(metric.aggregate_source)
     view = _SOURCE_VIEWS[source]
@@ -690,7 +733,7 @@ def _build_numeric_query(
     exclusion_expr = _exclusion_expression(metric)
     aggregate_expr = _aggregate_expression(metric, effective_start, effective_end)
     quantile_expr = _quantile_expression(metric)
-    where, params = _where_clause(metric, request, effective_start, effective_end)
+    where, params = _where_clause(metric, request, effective_start, effective_end, metric_version)
     statement = f"""
         WITH prepared AS (
             SELECT
@@ -768,9 +811,10 @@ def _query_distribution(
     metric: MetricDefinition,
     effective_start: date,
     effective_end: date,
+    metric_version: int,
 ) -> list[AggregateRow]:
     if metric.metric_id == "time_in_hr_zones_min":
-        return _query_hr_zone_distribution(conn, request, metric, effective_start, effective_end)
+        return _query_hr_zone_distribution(conn, request, metric, effective_start, effective_end, metric_version)
     source = str(metric.aggregate_source)
     view = _SOURCE_VIEWS[source]
     day_column = _SOURCE_DAY_COLUMNS[source]
@@ -778,7 +822,7 @@ def _query_distribution(
     sport_expr = _sport_output_expression(request)
     value_expr = _value_expression(metric)
     sample_expr = _sample_expression(metric)
-    where, params = _where_clause(metric, request, effective_start, effective_end)
+    where, params = _where_clause(metric, request, effective_start, effective_end, metric_version)
     statement = f"""
         WITH prepared AS (
             SELECT
@@ -851,13 +895,14 @@ def _query_hr_zone_distribution(
     metric: MetricDefinition,
     effective_start: date,
     effective_end: date,
+    metric_version: int,
 ) -> list[AggregateRow]:
     source = str(metric.aggregate_source)
     view = _SOURCE_VIEWS[source]
     day_column = _SOURCE_DAY_COLUMNS[source]
     bucket_expr = _bucket_expression(request, day_column, effective_start)
     sport_expr = _sport_output_expression(request)
-    where, params = _where_clause(metric, request, effective_start, effective_end)
+    where, params = _where_clause(metric, request, effective_start, effective_end, metric_version)
     statement = f"""
         WITH prepared AS (
             SELECT
@@ -935,11 +980,15 @@ def _where_clause(
     request: AggregateRequest,
     effective_start: date,
     effective_end: date,
+    metric_version: int,
 ) -> tuple[str, list[object]]:
     source = str(metric.aggregate_source)
     day_column = _SOURCE_DAY_COLUMNS[source]
-    where: list[str] = []
-    params: list[object] = []
+    # R11 version pin: every aggregate fact view exposes metric_version, so this
+    # parameterized predicate keeps a mixed-version DB from blending old + new
+    # rows into one aggregate. Bound as `?`, never string-formatted (T-15-05).
+    where: list[str] = ["metric_version = ?"]
+    params: list[object] = [metric_version]
     if request.window_days is not None and request.as_of_day is not None:
         where.extend([f"{day_column} = CAST(? AS DATE)", "window_days = ?"])
         params.extend([request.as_of_day, request.window_days])

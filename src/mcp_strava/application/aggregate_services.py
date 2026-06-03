@@ -69,14 +69,17 @@ def get_training_aggregates_service(
 
     with conn_context as conn:
         repo = DuckDBRepository.from_connection(conn)
+        # Resolve the current version ONCE and thread it through every read in
+        # this request so the status envelope and the aggregate rows agree (R11).
+        version = repo.current_metric_version()
         freshness = build_freshness_metadata(
             repo,
             checked_at,
             policy,
             signal_first_use=signal_first_use,
         )
-        read_model = repo.read_model_status()
-        rows = query_training_aggregates(conn, query_request)
+        read_model = repo.read_model_status(metric_version=version)
+        rows = query_training_aggregates(conn, query_request, metric_version=version)
 
     freshness_payload = dc_to_dict(freshness)
     row_payloads = []

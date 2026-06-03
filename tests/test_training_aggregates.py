@@ -384,8 +384,33 @@ def _aggregate_fixture(path: Path) -> Path:
             150.0,
             175.0,
             1,
-            2,
+            1,
             70.0,
+            "complete",
+            [],
+            60.0,
+            100.0,
+            1.0,
+            200,
+            200,
+        ),
+        # Stale-version row (metric_version=2) in the same May month bucket. Every
+        # product/aggregate read pins to the current version (1), so this row is
+        # NEVER blended in (R11) — it exists only so the version-pin test can prove
+        # a mixed-version DB still returns single-version-or-empty.
+        (
+            106,
+            "2026-05-13",
+            "Run",
+            6000.0,
+            2000,
+            2100,
+            200.0,
+            150.0,
+            175.0,
+            1,
+            2,
+            12345.0,
             "complete",
             [],
             60.0,
@@ -501,7 +526,7 @@ def _aggregate_fixture(path: Path) -> Path:
             elevation_gain_m=elevation_gain_m,
         )
     _insert_model_fact(conn, "2026-05-05", metric_version=1, fitness=10.0, fatigue=8.0, form=2.0, form_zone="normal")
-    _insert_model_fact(conn, "2026-05-13", metric_version=2, fitness=30.0, fatigue=22.0, form=8.0, form_zone="fresh")
+    _insert_model_fact(conn, "2026-05-13", metric_version=1, fitness=30.0, fatigue=22.0, form=8.0, form_zone="fresh")
     _insert_model_fact(conn, "2026-05-20", metric_version=1, fitness=40.0, fatigue=32.0, form=8.0, form_zone="fresh")
     _insert_rolling_facts(conn)
     conn.execute(
@@ -522,6 +547,20 @@ def _aggregate_fixture(path: Path) -> Path:
         INSERT INTO refresh_state (
             id, last_success_at, last_attempt_at, last_status
         ) VALUES (1, '2026-05-21T13:00:00', '2026-05-21T13:00:00', 'ok')
+        """
+    )
+    # Seed the logic-version sidecar so current_metric_version() deterministically
+    # resolves to 1 for this fixture. Without a sidecar row it would fall back to
+    # MAX(metric_version) across fact tables (= 2 here, from the v2 model fact) and
+    # version-pinned reads via current_metric_version() would miss the v1 rows.
+    conn.execute(
+        """
+        INSERT INTO read_model_logic_version (id, metric_version, logic_fingerprint, changed_at)
+        VALUES (1, 1, 'fixture-fingerprint', '2026-05-21T12:00:00')
+        ON CONFLICT (id) DO UPDATE SET
+            metric_version=excluded.metric_version,
+            logic_fingerprint=excluded.logic_fingerprint,
+            changed_at=excluded.changed_at
         """
     )
     conn.close()
@@ -630,6 +669,7 @@ def test_supported_buckets_return_factual_half_open_bounds(tmp_path: Path, bucke
                 end_day_exclusive="2026-06-01",
                 scope="global",
             ),
+            metric_version=1,
         )
     )
     conn.close()
@@ -663,6 +703,7 @@ def test_all_time_defaults_start_and_honors_exclusive_end(tmp_path: Path) -> Non
                 end_day_exclusive="2026-05-15",
                 scope="global",
             ),
+            metric_version=1,
         )
     )
     explicit_start = _payloads(
@@ -675,6 +716,7 @@ def test_all_time_defaults_start_and_honors_exclusive_end(tmp_path: Path) -> Non
                 end_day_exclusive="2026-05-15",
                 scope="global",
             ),
+            metric_version=1,
         )
     )
     conn.close()
@@ -699,6 +741,7 @@ def test_week_buckets_start_on_monday(tmp_path: Path) -> None:
                 end_day_exclusive="2026-06-01",
                 scope="global",
             ),
+            metric_version=1,
         )
     )
     conn.close()
@@ -721,6 +764,7 @@ def test_registry_aggregate_modes_return_expected_values(tmp_path: Path) -> None
                 end_day_exclusive="2026-06-01",
                 scope="global",
             ),
+            metric_version=1,
         )
     )
     run_rows = _payloads(
@@ -734,6 +778,7 @@ def test_registry_aggregate_modes_return_expected_values(tmp_path: Path) -> None
                 scope="per_sport",
                 sport_filter="Run",
             ),
+            metric_version=1,
         )
     )
     conn.close()
@@ -768,7 +813,12 @@ def test_registry_aggregate_modes_return_expected_values(tmp_path: Path) -> None
     assert _row(rows, "kudos_count")["value"] == pytest.approx(6.0)
 
 
-def test_missing_denominators_and_mixed_versions_are_explicit(tmp_path: Path) -> None:
+def test_missing_denominators_explicit_and_version_pin_blocks_blend(tmp_path: Path) -> None:
+    """The fixture seeds trimp facts at BOTH metric_version 1 and 2 in May. With
+    the R11 version pin (metric_version=1), the month aggregate must see ONLY the
+    v1 rows — never a blend — so metric_version_status is 'single', not
+    'mixed_degraded'. Pinning the read to the current version is what makes a
+    mixed-version DB return only-current-or-empty (R11)."""
     db_path = _aggregate_fixture(tmp_path / "coverage.duckdb")
     conn = open_fixture_db(db_path)
 
@@ -783,9 +833,10 @@ def test_missing_denominators_and_mixed_versions_are_explicit(tmp_path: Path) ->
                 scope="per_sport",
                 sport_filter="Hike",
             ),
+            metric_version=1,
         )
     )
-    mixed = _payloads(
+    pinned = _payloads(
         query_training_aggregates(
             conn,
             AggregateRequest(
@@ -795,16 +846,32 @@ def test_missing_denominators_and_mixed_versions_are_explicit(tmp_path: Path) ->
                 end_day_exclusive="2026-06-01",
                 scope="global",
             ),
+            metric_version=1,
         )
     )
+    # Status read pinned to the current version: the v2 stale row (106) must not
+    # contribute to any status fact either.
+    from mcp_strava.adapters.duckdb.aggregate_queries import query_status_facts
+
+    status_v1 = _payloads(query_status_facts(conn, as_of_day="2026-05-20", metric_version=1))
     conn.close()
 
     assert hike_hr[0]["value"] is None
     assert hike_hr[0]["completeness_status"] == "unavailable"
     assert hike_hr[0]["excluded_count"] == 1
     assert set(hike_hr[0]["missing_reasons"]) >= {"missing_denominator", "missing_hr"}
-    assert mixed[0]["metric_version_status"] == "mixed_degraded"
-    assert mixed[0]["completeness_status"] == "partial"
+    # Version pin tripwire: only one metric_version contributed -> no blend. The
+    # v2 stale row (activity 106) in the same month is filtered out entirely, so
+    # the status is 'single' (never 'mixed_degraded'). Completeness is 'partial'
+    # only because a v1 row (102) is itself partial — that is orthogonal to the
+    # version pin; the version pin is proven by metric_version_status == 'single'.
+    assert pinned[0]["metric_version_status"] == "single"
+    assert pinned[0]["completeness_status"] == "partial"
+    # The May v1 trimp sum (101:100 + 102:80 + 103:70 + 104:60 = 310) must NOT
+    # include the v2 stale row's trimp (12345.0) — the pin keeps it out entirely.
+    assert pinned[0]["value"] == pytest.approx(310.0)
+    # Status path is current-only too: it ran without error and excluded v2 (106).
+    assert status_v1
 
 
 def test_bundles_sport_scope_empty_buckets_and_rolling_windows(tmp_path: Path) -> None:
@@ -824,6 +891,7 @@ def test_bundles_sport_scope_empty_buckets_and_rolling_windows(tmp_path: Path) -
                 scope="per_sport",
                 sport_filter="Run",
             ),
+            metric_version=1,
         )
     )
     empty_rows = _payloads(
@@ -837,6 +905,7 @@ def test_bundles_sport_scope_empty_buckets_and_rolling_windows(tmp_path: Path) -
                 scope="global",
                 include_empty_buckets=True,
             ),
+            metric_version=1,
         )
     )
     rolling_widths = []
@@ -853,6 +922,7 @@ def test_bundles_sport_scope_empty_buckets_and_rolling_windows(tmp_path: Path) -
                     as_of_day="2026-05-21",
                     window_days=window_days,
                 ),
+                metric_version=1,
             )
         )
         rolling_widths.append(rows[0]["bucket_width"])
@@ -888,6 +958,7 @@ def test_phase9_product_bundles_handle_mixed_scopes_and_historical_context(tmp_p
                         end_day_exclusive="2026-05-22",
                         scope="both",
                     ),
+                    metric_version=1,
                 )
             )
             assert rows, bundle_id
@@ -903,6 +974,7 @@ def test_phase9_product_bundles_handle_mixed_scopes_and_historical_context(tmp_p
                     end_day_exclusive="2026-05-22",
                     scope="global",
                 ),
+                metric_version=1,
             )
         )
     finally:
@@ -937,7 +1009,7 @@ def test_phase9_status_fact_queries_return_fixture_evidence(tmp_path: Path) -> N
     db_path = _phase9_status_fixture(tmp_path / "phase9-status.duckdb")
     conn = open_fixture_db(db_path)
     try:
-        rows = _payloads(query_status_facts(conn, as_of_day="2026-05-20"))
+        rows = _payloads(query_status_facts(conn, as_of_day="2026-05-20", metric_version=1))
     finally:
         conn.close()
 
@@ -976,6 +1048,7 @@ def test_fixed_rolling_metrics_filter_to_their_declared_window(tmp_path: Path) -
                     end_day_exclusive="2026-05-25",
                     scope="global",
                 ),
+                metric_version=1,
             )
         )
         with pytest.raises(ValueError, match="requires rolling window 7"):
@@ -989,6 +1062,7 @@ def test_fixed_rolling_metrics_filter_to_their_declared_window(tmp_path: Path) -
                     as_of_day="2026-05-21",
                     window_days=14,
                 ),
+                metric_version=1,
             )
     finally:
         conn.close()
@@ -1036,7 +1110,7 @@ def test_product_parameter_rejections_happen_before_query_execution(tmp_path: Pa
     ]
     for request in invalid_requests:
         with pytest.raises(ValueError):
-            query_training_aggregates(conn, request)
+            query_training_aggregates(conn, request, metric_version=1)
 
     for forbidden_field in ("raw_sql", "sql", "table_name", "column_name", "query_plan", "gear_id"):
         with pytest.raises(TypeError):
@@ -1096,6 +1170,7 @@ def test_per_sport_rolling_aggregates_use_stored_sport_rows(tmp_path: Path) -> N
                 as_of_day="2026-05-21",
                 window_days=90,
             ),
+            metric_version=1,
         )
     )
     hike_rows = _payloads(
@@ -1111,6 +1186,7 @@ def test_per_sport_rolling_aggregates_use_stored_sport_rows(tmp_path: Path) -> N
                 as_of_day="2026-05-21",
                 window_days=90,
             ),
+            metric_version=1,
         )
     )
     conn.close()

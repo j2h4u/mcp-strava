@@ -13,6 +13,7 @@ from typing import Any
 
 from mcp_strava.adapters.duckdb.aggregate_queries import query_status_facts
 from mcp_strava.adapters.duckdb.connection import ReadConn
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
     get_training_aggregates_service,
@@ -112,7 +113,11 @@ def get_daily_brief_facts_service(
             signal_first_use=False,
             connection=conn,
         )
-        status_facts = [_normalise_status_fact(item) for item in query_status_facts(conn, as_of_day=as_of_day)]
+        status_version = DuckDBRepository.from_connection(conn).current_metric_version()
+        status_facts = [
+            _normalise_status_fact(item)
+            for item in query_status_facts(conn, as_of_day=as_of_day, metric_version=status_version)
+        ]
         gear_section = _supported_gear_section(
             _data_list(gear_candidates),
             checked_at=checked_at,
