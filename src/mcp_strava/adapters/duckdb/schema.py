@@ -22,6 +22,7 @@ DUCKDB_TABLES: tuple[str, ...] = (
     "training_model_daily",
     "rolling_period_facts",
     "read_model_refresh_runs",
+    "read_model_logic_version",
     "schema_migration_log",
 )
 
@@ -252,6 +253,17 @@ CREATE TABLE read_model_refresh_runs (
     checkpoint_cursor VARCHAR,
     attempt_count BIGINT NOT NULL DEFAULT 0,
     last_error VARCHAR
+);
+
+-- Singleton (one row, id=1) sidecar that turns metric_version into a
+-- system-managed monotonic counter sourced from the live logic fingerprint.
+-- IF NOT EXISTS so this DDL and the repository seed path (which also creates
+-- the table) are both idempotent and order-independent on live + fresh DBs.
+CREATE TABLE IF NOT EXISTS read_model_logic_version (
+    id BIGINT PRIMARY KEY,
+    metric_version BIGINT NOT NULL,
+    logic_fingerprint VARCHAR NOT NULL,
+    changed_at VARCHAR NOT NULL
 );
 
 CREATE TABLE schema_migration_log (
