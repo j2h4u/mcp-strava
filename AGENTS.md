@@ -176,7 +176,7 @@ Strava API ──► refresh/ + sync.py ──► DuckDB mirror (data/strava.duc
 - Used by: the Docker runtime and local MCP network
 ## Data Flow
 ### Ingest Path
-- `refresh/` and `sync.py` pull from the Strava API, parse via `types.py`, and persist to `data/strava.duckdb` through the DuckDB repository; the read-model materializer maintains derived tables.
+- `refresh/` and `sync.py` pull from the Strava API, parse via `types.py`, and persist to `data/strava.duckdb` through the DuckDB repository; the read-model materializer maintains derived tables. The derived read-model is self-maintaining: change any metric constant, formula, or computed field and the affected facts recompute themselves on the next refresh, with no version to bump and no manual step.
 ### Request Path
 - CLI/MCP calls go through `application/` services that read from the DuckDB repository, apply freshness gates, and return typed/serialized results.
 ### State
