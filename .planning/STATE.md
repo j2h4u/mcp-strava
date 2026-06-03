@@ -207,6 +207,7 @@ Recent decisions affecting current work:
 - Phase 11 added (2026-05-29): Tidy materializer repository access — Phase 10 code-review cleanup (IN-03), swap 6 inline-SQL call sites in read_model_materializer.py for named DuckDBRepository methods. Cosmetic/low-risk.
 - Phase 12 added (2026-05-29): Decouple db.py — split connection mgmt, repo factories, token/OAuth, and Strava HTTP out of the 237-line db.py grab-bag. The last real coupling hotspot; independent of Phase 11 (different files).
 - Phase 14 added (2026-05-31): Metric Platform registry-owned fact schema — promoted backlog 999.1 into the first incremental registry source-of-truth slice; plan-review convergence complete and ready for /gsd-execute-phase 14.
+- Phase 15 added (2026-06-03): Self-invalidating read-model + walk TRIMP discount + workout time fields — source-derived logic fingerprint auto-recomputes facts on metric code/constant change (zero manual version knob; wires the orphan enqueue_metric_version_recompute), then rides that to add WALK_TRIMP_DISCOUNT (forgotten Hermes edit; walks were counting at full TRIMP) and start_time_local/relative_time. Design from expert panel (Kaizen-trimmed); rich CONTEXT.md seeded; ready for /gsd-plan-phase 15.
 
 ### Pending Todos
 
