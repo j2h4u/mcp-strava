@@ -726,3 +726,37 @@ def test_walk_discount_recomputes_end_to_end_on_fingerprint_mismatch(tmp_path: P
     assert walk_day_fact["metric_version"] == 2
     assert walk_day_fact["effective_trimp"] == expected_effective
     assert walk_day_fact["effective_trimp"] < walk_day_fact["observed_trimp"]
+
+
+def test_activities_missing_kudos_filters_and_returns_typed_ids(tmp_path: Path) -> None:
+    """activities_missing_kudos returns plain int ids, only for activities that
+    have kudos upstream (kudos_count > 0) and none mirrored locally yet."""
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "strava.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    def _seed(repo: DuckDBRepository, activity_id: int, kudos_count: int) -> None:
+        repo.upsert_activity_summary(
+            activity_id=activity_id,
+            date="2026-05-21T06:00:00Z",
+            name=f"Run {activity_id}",
+            sport_type="Run",
+            distance=6000.0,
+            moving_time=1800,
+            elapsed_time=1900,
+            total_elevation_gain=120.0,
+            summary_json=f'{{"id":{activity_id},"kudos_count":{kudos_count}}}',
+            synced_at="2026-05-21T07:00:00Z",
+        )
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        _seed(repo, 201, kudos_count=3)  # has kudos upstream, none mirrored -> included
+        _seed(repo, 202, kudos_count=0)  # no kudos upstream -> excluded
+        _seed(repo, 203, kudos_count=5)  # already mirrored below -> excluded
+        repo.upsert_kudos(203, "Ada", "Lovelace", "2026-05-21T07:00:00Z")
+
+        ids = repo.activities_missing_kudos()
+
+        assert ids == [201]
+        assert all(isinstance(i, int) for i in ids)

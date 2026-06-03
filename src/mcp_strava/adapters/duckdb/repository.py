@@ -2246,6 +2246,28 @@ class DuckDBRepository:
             [activity_id],
         )
 
+    def activities_missing_kudos(self, window_days: int | None = None) -> list[int]:
+        """Activity ids that have kudos on Strava but none mirrored locally yet.
+
+        Selects activities whose summary `kudos_count > 0` and that have no rows
+        in the local `kudos` table, newest first; optionally bounded to the last
+        `window_days`. Returns ids only — the caller fetches each activity's
+        kudoers from the API. Keeps the raw DB-API rows inside the repository so
+        callers receive typed `int`s, never positional tuples (the boundary that
+        prevents the `row['id']`-on-a-tuple class of bug).
+        """
+        query = """
+            SELECT a.id FROM activities a
+            WHERE CAST(json_extract(a.summary_json, '$.kudos_count') AS INTEGER) > 0
+              AND NOT EXISTS (SELECT 1 FROM kudos k WHERE k.activity_id = a.id)
+        """
+        params: list[object] = []
+        if window_days is not None:
+            query += " AND a.date >= date('now', ?)"
+            params.append(f"-{window_days} days")
+        query += " ORDER BY a.date DESC"
+        return [int(row["id"]) for row in self._fetchall(query, params)]
+
     def upsert_kudos(self, activity_id: int, firstname: str, lastname: str, fetched_at: str) -> None:
         self._execute(
             """
