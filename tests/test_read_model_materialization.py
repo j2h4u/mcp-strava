@@ -480,3 +480,67 @@ def test_materializer_extracts_calories_from_detail_json(tmp_path: Path) -> None
 
     assert with_cal is not None and with_cal["calories_kcal"] == 612.5
     assert without_cal is not None and without_cal["calories_kcal"] is None
+
+
+def test_materializer_populates_start_time_local_from_start_date_local(tmp_path: Path) -> None:
+    """activity_metric_facts.start_time_local is the HH:MM parsed from start_date_local.
+
+    The materializer parses summary_json.start_date_local with fromisoformat +
+    strftime (not a [11:16] slice). The seed fixture starts at T06:00:00Z, so the
+    materialized fact carries "06:00".
+    """
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+    with repo:
+        _seed_dirty_activity_with_streams(repo, activity_id=940, day="2026-05-21")
+        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        fact = repo.fetch_activity_metric_fact(940, metric_version=1)
+
+    assert fact is not None
+    assert fact["start_time_local"] == "06:00"
+
+
+def test_start_time_local_migrates_additively_on_existing_db(tmp_path: Path) -> None:
+    """ensure_provenance_columns adds start_time_local to a live DB without it.
+
+    Simulate a pre-15-05 file: build a table from the registry DDL but with
+    start_time_local removed, insert an old row (column absent), then run the
+    additive migration. The column is added (NULL on the old row) and the
+    migration is idempotent (ADD COLUMN IF NOT EXISTS) on a second run.
+    """
+    import duckdb
+
+    from mcp_strava.adapters.duckdb.schema import ensure_provenance_columns
+    from mcp_strava.metric_registry import (
+        MATERIALIZED_FACT_COLUMN_REGISTRY,
+        activity_metric_facts_table_sql,
+    )
+
+    # Registry DDL minus the new column = the pre-15-05 table shape.
+    full_ddl = activity_metric_facts_table_sql()
+    legacy_ddl = full_ddl.replace("    start_time_local VARCHAR,\n", "")
+    assert "start_time_local" not in legacy_ddl
+    assert "start_time_local" in MATERIALIZED_FACT_COLUMN_REGISTRY["activity_metric_facts"]
+
+    db_path = tmp_path / "legacy.duckdb"
+    raw = duckdb.connect(str(db_path))
+    raw.execute(legacy_ddl)
+    raw.execute(
+        """
+        INSERT INTO activity_metric_facts
+            (activity_id, activity_day, sport_type, source_hash, source_revision,
+             metric_version, computed_at, completeness_status)
+        VALUES (960, DATE '2026-05-21', 'Run', 'h', 1, 1, '2026-05-24T12:00:00', 'complete')
+        """
+    )
+    cols_before = {r[1] for r in raw.execute("PRAGMA table_info('activity_metric_facts')").fetchall()}
+    assert "start_time_local" not in cols_before
+
+    ensure_provenance_columns(raw)
+    cols_after = {r[1] for r in raw.execute("PRAGMA table_info('activity_metric_facts')").fetchall()}
+    assert "start_time_local" in cols_after
+    # Old row is NULL on the freshly-added column until re-materialized.
+    value = raw.execute("SELECT start_time_local FROM activity_metric_facts WHERE activity_id = 960").fetchone()
+    assert value is not None and value[0] is None
+    # Idempotent: a second migration pass over the already-migrated table is a no-op.
+    ensure_provenance_columns(raw)
+    raw.close()

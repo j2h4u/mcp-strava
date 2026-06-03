@@ -10,6 +10,7 @@ from mcp_strava.metrics import (
     calc_hrr_pct,
     calc_vertical_speed,
     discounted_effective_trimp,
+    parse_local_hhmm,
 )
 
 # ─── Helpers ───
@@ -434,3 +435,37 @@ def test_discounted_effective_trimp_rounds_once_at_the_end():
     # single final round: round(0.125 + 0.04, 1) = round(0.165, 1) = 0.2
     # per-sport round: round(0.125,1)=0.1 ; round(0.04,1)=0.0 ; sum=0.1  (DIFFERS)
     assert discounted_effective_trimp({"Walk": 0.25, "Run": 0.04}) == 0.2
+
+
+# ─── parse_local_hhmm (HH:MM from start_date_local) ───
+
+
+def test_parse_local_hhmm_offset_naive():
+    # A plain naive local datetime: HH:MM is read straight off.
+    assert parse_local_hhmm("2026-05-21T07:16:00") == "07:16"
+
+
+def test_parse_local_hhmm_trailing_z_normalized():
+    # Strava sometimes emits a trailing "Z" (UTC designator). fromisoformat on
+    # 3.14 accepts "Z", but we normalize to "+00:00" for safety; the local HH:MM
+    # is taken as-written (no timezone conversion is applied to the wall clock).
+    assert parse_local_hhmm("2026-05-21T07:16:00Z") == "07:16"
+
+
+def test_parse_local_hhmm_offset_aware():
+    # An offset-bearing timestamp: the HH:MM is the wall-clock time as written,
+    # not converted to UTC.
+    assert parse_local_hhmm("2026-05-21T07:16:00+05:00") == "07:16"
+
+
+def test_parse_local_hhmm_is_not_a_string_slice():
+    # A microsecond-bearing / space-separated form would break a naive [11:16]
+    # slice but parses correctly via fromisoformat.
+    assert parse_local_hhmm("2026-05-21T07:16:30.500000") == "07:16"
+
+
+def test_parse_local_hhmm_none_and_garbage():
+    assert parse_local_hhmm(None) is None
+    assert parse_local_hhmm("") is None
+    assert parse_local_hhmm("not-a-timestamp") is None
+    assert parse_local_hhmm("2026-05-21") == "00:00"  # date-only -> midnight

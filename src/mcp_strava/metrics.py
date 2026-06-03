@@ -5,10 +5,47 @@ No storage imports — callers are responsible for fetching rows via the reposit
 """
 
 from collections.abc import Mapping
+from datetime import datetime
 
 from mcp_strava.cardiac_drift import cardiac_drift as _drift_algo
 from mcp_strava.constants import SPORT_WALK, WALK_TRIMP_DISCOUNT, Config
 from mcp_strava.types import CardiacDriftResult, HrRecovery, VerticalSpeed
+
+# ─── Local time-of-day (HH:MM) from a Strava start_date_local ───
+
+
+def parse_local_hhmm(start_date_local: str | None) -> str | None:
+    """Pure: the local time-of-day "HH:MM" from a Strava start_date_local string.
+
+    The input is the activity's full LOCAL start timestamp (e.g.
+    "2026-05-21T07:16:00", possibly with a trailing "Z" or an offset like
+    "+05:00"). We parse it with datetime.fromisoformat and format strftime("%H:%M")
+    — deliberately NOT a fragile string slice ([11:16]) that would break on a
+    space separator, fractional seconds, or any non-canonical layout.
+
+    The wall-clock time is read AS WRITTEN: no timezone conversion is applied, so
+    an offset-bearing value reports its own local clock, not UTC. A trailing "Z"
+    is normalized to "+00:00" for parser portability before parsing.
+
+    Returns None when the input is missing, empty, or unparseable (the caller
+    treats that as "no start time" rather than raising).
+    """
+    if not start_date_local:
+        return None
+    text = start_date_local.strip()
+    if not text:
+        return None
+    # Normalize a trailing UTC "Z" designator to an explicit offset so the value
+    # parses uniformly. fromisoformat accepts "Z" on 3.14, but normalizing keeps
+    # the parse identical across the offset-bearing and Z-bearing forms.
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError, TypeError:
+        return None
+    return parsed.strftime("%H:%M")
+
 
 # ─── Intra-Activity Cardiac Drift ───
 

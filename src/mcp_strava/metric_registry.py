@@ -1620,6 +1620,7 @@ _MATERIALIZED_FACT_COLUMN_SQL_METADATA: dict[str, dict[str, tuple[str, bool, str
         "hr_zone_model": _sql("VARCHAR"),
         "hr_max_used": _sql("BIGINT"),
         "hr_rest_used": _sql("BIGINT"),
+        "start_time_local": _sql("VARCHAR"),
     },
     "daily_load_facts": {
         "day": _sql("DATE", nullable=False),
@@ -1802,6 +1803,13 @@ MATERIALIZED_FACT_COLUMN_REGISTRY: dict[str, dict[str, FactColumnDefinition]] = 
                 "provenance",
                 (),
                 "Athlete resting HR from MCP_STRAVA_HR_REST used for zone bound computation.",
+            ),
+            (
+                "start_time_local",
+                "metric",
+                ("start_time",),
+                "Local time-of-day (HH:MM) the activity started, parsed from "
+                "summary_json.start_date_local (fromisoformat + strftime, not a string slice).",
             ),
         ),
     ),

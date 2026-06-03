@@ -9,7 +9,13 @@ from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.constants import Config
 from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
-from mcp_strava.metrics import calc_cardiac_drift, calc_hr_recovery, calc_hrr_pct, calc_vertical_speed
+from mcp_strava.metrics import (
+    calc_cardiac_drift,
+    calc_hr_recovery,
+    calc_hrr_pct,
+    calc_vertical_speed,
+    parse_local_hhmm,
+)
 from mcp_strava.settings import Settings, get_settings
 from mcp_strava.training import acwr_zone, calc_banister_series, form_zone
 
@@ -78,6 +84,26 @@ def _detail_calories(detail_json: str | None) -> float | None:
         return float(value)
     except ValueError, TypeError:
         return None
+
+
+def _start_time_local(summary_json: str | None) -> str | None:
+    """Materialize the local time-of-day (HH:MM) the activity started.
+
+    Pulls start_date_local out of the activity summary_json and delegates the
+    parse/format to the pure-domain metrics.parse_local_hhmm (fromisoformat +
+    strftime, Z/offset-normalizing, None-safe) — the SAME helper the read-time
+    payload uses, so the materialized column and any read-time fallback never
+    diverge. Returns None when summary_json is absent/garbage or has no
+    start_date_local. Feeds activity_metric_facts.start_time_local -> the
+    `start_time` metric on the workout payload.
+    """
+    if not summary_json:
+        return None
+    try:
+        start_date_local = json.loads(summary_json).get("start_date_local")
+    except ValueError, TypeError:
+        return None
+    return parse_local_hhmm(start_date_local)
 
 
 def _activity_fact(
@@ -197,6 +223,9 @@ def _activity_fact(
         "hr_zone_model": athlete.hr_zone_model,
         "hr_max_used": hr_max_used,
         "hr_rest_used": athlete.hr_rest,
+        # Local time-of-day (HH:MM) parsed from summary_json.start_date_local via
+        # the shared pure helper. NULL on old rows until re-materialized.
+        "start_time_local": _start_time_local(activity.summary_json),
     }
 
 

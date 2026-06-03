@@ -297,6 +297,7 @@ ACTIVITY_METRIC_FACT_LATE_COLUMNS: tuple[str, ...] = (
     "hr_max_used",
     "hr_rest_used",
     "calories_kcal",
+    "start_time_local",
 )
 
 DUCKDB_AGGREGATE_VIEW_SQL = """
