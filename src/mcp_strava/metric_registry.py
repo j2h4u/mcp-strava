@@ -6,8 +6,11 @@ derived metric. MCP tools expose filtered subsets through ``exposed_in``.
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 import re
 from dataclasses import dataclass, replace
+from importlib import import_module
 from typing import Any
 
 from mcp_strava.types import ExcludedInterpretation, MetricDefinition, StatusFactDefinition
@@ -2425,3 +2428,70 @@ def metric_catalog_payload() -> dict[str, Any]:
             for key, value in EXCLUDED_INTERPRETATIONS.items()
         },
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Source-text logic fingerprint
+# ═══════════════════════════════════════════════════════════════
+#
+# This is the detector that makes the read model self-invalidating. Instead of a
+# hand-bumped ``metric_version`` int that someone must remember to advance, the
+# fingerprint is derived directly from the *source text* of every module on the
+# materializer compute path (a local analog of dbt's ``state:modified``).
+#
+# COMPUTE_SOURCE_MODULES is the full recursive ``mcp_strava`` import closure of
+# ``read_model_materializer`` — i.e. every module whose source participates in
+# materializing a fact. Listing the whole closure (not a hand-picked "compute
+# only" subset) makes coverage automatic-by-construction: there is no judgment
+# call about which modules count, so nothing can silently fall out of scope. The
+# completeness test in ``tests/test_logic_fingerprint.py`` recomputes this
+# closure and fails loudly if the tuple drifts from it.
+#
+# ``mcp_strava.metric_registry`` is deliberately in the tuple: the materializer
+# imports it directly (``MATERIALIZED_ROLLING_WINDOW_DAYS``), so registry-owned
+# schema/metadata — e.g. a future fact-column registration — must flip the
+# fingerprint too. Self-inclusion is fine because the source is read at runtime
+# via ``import_module`` inside the function, not at module-import time.
+COMPUTE_SOURCE_MODULES: tuple[str, ...] = (
+    "mcp_strava.adapters.duckdb.connection",
+    "mcp_strava.adapters.duckdb.read_model_materializer",
+    "mcp_strava.adapters.duckdb.repository",
+    "mcp_strava.adapters.duckdb.schema",
+    "mcp_strava.cardiac_drift",
+    "mcp_strava.constants",
+    "mcp_strava.hr_zones",
+    "mcp_strava.mcp_content",
+    "mcp_strava.metric_registry",
+    "mcp_strava.metrics",
+    "mcp_strava.settings",
+    "mcp_strava.sports",
+    "mcp_strava.training",
+    "mcp_strava.types",
+)
+
+
+def compute_logic_fingerprint() -> str:
+    """Return a deterministic sha256 over the source text of the compute path.
+
+    The digest hashes ``name\\x00source\\x00`` pairs for every module in
+    ``COMPUTE_SOURCE_MODULES``, sorted by module name. Feeding both the module
+    name and its source (not bare source) makes the digest order-stable and
+    self-documenting and removes any ambiguity if two modules ever shared
+    identical source text.
+
+    Determinism note: this is sha256, NOT Python's builtin ``hash()`` (which is
+    salted per process by ``PYTHONHASHSEED``), so the digest is identical across
+    processes and machines. Comment/whitespace edits to a hashed module DO change
+    the fingerprint — that format-sensitivity is accepted by design.
+
+    ``import_module`` is called here at runtime (not at module import time) to
+    avoid the ``repository → schema → metric_registry`` import cycle.
+    """
+    digest = hashlib.sha256()
+    for module_name in sorted(COMPUTE_SOURCE_MODULES):
+        source = inspect.getsource(import_module(module_name))
+        digest.update(module_name.encode("utf-8"))
+        digest.update(b"\x00")
+        digest.update(source.encode("utf-8"))
+        digest.update(b"\x00")
+    return digest.hexdigest()

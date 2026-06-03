@@ -115,8 +115,7 @@ def _subprocess_fingerprint(hashseed: str) -> str:
         [
             sys.executable,
             "-c",
-            "from mcp_strava.metric_registry import compute_logic_fingerprint;"
-            "print(compute_logic_fingerprint())",
+            "from mcp_strava.metric_registry import compute_logic_fingerprint;print(compute_logic_fingerprint())",
         ],
         check=False,
         text=True,
