@@ -337,8 +337,24 @@ No backlog items currently.
 **Goal:** Changing an internal metric constant, formula, or computed field makes the DuckDB materialized read-model recompute affected facts automatically on the next refresh cycle — via a source-derived logic fingerprint, with no manual version bump and no manually-triggered recompute (versioning fully encapsulated). Built on that mechanism: add a configurable `WALK_TRIMP_DISCOUNT` (internal constant, no env) applied to daily `effective_trimp` via per-sport aggregation, and surface `start_time_local` (HH:MM) plus a read-time relative-time field on workout payloads. Full design (expert-panel, Kaizen-trimmed): see this phase's CONTEXT.md.
 **Requirements**: Zero-knob read-model auto-invalidation (developer ergonomics); port forgotten Hermes `WALK_TRIMP_DISCOUNT` so walks stop counting at full TRIMP in the Banister load model; finer workout time granularity (start HH:MM + relative "Nd Hh"/"Hh Mm" ago)
 **Depends on:** Phase 14
-**Plans:** 0 plans
+**Plans:** 5 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 15 to break down)
+**Wave 1**
+- [ ] 15-01-PLAN.md — source-text logic fingerprint (`COMPUTE_SOURCE_MODULES` + `compute_logic_fingerprint()`) + determinism/completeness tests (TDD)
+- [ ] 15-02-PLAN.md — `read_model_logic_version` sidecar table + version helpers + idempotent seed-at-current migration
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 15-03-PLAN.md — fingerprint trigger at the materialize chokepoint, delete `CURRENT_METRIC_VERSION`, source the int from `repo.current_metric_version()`, R11 aggregate version pin, observability
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 15-04-PLAN.md — `WALK_TRIMP_DISCOUNT` per-sport daily discount on `effective_trimp` (TDD); first end-to-end zero-knob proof
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 15-05-PLAN.md — materialize `start_time_local` (HH:MM) + read-time `relative_time` field; packaged-install fingerprint smoke
+
+Cross-cutting constraints:
+- Read-model auto-recompute (REQ-ZEROKNOB) underpins Waves 2-4; editing constants in `COMPUTE_SOURCE_MODULES` (Waves 3-4) must auto-invalidate.
+- Domain boundary (Phase 10/12): `metrics.py`/`constants.py` MUST NOT import storage/adapters.
+- No env config (internal constants only); no backward-compat; `just test` + ruff (incl. `format --check`) + pyright must end green.
