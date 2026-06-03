@@ -16,6 +16,7 @@ from mcp_strava.application.aggregate_services import (
 from mcp_strava.application.freshness import build_freshness_metadata
 from mcp_strava.constants import Config
 from mcp_strava.metric_registry import METRIC_REGISTRY
+from mcp_strava.metrics import parse_local_hhmm
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
 from mcp_strava.training import forward_simulate
@@ -270,13 +271,72 @@ def _gear_payload(row, summary: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _parse_start_dt(start_date_local: str | None) -> datetime | None:
+    """Parse a Strava start_date_local string to a datetime, or None.
+
+    Mirrors metrics.parse_local_hhmm's normalization (trailing "Z" -> "+00:00",
+    accepts naive and offset-aware forms) but returns the full datetime so the
+    read-time relative_time can diff it against `now`. None on missing/garbage.
+    """
+    if not start_date_local:
+        return None
+    text = start_date_local.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError, TypeError:
+        return None
+
+
+def _relative_time(start_date_local: str | None, now: datetime) -> str | None:
+    """Human recency of an activity relative to `now`, computed at READ time.
+
+    Parses the activity's full local start datetime (NOT the date-only
+    activity_date) and diffs it against `now`. Under 24h renders "<H>h <M>m";
+    from one full day on renders "<N>d <H>h" (minutes dropped), so the exact-24h
+    boundary renders "1d 0h". Returns None when start_date_local is
+    missing/unparseable.
+
+    To avoid a naive/aware subtraction TypeError, both sides are made comparable:
+    if the parsed datetime is tz-aware, `now` is coerced to the same tzinfo (and
+    vice versa) before subtracting. The result is read-time and deterministic
+    given a fixed `now`, so it is never materialized.
+    """
+    activity_dt = _parse_start_dt(start_date_local)
+    if activity_dt is None:
+        return None
+    # Align awareness so (now - activity_dt) never raises on a naive/aware mix.
+    if activity_dt.tzinfo is not None and now.tzinfo is None:
+        now = now.replace(tzinfo=activity_dt.tzinfo)
+    elif activity_dt.tzinfo is None and now.tzinfo is not None:
+        activity_dt = activity_dt.replace(tzinfo=now.tzinfo)
+    total_minutes = int((now - activity_dt).total_seconds() // 60)
+    if total_minutes < 0:
+        total_minutes = 0  # a future-dated start reads as "0h 0m", not negative
+    hours, minutes = divmod(total_minutes, 60)
+    if hours < 24:
+        return f"{hours}h {minutes}m"
+    days, rem_hours = divmod(hours, 24)
+    return f"{days}d {rem_hours}h"
+
+
 def _activity_payload(
     row,
     *,
+    now: datetime,
     kudos_names: list[str] | None = None,
     include_detail_context: bool = False,
 ) -> dict[str, Any]:
     summary = _summary_json(row)
+    # start_time_local: prefer the materialized fact column (source of truth);
+    # fall back to parsing summary.start_date_local with the SAME pure helper only
+    # when the column is NULL on an un-rematerialized row. Never re-slice [11:16].
+    start_time_local = _row_get(row, "start_time_local")
+    if start_time_local is None:
+        start_time_local = parse_local_hhmm(summary.get("start_date_local"))
     payload = {
         "activity_id": int(row["activity_id"]),
         "activity_date": row["activity_day"],
@@ -306,7 +366,8 @@ def _activity_payload(
         "cardiac_drift_significant": int(row["cardiac_drift_significant"] or 0),
         "cardiac_drift_quality": row["cardiac_drift_quality"],
         "hrr_pct": _activity_value(row, "hrr_pct"),
-        "start_time": str(summary.get("start_date_local", ""))[11:16] or None,
+        "start_time_local": start_time_local,
+        "relative_time": _relative_time(summary.get("start_date_local"), now),
         "hr_anomaly_count": int(row["anomaly_count"] or 0),
         "kudos_count": _kudos_count(summary),
         "completeness": _fact_status(row),
@@ -409,7 +470,7 @@ def list_workouts_service(
             limit=limit,
         )
         read_model = _read_model_status(repo)
-        data = [_activity_payload(row) for row in rows]
+        data = [_activity_payload(row, now=checked_at) for row in rows]
 
         completeness = CompletenessMetadata(
             status=_status_from_read_model(read_model, has_data=True, missing=[]),
@@ -438,6 +499,8 @@ def list_workouts_service(
                 "trimp",
                 "avg_hr",
                 "max_hr",
+                "start_time_local",
+                "relative_time",
                 "kudos_count",
                 "completeness",
             )
@@ -493,6 +556,7 @@ def get_workout_detail_service(
         assert resolved_id is not None, "row is non-None only when resolved_id is non-None"
         data = _activity_payload(
             row,
+            now=checked_at,
             kudos_names=_kudos_names(repo.kudos_for_activity(resolved_id)),
             include_detail_context=True,
         )

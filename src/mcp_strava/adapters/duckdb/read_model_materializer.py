@@ -95,7 +95,7 @@ def _start_time_local(summary_json: str | None) -> str | None:
     payload uses, so the materialized column and any read-time fallback never
     diverge. Returns None when summary_json is absent/garbage or has no
     start_date_local. Feeds activity_metric_facts.start_time_local -> the
-    `start_time` metric on the workout payload.
+    `start_time_local` metric on the workout payload.
     """
     if not summary_json:
         return None

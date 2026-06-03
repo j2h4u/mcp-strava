@@ -158,7 +158,11 @@ _CALCULATION_BY_METRIC_ID = {
     "moving_time_min": "Activity moving_time_s from the mirror divided by 60.",
     "elapsed_time_min": "Activity elapsed_time_s from the mirror divided by 60.",
     "elevation_m": "Activity total elevation gain in meters from the mirrored Strava activity.",
-    "start_time": "HH:MM extracted from summary_json.start_date_local when Strava provided it.",
+    "start_time_local": "Local time-of-day (HH:MM) the activity started, parsed from "
+    "summary_json.start_date_local via fromisoformat + strftime (not a string slice); "
+    "materialized on the activity fact row.",
+    "relative_time": "Human recency of the activity relative to now, computed at read time "
+    "from start_date_local: '<H>h <M>m' under 24h, '<N>d <H>h' from one day on.",
     "trimp": "Per-activity TRIMP = sum(seconds in each HR zone * zone weight) / 60 using the configured HR zone model and athlete resting HR.",
     "avg_hr": "Strava summary_json.average_heartrate for the activity.",
     "max_hr": "Strava summary_json.max_heartrate rounded to an integer bpm.",
@@ -418,8 +422,27 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         "higher_is_more",
         ["list_workouts", "get_workout_detail", "compare_periods"],
     ),
-    "start_time": _metric(
-        "start_time", "Start Time", "time", "activity", "activity", "both", "none", "neutral", ["get_workout_detail"]
+    "start_time_local": _metric(
+        "start_time_local",
+        "Start Time",
+        "time",
+        "activity",
+        "activity",
+        "both",
+        "none",
+        "neutral",
+        ["list_workouts", "get_workout_detail"],
+    ),
+    "relative_time": _metric(
+        "relative_time",
+        "Relative Time",
+        "text",
+        "activity",
+        "activity",
+        "both",
+        "none",
+        "context",
+        ["list_workouts", "get_workout_detail"],
     ),
     "trimp": _metric(
         "trimp",
@@ -1807,7 +1830,7 @@ MATERIALIZED_FACT_COLUMN_REGISTRY: dict[str, dict[str, FactColumnDefinition]] = 
             (
                 "start_time_local",
                 "metric",
-                ("start_time",),
+                ("start_time_local",),
                 "Local time-of-day (HH:MM) the activity started, parsed from "
                 "summary_json.start_date_local (fromisoformat + strftime, not a string slice).",
             ),

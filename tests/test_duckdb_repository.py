@@ -335,6 +335,7 @@ def test_ensure_provenance_columns_adds_registry_owned_late_activity_columns() -
         "hr_max_used",
         "hr_rest_used",
         "calories_kcal",
+        "start_time_local",
     )
     assert ACTIVITY_METRIC_FACT_LATE_COLUMNS == expected_late_columns
 
@@ -362,7 +363,8 @@ def test_ensure_provenance_columns_adds_registry_owned_late_activity_columns() -
               'hr_zone_model',
               'hr_max_used',
               'hr_rest_used',
-              'calories_kcal'
+              'calories_kcal',
+              'start_time_local'
           )
         ORDER BY ordinal_position
         """
