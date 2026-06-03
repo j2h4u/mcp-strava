@@ -12,9 +12,16 @@ from mcp_strava.adapters.duckdb.read_model_materializer import (
     materialize_read_model as materialize_duckdb_read_model,
 )
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository, summary_payload_changed
+from mcp_strava.metric_registry import cached_logic_fingerprint
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.refresh.schema_drift import journal_schema_drift
 from mcp_strava.types import parse_strava_activity, parse_strava_stream_channels
+
+
+def _emit(event: str, **fields: object) -> None:
+    """Emit a structured JSON diagnostic event to stdout (house log style)."""
+    print(json.dumps({"event": event, **fields}, ensure_ascii=False), flush=True)
+
 
 STREAM_KEYS = (
     "time",
@@ -268,20 +275,93 @@ def schema_validate(repo) -> None:
 
 def materialize_read_model_stage(
     repo,
-    metric_version: int,
     now_iso: str,
     renew_lease: Callable[[], None] | None,
     limit: int | None = None,
 ) -> dict[str, Any]:
+    """Materialize the read model, self-invalidating on a logic-fingerprint change.
+
+    This is the single chokepoint that turns "edit a metric constant/formula"
+    into "the affected facts recompute". Before materializing, it compares the
+    fingerprint stored in the sidecar (read_model_logic_version) against the LIVE
+    fingerprint of the current compute-path source:
+
+    - stored != live  -> a compute module changed since the sidecar was last
+      written. Bump metric_version to N+1, record the new fingerprint, and enqueue
+      EVERY activity for recompute (wiring the orphan enqueue_metric_version_recompute).
+    - stored is None  -> the sidecar is unseeded (the 15-02 adopt-current seed was
+      skipped by a transient fault). ADOPT-CURRENT to self-heal: write the sidecar
+      with the current/fallback version + live fingerprint and enqueue NOTHING, so
+      stored becomes == live and the next cycle is a no-op. No restart required.
+    - stored == live  -> no-op; just materialize at the current version.
+
+    The version materialized at is re-resolved INTERNALLY from
+    repo.current_metric_version() AFTER the bump/adopt (the bump invalidated the
+    sidecar memo), NOT from a caller-passed value. On a recompute cycle this
+    guarantees the materialize version (N+1) equals the just-enqueued version
+    (N+1) — a stale caller value can never leave dirty rows queued at N+1 while
+    materialization runs at N (cycle-2 stale-version guard).
+    """
     if not isinstance(repo, DuckDBRepository):
         raise TypeError(f"DuckDBRepository required, got {type(repo).__name__}")
-    return materialize_duckdb_read_model(
+
+    stored = repo.current_logic_version()
+    live = cached_logic_fingerprint()
+    trigger_reason = "materialize_read_model"
+
+    if stored is None:
+        # Unseeded sidecar -> adopt-current self-heal (no recompute). Write the
+        # current/fallback version (fact-table max, else 1) with the live
+        # fingerprint so stored becomes == live; enqueue zero dirty rows.
+        adopt_version = repo.current_metric_version()
+        repo.bump_logic_version(adopt_version, live, now_iso)
+        _emit(
+            "read_model_logic_adopted",
+            adopt_version=adopt_version,
+            current_fingerprint=live,
+            queued_at=now_iso,
+        )
+    elif stored["logic_fingerprint"] != live:
+        # A compute module's source changed -> bump + mass-enqueue recompute.
+        new_version = int(stored["metric_version"]) + 1
+        repo.bump_logic_version(new_version, live, now_iso)
+        enqueued = repo.enqueue_metric_version_recompute(
+            new_version, reason="logic_fingerprint_changed", queued_at=now_iso
+        )
+        trigger_reason = "logic_fingerprint_changed"
+        _emit(
+            "read_model_logic_recompute",
+            stored_fingerprint=stored["logic_fingerprint"],
+            current_fingerprint=live,
+            reason="logic_fingerprint_changed",
+            activities_enqueued=enqueued,
+            queued_at=now_iso,
+        )
+
+    # Re-resolve POST-bump: bump_logic_version() invalidated the memo, so this
+    # returns N+1 on a recompute cycle and the stored version otherwise.
+    current_version = repo.current_metric_version()
+    started = datetime.now(UTC)
+    result = materialize_duckdb_read_model(
         repo,
-        metric_version=metric_version,
+        metric_version=current_version,
         now=now_iso,
         renew_lease=renew_lease,
         limit=limit,
+        trigger_reason=trigger_reason,
     )
+    duration_ms = int((datetime.now(UTC) - started).total_seconds() * 1000)
+    # Self-explanatory materialize-ok signal: the version materialized at and how
+    # long the compute took, so an operator can correlate a recompute event with
+    # the version it landed and its cost.
+    _emit(
+        "read_model_materialize_done",
+        metric_version=current_version,
+        trigger_reason=trigger_reason,
+        duration_ms=duration_ms,
+        status=result.get("status"),
+    )
+    return result
 
 
 def estimate_stream_channel_backfill(

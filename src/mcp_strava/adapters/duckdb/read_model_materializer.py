@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from statistics import median
 from typing import Any
 
-from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.constants import Config
 from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
@@ -367,12 +367,13 @@ def _record_failed_run(repo: DuckDBRepository, started_at: str, metric_version: 
 
 def materialize_read_model(
     repo: DuckDBRepository,
-    metric_version: int = CURRENT_METRIC_VERSION,
+    metric_version: int,
     now: str | datetime | None = None,
     limit: int | None = None,
     run_id: int | None = None,
     renew_lease=None,
     settings: Settings | None = None,
+    trigger_reason: str = "materialize_read_model",
 ) -> dict[str, Any]:
     del run_id
     _settings = settings or get_settings()
@@ -439,7 +440,7 @@ def materialize_read_model(
                 "finished_at": computed_at,
                 "status": "ok",
                 "metric_version": metric_version,
-                "trigger_reason": "materialize_read_model",
+                "trigger_reason": trigger_reason,
                 "activities_considered": len(dirty_rows),
                 "activities_materialized": activity_count,
                 "daily_facts_materialized": len(daily_trimp),

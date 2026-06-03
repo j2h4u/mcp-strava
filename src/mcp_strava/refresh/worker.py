@@ -13,7 +13,7 @@ from threading import Event
 
 import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.duckdb.connection import MirrorConn
-from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.maintenance.compact import storage_stats
 from mcp_strava.refresh import RefreshSkipped, Stage, _sync_ops, health
 from mcp_strava.refresh.bootstrap import (
@@ -60,15 +60,30 @@ def _stream_channel_backfill_due(state) -> bool:
 def _materialize_dirty_read_model(batch_size: int) -> int:
     with MirrorConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
-        status = repo.read_model_status(metric_version=CURRENT_METRIC_VERSION)
+        status = repo.read_model_status(metric_version=repo.current_metric_version())
         dirty_count = int(status.get("dirty_count") or 0)
         if dirty_count == 0:
-            return 0
+            # Do NOT early-return: a logic-only edit (a compute constant/formula
+            # change with no dirty SOURCE rows) leaves the dirty queue empty, yet
+            # must still recompute. Run the chokepoint once so its fingerprint
+            # check fires — on a mismatch it bumps the version, enqueues every
+            # activity, and recomputes within this same call; on a match it is a
+            # cheap no-op. We report dirty_rows_cleared so a fingerprint-driven
+            # recompute on an empty queue is still observable.
+            result = _sync_ops.materialize_read_model_stage(
+                repo,
+                _now_iso(),
+                None,
+                limit=batch_size,
+            )
+            cleared = int(result.get("dirty_rows_cleared") or 0)
+            if cleared > 0:
+                _emit("read_model_logic_recompute_materialized", dirty_rows_cleared=cleared)
+            return cleared
         claim_count = min(dirty_count, batch_size)
         _emit("read_model_materialize_started", dirty_count=dirty_count, batch_size=claim_count)
         result = _sync_ops.materialize_read_model_stage(
             repo,
-            CURRENT_METRIC_VERSION,
             _now_iso(),
             None,
             limit=claim_count,

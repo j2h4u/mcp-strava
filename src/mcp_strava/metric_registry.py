@@ -2495,3 +2495,31 @@ def compute_logic_fingerprint() -> str:
         digest.update(source.encode("utf-8"))
         digest.update(b"\x00")
     return digest.hexdigest()
+
+
+# Per-process memo of the LIVE fingerprint. The materialize chokepoint compares
+# the stored fingerprint against the live one on EVERY refresh cycle (including
+# idle cycles with an empty dirty queue), so calling the uncached
+# compute_logic_fingerprint() each time would re-walk inspect.getsource over all
+# COMPUTE_SOURCE_MODULES per cycle — a permanent per-cycle cost. Source text
+# cannot change inside a running process (a code edit requires a restart), so the
+# live fingerprint is stable for the process lifetime and safe to memoize.
+#
+# Deliberately NOT lru_cache: tests for fingerprint sensitivity monkeypatch
+# inspect.getsource and call compute_logic_fingerprint() directly (the uncached
+# path), so the memo lives only on this wrapper and never shadows those tests.
+_live_fingerprint_cache: str | None = None
+
+
+def cached_logic_fingerprint() -> str:
+    """Return the live logic fingerprint, memoized for the process lifetime.
+
+    The chokepoint calls THIS (not compute_logic_fingerprint()) so idle cycles do
+    not re-read the source of every compute module. compute_logic_fingerprint()
+    stays uncached for the seed path and the sensitivity tests, which need to see
+    a fresh walk each call.
+    """
+    global _live_fingerprint_cache
+    if _live_fingerprint_cache is None:
+        _live_fingerprint_cache = compute_logic_fingerprint()
+    return _live_fingerprint_cache

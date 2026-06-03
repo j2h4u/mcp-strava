@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION
 from mcp_strava.adapters.strava import StravaUnavailable
 from mcp_strava.refresh import _sync_ops
 from mcp_strava.refresh.checkpoints import Stage, is_active_backfill_stage, is_stream_channel_backfill_stage
@@ -107,7 +106,6 @@ def run_once(
             repo.set_checkpoint(Stage.READ_MODEL_MATERIALIZE.value, None)
             _sync_ops.materialize_read_model_stage(
                 repo,
-                CURRENT_METRIC_VERSION,
                 now_iso,
                 _lease_renewer(repo, clock, owner, policy.lease_duration_seconds),
             )
@@ -178,7 +176,6 @@ def run_catchup(
             repo.set_checkpoint(Stage.READ_MODEL_MATERIALIZE_BACKFILL.value, None)
             _sync_ops.materialize_read_model_stage(
                 repo,
-                CURRENT_METRIC_VERSION,
                 now_iso,
                 _lease_renewer(repo, clock, owner, policy.lease_duration_seconds),
             )
@@ -272,7 +269,6 @@ def run_stream_channel_catchup(
         )
         _sync_ops.materialize_read_model_stage(
             repo,
-            CURRENT_METRIC_VERSION,
             now_iso,
             _lease_renewer(repo, clock, owner, lease_seconds),
         )

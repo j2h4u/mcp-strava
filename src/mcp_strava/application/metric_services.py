@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from mcp_strava.adapters.duckdb.connection import ReadConn
-from mcp_strava.adapters.duckdb.repository import CURRENT_METRIC_VERSION, DuckDBRepository
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
     get_training_aggregates_service,
@@ -184,7 +184,7 @@ def _next_day(day: str) -> str:
 
 
 def _read_model_status(repo) -> dict[str, Any]:
-    return repo.read_model_status(metric_version=CURRENT_METRIC_VERSION)
+    return repo.read_model_status(metric_version=repo.current_metric_version())
 
 
 def _coverage_with_read_model(read_model: dict[str, Any], extra: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -324,20 +324,21 @@ def _latest_as_of_day(checked_at: datetime) -> str:
 
 def _rolling_by_window(repo, as_of_day: str) -> dict[int, object]:
     windows = (7, 14, 28, 90)
+    version = repo.current_metric_version()
     batch_fetch = getattr(repo, "fetch_rolling_period_facts_by_windows", None)
     if batch_fetch is not None:
         return batch_fetch(
             as_of_day,
             windows,
             scope="all",
-            metric_version=CURRENT_METRIC_VERSION,
+            metric_version=version,
         )
     return {
         window: repo.fetch_rolling_period_facts(
             as_of_day,
             window,
             scope="all",
-            metric_version=CURRENT_METRIC_VERSION,
+            metric_version=version,
         )
         for window in windows
     }
@@ -355,9 +356,10 @@ def get_fitness_state_service(
         freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         as_of_day = _latest_as_of_day(checked_at)
-        model = repo.fetch_latest_training_model_day(CURRENT_METRIC_VERSION, as_of_day=as_of_day)
+        version = repo.current_metric_version()
+        model = repo.fetch_latest_training_model_day(version, as_of_day=as_of_day)
         if model is None:
-            model = repo.fetch_latest_training_model_day(CURRENT_METRIC_VERSION)
+            model = repo.fetch_latest_training_model_day(version)
         rolling = _rolling_by_window(repo, model["day"] if model is not None else as_of_day)
 
     missing: list[str] = []
@@ -403,7 +405,7 @@ def list_workouts_service(
             start_day,
             end_day,
             sport=sport,
-            metric_version=CURRENT_METRIC_VERSION,
+            metric_version=repo.current_metric_version(),
             limit=limit,
         )
         read_model = _read_model_status(repo)
@@ -465,7 +467,7 @@ def get_workout_detail_service(
         read_model = _read_model_status(repo)
         resolved_id = repo.latest_activity_id() if activity_id == "latest" else int(activity_id)
         row = (
-            repo.fetch_activity_metric_fact(resolved_id, metric_version=CURRENT_METRIC_VERSION)
+            repo.fetch_activity_metric_fact(resolved_id, metric_version=repo.current_metric_version())
             if resolved_id is not None
             else None
         )
@@ -901,7 +903,7 @@ def _scenario_trimps(
 
 def _daily_trimp_history(repo, start_day: str, end_day: str) -> dict[str, float]:
     rows = repo.fetch_daily_load_facts(
-        start_day, _next_day(end_day), scope="all", metric_version=CURRENT_METRIC_VERSION
+        start_day, _next_day(end_day), scope="all", metric_version=repo.current_metric_version()
     )
     return {row["day"]: float(row["effective_trimp"] or 0.0) for row in rows}
 
@@ -933,9 +935,10 @@ def project_fitness_state_service(
         repo = DuckDBRepository.from_connection(conn)
         freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
-        baseline = repo.fetch_latest_training_model_day(CURRENT_METRIC_VERSION, as_of_day=today_day.isoformat())
+        version = repo.current_metric_version()
+        baseline = repo.fetch_latest_training_model_day(version, as_of_day=today_day.isoformat())
         if baseline is None:
-            baseline = repo.fetch_latest_training_model_day(CURRENT_METRIC_VERSION)
+            baseline = repo.fetch_latest_training_model_day(version)
         history_start = (today_day - timedelta(days=27)).isoformat()
         history_daily_trimp = _daily_trimp_history(repo, history_start, today_day.isoformat())
 

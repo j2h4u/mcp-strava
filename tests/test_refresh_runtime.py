@@ -291,9 +291,8 @@ def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch,
     monkeypatch.setattr(_sync_ops, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
     monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
 
-    def fake_materialize(repo, metric_version, now_iso, renew_lease):
+    def fake_materialize(repo, now_iso, renew_lease):
         del repo
-        assert metric_version == 1
         assert now_iso == clock.iso()
         assert callable(renew_lease)
         order.append("read_model_materialize")
@@ -343,8 +342,8 @@ def test_materialization_lost_lease_fails_closed(monkeypatch, tmp_path):
     monkeypatch.setattr(_sync_ops, "schema_validate", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: 0)
 
-    def fake_materialize(repo, metric_version, now_iso, renew_lease):
-        del repo, metric_version, now_iso
+    def fake_materialize(repo, now_iso, renew_lease):
+        del repo, now_iso
         renew_lease()
 
     monkeypatch.setattr(_sync_ops, "materialize_read_model_stage", fake_materialize, raising=False)
@@ -565,6 +564,9 @@ def test_worker_materializes_read_model_in_bounded_batch(monkeypatch):
             return False
 
     class FakeRepo:
+        def current_metric_version(self):
+            return 1
+
         def read_model_status(self, metric_version=None):
             del metric_version
             return {"dirty_count": 12}
@@ -573,8 +575,8 @@ def test_worker_materializes_read_model_in_bounded_batch(monkeypatch):
         calls.append(("repo_factory", conn))
         return FakeRepo()
 
-    def fake_materialize_stage(repo, metric_version, now_iso, renew_lease, limit=None):
-        del repo, metric_version, now_iso, renew_lease
+    def fake_materialize_stage(repo, now_iso, renew_lease, limit=None):
+        del repo, now_iso, renew_lease
         calls.append(("materialize_stage", limit))
         return {"dirty_rows_cleared": limit}
 
@@ -605,6 +607,9 @@ def test_worker_materialization_uses_repository_factory_and_runtime_stage(monkey
             return False
 
     class FakeRepo:
+        def current_metric_version(self):
+            return 1
+
         def read_model_status(self, metric_version=None):
             del metric_version
             return {"dirty_count": 8}
@@ -613,8 +618,8 @@ def test_worker_materialization_uses_repository_factory_and_runtime_stage(monkey
         calls.append(("repo_factory", conn))
         return FakeRepo()
 
-    def fake_materialize_stage(repo, metric_version, now_iso, renew_lease, limit=None):
-        del repo, metric_version, now_iso, renew_lease
+    def fake_materialize_stage(repo, now_iso, renew_lease, limit=None):
+        del repo, now_iso, renew_lease
         calls.append(("materialize_stage", 3))
         return {"dirty_rows_cleared": 3}
 
@@ -683,6 +688,9 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
             return False
 
     class FakeRepo:
+        def current_metric_version(self):
+            return 1
+
         def read_model_status(self, metric_version=None):
             del metric_version
             return {"dirty_count": 0}
@@ -721,6 +729,9 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
     monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
     monkeypatch.setattr(worker, "ensure_runtime_refresh_schema", lambda _settings: None)
     monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
+    # Empty dirty queue still calls the chokepoint (fingerprint check); these tests
+    # exercise the periodic-refresh cycle, not materialization, so stub it out.
+    monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", lambda *_a, **_k: {"dirty_rows_cleared": 0})
     monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
     monkeypatch.setattr(
         worker,
@@ -760,6 +771,9 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
             return False
 
     class FakeRepo:
+        def current_metric_version(self):
+            return 1
+
         def read_model_status(self, metric_version=None):
             del metric_version
             return {"dirty_count": 0}
@@ -783,6 +797,9 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
     monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
     monkeypatch.setattr(worker, "ensure_runtime_refresh_schema", lambda _settings: None)
     monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
+    # Empty dirty queue still calls the chokepoint (fingerprint check); these tests
+    # exercise the periodic-refresh cycle, not materialization, so stub it out.
+    monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", lambda *_a, **_k: {"dirty_rows_cleared": 0})
     monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
     monkeypatch.setattr(
         worker,
@@ -822,6 +839,9 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
             return False
 
     class FakeRepo:
+        def current_metric_version(self):
+            return 1
+
         def read_model_status(self, metric_version=None):
             del metric_version
             return {"dirty_count": 0}
@@ -836,6 +856,9 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
     monkeypatch.setattr(worker, "_now_iso", lambda: "2026-05-21T12:00:00")
     monkeypatch.setattr(worker, "ensure_runtime_refresh_schema", lambda _settings: None)
     monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
+    # Empty dirty queue still calls the chokepoint (fingerprint check); these tests
+    # exercise the periodic-refresh cycle, not materialization, so stub it out.
+    monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", lambda *_a, **_k: {"dirty_rows_cleared": 0})
     monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
     monkeypatch.setattr(
         worker,
@@ -1371,3 +1394,140 @@ def test_stream_channel_backfill_rate_limit_keeps_checkpoint_and_rows(tmp_path):
     assert result["status"] in {"failed", "delayed"}
     assert state.checkpoint_stage == Stage.STREAM_CHANNELS_BACKFILL.value
     assert len(rows) == 1
+
+
+def _seed_one_dirty_activity(repo, *, activity_id: int = 920, day: str = "2026-05-21") -> None:
+    """Seed one HR-bearing activity so the dirty queue + activity_source_state
+    have a row to materialize/enqueue. Mirrors the materializer test fixture."""
+    repo.upsert_activity_summary(
+        activity_id=activity_id,
+        date=f"{day}T06:00:00Z",
+        name=f"Materialized {activity_id}",
+        sport_type="Run",
+        distance=6000.0,
+        moving_time=1800,
+        elapsed_time=1900,
+        total_elevation_gain=120.0,
+        summary_json=(
+            f'{{"id":{activity_id},"name":"Materialized","sport_type":"Run","start_date_local":"{day}T06:00:00Z",'
+            '"distance":6000,"moving_time":1800,"elapsed_time":1900,"total_elevation_gain":120,'
+            '"average_heartrate":145,"max_heartrate":172,"has_heartrate":true}'
+        ),
+        synced_at=f"{day}T07:00:00Z",
+    )
+    repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
+    rows = [
+        {
+            "time_offset": idx * 10,
+            "heartrate": 138 + (idx % 35),
+            "velocity": 3.0 + ((idx % 4) * 0.02),
+            "altitude": 500.0 + idx * 0.2,
+            "cadence": 84,
+            "lat": 43.2 + idx * 0.00001,
+            "lng": 76.9 + idx * 0.00001,
+            "grade": 1.0,
+            "gap_speed": 3.1,
+            "gap_distance": idx * 30.0,
+            "is_moving": 1,
+            "values_json": '{"distance": %.1f}' % (idx * 30.0),
+        }
+        for idx in range(180)
+    ]
+    repo.replace_stream_rows_and_channel_metadata(
+        activity_id,
+        rows=rows,
+        metadata=[
+            {
+                "channel_key": "heartrate",
+                "original_size": len(rows),
+                "resolution": "high",
+                "series_type": "distance",
+                "fetched_at": f"{day}T07:30:00Z",
+                "batch_id": "fingerprint-test",
+                "status": "available",
+                "error": None,
+            }
+        ],
+    )
+
+
+def _last_ok_run_version(repo) -> int:
+    return int(
+        repo.conn.execute(
+            """
+            SELECT metric_version FROM read_model_refresh_runs
+            WHERE status = 'ok' ORDER BY id DESC LIMIT 1
+            """
+        ).fetchone()[0]
+    )
+
+
+def test_chokepoint_materializes_at_bumped_version_on_fingerprint_mismatch(tmp_path):
+    """Stale-version HIGH guard: when stored != live, the stage must bump to N+1,
+    enqueue every activity at N+1, AND materialize at the SAME N+1 it just bumped
+    to — never at the pre-bump N. The version is re-resolved internally post-bump,
+    so the enqueue version and the materialize version cannot disagree."""
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.refresh._sync_ops import materialize_read_model_stage
+    from tests._fixtures_duckdb import create_empty_fixture_db
+
+    fixture = tmp_path / "fingerprint.duckdb"
+    create_empty_fixture_db(fixture)
+    with DuckDBRepository.from_path(fixture) as repo:
+        _seed_one_dirty_activity(repo)
+        # First cycle: stored == live (seed adopted current) -> normal materialize at N=1.
+        materialize_read_model_stage(repo, "2026-05-24T12:00:00", None)
+        assert _last_ok_run_version(repo) == 1
+
+        # Force a logic-edit signal: overwrite the stored fingerprint with a wrong
+        # value (the live side is the real cached fingerprint). This is exactly how
+        # a real source edit looks: stored is stale, live moved on.
+        repo.bump_logic_version(1, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
+        # Re-dirty the activity so there is something to recompute at N+1.
+        repo.update_activity_detail(920, '{"id": 920, "resource_state": 3, "calories": 410}')
+
+        materialize_read_model_stage(repo, "2026-05-24T13:00:00", None)
+
+        bumped = repo.current_metric_version()
+        materialized_version = _last_ok_run_version(repo)
+        fact_at_2 = repo.fetch_activity_metric_fact(920, metric_version=2)
+
+    assert bumped == 2, "fingerprint mismatch must bump metric_version to N+1"
+    assert materialized_version == 2, "materialize must run at the bumped N+1, not the stale N"
+    assert fact_at_2 is not None, "the recompute must write facts at the bumped version"
+
+
+def test_chokepoint_adopts_current_when_sidecar_unseeded(tmp_path):
+    """Adopt-current self-heal: when the sidecar is UNSEEDED (stored is None,
+    e.g. a transient 15-02 seed failure), the stage writes the sidecar to
+    (current/fallback version, live fingerprint) and enqueues ZERO dirty rows —
+    no recompute. The next cycle is then a no-op (stored == live)."""
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.metric_registry import cached_logic_fingerprint
+    from mcp_strava.refresh._sync_ops import materialize_read_model_stage
+    from tests._fixtures_duckdb import create_empty_fixture_db
+
+    fixture = tmp_path / "adopt.duckdb"
+    create_empty_fixture_db(fixture)
+    with DuckDBRepository.from_path(fixture) as repo:
+        _seed_one_dirty_activity(repo)
+        # Simulate a skipped seed: delete the sidecar row so current_logic_version() is None.
+        repo.conn.execute("DELETE FROM read_model_logic_version WHERE id = 1")
+        repo._current_metric_version_cache = None
+        assert repo.current_logic_version() is None
+
+        dirty_before = len(repo.dirty_activity_rows())
+        materialize_read_model_stage(repo, "2026-05-24T12:00:00", None)
+
+        stored = repo.current_logic_version()
+        # A second cycle must be a no-op: stored == live, version unchanged.
+        version_after_adopt = repo.current_metric_version()
+        materialize_read_model_stage(repo, "2026-05-24T13:00:00", None)
+        version_after_noop = repo.current_metric_version()
+
+    assert stored is not None, "adopt-current must write the sidecar"
+    assert stored["logic_fingerprint"] == cached_logic_fingerprint(), "adopt writes the LIVE fingerprint"
+    # Adoption does NOT enqueue a mass recompute: the only dirty rows are the
+    # pre-existing seed dirty rows, never multiplied by a version bump.
+    assert version_after_adopt == version_after_noop, "adopt then match -> version must not bump"
+    assert dirty_before >= 1

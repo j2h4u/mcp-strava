@@ -28,8 +28,6 @@ from mcp_strava.types import (
 
 Row = dict[str, Any]
 
-CURRENT_METRIC_VERSION = 1
-
 
 def _emit(event: str, **fields: object) -> None:
     """Emit a structured JSON diagnostic event to stdout (house log style)."""
@@ -466,7 +464,7 @@ class DuckDBRepository:
         activity_id: int,
         *,
         reason: str = "source_changed",
-        metric_version: int = CURRENT_METRIC_VERSION,
+        metric_version: int,
         queued_at: str | None = None,
     ) -> bool:
         if not self._read_model_enabled():
@@ -1220,7 +1218,9 @@ class DuckDBRepository:
                     synced_at,
                 ],
             )
-            self.update_activity_source_state_and_enqueue_dirty(activity_id)
+            self.update_activity_source_state_and_enqueue_dirty(
+                activity_id, metric_version=self.current_metric_version()
+            )
         except Exception:
             self.rollback()
             raise
@@ -1230,7 +1230,9 @@ class DuckDBRepository:
         self.begin()
         try:
             self._execute("UPDATE activities SET detail_json = ? WHERE id = ?", [detail_json, activity_id])
-            self.update_activity_source_state_and_enqueue_dirty(activity_id)
+            self.update_activity_source_state_and_enqueue_dirty(
+                activity_id, metric_version=self.current_metric_version()
+            )
         except Exception:
             self.rollback()
             raise
@@ -1797,7 +1799,9 @@ class DuckDBRepository:
         self.begin()
         try:
             self._insert_stream_rows(activity_id, payload, chunk_size)
-            self.update_activity_source_state_and_enqueue_dirty(activity_id)
+            self.update_activity_source_state_and_enqueue_dirty(
+                activity_id, metric_version=self.current_metric_version()
+            )
         except Exception:
             self.rollback()
             raise
@@ -1817,7 +1821,9 @@ class DuckDBRepository:
         try:
             self._execute("DELETE FROM streams WHERE activity_id = ?", [activity_id])
             self._insert_stream_rows(activity_id, payload, chunk_size)
-            self.update_activity_source_state_and_enqueue_dirty(activity_id)
+            self.update_activity_source_state_and_enqueue_dirty(
+                activity_id, metric_version=self.current_metric_version()
+            )
         except Exception:
             self.rollback()
             raise
@@ -1871,7 +1877,9 @@ class DuckDBRepository:
         self.begin()
         try:
             self._execute("DELETE FROM streams WHERE activity_id = ?", [activity_id])
-            self.update_activity_source_state_and_enqueue_dirty(activity_id)
+            self.update_activity_source_state_and_enqueue_dirty(
+                activity_id, metric_version=self.current_metric_version()
+            )
         except Exception:
             self.rollback()
             raise
@@ -1921,7 +1929,9 @@ class DuckDBRepository:
                 ],
             )
             if commit:
-                self.update_activity_source_state_and_enqueue_dirty(activity_id)
+                self.update_activity_source_state_and_enqueue_dirty(
+                    activity_id, metric_version=self.current_metric_version()
+                )
         except Exception:
             if commit:
                 self.rollback()
@@ -1955,7 +1965,9 @@ class DuckDBRepository:
                     error=item.get("error"),
                     commit=False,
                 )
-            self.update_activity_source_state_and_enqueue_dirty(activity_id)
+            self.update_activity_source_state_and_enqueue_dirty(
+                activity_id, metric_version=self.current_metric_version()
+            )
         except Exception:
             self.rollback()
             raise
@@ -2009,7 +2021,9 @@ class DuckDBRepository:
                     error=item.get("error"),
                     commit=False,
                 )
-            self.update_activity_source_state_and_enqueue_dirty(activity_id)
+            self.update_activity_source_state_and_enqueue_dirty(
+                activity_id, metric_version=self.current_metric_version()
+            )
         except Exception:
             self.rollback()
             raise
