@@ -361,6 +361,27 @@ class DuckDBRepository:
                 row = self.conn.execute(sql, list(params or [])).fetchone()
         return row[0] if row is not None else None
 
+    def _scalar_int(self, sql: str, params: Iterable[object] | None = None) -> int:
+        """Run a scalar COUNT/aggregate query and return a plain ``int``.
+
+        The single controlled place where the unavoidable ``Any -> int`` narrowing
+        on a raw DB-API scalar happens, so public count methods stay fully typed and
+        no ``reportAny`` leaks out of the repository. A NULL/absent scalar (e.g.
+        ``COUNT(*)`` on an empty table never NULLs, but ``SUM`` can) collapses to 0.
+        The ``isinstance`` narrows ``Any -> int`` for the type checker (DuckDB
+        returns Python ``int`` for COUNT/SUM aggregates); a non-int/None scalar
+        means the query was misused as a counter, so fail loudly rather than coerce.
+        """
+        # Assign through an ``object``-typed local: _scalar returns ``Any | None``,
+        # and ``object`` erases the ``Any`` so the isinstance narrowing below gives
+        # the type checker a concrete ``int`` (no reportAny leak past this point).
+        value: object = self._scalar(sql, params)
+        if value is None:
+            return 0
+        if not isinstance(value, int):
+            raise TypeError(f"_scalar_int expected an integer scalar, got {type(value).__name__}")
+        return value
+
     def _table_columns(self, table: str) -> set[str]:
         _safe_identifier(table)
         with duckdb_process_lock():
@@ -2210,6 +2231,64 @@ class DuckDBRepository:
             "unavailable_channels": int(row["unavailable_channels"] or 0) if row else 0,
             "error_channels": int(row["error_channels"] or 0) if row else 0,
         }
+
+    # Mirror coverage counts (owned here so the application layer never runs raw
+    # SQL — callers receive typed ints/sets/bools, never raw DB-API rows).
+    def stream_table_columns(self) -> set[str]:
+        """Column names present on the ``streams`` table (via PRAGMA table_info)."""
+        return self._table_columns("streams")
+
+    def mirror_table_exists(self, table: str) -> bool:
+        """True when ``table`` exists in the mirror DB (information_schema lookup)."""
+        return self._table_exists(table)
+
+    def count_activities(self) -> int:
+        return self._scalar_int("SELECT COUNT(*) FROM activities")
+
+    def count_activities_with_streams(self) -> int:
+        return self._scalar_int("SELECT COUNT(DISTINCT activity_id) FROM streams")
+
+    def count_stream_points(self) -> int:
+        return self._scalar_int("SELECT COUNT(*) FROM streams")
+
+    def count_stream_gps_points(self, *, has_latlng: bool) -> int:
+        """Count stream points carrying GPS coordinates.
+
+        Canonical schema stores GPS as separate ``lat``/``lng`` columns; an older
+        variant DB may also carry a combined ``latlng`` column. ``has_latlng`` is
+        the caller's column-presence check (from ``stream_table_columns``) and
+        widens the predicate only when that column actually exists, so the query
+        never references a missing column.
+        """
+        gps_where = "lat IS NOT NULL AND lng IS NOT NULL"
+        if has_latlng:
+            gps_where = f"({gps_where}) OR latlng IS NOT NULL"
+        return self._scalar_int(f"SELECT COUNT(*) FROM streams WHERE {gps_where}")
+
+    def count_activities_missing_channel_metadata(self) -> int:
+        """Activities that have stream rows but zero ``stream_channels`` metadata."""
+        return self._scalar_int(
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT s.activity_id
+                FROM streams s
+                LEFT JOIN stream_channels c ON c.activity_id = s.activity_id
+                GROUP BY s.activity_id
+                HAVING COUNT(c.channel_key) = 0
+            )
+            """
+        )
+
+    def count_streams_missing_extra_values(self, *, has_values_json: bool) -> int:
+        """Stream points lacking the ``values_json`` extra-channels blob.
+
+        ``has_values_json`` is the caller's column-presence check; when the column
+        is absent (older DB), every stream point counts as missing extra values.
+        """
+        if not has_values_json:
+            return self.count_stream_points()
+        return self._scalar_int("SELECT COUNT(*) FROM streams WHERE values_json IS NULL OR values_json = ''")
 
     # Zones
     def latest_athlete_zones(self) -> str | None:

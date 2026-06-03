@@ -11,69 +11,32 @@ from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 _BACKFILL_SAMPLE_LIMIT = 20
 
 
-def _count(conn, sql: str, params=None) -> int:
-    row = conn.execute(sql, params or []).fetchone()
-    assert row is not None, "COUNT(*) always returns a row"
-    return int(row[0])
-
-
-def _stream_columns(conn) -> set[str]:
-    rows = conn.execute("PRAGMA table_info('streams')").fetchall()
-    return {str(row[1]) for row in rows}
-
-
-def _table_exists(conn, table: str) -> bool:
-    row = conn.execute(
-        """
-        SELECT 1
-        FROM information_schema.tables
-        WHERE table_name = ?
-        LIMIT 1
-        """,
-        [table],
-    ).fetchone()
-    return row is not None
-
-
 def get_mirror_coverage_service(*, connection=None) -> dict:
     conn_context = nullcontext(connection) if connection is not None else MirrorConn()
     with conn_context as conn:
         repo = DuckDBRepository.from_connection(conn)
-        stream_columns = _stream_columns(conn)
-        activities_total = _count(conn, "SELECT COUNT(*) FROM activities")
-        activities_with_streams = _count(conn, "SELECT COUNT(DISTINCT activity_id) FROM streams")
-        stream_points = _count(conn, "SELECT COUNT(*) FROM streams")
-        gps_where = "lat IS NOT NULL AND lng IS NOT NULL"
-        if "latlng" in stream_columns:
-            gps_where = f"({gps_where}) OR latlng IS NOT NULL"
-        gps_points = _count(conn, f"SELECT COUNT(*) FROM streams WHERE {gps_where}")
-        channel_stats = repo.stream_channel_coverage()
-        has_stream_channels = _table_exists(conn, "stream_channels")
+        # All queries go through typed repository methods — the application layer
+        # never touches conn.execute / raw DB-API (see DuckDBRepository mirror
+        # coverage count methods). stream_table_columns drives the schema-variant
+        # branches (latlng / values_json) below.
+        stream_columns = repo.stream_table_columns()
+        has_latlng = "latlng" in stream_columns
         has_values_json_col = "values_json" in stream_columns
 
+        activities_total = repo.count_activities()
+        activities_with_streams = repo.count_activities_with_streams()
+        stream_points = repo.count_stream_points()
+        gps_points = repo.count_stream_gps_points(has_latlng=has_latlng)
+        channel_stats = repo.stream_channel_coverage()
+        has_stream_channels = repo.mirror_table_exists("stream_channels")
+
         if has_stream_channels:
-            missing_metadata = _count(
-                conn,
-                """
-                SELECT COUNT(*)
-                FROM (
-                    SELECT s.activity_id
-                    FROM streams s
-                    LEFT JOIN stream_channels c ON c.activity_id = s.activity_id
-                    GROUP BY s.activity_id
-                    HAVING COUNT(c.channel_key) = 0
-                )
-                """,
-            )
+            missing_metadata = repo.count_activities_missing_channel_metadata()
         else:
             missing_metadata = activities_with_streams
 
-        if has_values_json_col:
-            missing_extra_values = _count(
-                conn, "SELECT COUNT(*) FROM streams WHERE values_json IS NULL OR values_json = ''"
-            )
-        else:
-            missing_extra_values = stream_points
+        missing_extra_values = repo.count_streams_missing_extra_values(has_values_json=has_values_json_col)
+
         stream_channel_backfill = repo.activities_missing_stream_channels(
             requested_channels=(
                 "time",
