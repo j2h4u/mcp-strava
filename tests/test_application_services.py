@@ -212,3 +212,61 @@ def test_get_freshness_service_uses_primary_repository_factory_for_connections(
     assert seen_connections == [connection]
     assert payload["freshness"]["last_successful_refresh_at"] == "2026-05-21T06:00:00"
     assert payload["freshness"]["last_activity_at"] == "2026-05-21T07:00:00"
+
+
+def test_WR_02_freshness_now_default_is_utc_not_local(repo: DuckDBRepository, monkeypatch) -> None:
+    """WR-02: the defaulted freshness clock must be a UTC instant, not the server's
+    LOCAL wall clock.
+
+    last_success_at is stored UTC-naive (refresh writes datetime.now(UTC); _parse_dt
+    normalizes Z->+00:00). The age comparison must therefore use a UTC `now`. On a
+    non-UTC server (e.g. Asia/Almaty, UTC+6) the old `now or datetime.now()` default
+    yielded a LOCAL-naive now that ran +6h ahead of the UTC last_success_at, inflating
+    the computed age by the offset and misclassifying a still-fresh mirror as aging.
+
+    Scenario: last_success_at is 10h old in UTC (fresh; < warn_age_hours=12). A local
+    clock skewed +6h ahead makes it read as 16h old (aging, between warn=12 and
+    max=24). With the UTC fix the state is 'fresh'; with the local bug it is 'aging'.
+    """
+    import mcp_strava.application.freshness as freshness
+
+    true_utc = datetime.fromisoformat("2026-05-21T10:00:00")  # UTC-naive "now"
+    local_skew = datetime.fromisoformat("2026-05-21T16:00:00")  # +6h Almaty wall clock
+
+    class _ClockProxy:
+        """Stand-in for the `datetime` symbol the module calls .now() on."""
+
+        @staticmethod
+        def now(tz=None):
+            if tz is not None:
+                # UTC-aware request -> return the true UTC instant, tz-aware.
+                return true_utc.replace(tzinfo=tz)
+            # Naive request (the buggy local path) -> the +6h-skewed wall clock.
+            return local_skew
+
+        @staticmethod
+        def fromisoformat(value):
+            return datetime.fromisoformat(value)
+
+    # 10h-old-in-UTC success: fresh under a UTC now, aging under the +6h-skewed now.
+    _set_refresh_state(
+        repo,
+        last_success_at="2026-05-21T00:00:00",
+        last_attempt_at="2026-05-21T00:00:00",
+        last_status="ok",
+    )
+
+    monkeypatch.setattr(freshness, "datetime", _ClockProxy)
+
+    # now=None -> exercise the PRODUCTION default freshness-clock path end-to-end.
+    envelope = freshness.get_freshness_service(
+        now=None,
+        signal_first_use=False,
+        connection=repo.conn,
+    )
+    state = dc_to_dict(envelope)["freshness"]["freshness_state"]
+
+    assert state == "fresh", (
+        "freshness must classify against a UTC now; a local-skewed default now misreads "
+        f"a 10h-old (UTC) success as aging — got {state}"
+    )
