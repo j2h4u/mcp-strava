@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+import shutil
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -9,9 +12,37 @@ import pytest
 
 from tests._fixtures_duckdb import create_fixture_db
 
+# The packaged runtime executes `docker compose -f deploy/docker-compose.yml`.
+_COMPOSE = ("docker", "compose", "-f", "deploy/docker-compose.yml")
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def _compose_service_running(service: str = "mcp-strava") -> bool:
+    """True only if the packaged container is up, so the smoke can shell into it.
+
+    Skips cleanly when docker/compose is unavailable or the service is not running
+    (keeping `uv run pytest -q` green locally); `just test` brings the container up
+    first via `compose up -d --wait`, so the phase gate exercises this path.
+    """
+    if shutil.which("docker") is None:
+        return False
+    try:
+        result = subprocess.run(
+            [*_COMPOSE, "ps", "--status=running", "--services"],
+            cwd=_repo_root(),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except OSError, subprocess.SubprocessError:
+        return False
+    if result.returncode != 0:
+        return False
+    return service in result.stdout.split()
 
 
 def _read_text(path: Path) -> str:
@@ -260,3 +291,36 @@ def test_lease_active_uses_utc_and_tolerates_aware_timestamps() -> None:
     assert _lease_active({"lease_owner": None, "lease_expires_at": future}) is False
     assert _lease_active({"lease_owner": "w", "lease_expires_at": None}) is True
     assert _lease_active({"lease_owner": "w", "lease_expires_at": "not-a-date"}) is True
+
+
+@pytest.mark.skipif(
+    not _compose_service_running(),
+    reason="mcp-strava container not running (skips locally; `just test` brings it up first)",
+)
+def test_compute_logic_fingerprint_succeeds_under_packaged_install() -> None:
+    """compute_logic_fingerprint() works under the pip-install /app (non-editable) layout.
+
+    The editable-install smoke in test_logic_fingerprint.py cannot prove that
+    inspect.getsource finds source under the PACKAGED layout (deploy/Dockerfile
+    `pip install /app` ships source into site-packages). This shells into the
+    running container and computes the real fingerprint there: a 64-char hex with
+    exit 0 proves getsource raises no OSError on installed source (T-15-11 / A1).
+    """
+    result = subprocess.run(
+        [
+            *_COMPOSE,
+            "exec",
+            "-T",
+            "mcp-strava",
+            "python",
+            "-c",
+            "from mcp_strava.metric_registry import compute_logic_fingerprint;print(compute_logic_fingerprint())",
+        ],
+        cwd=_repo_root(),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, f"container fingerprint failed: {result.stderr}"
+    digest = result.stdout.strip().splitlines()[-1].strip()
+    assert _HEX64.match(digest), f"expected a 64-char hex fingerprint, got: {digest!r}"

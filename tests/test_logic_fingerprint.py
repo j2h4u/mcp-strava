@@ -221,3 +221,32 @@ def test_all_listed_modules_are_importable() -> None:
     for module_name in COMPUTE_SOURCE_MODULES:
         # Must not raise: import_module inside compute_logic_fingerprint relies on this.
         importlib.import_module(module_name)
+
+
+# --------------------------------------------------------------------------- #
+# Packaged-install getsource smoke (editable; unconditional)                   #
+# --------------------------------------------------------------------------- #
+
+
+def test_getsource_succeeds_on_every_compute_source_module() -> None:
+    """inspect.getsource must succeed on EVERY COMPUTE_SOURCE_MODULES module.
+
+    The fingerprint is computed by inspect.getsource over each compute module.
+    Under some packaged layouts getsource can raise OSError (no source file
+    available), which would crash the fingerprint compare on every refresh cycle
+    (T-15-11). This UNCONDITIONAL local smoke runs under `uv run pytest -q` on the
+    editable install and catches a getsource regression locally — not only in
+    Docker. The real packaged pip-install layout is additionally proven by the
+    docker compose exec smoke in tests/test_docker_runtime.py.
+    """
+    for module_name in COMPUTE_SOURCE_MODULES:
+        module = importlib.import_module(module_name)
+        try:
+            source = inspect.getsource(module)
+        except OSError as exc:  # pragma: no cover - failure path is the assertion
+            raise AssertionError(f"inspect.getsource raised OSError for {module_name}: {exc}") from exc
+        assert source, f"empty source returned for {module_name}"
+
+    digest = compute_logic_fingerprint()
+    assert len(digest) == 64
+    assert all(char in "0123456789abcdef" for char in digest)
