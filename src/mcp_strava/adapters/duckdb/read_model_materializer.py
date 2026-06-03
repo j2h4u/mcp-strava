@@ -389,9 +389,15 @@ def _record_failed_run(repo: DuckDBRepository, started_at: str, metric_version: 
                 "last_error": str(error),
             }
         )
-        repo.conn.commit()
+        # WR-03: commit through the lock-aware repository helper, not a raw
+        # repo.conn.commit(). record_read_model_refresh_run already writes via
+        # _execute (which takes duckdb_process_lock()); _commit_if_standalone
+        # finalizes that write under the same single-writer lock the rest of the
+        # repository honors, so the failed-run bookkeeping cannot interleave with
+        # another writer's transaction.
+        repo._commit_if_standalone()
     except Exception:
-        repo.conn.rollback()
+        repo.rollback()
 
 
 def materialize_read_model(
