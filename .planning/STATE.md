@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 15-06 gap-closure (WR-01..04 advisory WARNINGs hardened via TDD)
+status: complete
+stopped_at: Phase 15 complete and re-verified (passed, 21/21, 389 tests); WR-01..04 hardened. Milestone v1.1 at 100% — next step /gsd-complete-milestone
 last_updated: "2026-06-03T20:09:35.456Z"
 last_activity: 2026-06-03
 progress:
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 ## Current Position
 
-Phase: 15
-Plan: Not started
-Status: Phase complete; 15-06 gap-closure hardened the 4 advisory WARNINGs — ready for re-verification
-Last activity: 2026-06-03
+Phase: 15 (complete)
+Plan: —
+Status: Phase 15 re-verified passed (21/21, 389 tests); WR-01..04 hardened via TDD. Milestone v1.1 100% — next /gsd-complete-milestone
+Last activity: 2026-06-04
 
 ## Performance Metrics
 
