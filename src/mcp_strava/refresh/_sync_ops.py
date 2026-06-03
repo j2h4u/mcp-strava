@@ -323,11 +323,25 @@ def materialize_read_model_stage(
         )
     elif stored["logic_fingerprint"] != live:
         # A compute module's source changed -> bump + mass-enqueue recompute.
+        # WR-01: the version advance and the mass-enqueue MUST land atomically.
+        # bump_logic_version + enqueue_metric_version_recompute each
+        # _commit_if_standalone, which no-ops inside a transaction, so wrapping
+        # them in one repo.begin()/commit() makes the pair all-or-nothing. Without
+        # this, a crash AFTER the bump commit but BEFORE the enqueue commit would
+        # durably advance the stored fingerprint to live while leaving the dirty
+        # queue empty — the next cycle then sees stored == live and silently never
+        # recomputes (the under-invalidation this phase exists to prevent).
         new_version = int(stored["metric_version"]) + 1
-        repo.bump_logic_version(new_version, live, now_iso)
-        enqueued = repo.enqueue_metric_version_recompute(
-            new_version, reason="logic_fingerprint_changed", queued_at=now_iso
-        )
+        repo.begin()
+        try:
+            repo.bump_logic_version(new_version, live, now_iso)
+            enqueued = repo.enqueue_metric_version_recompute(
+                new_version, reason="logic_fingerprint_changed", queued_at=now_iso
+            )
+        except Exception:
+            repo.rollback()
+            raise
+        repo.commit()
         trigger_reason = "logic_fingerprint_changed"
         _emit(
             "read_model_logic_recompute",
