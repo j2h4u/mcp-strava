@@ -17,3 +17,14 @@
   seed can create it, so a pre-Phase-15 live DB crash-loops. Worked around for the
   dev instance by applying the in-code seed once; durable fix deferred to the deploy
   layer.
+
+## 15-06 execution discoveries (out of scope — logged, not fixed)
+
+- **`deploy/gateway_register.py` pre-existing lint + format drift:** `uv run ruff
+  check` flags `UP035` at `deploy/gateway_register.py:9` (`from typing import
+  Callable` should be `from collections.abc import Callable`), and `ruff format
+  --check` would reformat the same file. Both are pre-existing (no diff from HEAD;
+  not touched by 15-06) and outside the WR-01..04 change set, so per the scope
+  boundary they were logged here rather than fixed. The file is deploy tooling, not
+  on the product/runtime import path. Suggest a quick `style`/`chore` task to run
+  `ruff check --fix` + `ruff format` over `deploy/`.
