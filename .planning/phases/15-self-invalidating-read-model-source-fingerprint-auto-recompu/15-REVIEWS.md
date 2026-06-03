@@ -1,221 +1,228 @@
 ---
 phase: 15
-review_cycle: 2
+review_cycle: 3
 reviewers: [codex, opencode]
-reviewed_at: 2026-06-03T18:40:00Z
+reviewed_at: 2026-06-03T19:05:00Z
 plans_reviewed: [15-01-PLAN.md, 15-02-PLAN.md, 15-03-PLAN.md, 15-04-PLAN.md, 15-05-PLAN.md]
-prior_cycle: 1
-prior_cycle_commit: abe0bbe
+prior_cycle: 2
+prior_cycle_commit: 213a82d
+amendment_commit: f7e2bea
 context: >
-  Cycle-2 review of the amended Phase 15 plans. The plans were amended (commit abe0bbe)
-  to fold in 4 HIGH + 6 MEDIUM findings from cycle 1. This review verifies whether the
-  prior HIGHs are resolved and whether the amendments (notably the rewave to a strictly
-  serial W1->W2->W3->W4->W5 structure) introduced new HIGH concerns.
+  Cycle-3 review of the Phase 15 plans after commit f7e2bea amended them to fix the single
+  remaining cycle-2 HIGH (stale memoized / caller-resolved metric_version that could defeat
+  the self-invalidating recompute). The fix: bump_logic_version() now invalidates the
+  current_metric_version memo, and materialize_read_model_stage drops its caller-passed
+  metric_version param and re-resolves the version internally AFTER the fingerprint bump
+  (callers in runtime.py x3 + worker.py updated). This cycle verifies the HIGH is fully
+  resolved and that removing the chokepoint param / adding the post-bump re-resolution did
+  not introduce any new HIGH. MEDIUM/LOW folds (15-04 option-a E2E, 15-05 rewaved parallel
+  to 15-04, status-path grep instruction, per-process fingerprint cache, parse_local_hhmm
+  home) were also confirmed coherent.
+unresolved_high_count: 0
 ---
 
-# Cross-AI Plan Review — Phase 15 (Cycle 2)
+# Cross-AI Plan Review — Phase 15 (Cycle 3)
 
 ## Codex Review
 
 **Summary**
-The amended plans resolve all prior HIGH findings on the text. Phase 15 is close, but not
-fully executable yet because the amendments introduce one new HIGH risk: `current_metric_version()`
-is now explicitly memoized, but the recompute path bumps the version and then may reuse a stale
-cached or caller-resolved version. The wave serialization is mostly justified through 15-04, but
-15-05's dependency on 15-04 looks over-serialized.
 
-**Prior HIGH Resolution Table**
+The cycle-2 HIGH is fully resolved in the amended plan text. The plans now require both
+necessary fixes: `bump_logic_version()` invalidates the memo, and `materialize_read_model_stage()`
+removes the caller-provided `metric_version` and re-resolves internally after compare/bump.
+No new HIGH. One MEDIUM plan-text inconsistency remains around the unseeded-sidecar self-healing
+path, plus one LOW stale-wording issue.
 
-| Prior HIGH | Status | Evidence |
-|---|---|---|
-| H1: `15-02` must depend on `15-01` | RESOLVED | `15-02` frontmatter now has `depends_on: [15-01]`; Task 2 imports `compute_logic_fingerprint` added by `15-01`. |
-| H2: version pinning incomplete | RESOLVED | `15-03` Task 3 explicitly threads `metric_version` through `query_training_aggregates`, `_where_clause`, `_effective_range_for_metric`, `query_status_facts`, and `aggregate_services.py`. |
-| H3: deleting `CURRENT_METRIC_VERSION` breaks defaults and misses re-export | RESOLVED | `15-03` Task 1 removes the constant from `repository.py`, `adapters/duckdb/__init__.py`, `__all__`, and makes `update_activity_source_state_and_enqueue_dirty` plus `materialize_read_model` require explicit `metric_version`. |
-| H4: `metric_registry` omitted from fingerprint modules | RESOLVED | `15-01` must-have says `mcp_strava.metric_registry is in COMPUTE_SOURCE_MODULES`; implementation tuple includes it. |
-| Seed robustness: `ImportError` breaks `from_connection()` | RESOLVED | `15-02` requires `try/except Exception` around fingerprint compute plus seed insert, and tests an `ImportError` path where `from_connection()` still succeeds. |
+**Prior-HIGH Resolution Verdict: RESOLVED.**
+
+Evidence:
+- 15-02-PLAN.md:17 must-have explicitly says `bump_logic_version()` invalidates the cached
+  `current_metric_version` memo.
+- 15-02-PLAN.md:81 requires invalidation at the END of the bump, after the upsert, and says
+  callers must not be responsible for resetting the memo.
+- 15-02-PLAN.md:105 adds the same-repo regression test: populate memo at `v`, bump to `v+1`,
+  then assert `current_metric_version()` returns `v+1`.
+- 15-03-PLAN.md:25 must-have says the chokepoint re-resolves internally after compare-and-bump,
+  not from a caller-passed pre-bump value.
+- 15-03-PLAN.md:85 and :108 explicitly update all four stage callers: runtime.py:108,
+  runtime.py:179, runtime.py:273, worker.py:69.
+- 15-03-PLAN.md:110 gives the correct ordering: `bump_logic_version(new_version, ...)`, enqueue
+  at `new_version`, then `current_version = repo.current_metric_version()` after memo invalidation.
+
+This closes the stale `N` vs dirty-queue `N+1` failure.
 
 **New Concerns**
 
-HIGH: Stale cached metric version can break the recompute path.
-`15-02` requires `current_metric_version()` to cache the resolved value for the repo lifetime.
-`15-03` then says the trigger does `bump_logic_version(new_version, ...)` and afterwards resolves
-`current_version = repo.current_metric_version()`. It also says `runtime.py` and `worker.py` should
-read `repo.current_metric_version()` and pass it into `materialize_read_model_stage`. If the cache
-was populated before the bump, or the caller passes the pre-bump version, the dirty rows may be
-enqueued for version N+1 while materialization still runs version N. Amend the plan to require
-`bump_logic_version()` to update/invalidate the memoized current version and require
-`materialize_read_model_stage` to resolve the version internally after the fingerprint check, not
-accept a caller-resolved version.
+HIGH: None. Removing the `metric_version` parameter from `materialize_read_model_stage` is safe
+in the plan: all four current callers are named and updated. The lower-level materializer still
+needs a version, and the plan keeps that as a required parameter supplied by the stage.
 
-MEDIUM: `15-05` is over-serialized behind `15-04`.
-`15-02 -> 15-03` is real. `15-03 -> 15-04` is justified because `15-04` includes the zero-knob
-recompute integration proof. But `15-05` only needs `15-03` for recompute/version plumbing and
-touches time-field/schema/payload concerns; it does not depend on the walk discount semantics from
-`15-04`. It can likely be `depends_on: [15-03]` and run parallel with `15-04`, with ordinary
-file-conflict coordination.
+MEDIUM: unseeded sidecar self-healing text is still inconsistent. 15-02-PLAN.md:87 says if seeding
+is skipped, "15-03's chokepoint adopts-current on the next cycle." But 15-03-PLAN.md:110 says
+`stored is None` does nothing and adoption is handled by the 15-02 seed. Not a HIGH because the
+fallback `current_metric_version()` still gives a usable version and `from_connection()` can retry
+seeding on later repo creation. The plan should either add an explicit `stored is None`
+adopt-current branch at the chokepoint or remove the claim that 15-03 performs adoption.
 
-MEDIUM: unseeded sidecar self-healing is inconsistent.
-`15-02` says a skipped seed leaves the sidecar unseeded and defers to the next cycle, but `15-03`
-says when `stored is None`, "do nothing." That is safe for no-recompute, but it does not guarantee
-adoption. Add an explicit adopt-current branch at the chokepoint: if `stored is None` and live
-fingerprint computes, write the sidecar with the current/fallback version and do not enqueue.
+LOW: stale threat-boundary wording in 15-05. 15-05-PLAN.md:135 still says `start_date_local` is
+"sliced," while the must-haves and mitigation correctly require `datetime.fromisoformat()` parsing.
+The actionable task text is clear, so this is only cleanup.
 
-MEDIUM: `15-04` overclaims its constant-change E2E proof.
-The must-have says changing `WALK_TRIMP_DISCOUNT` flips the fingerprint and auto-recomputes. The
-implementation text correctly notes monkeypatching the constant does not change `inspect.getsource`,
-but option `(b)` only proves recalculation uses the patched constant, not fingerprint-triggered
-recompute. Require option `(a)` or an equivalent forced stored/live fingerprint mismatch integration
-test, and rely on `15-01` for source-text sensitivity.
-
-LOW: `15-05` threat model still says string slicing.
-The task text correctly requires `datetime.fromisoformat()` and forbids `[11:16]`, but T-15-10 still
-says "opaque string slice ([11:16])." Clean that up to avoid executor confusion.
+**MEDIUM Fold Confirmation** — coherent: 15-04 option-a E2E required; 15-05 re-waved to wave 4,
+`depends_on: [15-03]`, function-level coordination on the only shared file; status-path grep
+instruction replaces stale line numbers; worker empty-queue gate fixed; per-process live
+fingerprint cache added (uncached retained for seed/tests); `parse_local_hhmm` placed in `metrics.py`.
 
 **Risk Assessment**
-Overall risk is HIGH until the cached-version invalidation issue is amended, because it can defeat
-the core self-invalidating behavior. After that fix, MEDIUM: the prior HIGHs are resolved, and the
-remaining issues are mostly scheduling, test precision, and plan consistency.
+
+Overall risk MEDIUM/LOW. No unresolved HIGH blockers in the amended plan text. The only meaningful
+remaining issue is the unseeded-sidecar adoption inconsistency, worth cleaning before execution
+because it affects plan clarity and rare seed-failure recovery.
+
+**Unresolved HIGH count: 0**
 
 ---
 
 ## OpenCode Review
 
-# Phase 15 — Review Cycle 2
+**Summary**
 
-## 1. Summary
+The cycle-2 HIGH (stale memoized/caller-resolved `metric_version` defeating recompute) is fully
+resolved by the amended plan text, with explicit, verifiable text in both 15-02 (memo invalidation)
+and 15-03 (signature removal + internal post-bump re-resolution + regression test). No new HIGH
+concerns were introduced. The five MEDIUM folds from cycle 2 are coherent and correctly applied.
+The phase is executable.
 
-All five prior HIGH concerns (H1–H4 + seed-robustness) are **fully resolved** in the amended plans
-with concrete, verifiable plan text. No new HIGH concerns were introduced. Three MEDIUM notes
-(worker idle perf, 15-04 e2e ambiguity, status-fact line-number precision) deserve attention during
-execution but are not blockers. The serialization of waves 2→3→4→5 is slightly conservative but
-justified by real code-shared-file dependencies. **The phase is executable.**
+**Prior HIGH Resolution Verdict: FULLY RESOLVED.** Three independent plan-text amendments close it:
 
-## 2. Prior HIGH Resolution Table
+| Fix | Document | Cite |
+|-----|----------|------|
+| Memo invalidation | 15-02 Task 2 | "bump_logic_version() MUST invalidate the current_metric_version memo on the repo instance at the END of the bump (after the upsert commits)" |
+| Signature change (remove caller param) | 15-03 Task 2 | "REMOVE the `metric_version: int` parameter from materialize_read_model_stage" |
+| Internal post-bump re-resolution | 15-03 Task 2 | "resolve current_version = repo.current_metric_version() AFTER the bump (the 15-02 memo was just invalidated by bump_logic_version, so this returns the NEW version on a recompute cycle)" |
+| Stale-version regression test | 15-03 Task 2 | "Add a regression test... forces stored != live, runs the stage on the SAME repo, and asserts the metric_version actually materialized equals the bumped (N+1) version" |
 
-| Prior HIGH | Verdict | Evidence from amended plan text |
-|---|---|---|
-| **H1**: 15-02 must `depends_on:[15-01]` | **RESOLVED** | 15-02-PLAN.md YAML header: `depends_on: [15-01]`. Task 2 says "import compute_logic_fingerprint INSIDE the method (runtime)". |
-| **H2**: Version pinning incomplete | **RESOLVED** | 15-03-PLAN.md Task 3 covers ALL three paths: `_effective_range_for_metric` pinned `metric_version = ?`; `query_status_facts` adds `metric_version = ?` to each direct SELECT; `aggregate_services.py` resolves `version` once and threads it into `read_model_status` + `query_training_aggregates`. No-blend test covers point, aggregate, AND status reads. |
-| **H3**: `CURRENT_METRIC_VERSION` deletion breaks default arg + incomplete removal scope | **RESOLVED** | 15-03-PLAN.md Task 1 removes the re-export from `adapters/duckdb/__init__.py:5` AND `__all__` line 10; makes both default args required; verification `grep -rn CURRENT_METRIC_VERSION src/` returns nothing. Codebase confirmed symbol on lines 5 and 10. |
-| **H4** (codex): `metric_registry` omitted from `COMPUTE_SOURCE_MODULES` | **RESOLVED** | 15-01-PLAN.md tuple now includes `"mcp_strava.metric_registry"`; verified `read_model_materializer.py:11` imports from `metric_registry`. |
-| **Seed-path robustness** (opencode) | **RESOLVED** | 15-02-PLAN.md Task 2 wraps the fingerprint compute in a SEPARATE inner `try/except Exception` distinct from the `CatalogException` guard; Task 3 verifies with a monkeypatch ImportError test. |
+Together: the repo memo is cleared inside `bump_logic_version` after the upsert, and the stage's
+only version source is a fresh `repo.current_metric_version()` call that occurs AFTER bump returns,
+guaranteeing the memo is already cleared and the re-read hits the freshly-written sidecar row
+(N+1 on recompute, stored N on no-change). No caller can inject a stale version because the param
+no longer exists on the stage signature.
 
-## 3. New Concerns
+**New Concerns**
 
-### MEDIUM — One
-**Worker idle-cycle fingerprint computation cost.** 15-03 Task 2 picks option (b): when
-`dirty_count==0`, still call `materialize_read_model_stage` once. The trigger block calls
-`compute_logic_fingerprint()` (import_module + inspect.getsource over 8 modules) on every idle cycle.
-Likely negligible on a single-user local service, but a permanent per-cycle overhead. Mitigation: a
-per-process fingerprint cache, or option (a). Not a blocker.
+All four callers updated? MEDIUM → LOW. The plan explicitly lists all 4 callers (runtime.py
+108/179/273, worker.py 69) in both Task 1 and Task 2. No positional-arg shift affects callers
+because the removed param (`metric_version`) comes BEFORE the remaining positional `now_iso`;
+after removal the first two positional args are `repo` and `now_iso` — exactly what all 4 callers
+pass. No caller breakage risk. Minor LOW: Task 1 and Task 2 both say to update callers (redundant
+but not contradictory) — executor should remove the param and update callers in one atomic commit.
 
-### MEDIUM — Two
-**15-04 zero-knob end-to-end proof remains ambiguously specified.** The plan offers (a) vs (b)
-without choosing; option (b) is just a unit test of the discount function and does not prove the
-fingerprint → recompute pipeline. Recommendation: pick (a) and document the choice.
+Post-bump internal re-resolution: No concerns. The flow is serial and single-threaded (DuckDB is
+single-owner): read stored → compute live (cached) → on mismatch bump(N+1) (upserts + invalidates
+memo) + enqueue(N+1) → `current_metric_version()` fresh read → N+1 → materialize at N+1.
+(1) memo invalidation happens at end of bump, re-read is after bump returns → guaranteed cleared;
+(2) no other code path calls `current_metric_version()` between bump and re-read (adjacent in the
+same function body); (3) unseeded `stored is None` path: no bump, fallback to fact-table max or 1,
+correct; (4) the regression test directly validates enqueue-version == materialize-version.
 
-### MEDIUM — Three
-**`query_status_facts` per-SELECT line numbers may be imprecise.** Verified code shows
-`query_status_facts` (line 163) iterates `STATUS_FACT_REGISTRY` and delegates to `_query_status_fact`;
-the actual SELECTs are likely inside that inner function. Intent (pin every direct fact-table query)
-is clear and correct; executor should search for fact-table access patterns rather than rely on the
-listed line numbers.
+**MEDIUM fold coherence** — all RESOLVED: 15-04 option-a E2E; 15-05 `depends_on: [15-03]` rewave
+with function-level coordination; status-path grep instruction; `cached_logic_fingerprint()`
+per-process cache; `parse_local_hhmm` in `metrics.py`.
 
-### LOW — Serialization waves 2→5
-15-05 declares `depends_on: [15-03, 15-04]`. 15-03 dependency is clearly correct. The 15-04
-dependency is logically unnecessary (Walk discount and time fields don't interact) but defensible on
-code-safety grounds: both plans modify `repository.py` and `read_model_materializer.py` in adjacent
-areas. Lost parallelism is one serialized commit cycle — trivial cost. Not actionable.
+**Minor observations (LOW)**
 
-### LOW — `_parse_local_hhmm` helper placement
-15-05 Task 1 says to factor a module-level helper used by both `read_model_materializer.py` (adapter)
-and `metric_services.py` (application). Placing it in either creates a layering import. The implementer
-should place it in a neutral location (e.g. `constants.py` or a new lightweight module). Low risk.
+1. Unseeded sidecar never self-heals at the chokepoint: if the 15-02 seed fails transiently
+   (import error), the sidecar stays unseeded until the next `from_connection` (service restart).
+   Degrades gracefully (fallback version, no crash), but auto-recompute unavailable until restart.
+   Not a correctness issue.
+2. Dual update of callers across Task 1 and Task 2 — do signature removal + caller update atomically.
+3. 15-05 T-15-10 threat model cleaned up (no longer "opaque string slice"); now uses
+   `datetime.fromisoformat()` + `strftime('%H:%M')`.
 
-### LOW — 15-01 YAML `depends_on: []`
-Correct and consistent — 15-01 is the foundational plan.
+**Risk Assessment**
 
-## 4. Risk Assessment
+Overall: LOW. The single cycle-2 HIGH is fully resolved across both 15-02 (memo invalidation) and
+15-03 (signature removal + internal re-resolution + regression test). All five MEDIUM folds coherent.
+No new HIGH. The two LOW notes (unseeded self-heal deferral, caller-update atomicity) are
+implementation-level and do not affect correctness.
 
-**Overall: LOW.** All 5 prior HIGH concerns are fully resolved with traceable evidence. No new HIGH
-found by this reviewer. The three MEDIUM notes are implementation-level. Serialization is conservative
-but justified. **The phase is ready for execution.**
+**Unresolved HIGH count: 0**
 
 ---
 
 ## Consensus Summary
 
-Both reviewers independently confirm that **all 5 prior HIGH concerns (H1–H4 + seed-path robustness)
-are FULLY RESOLVED** in the amended plans, with traceable evidence cited from the plan text and
-cross-checked against the codebase (`__init__.py:5/10`, `read_model_materializer.py:11`). The cycle-1
-fold-in succeeded on every prior HIGH.
+Both reviewers independently and unambiguously conclude that the **single cycle-2 HIGH (stale
+memoized / caller-resolved `metric_version`) is FULLY RESOLVED**, and that the amendments introduced
+**zero new HIGH concerns**. Both cite specific amended plan text:
 
-The reviewers **diverge on one new finding**, which was verified against the source during this review
-and is folded in as a genuine HIGH (see below).
+- 15-02 Task 2 / must-have: `bump_logic_version()` invalidates the `current_metric_version` memo at
+  the END of the bump (after the upsert commits); same-repo regression test (populate memo at v →
+  bump to v+1 → assert read returns v+1).
+- 15-03 Task 2: `materialize_read_model_stage` loses its `metric_version` parameter and re-resolves
+  `repo.current_metric_version()` INTERNALLY, after the fingerprint compare-and-bump; regression
+  test asserts materialized version == bumped N+1.
 
-### Agreed Strengths (both reviewers)
+**Independent code verification (this cycle):** The orchestrator verified the prior-HIGH fix and the
+param-removal against the live source (plans not yet executed):
+- The current chokepoint signature is `materialize_read_model_stage(repo, metric_version, now_iso,
+  renew_lease, limit=None)` (`_sync_ops.py:269`). Removing `metric_version` yields `(repo, now_iso,
+  renew_lease, limit=None)`.
+- There are EXACTLY 4 callers — runtime.py:108, runtime.py:179, runtime.py:273, worker.py:69 — and
+  each passes `CURRENT_METRIC_VERSION` as the 2nd positional arg immediately followed by `now_iso`.
+  Deleting that one argument line at each site shifts `now_iso` up to 2nd positional, matching the
+  new signature. No keyword caller depends on the removed name; no positional misalignment results.
+  The plan names all 4 sites. The param-removal is mechanically clean → the reviewers' "no new HIGH"
+  conclusion holds against the actual source.
 
-- All prior HIGHs resolved with explicit, verifiable plan text (not hand-waving).
-- H2 version pin now threads through the entire aggregate/status read path (`_where_clause`,
-  `_effective_range_for_metric`, `query_status_facts`, `aggregate_services.py`), not just `_where_clause`.
-- H3 constant removal is exhaustive (symbol + re-export + `__all__` + required params), with a
-  `grep`-returns-nothing verification gate.
-- Seed-path `ImportError` guard is correctly separated from the `CatalogException` guard.
+### Agreed Strengths
 
-### Agreed Concerns (raised or accepted by both — fold in manually)
+- Cycle-2 HIGH closed at BOTH ends: memo invalidation inside `bump_logic_version` (single guaranteed
+  point) AND param removal + post-bump internal re-resolution at the chokepoint, plus a dedicated
+  same-repo regression test guarding it.
+- Post-bump re-resolution is correct in a single-threaded, single-owner DuckDB process: the memo is
+  cleared before the re-read, no intervening `current_metric_version()` call can re-stale it, and the
+  unseeded fallback path is sound.
+- All five cycle-2 MEDIUM folds applied coherently (15-04 option-a E2E, 15-05 parallel rewave,
+  status-path grep, per-process fingerprint cache, layering-neutral helper home).
 
-1. **[MEDIUM] 15-04 zero-knob E2E proof is ambiguously specified (option a vs b).** Both reviewers
-   flag that option (b) only proves the discount recalculates with a patched constant — it does NOT
-   prove the fingerprint→recompute pipeline fires. Pick option (a): force a real stored-vs-live
-   fingerprint mismatch at the chokepoint and assert recompute. Lean on 15-01 for source-text sensitivity.
-2. **[MEDIUM] 15-05 is over-serialized behind 15-04.** Codex (MEDIUM) and OpenCode (LOW) agree the
-   15-04 dependency is logically unnecessary — Walk discount and time fields don't interact. OpenCode
-   accepts it on shared-file (`repository.py`, `read_model_materializer.py`) merge-safety grounds.
-   Decision needed: keep serial for file-conflict safety, or relax 15-05 to `depends_on: [15-03]` and
-   coordinate the shared-file edits. Low real cost either way (one serial commit cycle).
-3. **[MEDIUM] `query_status_facts` line numbers (265/307/336/366/392/432/501) are imprecise.** The
-   real SELECTs live inside the per-definition `_query_status_fact` delegate. The intent is correct;
-   the executor should grep for fact-table access in the status path rather than trust the line list.
+### Agreed Concerns (fold in manually — none are HIGH)
 
-### Divergent View (verified against code → folded in as HIGH)
-
-- **[HIGH] Stale memoized / caller-resolved `metric_version` can defeat the recompute.** Codex raises
-  this as a new HIGH; OpenCode does not flag it. **Verified against source during this review:**
-  `materialize_read_model_stage(repo, metric_version, ...)` (`_sync_ops.py:270`) takes
-  `metric_version` as a **caller-resolved parameter**, and 15-03 Task 2 keeps that shape (worker/runtime
-  resolve `repo.current_metric_version()` and pass it in). 15-02 Task 2 mandates that
-  `current_metric_version()` **memoizes** its result on the repo instance for the repo lifetime. The
-  trigger then `bump_logic_version(N+1)` → `enqueue_metric_version_recompute(N+1)` (dirty rows at N+1).
-  If the memo was populated to N before the bump, OR the caller passed a pre-bump N into the stage,
-  materialization runs at stale N while dirty rows are queued at N+1 — a self-defeating version
-  mismatch that the plans do not currently close. The plans never state that `bump_logic_version()`
-  invalidates the memo, and they explicitly pass a caller-resolved `metric_version` into the stage
-  rather than re-resolving after the fingerprint check. This is a real interaction-bug introduced by
-  the cycle-1 amendments (memoization + required-param threading).
-
-  **Required fix (fold into 15-02/15-03 before execution):** (a) `bump_logic_version()` must invalidate/
-  update the memoized `current_metric_version` on the repo instance; AND (b) the chokepoint must
-  resolve `metric_version` **internally, after** the fingerprint compare-and-bump — `materialize_read_model_stage`
-  should derive the version from `repo.current_metric_version()` post-bump rather than trust a
-  caller-resolved value. Together these guarantee enqueue version == materialize version on the
-  recompute cycle.
+1. **[MEDIUM] Unseeded-sidecar self-healing text is inconsistent across 15-02 and 15-03.** 15-02:87
+   claims "15-03's chokepoint adopts-current on the next cycle," but 15-03:110 says when `stored is
+   None` the chokepoint does nothing (adoption handled by the 15-02 seed). Both reviewers flag this
+   (codex MEDIUM, opencode LOW). Functionally safe — `current_metric_version()` falls back to the
+   fact-table max (or 1) so reads never break, and a later `from_connection()` re-attempts the seed —
+   but if the seed fails transiently (e.g. ImportError), auto-recompute is unavailable until the next
+   repo creation / service restart. **Fix options:** (a) add an explicit `stored is None` adopt-current
+   branch at the chokepoint (write the sidecar with the current/fallback version + live fingerprint,
+   do NOT enqueue), OR (b) reword 15-02:87 to drop the claim that 15-03 performs adoption and state
+   the seed re-attempts on next `from_connection`. Either makes the two plans agree.
 
 ### Other items to fold (LOW)
 
-- 15-05 threat model T-15-10 still describes the old `[11:16]` "opaque string slice" — stale vs the
-  amended `fromisoformat` parse; tidy to avoid executor confusion (codex LOW).
-- `_parse_local_hhmm` helper needs a layering-neutral home (not adapter, not application) to avoid an
-  import-direction violation (opencode LOW).
-- 15-03 worker option (b) computes the fingerprint every idle cycle; cheap on a single-user instance,
-  but a per-process fingerprint cache or option (a) avoids the permanent per-cycle cost (opencode MEDIUM/perf).
+- **Caller-update atomicity (opencode):** Task 1 and Task 2 of 15-03 both instruct updating the 4
+  stage callers — redundant but not contradictory. Execute the signature removal + all 4 caller edits
+  as one atomic commit to avoid a transient broken-import state.
+- **15-05 threat-row wording (codex):** T-15-10's "trust boundary" line still describes the value as
+  "sliced"; the must-haves/mitigation correctly require `fromisoformat()` parsing. Cosmetic cleanup.
+- **ROADMAP wave metadata is stale (orchestrator note):** `.planning/ROADMAP.md` still lists 15-05 in
+  "Wave 4 (blocked on Wave 3)" and 15-04 in "Wave 3," whereas the amended plan frontmatter has both
+  15-04 and 15-05 at `wave: 4` / `depends_on: [15-03]`. Plan frontmatter is the source of truth for
+  the executor; the ROADMAP prose is a doc-consistency tidy, not a blocker.
+
+### Divergent Views
+
+None of substance. The only delta is severity labeling of the unseeded-sidecar item (codex MEDIUM
+vs opencode LOW); both agree it is non-blocking and below HIGH. Both reviewers report **Unresolved
+HIGH count: 0**.
 
 ### Net Assessment
 
-The cycle-1 HIGHs are closed. One NEW HIGH (memoized/caller-resolved version vs post-bump version)
-remains unresolved and is verified in the source — it must be folded into 15-02/15-03 before execution.
-After that single fix, the phase drops to MEDIUM/LOW (the rest are scheduling, test-precision, and
-plan-consistency items). The strict W1→W5 serialization is sound: every `depends_on` references only
-earlier waves and each edge is backed by a real data/code dependency; the only soft edge (15-05→15-04)
-is a defensible shared-file merge-safety choice, not a correctness requirement.
+The cycle-2 HIGH is closed and independently verified against the source. No new HIGH was introduced
+by removing the chokepoint's `metric_version` param or by the post-bump internal re-resolution. The
+phase is **executable**. Remaining items are one MEDIUM plan-text consistency tidy (unseeded-sidecar
+adoption: make 15-02 and 15-03 agree) and a few LOW cosmetic/atomicity notes — fold manually; none
+require a replan loop.
 
-**Current cycle unresolved HIGH count: 1.**
+**Current cycle unresolved HIGH count: 0.**
