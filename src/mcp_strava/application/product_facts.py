@@ -18,6 +18,7 @@ from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
     get_training_aggregates_service,
 )
+from mcp_strava.application.freshness import _freshness_now
 from mcp_strava.application.metric_services import (
     compare_periods_service,
     get_fitness_state_service,
@@ -53,7 +54,10 @@ def get_daily_brief_facts_service(
     signal_first_use: bool = True,
     connection=None,
 ) -> ServiceEnvelope:
-    checked_at = now or datetime.now()
+    # WR-02: default to a UTC-naive instant. checked_at flows down only as the
+    # `now` for freshness (instant vs UTC last_success_at) and relative_time (an
+    # instant duration); the wall-clock calendar comes from the explicit as_of_day.
+    checked_at = now if now is not None else _freshness_now()
     as_of = _parse_day(as_of_day)
     start_14d = as_of - timedelta(days=13)
     end_exclusive = as_of + timedelta(days=1)
@@ -225,7 +229,10 @@ def get_weekly_digest_facts_service(
     signal_first_use: bool = True,
     connection=None,
 ) -> ServiceEnvelope:
-    checked_at = now or datetime.now()
+    # WR-02: default to a UTC-naive instant. checked_at flows down only as the
+    # `now` for freshness (instant vs UTC last_success_at) and relative_time (an
+    # instant duration); the wall-clock calendar comes from the explicit as_of_day.
+    checked_at = now if now is not None else _freshness_now()
     as_of = _parse_day(as_of_day)
     week_start = as_of - timedelta(days=as_of.weekday())
     end_exclusive = as_of + timedelta(days=1)
@@ -339,7 +346,10 @@ def get_historical_facts_service(
     signal_first_use: bool = True,
     connection=None,
 ) -> ServiceEnvelope:
-    checked_at = now or datetime.now()
+    # WR-02: default to a UTC-naive instant. checked_at flows down only as the
+    # `now` for freshness (instant vs UTC last_success_at) and relative_time (an
+    # instant duration); the wall-clock calendar comes from the explicit as_of_day.
+    checked_at = now if now is not None else _freshness_now()
     as_of = _parse_day(as_of_day)
     week_start = as_of - timedelta(days=as_of.weekday())
     end_exclusive = as_of + timedelta(days=1)

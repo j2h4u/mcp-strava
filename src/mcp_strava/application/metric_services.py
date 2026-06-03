@@ -13,7 +13,7 @@ from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
     get_training_aggregates_service,
 )
-from mcp_strava.application.freshness import build_freshness_metadata
+from mcp_strava.application.freshness import _freshness_now, build_freshness_metadata
 from mcp_strava.constants import Config
 from mcp_strava.metric_registry import METRIC_REGISTRY
 from mcp_strava.metrics import parse_local_hhmm
@@ -383,6 +383,18 @@ def _latest_as_of_day(checked_at: datetime) -> str:
     return checked_at.date().isoformat()
 
 
+def _freshness_clock(now: datetime | None) -> datetime:
+    """The instant to hand build_freshness_metadata (WR-02).
+
+    When the caller supplies an explicit `now`, honor it (tests/callers control
+    the clock). Otherwise default to a UTC-naive instant so the staleness
+    comparison against UTC-stored last_success_at is offset-correct. The local
+    `checked_at` is kept separately for calendar/display derivations (as_of_day,
+    relative_time) — only this instant-comparison clock is UTC.
+    """
+    return now if now is not None else _freshness_now()
+
+
 def _rolling_by_window(repo, as_of_day: str) -> dict[int, object]:
     windows = (7, 14, 28, 90)
     version = repo.current_metric_version()
@@ -414,7 +426,7 @@ def get_fitness_state_service(
     checked_at = now or datetime.now()
     with _connection_context(connection) as conn:
         repo = DuckDBRepository.from_connection(conn)
-        freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
+        freshness = build_freshness_metadata(repo, _freshness_clock(now), _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         as_of_day = _latest_as_of_day(checked_at)
         version = repo.current_metric_version()
@@ -461,7 +473,7 @@ def list_workouts_service(
     end_day = _next_day(end_date) if end_date else "9999-12-31"
     with _connection_context(connection) as conn:
         repo = DuckDBRepository.from_connection(conn)
-        freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
+        freshness = build_freshness_metadata(repo, _freshness_clock(now), _policy(), signal_first_use=signal_first_use)
         rows = repo.fetch_activity_metric_facts(
             start_day,
             end_day,
@@ -526,7 +538,7 @@ def get_workout_detail_service(
     checked_at = now or datetime.now()
     with _connection_context(connection) as conn:
         repo = DuckDBRepository.from_connection(conn)
-        freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
+        freshness = build_freshness_metadata(repo, _freshness_clock(now), _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         resolved_id = repo.latest_activity_id() if activity_id == "latest" else int(activity_id)
         row = (
@@ -997,7 +1009,7 @@ def project_fitness_state_service(
     days = [today_day + timedelta(days=offset) for offset in range(horizon_days + 1)]
     with _connection_context(connection) as conn:
         repo = DuckDBRepository.from_connection(conn)
-        freshness = build_freshness_metadata(repo, checked_at, _policy(), signal_first_use=signal_first_use)
+        freshness = build_freshness_metadata(repo, _freshness_clock(now), _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         version = repo.current_metric_version()
         baseline = repo.fetch_latest_training_model_day(version, as_of_day=today_day.isoformat())

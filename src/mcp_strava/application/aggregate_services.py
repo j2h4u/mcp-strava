@@ -14,7 +14,7 @@ from mcp_strava.adapters.duckdb.aggregate_queries import (
 )
 from mcp_strava.adapters.duckdb.connection import ReadConn
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-from mcp_strava.application.freshness import build_freshness_metadata
+from mcp_strava.application.freshness import _freshness_now, build_freshness_metadata
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
 from mcp_strava.types import (
@@ -63,7 +63,10 @@ def get_training_aggregates_service(
 ) -> ServiceEnvelope:
     query_request = request.to_query_request()
     metric_definitions = validate_aggregate_request(query_request)
-    checked_at = now or datetime.now()
+    # WR-02: checked_at here feeds only the freshness instant comparison (the
+    # as_of_day calendar is carried separately on the request), so default it to a
+    # UTC-naive instant to match the UTC-stored last_success_at.
+    checked_at = now if now is not None else _freshness_now()
     policy = RefreshPolicy.from_settings(get_settings())
     conn_context = nullcontext(connection) if connection is not None else ReadConn()
 

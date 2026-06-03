@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from datetime import datetime
+from datetime import UTC, datetime
 
 from mcp_strava.adapters.duckdb.connection import MirrorConn
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
@@ -17,6 +17,21 @@ from mcp_strava.types import (
     ServiceRationale,
     ServiceWarning,
 )
+
+
+def _freshness_now() -> datetime:
+    """The default 'now' for freshness/staleness comparisons — a UTC-naive instant.
+
+    WR-02: freshness compares `now` against last_success_at, which is stored
+    UTC-naive (refresh writes datetime.now(UTC); _parse_dt normalizes Z->+00:00).
+    The comparison is between INSTANTS, so the clock must be UTC end-to-end — a
+    plain datetime.now() (server-local, e.g. Asia/Almaty +6h) would skew the
+    computed age by the UTC offset and misclassify a fresh mirror as aging/stale.
+    We strip tzinfo to match the UTC-naive basis the stored timestamps are parsed
+    into. Display/calendar values (start_time_local, as_of_day) stay local; only
+    this instant-comparison clock is UTC.
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _age_seconds(now: datetime, value: str | None) -> int | None:
@@ -122,7 +137,7 @@ def get_freshness_service(
     own. Reached from the ``freshness`` CLI command / capability registry, not
     from the six MCP product tools.
     """
-    checked_at = now or datetime.now()
+    checked_at = now if now is not None else _freshness_now()
     settings = get_settings()
     policy = RefreshPolicy.from_settings(settings)
     # MirrorConn (open-per-call), not ReadConn: this is a CLI/registry read on a
