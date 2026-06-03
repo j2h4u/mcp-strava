@@ -19,7 +19,8 @@ dependencies = [
 dev = [
     "pytest>=9",
     "ruff>=0.15",
-    "pyright>=1.1.390",
+    "basedpyright>=1.31",
+    "import-linter>=2.3",
     "vulture>=2.14",
 ]
 
@@ -46,7 +47,75 @@ select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
 [tool.ruff.format]
 quote-style = "double"
 
+# Type checking. Read by both basedpyright (CI gate) and pyright/Pylance (IDE);
+# basedpyright reads this [tool.pyright] table. basedpyright is a strict pyright
+# fork (bundles pyright 1.1.410). We keep standard mode and turn ON `reportAny`
+# — the rule that flags expressions of type `Any`, the exact blind spot that let
+# `row['id']` on a raw DB-API tuple ship past type checking (fetchall() ->
+# list[Any]). We deliberately do NOT adopt basedpyright's whole strict family
+# (reportUnknown*/reportMissing*) — that is a separate typing-hardening effort
+# that would bury the signal — so those are silenced. Existing `Any` sites are
+# captured in basedpyright-baseline.json; CI fails only on NEW ones. (pyright
+# ignores the basedpyright-only rule names it does not recognize.)
 [tool.pyright]
 include = ["src"]
 pythonVersion = "3.14"
 typeCheckingMode = "standard"
+reportAny = "error"
+reportExplicitAny = "none"
+reportUnknownVariableType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportUnknownLambdaType = "none"
+reportMissingParameterType = "none"
+reportMissingTypeArgument = "none"
+reportUnannotatedClassAttribute = "none"
+reportUnusedCallResult = "none"
+reportImplicitStringConcatenation = "none"
+reportPrivateUsage = "none"
+
+# Architectural layer contracts (import-linter). Enforces the clean-architecture
+# boundaries the project is organized around, as a CI test. Catches import-level
+# drift that ruff/pyright cannot express (e.g. an inner layer importing an outer
+# one). Complements basedpyright's reportAny, which catches the Any-typed access
+# that let the raw-DB-API kudos bug slip past type checking.
+[tool.importlinter]
+root_package = "mcp_strava"
+
+[[tool.importlinter.contracts]]
+name = "Strava and DuckDB adapters stay independent"
+type = "independence"
+modules = [
+    "mcp_strava.adapters.duckdb",
+    "mcp_strava.adapters.strava",
+]
+
+[[tool.importlinter.contracts]]
+name = "Pure domain is free of infrastructure and outer layers"
+type = "forbidden"
+source_modules = [
+    "mcp_strava.metrics",
+    "mcp_strava.cardiac_drift",
+    "mcp_strava.training",
+    "mcp_strava.hr_zones",
+    "mcp_strava.sports",
+]
+forbidden_modules = [
+    "mcp_strava.adapters",
+    "mcp_strava.application",
+    "mcp_strava.refresh",
+    "mcp_strava.interfaces",
+]
+
+[[tool.importlinter.contracts]]
+name = "Adapters do not depend on outer layers"
+type = "forbidden"
+source_modules = [
+    "mcp_strava.adapters",
+]
+forbidden_modules = [
+    "mcp_strava.application",
+    "mcp_strava.refresh",
+    "mcp_strava.interfaces",
+]

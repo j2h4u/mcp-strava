@@ -38,7 +38,10 @@ jobs:
         run: uv run ruff check .
 
       - name: Type check
-        run: uv run pyright src
+        run: uv run basedpyright src
+
+      - name: Import contracts
+        run: uv run lint-imports
 
       - name: Build syntax check
         run: uv run python -m compileall -q src deploy tests
