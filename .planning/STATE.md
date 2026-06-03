@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: complete
-stopped_at: Phase 15 complete and re-verified (passed, 21/21, 389 tests); WR-01..04 hardened. Milestone v1.1 at 100% — next step /gsd-complete-milestone
-last_updated: "2026-06-03T20:09:35.456Z"
-last_activity: 2026-06-03
+status: verifying
+stopped_at: Completed 15-06 gap-closure (WR-01..04 advisory WARNINGs hardened via TDD)
+last_updated: "2026-06-03T20:14:40.736Z"
+last_activity: 2026-06-04
 progress:
   total_phases: 15
   completed_phases: 15
