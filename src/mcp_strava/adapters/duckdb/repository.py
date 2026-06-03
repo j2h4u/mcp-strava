@@ -618,18 +618,38 @@ class DuckDBRepository:
         metric_version: int,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        params: list[object] = [metric_version]
-        sql = """
+        base_sql = """
             SELECT d.*, s.source_hash
             FROM metric_dirty_activities d
             JOIN activity_source_state s ON s.activity_id = d.activity_id
             WHERE d.metric_version = ?
             ORDER BY d.activity_day, d.activity_id
         """
-        if limit is not None:
-            sql += " LIMIT ?"
-            params.append(limit)
-        return self._fetchall(sql, params)
+        if limit is None:
+            return self._fetchall(base_sql, [metric_version])
+
+        rows = self._fetchall(base_sql + " LIMIT ?", [metric_version, limit])
+        if not rows:
+            return rows
+
+        # WR-04: never return a PARTIAL day. The daily/rolling rollups sum
+        # activity_metric_facts at this metric_version; if a day's activities are
+        # split across batches (some materialized at N+1, the rest still queued),
+        # that day under-counts until later batches land — yet the daily fact is
+        # written as complete. Extend the batch to whole-day boundaries so every
+        # activity for each day in the batch is materialized together. Rows are
+        # ordered by (activity_day, activity_id), so only the LAST day in the
+        # limited slice can be partially cut; pull in its remaining dirty rows.
+        last_day = str(rows[-1]["activity_day"])
+        claimed_ids = {int(r["activity_id"]) for r in rows if str(r["activity_day"]) == last_day}
+        remainder = self._fetchall(
+            base_sql.replace("WHERE d.metric_version = ?", "WHERE d.metric_version = ? AND d.activity_day = CAST(? AS DATE)"),
+            [metric_version, last_day],
+        )
+        for row in remainder:
+            if int(row["activity_id"]) not in claimed_ids:
+                rows.append(row)
+        return rows
 
     def clear_dirty_activity_rows(self, rows: Iterable[Row]) -> int:
         count = 0
