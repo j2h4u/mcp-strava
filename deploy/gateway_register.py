@@ -5,8 +5,8 @@ import datetime as dt
 import shlex
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import yaml
 
@@ -230,8 +230,7 @@ def register_strava_gateway(
         )
         if restart_rc != 0:
             print(
-                "rollback restart failed; manual recovery required from backups "
-                f"{catalog_backup} and {compose_backup}",
+                f"rollback restart failed; manual recovery required from backups {catalog_backup} and {compose_backup}",
                 file=sys.stderr,
             )
             return EXIT_ROLLBACK_RESTART_FAILED
