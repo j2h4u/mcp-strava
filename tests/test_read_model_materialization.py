@@ -625,3 +625,41 @@ def test_start_time_local_migrates_additively_on_existing_db(tmp_path: Path) -> 
     # Idempotent: a second migration pass over the already-migrated table is a no-op.
     ensure_provenance_columns(raw)
     raw.close()
+
+
+def test_WR_04_partial_batch_does_not_undercount_daily_facts(tmp_path: Path) -> None:
+    """WR-04: a limited recompute batch must not write an UNDER-COUNTED daily fact.
+
+    The daily/rolling rollups sum activity_metric_facts at the target metric_version.
+    If a day's activities are split across batches (some already at N+1, some still
+    queued), summing only the materialized subset under-counts that day. The
+    materializer must never roll up a day while some of that day's activities are
+    still unmaterialized at the target version: whole days are processed atomically.
+
+    Seed two HR-bearing activities on the SAME day and materialize with limit=1. A
+    naive limit would materialize one activity and write a daily fact with
+    activity_count=1 (the other activity's load missing). The correct behavior keeps
+    the day whole: the daily fact counts BOTH activities.
+    """
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+    with repo:
+        _seed_dirty_activity_with_streams(repo, activity_id=920, day="2026-05-21")
+        _seed_dirty_activity_with_streams(repo, activity_id=921, day="2026-05-21")
+
+        # limit=1 would, naively, materialize only one of the two same-day activities.
+        result = materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00", limit=1)
+
+        # fetch_daily_load_facts uses an exclusive upper bound (day < end_day).
+        daily_facts = repo.fetch_daily_load_facts("2026-05-21", "2026-05-22", scope="all")
+        fact_920 = repo.fetch_activity_metric_fact(920, metric_version=1)
+        fact_921 = repo.fetch_activity_metric_fact(921, metric_version=1)
+
+    assert result["status"] == "ok"
+    assert daily_facts, "the 2026-05-21 daily fact must exist"
+    assert daily_facts[0]["activity_count"] == 2, (
+        "daily fact must count BOTH same-day activities, not a half-materialized subset "
+        f"(got activity_count={daily_facts[0]['activity_count']}) — partial-batch under-count"
+    )
+    assert fact_920 is not None and fact_921 is not None, (
+        "both same-day activities must be materialized before their day is rolled up"
+    )
