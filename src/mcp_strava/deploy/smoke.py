@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import sys
+from typing import cast
 
 from mcp_strava.devtools.mcp_client.client import (
     DEFAULT_LATENCY_P95_MS,
@@ -55,7 +56,7 @@ async def _run_smoke(
         return 1
     if perf and perf_result is not None:
         print(json.dumps(perf_result, ensure_ascii=False, separators=(",", ":")))
-        if perf_result.get("status") != "ok":
+        if perf_result["status"] != "ok":
             return 1
     return 0
 
@@ -71,17 +72,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--p95-ms", type=float, default=DEFAULT_LATENCY_P95_MS)
     parser.add_argument("--workout-id", type=int)
     args = parser.parse_args(argv)
+    url = cast(str, args.url)
+    expect_tools = cast(list[str], args.expect_tool)
+    call_name = cast("str | None", args.call)
+    perf = cast(bool, args.perf)
+    samples = cast(int, args.samples)
+    warmup = cast(int, args.warmup)
+    p95_ms = cast(float, args.p95_ms)
+    workout_id = cast("int | None", args.workout_id)
 
     return asyncio.run(
         _run_smoke(
-            url=args.url,
-            expect_tools=args.expect_tool,
-            call_name=args.call,
-            perf=args.perf,
-            samples=args.samples,
-            warmup=args.warmup,
-            p95_ms=args.p95_ms,
-            workout_id=args.workout_id,
+            url=url,
+            expect_tools=expect_tools,
+            call_name=call_name,
+            perf=perf,
+            samples=samples,
+            warmup=warmup,
+            p95_ms=p95_ms,
+            workout_id=workout_id,
         )
     )
 

@@ -7,6 +7,7 @@ import os
 import sys
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
+from typing import cast
 
 from mcp_strava.refresh.health import check_refresh_health
 
@@ -24,7 +25,9 @@ def _validate_owner_and_children() -> None:
     path = _state_path()
     if not path.exists():
         raise RuntimeError("supervisor state file is missing")
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = cast(object, json.loads(path.read_text(encoding="utf-8")))
+    if not isinstance(payload, dict):
+        raise RuntimeError("supervisor state file is malformed")
     owner = payload.get("owner")
     if not isinstance(owner, dict) or not isinstance(owner.get("pid"), int):
         raise RuntimeError("supervisor owner process is missing")

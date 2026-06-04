@@ -6,7 +6,7 @@ import argparse
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from mcp_strava.adapters.duckdb.connection import open_expected_mirror_db as open_expected_duckdb
 from mcp_strava.adapters.duckdb.schema import DUCKDB_TABLES
@@ -98,7 +98,7 @@ def _lease_active(refresh_state: dict[str, Any]) -> bool:
     if expires_at is None:
         return True
     try:
-        expires = datetime.fromisoformat(str(expires_at))
+        expires = datetime.fromisoformat(str(cast(object, expires_at)))
     except ValueError:
         # Unparseable timestamp — assume active so we never stomp a live refresh.
         return True
@@ -127,7 +127,7 @@ def _validate_duckdb_runtime_db(
             raise RuntimeError(f"active refresh lease blocks DuckDB startup: {refresh_state.get('lease_owner')}")
         _count_row = conn.execute("SELECT COUNT(*) FROM activities").fetchone()
         assert _count_row is not None, "COUNT(*) always returns a row"
-        activity_count = int(_count_row[0])
+        activity_count = cast(int, _count_row[0])
         if quick:
             return {
                 "path": str(path),
@@ -172,15 +172,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--quick", action="store_true", help="Run lightweight health check")
     parser.add_argument("--quiet", action="store_true", help="Suppress success output")
     args = parser.parse_args(argv)
+    db = cast(str, args.db)
+    quick = cast(bool, args.quick)
+    quiet = cast(bool, args.quiet)
 
     try:
-        validate_runtime_db(Path(args.db), quick=args.quick)
+        validate_runtime_db(Path(db), quick=quick)
     except Exception as exc:
-        if not args.quiet:
+        if not quiet:
             print(f"preflight failed: {exc}", file=sys.stderr)
         return 1
 
-    if not args.quiet:
+    if not quiet:
         print("preflight ok")
     return 0
 

@@ -7,10 +7,58 @@ import types
 from contextlib import AsyncExitStack
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 from mcp import ClientSession, StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
+
+
+class SmokeResult(TypedDict):
+    """Return shape of :func:`run_basic_smoke`."""
+
+    status: str
+    mode: str
+    tools: list[str]
+    called: list[str]
+    data_shapes: dict[str, object]
+    warnings: dict[str, object]
+
+
+class LiveSmokeResult(TypedDict):
+    """Return shape of :func:`run_live_smoke` (superset of :class:`SmokeResult`)."""
+
+    status: str
+    mode: str
+    tools: list[str]
+    called: list[str]
+    aggregate_bundles: list[str]
+    workout_id: int
+    data_shapes: dict[str, object]
+    warnings: dict[str, object]
+
+
+class LatencyToolResult(TypedDict):
+    """Per-tool metrics within :class:`LatencyGateResult`."""
+
+    status: str
+    tool_name: str
+    arguments: dict[str, object]
+    samples: int
+    warmup: int
+    p50_ms: float
+    p95_ms: float
+    max_ms: float
+    threshold_ms: float
+
+
+class LatencyGateResult(TypedDict):
+    """Return shape of :func:`run_warm_latency_gate` / :func:`measure_warm_tool_latency`."""
+
+    status: str
+    mode: str
+    startup_ms: float
+    tools: dict[str, LatencyToolResult]
+
 
 DEFAULT_TIMEOUT_SECONDS = 5.0
 DEFAULT_LATENCY_WARMUP = 2
@@ -275,7 +323,7 @@ async def verify_tool_surface(client: StdioMcpClient | HttpMcpClient) -> list[st
     return sorted(tool_names)
 
 
-async def run_basic_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, Any]:
+async def run_basic_smoke(client: StdioMcpClient | HttpMcpClient) -> SmokeResult:
     tool_names = await verify_tool_surface(client)
     workouts = _require_success("list_workouts", await client.call_tool("list_workouts", {"limit": 1}))
     sc = workouts.get("structuredContent")
@@ -389,7 +437,7 @@ async def run_warm_latency_gate(
     p95_ms: float = DEFAULT_LATENCY_P95_MS,
     startup_ms: float = 0.0,
     raise_on_failure: bool = True,
-) -> dict[str, Any]:
+) -> LatencyGateResult:
     selected_calls = calls if calls is not None else await resolve_default_warm_latency_calls(client)
     return await measure_warm_tool_latency(
         client,
@@ -411,7 +459,7 @@ async def measure_warm_tool_latency(
     p95_ms: float = DEFAULT_LATENCY_P95_MS,
     startup_ms: float = 0.0,
     raise_on_failure: bool = True,
-) -> dict[str, Any]:
+) -> LatencyGateResult:
     normalized_calls = _normalize_latency_calls(calls)
     if warmup < 0:
         raise ValueError("warmup must be zero or positive")
@@ -422,7 +470,7 @@ async def measure_warm_tool_latency(
     if startup_ms < 0:
         raise ValueError("startup_ms must be zero or positive")
 
-    tool_results: dict[str, dict[str, Any]] = {}
+    tool_results: dict[str, LatencyToolResult] = {}
     exceeded: list[str] = []
     result_key_counts: dict[str, int] = {}
     for call in normalized_calls:
@@ -445,24 +493,24 @@ async def measure_warm_tool_latency(
         status = "ok" if p95_value <= p95_ms else "exceeded"
         if status != "ok":
             exceeded.append(result_key)
-        tool_results[result_key] = {
-            "status": status,
-            "tool_name": name,
-            "arguments": arguments,
-            "samples": samples,
-            "warmup": warmup,
-            "p50_ms": round(p50_value, 3),
-            "p95_ms": round(p95_value, 3),
-            "max_ms": round(max_value, 3),
-            "threshold_ms": p95_ms,
-        }
+        tool_results[result_key] = LatencyToolResult(
+            status=status,
+            tool_name=name,
+            arguments=arguments,
+            samples=samples,
+            warmup=warmup,
+            p50_ms=round(p50_value, 3),
+            p95_ms=round(p95_value, 3),
+            max_ms=round(max_value, 3),
+            threshold_ms=p95_ms,
+        )
 
-    result = {
-        "status": "ok" if not exceeded else "failed",
-        "mode": "warm_latency",
-        "startup_ms": round(startup_ms, 3),
-        "tools": tool_results,
-    }
+    result = LatencyGateResult(
+        status="ok" if not exceeded else "failed",
+        mode="warm_latency",
+        startup_ms=round(startup_ms, 3),
+        tools=tool_results,
+    )
     if exceeded and raise_on_failure:
         details = ", ".join(
             f"{key} (p95={tool_results[key]['p95_ms']}ms > {tool_results[key]['threshold_ms']}ms)" for key in exceeded
@@ -475,7 +523,7 @@ async def run_live_smoke(
     client: StdioMcpClient | HttpMcpClient,
     *,
     today: str | date | None = None,
-) -> dict[str, Any]:
+) -> LiveSmokeResult:
     tool_names = await verify_tool_surface(client)
     fitness = _require_success("get_fitness_state", await client.call_tool("get_fitness_state", {}))
     workouts = _require_success("list_workouts", await client.call_tool("list_workouts", {"limit": 3}))
