@@ -21,7 +21,6 @@ DUCKDB_TABLES: tuple[str, ...] = (
     "rolling_period_facts",
     "read_model_refresh_runs",
     "read_model_logic_version",
-    "schema_migration_log",
 )
 
 DATE_COLUMNS: dict[str, tuple[str, ...]] = {
@@ -262,13 +261,6 @@ CREATE TABLE IF NOT EXISTS read_model_logic_version (
     metric_version BIGINT NOT NULL,
     logic_fingerprint VARCHAR NOT NULL,
     changed_at VARCHAR NOT NULL
-);
-
-CREATE TABLE schema_migration_log (
-    version BIGINT PRIMARY KEY,
-    name VARCHAR NOT NULL,
-    applied_at VARCHAR NOT NULL,
-    checksum VARCHAR NOT NULL
 );
 
 CREATE INDEX idx_duckdb_activities_day_id ON activities(activity_day, id);
