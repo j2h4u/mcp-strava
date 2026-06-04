@@ -34,10 +34,16 @@ def _now_iso() -> str:
 
 def _read(path: Path) -> dict[str, object]:
     try:
-        parsed = cast(object, json.loads(path.read_text(encoding="utf-8")))
-        return parsed if isinstance(parsed, dict) else {}
-    except OSError, json.JSONDecodeError:
-        return {}
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}  # no health file yet (cold start before the first cycle)
+    # Corrupt JSON / non-object fails loud — the file is written atomically
+    # (tmp + rename) by record_cycle, so corruption is a real bug, not a state
+    # to silently paper over with an empty dict (which would read as "healthy").
+    parsed = cast(object, json.loads(raw))
+    if not isinstance(parsed, dict):
+        raise ValueError(f"health file is not a JSON object: {path}")
+    return parsed
 
 
 def record_cycle(outcome: str, *, error_type: str | None = None, error: str | None = None) -> None:
