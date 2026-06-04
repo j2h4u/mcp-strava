@@ -17,9 +17,10 @@ lint:
 fmt-check:
     uv run ruff format --check src tests
 
-# Static type checking
+# Static type checking — basedpyright is the canonical checker (matches CI:
+# `uv run basedpyright src`). It reads the [tool.pyright] table in pyproject.
 typecheck:
-    uv run pyright src
+    uv run basedpyright src
 
 # Dead-code scan. Keep separate from `check` so false positives can be triaged
 # without blocking routine lint/type cleanup.
