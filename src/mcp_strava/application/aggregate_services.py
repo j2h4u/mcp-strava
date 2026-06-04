@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from mcp_strava.adapters.duckdb.aggregate_queries import (
     AggregateRequest,
@@ -84,17 +84,20 @@ def get_training_aggregates_service(
         read_model = repo.read_model_status(metric_version=version)
         rows = query_training_aggregates(conn, query_request, metric_version=version)
 
-    freshness_payload = dc_to_dict(freshness)
-    row_payloads = []
+    # dc_to_dict returns Any; annotate as dict[str, object] to kill the Any cascade.
+    freshness_payload: dict[str, object] = cast("dict[str, object]", dc_to_dict(freshness))
+    row_payloads: list[dict[str, object]] = []
     missing: set[str] = set()
     row_statuses: list[str] = []
     for row in rows:
-        payload = dc_to_dict(row)
+        payload: dict[str, object] = cast("dict[str, object]", dc_to_dict(row))
         payload["mirror_freshness"] = freshness_payload
         payload["read_model_freshness"] = read_model
         row_payloads.append(payload)
         row_statuses.append(str(payload["completeness_status"]))
-        missing.update(str(reason) for reason in payload.get("missing_reasons", []))
+        reasons_raw: object = payload.get("missing_reasons", [])
+        reasons: list[object] = reasons_raw if isinstance(reasons_raw, list) else []
+        missing.update(str(reason) for reason in reasons)
 
     completeness_status = _payload_completeness(row_statuses, read_model)
     if read_model.get("status") != "current":

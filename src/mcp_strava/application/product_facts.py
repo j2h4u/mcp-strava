@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from mcp_strava.adapters.duckdb.aggregate_queries import query_status_facts
 from mcp_strava.adapters.duckdb.connection import ReadConn
@@ -128,13 +128,15 @@ def get_daily_brief_facts_service(
             connection=conn,
         )
 
-    fitness_payload = dc_to_dict(fitness)
-    recent_payload = dc_to_dict(recent)
-    bundle_payload = dc_to_dict(bundle_rows)
-    daily_payload = dc_to_dict(daily_load)
-    by_sport_payload = dc_to_dict(by_sport)
+    # dc_to_dict returns Any; annotate as dict[str, object] to erase the Any cascade.
+    fitness_payload: dict[str, object] = cast("dict[str, object]", dc_to_dict(fitness))
+    recent_payload: dict[str, object] = cast("dict[str, object]", dc_to_dict(recent))
+    bundle_payload: dict[str, object] = cast("dict[str, object]", dc_to_dict(bundle_rows))
+    daily_payload: dict[str, object] = cast("dict[str, object]", dc_to_dict(daily_load))
+    by_sport_payload: dict[str, object] = cast("dict[str, object]", dc_to_dict(by_sport))
     read_model = _read_model_from(fitness_payload, bundle_payload)
-    freshness_payload = fitness_payload["freshness"]
+    # fitness_payload["freshness"] is object (dict[str,object].__getitem__); cast for _section.
+    freshness_payload: dict[str, object] = cast("dict[str, object]", fitness_payload["freshness"])
     requested = set(metrics_for_aggregate_bundle("daily_brief"))
     bundle_metric_values = _metric_values(_rows(bundle_payload))
 
@@ -271,9 +273,9 @@ def get_weekly_digest_facts_service(
             connection=conn,
         )
 
-    weekly_payload = dc_to_dict(weekly)
-    current_payload = dc_to_dict(current_week)
-    trends_payload = dc_to_dict(trends)
+    weekly_payload: dict[str, object] = cast("dict[str, object]", dc_to_dict(weekly))
+    current_payload: dict[str, object] = cast("dict[str, object]", dc_to_dict(current_week))
+    trends_payload: dict[str, object] = cast("dict[str, object]", dc_to_dict(trends))
     read_model = _read_model_from(weekly_payload, trends_payload)
     rows = _rows(weekly_payload)
     sections = {
@@ -322,9 +324,11 @@ def get_weekly_digest_facts_service(
                 "current": {"start": week_start.isoformat(), "end_exclusive": end_exclusive.isoformat()},
                 "previous": {"start": previous_start.isoformat(), "end_exclusive": previous_end.isoformat()},
             },
-            comparison=trends_payload["data"],
+            comparison=cast("dict[str, object]", trends_payload["data"]),
         ),
-        "freshness": _section(requested=("activity_date",), facts=weekly_payload["freshness"]),
+        "freshness": _section(
+            requested=("activity_date",), facts=cast("dict[str, object]", weekly_payload["freshness"])
+        ),
         "read_model": _section(requested=("fitness",), facts=read_model),
     }
     data = _bundle_data(
@@ -369,7 +373,7 @@ def get_historical_facts_service(
             connection=conn,
         )
 
-    historical_payload = dc_to_dict(historical)
+    historical_payload: dict[str, object] = cast("dict[str, object]", dc_to_dict(historical))
     rows = _rows(historical_payload)
     facts = _metric_values(rows)
     read_model = _read_model_from(historical_payload)
@@ -392,7 +396,9 @@ def get_historical_facts_service(
             read_model=read_model,
             row_count=len(rows),
         ),
-        "freshness": _section(requested=("activity_date",), facts=historical_payload["freshness"]),
+        "freshness": _section(
+            requested=("activity_date",), facts=cast("dict[str, object]", historical_payload["freshness"])
+        ),
         "read_model": _section(requested=("fitness",), facts=read_model),
     }
     data = _bundle_data(
@@ -466,29 +472,29 @@ def _parse_day(value: str) -> date:
     return date.fromisoformat(value)
 
 
-def _dict_data(payload: dict[str, Any]) -> dict[str, Any]:
-    data = payload.get("data")
-    return data if isinstance(data, dict) else {}
+def _dict_data(payload: dict[str, object]) -> dict[str, Any]:
+    data: object = payload.get("data")
+    return data if isinstance(data, dict) else {}  # type: ignore[return-value]
 
 
-def _data_list(payload: dict[str, Any] | ServiceEnvelope) -> list[dict[str, Any]]:
+def _data_list(payload: dict[str, object] | ServiceEnvelope) -> list[dict[str, Any]]:
     if isinstance(payload, ServiceEnvelope):
-        data = payload.data
+        raw_data: object = cast("object", payload.data)
     else:
-        data = payload.get("data")
-    if not isinstance(data, list):
+        raw_data = payload.get("data")
+    if not isinstance(raw_data, list):
         return []
-    return [item for item in data if isinstance(item, dict)]
+    return [item for item in raw_data if isinstance(item, dict)]  # type: ignore[return-value]
 
 
-def _rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    data = payload.get("data")
+def _rows(payload: dict[str, object]) -> list[dict[str, Any]]:
+    data: object = payload.get("data")
     if not isinstance(data, dict):
         return []
-    rows = data.get("rows")
+    rows: object = data.get("rows")
     if not isinstance(rows, list):
         return []
-    return [row for row in rows if isinstance(row, dict)]
+    return [row for row in rows if isinstance(row, dict)]  # type: ignore[return-value]
 
 
 def _filter_rows(rows: list[dict[str, Any]], metric_ids: set[str]) -> list[dict[str, Any]]:
@@ -499,13 +505,14 @@ def _metric_values(rows: list[dict[str, Any]]) -> dict[str, Any]:
     values: dict[str, Any] = {}
     for row in rows:
         metric_id = str(row.get("metric_id"))
-        value = row.get("value")
-        if value is None and isinstance(row.get("distribution"), dict):
-            value = row["distribution"]
-        if value is None and isinstance(row.get("quantiles"), dict):
-            value = row["quantiles"]
-        if value is not None:
-            values.setdefault(metric_id, value)
+        # row is dict[str, Any]; pin .get() results through object to erase Any.
+        raw_value: object = cast("object", row.get("value"))
+        if raw_value is None and isinstance(cast("object", row.get("distribution")), dict):
+            raw_value = cast("object", row["distribution"])
+        if raw_value is None and isinstance(cast("object", row.get("quantiles")), dict):
+            raw_value = cast("object", row["quantiles"])
+        if raw_value is not None:
+            values.setdefault(metric_id, raw_value)
     return values
 
 
@@ -517,11 +524,10 @@ def _pick_metrics(values: dict[str, Any], metric_ids: tuple[str, ...]) -> dict[s
     }
 
 
-def _normalise_status_fact(item) -> dict[str, Any]:
-    payload = dc_to_dict(item)
-    evidence = payload.get("evidence")
-    if not isinstance(evidence, dict):
-        evidence = {}
+def _normalise_status_fact(item: object) -> dict[str, Any]:
+    payload: dict[str, object] = cast("dict[str, object]", dc_to_dict(item))
+    evidence_raw: object = payload.get("evidence")
+    evidence: dict[str, object] = evidence_raw if isinstance(evidence_raw, dict) else {}
     if payload.get("code") == "consecutive_high_load_hikes":
         evidence = dict(evidence)
         if "hike_days" in evidence and "dates" not in evidence:
@@ -537,7 +543,7 @@ def _normalise_status_fact(item) -> dict[str, Any]:
             if source in evidence and target not in evidence:
                 evidence[target] = evidence[source]
     payload["evidence"] = evidence
-    return payload
+    return cast("dict[str, Any]", payload)
 
 
 def _supported_gear_section(
@@ -548,21 +554,23 @@ def _supported_gear_section(
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for workout in recent_items:
-        activity_id = workout.get("activity_id")
-        if activity_id is None:
+        activity_id_raw: object = cast("object", workout.get("activity_id"))
+        if activity_id_raw is None:
             continue
         detail = get_workout_detail_service(
-            activity_id,
+            activity_id_raw,  # type: ignore[arg-type]
             now=checked_at,
             signal_first_use=False,
             connection=connection,
         )
-        detail_data = dc_to_dict(detail).get("data")
-        if not isinstance(detail_data, dict):
+        detail_dict: dict[str, object] = cast("dict[str, object]", dc_to_dict(detail))
+        detail_data_raw: object = detail_dict.get("data")
+        if not isinstance(detail_data_raw, dict):
             continue
+        detail_data: dict[str, object] = detail_data_raw
         gear = {metric_id: detail_data.get(metric_id) for metric_id in GEAR_METRIC_IDS}
         if any(value is not None for value in gear.values()):
-            items.append({"activity_id": int(activity_id), **gear})
+            items.append({"activity_id": int(activity_id_raw), **gear})  # type: ignore[arg-type]
 
     included = tuple(
         metric_id for metric_id in GEAR_METRIC_IDS if any(item.get(metric_id) is not None for item in items)
@@ -584,9 +592,9 @@ def _section(
     rows: list[dict[str, Any]] | None = None,
     items: list[dict[str, Any]] | None = None,
     metrics: dict[str, Any] | None = None,
-    facts: dict[str, Any] | None = None,
+    facts: dict[str, object] | None = None,
     periods: dict[str, Any] | None = None,
-    comparison: dict[str, Any] | None = None,
+    comparison: dict[str, object] | None = None,
     season: str | None = None,
     current_week: dict[str, Any] | None = None,
     read_model: dict[str, Any] | None = None,
@@ -625,23 +633,28 @@ def _included_metrics(
     rows: list[dict[str, Any]] | None,
     items: list[dict[str, Any]] | None,
     metrics: dict[str, Any] | None,
-    facts: dict[str, Any] | None,
+    facts: dict[str, object] | None,
 ) -> set[str]:
     requested_set = set(requested)
     included: set[str] = set()
     if rows is not None:
         for row in rows:
-            metric_id = row.get("metric_id")
-            if metric_id in requested_set and row.get("completeness_status") != "unavailable":
+            metric_id: object = cast("object", row.get("metric_id"))
+            if metric_id in requested_set and cast("object", row.get("completeness_status")) != "unavailable":
                 included.add(str(metric_id))
-    for payload in (metrics, facts):
-        if payload:
-            included.update(
-                metric_id for metric_id, value in payload.items() if metric_id in requested_set and value is not None
-            )
+    if metrics is not None:
+        # metrics: dict[str, Any]; cast the whole dict to erase Any from values.
+        metrics_typed: dict[str, object] = cast("dict[str, object]", metrics)
+        for metric_id_m, value_obj_m in metrics_typed.items():
+            if metric_id_m in requested_set and value_obj_m is not None:
+                included.add(metric_id_m)
+    if facts is not None:
+        for metric_id_f, value_f in facts.items():
+            if metric_id_f in requested_set and value_f is not None:
+                included.add(metric_id_f)
     if items:
         for item in items:
-            included.update(metric_id for metric_id in requested_set if item.get(metric_id) is not None)
+            included.update(metric_id for metric_id in requested_set if cast("object", item.get(metric_id)) is not None)
     return included
 
 
@@ -704,17 +717,17 @@ def _reason(metric_id: str, reason_code: str, *, evidence_count: int = 0) -> dic
     }
 
 
-def _read_model_from(*payloads: dict[str, Any]) -> dict[str, Any]:
+def _read_model_from(*payloads: dict[str, object]) -> dict[str, Any]:
     for payload in payloads:
-        completeness = payload.get("completeness")
+        completeness: object = payload.get("completeness")
         if not isinstance(completeness, dict):
             continue
-        coverage = completeness.get("coverage")
+        coverage: object = completeness.get("coverage")
         if not isinstance(coverage, dict):
             continue
-        read_model = coverage.get("read_model")
+        read_model: object = coverage.get("read_model")
         if isinstance(read_model, dict):
-            return read_model
+            return read_model  # type: ignore[return-value]
     return {
         "status": "unavailable",
         "last_materialized_at": None,
@@ -732,13 +745,19 @@ def _service_envelope(
     read_model: dict[str, Any],
     requested_metrics: set[str],
 ) -> ServiceEnvelope:
-    section_statuses = [_section_status(section) for section in data["sections"].values() if isinstance(section, dict)]
+    sections_raw: object = cast("object", data["sections"])
+    sections_dict: dict[str, object] = sections_raw if isinstance(sections_raw, dict) else {}
+    section_statuses = [
+        _section_status(section)
+        for section in sections_dict.values()
+        if isinstance(section, dict)  # type: ignore[arg-type]
+    ]
     missing = sorted(_missing_reasons(data))
     coverage = {
         "read_model": read_model,
-        "bundle_id": data["bundle_id"],
+        "bundle_id": cast("object", data["bundle_id"]),
         "requested_metrics": sorted(requested_metrics),
-        "section_count": len(data["sections"]),
+        "section_count": len(sections_dict),
     }
     warnings = _dedupe_warnings([*primary.warnings, *(warning for env in related for warning in env.warnings)])
     return ServiceEnvelope(

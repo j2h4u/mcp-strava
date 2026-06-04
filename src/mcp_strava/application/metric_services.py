@@ -5,10 +5,15 @@ from __future__ import annotations
 import json
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from mcp_strava.adapters.duckdb.connection import ReadConn
-from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.repository import (
+    ActivityMetricFactRow,
+    DuckDBRepository,
+    RollingPeriodFactRow,
+    TrainingModelDayRow,
+)
 from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
     get_training_aggregates_service,
@@ -99,15 +104,26 @@ ROLLING_FACTS = {
 }
 
 
-def _project_fitness_state_metrics(model, rolling: dict[int, Any]) -> dict[str, Any]:
+def _project_fitness_state_metrics(
+    model: TrainingModelDayRow | None,
+    rolling: dict[int, RollingPeriodFactRow],
+) -> dict[str, Any]:
     data: dict[str, Any] = {}
     if model is not None:
+        # TypedDict fields are all ``object``; treat as a plain dict for dynamic key
+        # access (MODEL_FACTS maps metric_id → column name, both str, all defined fields).
+        model_dict = cast("dict[str, object]", model)
         for metric_id, column in MODEL_FACTS.items():
-            _metric_if_registered(data, metric_id, model[column])
+            _metric_if_registered(data, metric_id, model_dict.get(column))
     for metric_id, (window, column, scale) in ROLLING_FACTS.items():
         row = rolling.get(window)
-        value = row[column] if row is not None else None
-        _metric_if_registered(data, metric_id, round(float(value) * scale, 3) if value is not None else None)
+        # RollingPeriodFactRow fields are all ``object``; dynamic column access via cast.
+        raw_value: object = cast("dict[str, object]", row).get(column) if row is not None else None
+        _metric_if_registered(
+            data,
+            metric_id,
+            round(float(raw_value) * scale, 3) if raw_value is not None else None,  # type: ignore[arg-type]
+        )
     return data
 
 
@@ -128,13 +144,14 @@ def _is_number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _parse_json_list(value) -> list[str]:
+def _parse_json_list(value: object) -> list[str]:
     if value is None:
         return []
     if isinstance(value, list):
         return [str(item) for item in value]
+    parsed: object = None
     try:
-        parsed = json.loads(str(value))
+        parsed = cast("object", json.loads(str(value)))
     except json.JSONDecodeError:
         return []
     if not isinstance(parsed, list):
@@ -142,34 +159,35 @@ def _parse_json_list(value) -> list[str]:
     return [str(item) for item in parsed]
 
 
-def _json_object_from_row(row, key: str) -> dict[str, Any]:
+def _json_object_from_row(row: object, key: str) -> dict[str, Any]:
     raw = _row_get(row, key)
     if not raw:
         return {}
+    result: object = None
     try:
-        parsed = json.loads(str(raw))
+        result = cast("object", json.loads(str(raw)))
     except json.JSONDecodeError:
         return {}
-    return parsed if isinstance(parsed, dict) else {}
+    return result if isinstance(result, dict) else {}  # type: ignore[return-value]
 
 
-def _summary_json(row) -> dict[str, Any]:
+def _summary_json(row: object) -> dict[str, Any]:
     return _json_object_from_row(row, "summary_json")
 
 
-def _detail_json(row) -> dict[str, Any]:
+def _detail_json(row: object) -> dict[str, Any]:
     return _json_object_from_row(row, "detail_json")
 
 
 def _kudos_count(summary: dict[str, Any]) -> int:
-    value = summary.get("kudos_count")
+    raw: object = summary.get("kudos_count")
     try:
-        return int(value) if value is not None else 0
+        return int(raw) if raw is not None else 0  # type: ignore[arg-type]
     except TypeError, ValueError:
         return 0
 
 
-def _kudos_names(rows) -> list[str]:
+def _kudos_names(rows: list[dict[str, object]]) -> list[str]:
     names: list[str] = []
     for row in rows:
         firstname = str(_row_get(row, "firstname", "") or "").strip()
@@ -208,37 +226,39 @@ def _rationale(message: str) -> list[ServiceRationale]:
     return [ServiceRationale(code="metric_bundle_from_read_model", message=message)]
 
 
-def _fact_status(row) -> dict[str, Any]:
+def _fact_status(row: ActivityMetricFactRow) -> dict[str, Any]:
     missing = _parse_json_list(row["missing_reasons_json"])
     return {
-        "status": row["completeness_status"],
+        "status": str(row["completeness_status"]),
         "missing": missing,
-        "source_revision": int(row["source_revision"]),
-        "metric_version": int(row["metric_version"]),
+        "source_revision": int(row["source_revision"]),  # type: ignore[arg-type]
+        "metric_version": int(row["metric_version"]),  # type: ignore[arg-type]
         "materialized_at": row["computed_at"],
     }
 
 
-def _row_get(row, key: str, default=None):
+def _row_get(row: object, key: str, default: object = None) -> object:
     if row is None:
         return default
-    if hasattr(row, "keys") and key in row.keys():
-        return row[key]
+    if hasattr(row, "keys") and key in row.keys():  # type: ignore[union-attr]
+        return row[key]  # type: ignore[index]
     if isinstance(row, dict):
         return row.get(key, default)
     return default
 
 
-def _zone_minutes(row) -> list[float]:
-    return [round(float(row[f"zone{idx}_seconds"] or 0) / 60, 3) for idx in range(1, 6)]
+def _zone_minutes(row: ActivityMetricFactRow) -> list[float]:
+    # zone*_seconds fields are ``object`` (nullable BIGINT); ``or 0`` collapses NULL.
+    row_dict = cast("dict[str, object]", row)
+    return [round(float(row_dict[f"zone{idx}_seconds"] or 0) / 60, 3) for idx in range(1, 6)]  # type: ignore[arg-type]
 
 
-def _activity_value(row, metric_id: str):
+def _activity_value(row: ActivityMetricFactRow, metric_id: str) -> object:
     if metric_id in {"avg_hr", "max_hr"}:
         summary = _summary_json(row)
         summary_key = "average_heartrate" if metric_id == "avg_hr" else "max_heartrate"
         value = summary.get(summary_key)
-        return round(float(value), 3) if value is not None else None
+        return round(float(value), 3) if value is not None else None  # type: ignore[arg-type]
     if metric_id == "time_in_hr_zones_min":
         return _zone_minutes(row)
     if metric_id == "cardiac_drift_severity":
@@ -246,28 +266,29 @@ def _activity_value(row, metric_id: str):
     column, scale = ACTIVITY_SCALAR_FACTS.get(metric_id, (None, 1.0))
     if column is None:
         return None
-    value = row[column]
+    row_dict = cast("dict[str, object]", row)
+    value: object = row_dict.get(column)
     if value is None:
         return None
-    return round(float(value) * float(scale), 3)
+    return round(float(value) * float(scale), 3)  # type: ignore[arg-type]
 
 
-def _gear_payload(row, summary: dict[str, Any]) -> dict[str, Any]:
+def _gear_payload(row: ActivityMetricFactRow, summary: dict[str, Any]) -> dict[str, Any]:
     detail = _detail_json(row)
     _gear_raw = detail.get("gear")
     gear: dict[str, Any] = _gear_raw if isinstance(_gear_raw, dict) else {}
     gear_id = summary.get("gear_id") or detail.get("gear_id") or gear.get("id")
     distance_m = gear.get("distance") or gear.get("converted_distance")
     try:
-        gear_distance_km = round(float(distance_m) / 1000.0, 3) if distance_m is not None else None
+        gear_distance_km = round(float(distance_m) / 1000.0, 3) if distance_m is not None else None  # type: ignore[arg-type]
     except TypeError, ValueError:
         gear_distance_km = None
     primary = gear.get("primary")
     return {
-        "gear_id": str(gear_id) if gear_id is not None else None,
+        "gear_id": str(gear_id) if gear_id is not None else None,  # type: ignore[arg-type]
         "gear_name": gear.get("name") or gear.get("nickname"),
         "gear_distance_km": gear_distance_km,
-        "gear_primary": bool(primary) if primary is not None else None,
+        "gear_primary": bool(primary) if primary is not None else None,  # type: ignore[arg-type]
     }
 
 
@@ -324,7 +345,7 @@ def _relative_time(start_date_local: str | None, now: datetime) -> str | None:
 
 
 def _activity_payload(
-    row,
+    row: ActivityMetricFactRow,
     *,
     now: datetime,
     kudos_names: list[str] | None = None,
@@ -338,7 +359,7 @@ def _activity_payload(
     if start_time_local is None:
         start_time_local = parse_local_hhmm(summary.get("start_date_local"))
     payload = {
-        "activity_id": int(row["activity_id"]),
+        "activity_id": int(row["activity_id"]),  # type: ignore[arg-type]
         "activity_date": row["activity_day"],
         "sport_type": row["sport_type"],
         "activity_name": row["activity_name"],
@@ -348,10 +369,10 @@ def _activity_payload(
         "elevation_m": _activity_value(row, "elevation_m"),
         "trimp": _activity_value(row, "trimp"),
         "avg_hr": summary.get("average_heartrate"),
-        "max_hr": int(round(summary["max_heartrate"])) if summary.get("max_heartrate") else None,
+        "max_hr": int(round(summary["max_heartrate"])) if summary.get("max_heartrate") else None,  # type: ignore[arg-type]
         "time_in_hr_zones_min": _zone_minutes(row),
-        "hr_recovery_pauses": int(row["hr_recovery_pause_count"] or 0),
-        "hr_recovery_total_rest_sec": int(row["hr_recovery_total_rest_sec"] or 0),
+        "hr_recovery_pauses": int(row["hr_recovery_pause_count"] or 0),  # type: ignore[arg-type]
+        "hr_recovery_total_rest_sec": int(row["hr_recovery_total_rest_sec"] or 0),  # type: ignore[arg-type]
         "hr_recovery_median_bpm_per_min": _activity_value(row, "hr_recovery_median_bpm_per_min"),
         "hr_recovery_best_bpm_per_min": _activity_value(row, "hr_recovery_best_bpm_per_min"),
         "hr_recovery_worst_bpm_per_min": _activity_value(row, "hr_recovery_worst_bpm_per_min"),
@@ -363,12 +384,12 @@ def _activity_payload(
         "cardiac_cost_adjusted": _activity_value(row, "cardiac_cost_adjusted"),
         "cardiac_drift_pct": _activity_value(row, "cardiac_drift_pct"),
         "cardiac_drift_severity": row["cardiac_drift_severity"],
-        "cardiac_drift_significant": int(row["cardiac_drift_significant"] or 0),
+        "cardiac_drift_significant": int(row["cardiac_drift_significant"] or 0),  # type: ignore[arg-type]
         "cardiac_drift_quality": row["cardiac_drift_quality"],
         "hrr_pct": _activity_value(row, "hrr_pct"),
         "start_time_local": start_time_local,
         "relative_time": _relative_time(summary.get("start_date_local"), now),
-        "hr_anomaly_count": int(row["anomaly_count"] or 0),
+        "hr_anomaly_count": int(row["anomaly_count"] or 0),  # type: ignore[arg-type]
         "kudos_count": _kudos_count(summary),
         "completeness": _fact_status(row),
     }
@@ -395,26 +416,15 @@ def _freshness_clock(now: datetime | None) -> datetime:
     return now if now is not None else _freshness_now()
 
 
-def _rolling_by_window(repo, as_of_day: str) -> dict[int, object]:
+def _rolling_by_window(repo: DuckDBRepository, as_of_day: str) -> dict[int, RollingPeriodFactRow]:
     windows = (7, 14, 28, 90)
     version = repo.current_metric_version()
-    batch_fetch = getattr(repo, "fetch_rolling_period_facts_by_windows", None)
-    if batch_fetch is not None:
-        return batch_fetch(
-            as_of_day,
-            windows,
-            scope="all",
-            metric_version=version,
-        )
-    return {
-        window: repo.fetch_rolling_period_facts(
-            as_of_day,
-            window,
-            scope="all",
-            metric_version=version,
-        )
-        for window in windows
-    }
+    return repo.fetch_rolling_period_facts_by_windows(
+        as_of_day,
+        windows,
+        scope="all",
+        metric_version=version,
+    )
 
 
 def get_fitness_state_service(
@@ -433,7 +443,7 @@ def get_fitness_state_service(
         model = repo.fetch_latest_training_model_day(version, as_of_day=as_of_day)
         if model is None:
             model = repo.fetch_latest_training_model_day(version)
-        rolling = _rolling_by_window(repo, model["day"] if model is not None else as_of_day)
+        rolling = _rolling_by_window(repo, str(model["day"]) if model is not None else as_of_day)
 
     missing: list[str] = []
     if model is None:
@@ -573,7 +583,7 @@ def get_workout_detail_service(
             include_detail_context=True,
         )
         missing = _parse_json_list(row["missing_reasons_json"])
-        stream_derived = [
+        stream_derived: list[object] = [
             data["hr_recovery_median_bpm_per_min"],
             data["vertical_speed_m_per_h"],
             data["cardiac_cost"],
@@ -606,14 +616,19 @@ def get_workout_detail_service(
 
 
 def _aggregate_rows(envelope: ServiceEnvelope) -> list[dict[str, Any]]:
-    data = envelope.data if isinstance(envelope.data, dict) else {}
-    rows = data.get("rows", [])
-    return [row for row in rows if isinstance(row, dict)]
+    # ServiceEnvelope.data is typed Any; route through object to erase Any at assignment.
+    _env_data: object = cast("object", envelope.data)
+    data: dict[str, object] = _env_data if isinstance(_env_data, dict) else {}
+    rows_raw: object = data.get("rows", [])
+    rows: list[object] = rows_raw if isinstance(rows_raw, list) else []
+    return [row for row in rows if isinstance(row, dict)]  # type: ignore[return-value]
 
 
 def _compare_row_key(row: dict[str, Any]) -> tuple[str, str | None, str]:
-    scope = str(row.get("scope") or "global")
-    metric_id = str(row["metric_id"])
+    scope_raw: object = cast("object", row.get("scope")) or "global"
+    scope = str(scope_raw)
+    mid_raw: object = cast("object", row.get("metric_id")) or ""
+    metric_id = str(mid_raw)
     if scope == "per_sport":
         return scope, str(row.get("sport_type") or "unknown"), metric_id
     return "global", None, metric_id
@@ -691,26 +706,28 @@ def _distribution_delta(
 ) -> tuple[dict[str, float], dict[str, float | None], float | None]:
     _dist_a = row_a.get("distribution") if row_a is not None else None
     _dist_b = row_b.get("distribution") if row_b is not None else None
-    buckets_a: dict[str, Any] = _dist_a if isinstance(_dist_a, dict) else {}
-    buckets_b: dict[str, Any] = _dist_b if isinstance(_dist_b, dict) else {}
+    buckets_a: dict[str, object] = _dist_a if isinstance(_dist_a, dict) else {}
+    buckets_b: dict[str, object] = _dist_b if isinstance(_dist_b, dict) else {}
     keys = sorted(set(buckets_a) | set(buckets_b))
     deltas: dict[str, float] = {}
     delta_pct: dict[str, float | None] = {}
+
+    def _fval(v: object) -> float:
+        # Narrow object | None from dict[str, object].get() to float; None → 0.0.
+        return float(v) if v is not None else 0.0  # type: ignore[arg-type]
+
     for key in keys:
-        a_value = float(buckets_a.get(key) or 0.0)
-        b_value = float(buckets_b.get(key) or 0.0)
+        a_value = _fval(buckets_a.get(key))
+        b_value = _fval(buckets_b.get(key))
         delta = round(a_value - b_value, 3)
         deltas[key] = delta
         delta_pct[key] = round((delta / b_value) * 100, 2) if b_value else None
-    total_a = sum(float(value or 0.0) for value in buckets_a.values())
-    total_b = sum(float(value or 0.0) for value in buckets_b.values())
+    total_a = sum(_fval(value) for value in buckets_a.values())
+    total_b = sum(_fval(value) for value in buckets_b.values())
     overlap = None
     if total_a > 0 and total_b > 0:
         overlap = round(
-            (
-                sum(min(float(buckets_a.get(key) or 0.0), float(buckets_b.get(key) or 0.0)) for key in keys)
-                / max(total_a, total_b)
-            )
+            (sum(min(_fval(buckets_a.get(key)), _fval(buckets_b.get(key))) for key in keys) / max(total_a, total_b))
             * 100,
             2,
         )
@@ -845,8 +862,11 @@ def compare_periods_service(
         "global": global_section,
         "per_sport": per_sport_section,
     }
-    read_model = period_a_envelope.completeness.coverage.get("read_model", {})
-    period_b_read_model = period_b_envelope.completeness.coverage.get("read_model", {})
+    # coverage is dict[str, Any]; route through cast to erase the Any at assignment.
+    _rm_a: object = cast("object", period_a_envelope.completeness.coverage.get("read_model", {}))
+    read_model: dict[str, object] = _rm_a if isinstance(_rm_a, dict) else {}
+    _rm_b: object = cast("object", period_b_envelope.completeness.coverage.get("read_model", {}))
+    period_b_read_model: dict[str, object] = _rm_b if isinstance(_rm_b, dict) else {}
     comparison_missing = sorted(
         set(period_a_envelope.completeness.missing) | set(period_b_envelope.completeness.missing)
     )
@@ -898,8 +918,8 @@ def _comparison_completeness_status(
     period_a_status: str,
     period_b_status: str,
     *,
-    period_a_read_model: dict[str, Any],
-    period_b_read_model: dict[str, Any],
+    period_a_read_model: dict[str, object],
+    period_b_read_model: dict[str, object],
     has_data: bool,
 ) -> str:
     if not has_data:
@@ -977,11 +997,12 @@ def _scenario_trimps(
     raise ValueError(f"Unsupported scenario: {scenario}")
 
 
-def _daily_trimp_history(repo, start_day: str, end_day: str) -> dict[str, float]:
+def _daily_trimp_history(repo: DuckDBRepository, start_day: str, end_day: str) -> dict[str, float]:
     rows = repo.fetch_daily_load_facts(
         start_day, _next_day(end_day), scope="all", metric_version=repo.current_metric_version()
     )
-    return {row["day"]: float(row["effective_trimp"] or 0.0) for row in rows}
+    # DailyLoadFactRow fields are ``object``; str() and float() narrow safely at runtime.
+    return {str(row["day"]): float(row["effective_trimp"] or 0.0) for row in rows}  # type: ignore[arg-type]
 
 
 def project_fitness_state_service(
@@ -1018,8 +1039,9 @@ def project_fitness_state_service(
         history_start = (today_day - timedelta(days=27)).isoformat()
         history_daily_trimp = _daily_trimp_history(repo, history_start, today_day.isoformat())
 
-    baseline_fitness = float(baseline["fitness"] or 0.0) if baseline is not None else 0.0
-    baseline_fatigue = float(baseline["fatigue"] or 0.0) if baseline is not None else 0.0
+    # baseline["fitness"]/["fatigue"] are ``object`` (TrainingModelDayRow); float() narrows.
+    baseline_fitness = float(baseline["fitness"] or 0.0) if baseline is not None else 0.0  # type: ignore[arg-type]
+    baseline_fatigue = float(baseline["fatigue"] or 0.0) if baseline is not None else 0.0  # type: ignore[arg-type]
     missing = [] if baseline is not None else ["read_model_unavailable"]
     scenario_payload: dict[str, dict[str, Any]] = {}
     for scenario in scenarios:
@@ -1030,13 +1052,17 @@ def project_fitness_state_service(
             history_daily_trimp=history_daily_trimp,
             custom_daily_trimp=custom_daily_trimp,
         )
+        # ALPHA constants are computed in a nested class body (pow() expression),
+        # which pyright infers as Any. Cast to float once here to keep the call sites typed.
+        alpha_fitness: float = float(Config.Model.Banister.ALPHA_FITNESS)  # type: ignore[arg-type]
+        alpha_fatigue: float = float(Config.Model.Banister.ALPHA_FATIGUE)  # type: ignore[arg-type]
         sim = forward_simulate(
             baseline_fitness,
             baseline_fatigue,
             trimps,
             today_day,
-            Config.Model.Banister.ALPHA_FITNESS,
-            Config.Model.Banister.ALPHA_FATIGUE,
+            alpha_fitness,
+            alpha_fatigue,
         )
         daily_rows = [
             {
@@ -1056,8 +1082,8 @@ def project_fitness_state_service(
                 baseline_fatigue,
                 trimps + [0.0] * (monday - target_day).days,
                 today_day,
-                Config.Model.Banister.ALPHA_FITNESS,
-                Config.Model.Banister.ALPHA_FATIGUE,
+                alpha_fitness,
+                alpha_fatigue,
             )
             metadata["post_weekend_monday_form"] = monday_sim[-1].form if monday_sim else None
         else:

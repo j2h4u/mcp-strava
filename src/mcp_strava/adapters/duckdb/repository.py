@@ -142,6 +142,165 @@ class _ValuesJsonRow(TypedDict):
     values_json: object
 
 
+# ─── Wide fact-read TypedDicts (public repository read boundary) ───
+#
+# Each TypedDict below maps one SELECTed column set to a concrete shape so
+# that application-layer callers never see ``dict[str, Any]``. The cast from
+# ``Row`` (``dict[str, object]``) to these TypedDicts happens via ``_all``/
+# ``_one`` — exactly one controlled cast per public read method.
+#
+# Nullable columns (SQL NULL / outer-join) are typed ``X | None``.
+# DATE columns come back as ISO strings (see ``_normalize_cell``).
+
+
+class ActivityMetricFactRow(TypedDict):
+    """Row returned by ``fetch_activity_metric_facts`` / ``fetch_activity_metric_fact``.
+
+    Columns: ``activity_metric_facts f`` (SELECT *) joined with
+    ``activities a`` (name, date, summary_json, detail_json).
+    Metric-specific numeric columns (trimp, zone*_seconds, etc.) are all
+    nullable because they are added via additive migration and may be NULL on
+    rows materialised before a new column was introduced.
+    """
+
+    # ── PK / identity ──
+    activity_id: object  # int stored as BIGINT; object to match _normalize_cell
+    activity_day: object  # DATE → ISO str
+    metric_version: object  # BIGINT
+    # ── Completeness ──
+    completeness_status: object  # VARCHAR
+    missing_reasons_json: object  # VARCHAR (JSON list)
+    source_revision: object  # BIGINT
+    computed_at: object  # VARCHAR timestamp
+    # ── Core metric columns (nullable — additive migration) ──
+    trimp: object  # DOUBLE | NULL
+    distance_m: object  # DOUBLE | NULL
+    moving_time_s: object  # BIGINT | NULL
+    elapsed_time_s: object  # BIGINT | NULL
+    elevation_gain_m: object  # DOUBLE | NULL
+    zone1_seconds: object  # BIGINT | NULL
+    zone2_seconds: object  # BIGINT | NULL
+    zone3_seconds: object  # BIGINT | NULL
+    zone4_seconds: object  # BIGINT | NULL
+    zone5_seconds: object  # BIGINT | NULL
+    hr_recovery_pause_count: object  # BIGINT | NULL
+    hr_recovery_total_rest_sec: object  # BIGINT | NULL
+    hr_recovery_median_rate: object  # DOUBLE | NULL
+    hr_recovery_best_rate: object  # DOUBLE | NULL
+    hr_recovery_worst_rate: object  # DOUBLE | NULL
+    hr_recovery_avg_rate: object  # DOUBLE | NULL
+    vertical_speed_vmh: object  # DOUBLE | NULL
+    vertical_speed_total_ascent_m: object  # DOUBLE | NULL
+    vertical_speed_duration_hours: object  # DOUBLE | NULL
+    cardiac_cost: object  # DOUBLE | NULL
+    adjusted_cardiac_cost: object  # DOUBLE | NULL
+    cardiac_drift_pct: object  # DOUBLE | NULL
+    cardiac_drift_significant: object  # BIGINT | NULL
+    cardiac_drift_severity: object  # VARCHAR | NULL
+    cardiac_drift_quality: object  # VARCHAR | NULL
+    hrr_pct: object  # DOUBLE | NULL
+    anomaly_count: object  # BIGINT | NULL
+    start_time_local: object  # VARCHAR | NULL
+    sport_type: object  # VARCHAR
+    # ── Joined from activities ──
+    activity_name: object  # VARCHAR | NULL
+    activity_date: object  # VARCHAR | NULL
+    summary_json: object  # VARCHAR | NULL
+    detail_json: object  # VARCHAR | NULL
+
+
+class DailyLoadFactRow(TypedDict):
+    """Row returned by ``fetch_daily_load_facts``.
+
+    Columns: ``SELECT * FROM daily_load_facts``.
+    """
+
+    day: object  # DATE → ISO str
+    scope: object  # VARCHAR
+    sport_type: object  # VARCHAR
+    metric_version: object  # BIGINT
+    computed_at: object  # VARCHAR
+    completeness_status: object  # VARCHAR
+    missing_reasons_json: object  # VARCHAR
+    activity_count: object  # BIGINT
+    stream_point_count: object  # BIGINT
+    heartrate_point_count: object  # BIGINT
+    observed_trimp: object  # DOUBLE | NULL
+    effective_trimp: object  # DOUBLE
+    distance_m: object  # DOUBLE
+    moving_time_s: object  # BIGINT
+    elevation_gain_m: object  # DOUBLE
+    zone4_seconds: object  # BIGINT
+    zone5_seconds: object  # BIGINT
+    high_zone_seconds: object  # BIGINT
+    anomaly_count: object  # BIGINT
+
+
+class TrainingModelDayRow(TypedDict):
+    """Row returned by ``fetch_latest_training_model_day``.
+
+    Columns: ``SELECT * FROM training_model_daily``.
+    """
+
+    day: object  # DATE → ISO str
+    scope: object  # VARCHAR
+    sport_type: object  # VARCHAR
+    metric_version: object  # BIGINT
+    computed_at: object  # VARCHAR
+    completeness_status: object  # VARCHAR
+    missing_reasons_json: object  # VARCHAR
+    effective_trimp: object  # DOUBLE
+    observed_trimp: object  # DOUBLE | NULL
+    fitness: object  # DOUBLE | NULL
+    fatigue: object  # DOUBLE | NULL
+    form: object  # DOUBLE | NULL
+    form_zone: object  # VARCHAR | NULL
+    acwr_zone: object  # VARCHAR | NULL
+    acwr: object  # DOUBLE | NULL
+    load_7d: object  # DOUBLE | NULL
+    load_28d: object  # DOUBLE | NULL
+    load_42d: object  # DOUBLE | NULL
+    input_days: object  # BIGINT
+    missing_days: object  # BIGINT
+
+
+class RollingPeriodFactRow(TypedDict):
+    """Row returned by ``fetch_rolling_period_facts`` /
+    ``fetch_rolling_period_facts_by_windows``.
+
+    Columns: ``SELECT * FROM rolling_period_facts``.
+    """
+
+    as_of_day: object  # DATE → ISO str
+    window_days: object  # BIGINT
+    scope: object  # VARCHAR
+    sport_type: object  # VARCHAR
+    metric_version: object  # BIGINT
+    computed_at: object  # VARCHAR
+    completeness_status: object  # VARCHAR
+    missing_reasons_json: object  # VARCHAR
+    activity_count: object  # BIGINT
+    active_days: object  # BIGINT
+    rest_days: object  # BIGINT
+    observed_trimp: object  # DOUBLE | NULL
+    effective_trimp: object  # DOUBLE
+    distance_m: object  # DOUBLE
+    moving_time_s: object  # BIGINT
+    elevation_gain_m: object  # DOUBLE
+    high_zone_seconds: object  # BIGINT
+    anomaly_count: object  # BIGINT
+    fitness: object  # DOUBLE | NULL
+    fatigue: object  # DOUBLE | NULL
+    form: object  # DOUBLE | NULL
+    form_zone: object  # VARCHAR | NULL
+    acwr_zone: object  # VARCHAR | NULL
+    acwr: object  # DOUBLE | NULL
+    median_cardiac_cost: object  # DOUBLE | NULL
+    median_adjusted_cardiac_cost: object  # DOUBLE | NULL
+    median_hr_recovery: object  # DOUBLE | NULL
+    median_cardiac_drift_pct: object  # DOUBLE | NULL
+
+
 def _emit(event: str, **fields: object) -> None:
     """Emit a structured JSON diagnostic event to stdout (house log style)."""
     print(json.dumps({"event": event, **fields}, ensure_ascii=False), flush=True)
@@ -1142,7 +1301,7 @@ class DuckDBRepository:
         as_of_day: str | None = None,
         scope: str = "all",
         sport: str | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> TrainingModelDayRow | None:
         if not self._read_model_enabled():
             return None
         where = ["metric_version = ?", "scope = ?", "sport_type = ?"]
@@ -1150,15 +1309,17 @@ class DuckDBRepository:
         if as_of_day is not None:
             where.append("day <= CAST(? AS DATE)")
             params.append(as_of_day)
-        return self._fetchone(
-            f"""
-            SELECT *
-            FROM training_model_daily
-            WHERE {" AND ".join(where)}
-            ORDER BY day DESC
-            LIMIT 1
-            """,
-            params,
+        return self._one(
+            self._fetchone(
+                f"""
+                SELECT *
+                FROM training_model_daily
+                WHERE {" AND ".join(where)}
+                ORDER BY day DESC
+                LIMIT 1
+                """,
+                params,
+            )
         )
 
     def fetch_activity_metric_facts(
@@ -1170,7 +1331,7 @@ class DuckDBRepository:
         metric_version: int | None = None,
         limit: int | None = None,
         cursor: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[ActivityMetricFactRow]:
         if not self._read_model_enabled():
             return []
         where = ["f.activity_day >= CAST(? AS DATE)", "f.activity_day < CAST(? AS DATE)"]
@@ -1196,9 +1357,11 @@ class DuckDBRepository:
         if limit is not None:
             sql += " LIMIT ?"
             params.append(limit)
-        return self._fetchall(sql, params)
+        return self._all(self._fetchall(sql, params))
 
-    def fetch_activity_metric_fact(self, activity_id: int, metric_version: int | None = None) -> dict[str, Any] | None:
+    def fetch_activity_metric_fact(
+        self, activity_id: int, metric_version: int | None = None
+    ) -> ActivityMetricFactRow | None:
         if not self._read_model_enabled():
             return None
         where = ["f.activity_id = ?"]
@@ -1206,16 +1369,18 @@ class DuckDBRepository:
         if metric_version is not None:
             where.append("f.metric_version = ?")
             params.append(metric_version)
-        return self._fetchone(
-            f"""
-            SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json, a.detail_json
-            FROM activity_metric_facts f
-            LEFT JOIN activities a ON a.id = f.activity_id
-            WHERE {" AND ".join(where)}
-            ORDER BY f.metric_version DESC
-            LIMIT 1
-            """,
-            params,
+        return self._one(
+            self._fetchone(
+                f"""
+                SELECT f.*, a.name AS activity_name, a.date AS activity_date, a.summary_json, a.detail_json
+                FROM activity_metric_facts f
+                LEFT JOIN activities a ON a.id = f.activity_id
+                WHERE {" AND ".join(where)}
+                ORDER BY f.metric_version DESC
+                LIMIT 1
+                """,
+                params,
+            )
         )
 
     def fetch_daily_load_facts(
@@ -1226,7 +1391,7 @@ class DuckDBRepository:
         scope: str,
         sport: str | None = None,
         metric_version: int | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[DailyLoadFactRow]:
         if not self._read_model_enabled():
             return []
         where = ["day >= CAST(? AS DATE)", "day < CAST(? AS DATE)", "scope = ?", "sport_type = ?"]
@@ -1234,14 +1399,16 @@ class DuckDBRepository:
         if metric_version is not None:
             where.append("metric_version = ?")
             params.append(metric_version)
-        return self._fetchall(
-            f"""
-            SELECT *
-            FROM daily_load_facts
-            WHERE {" AND ".join(where)}
-            ORDER BY day ASC
-            """,
-            params,
+        return self._all(
+            self._fetchall(
+                f"""
+                SELECT *
+                FROM daily_load_facts
+                WHERE {" AND ".join(where)}
+                ORDER BY day ASC
+                """,
+                params,
+            )
         )
 
     def fetch_rolling_period_facts(
@@ -1252,7 +1419,7 @@ class DuckDBRepository:
         scope: str,
         sport: str | None = None,
         metric_version: int | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> RollingPeriodFactRow | None:
         if not self._read_model_enabled():
             return None
         where = ["as_of_day = CAST(? AS DATE)", "window_days = ?", "scope = ?", "sport_type = ?"]
@@ -1260,15 +1427,17 @@ class DuckDBRepository:
         if metric_version is not None:
             where.append("metric_version = ?")
             params.append(metric_version)
-        return self._fetchone(
-            f"""
-            SELECT *
-            FROM rolling_period_facts
-            WHERE {" AND ".join(where)}
-            ORDER BY metric_version DESC
-            LIMIT 1
-            """,
-            params,
+        return self._one(
+            self._fetchone(
+                f"""
+                SELECT *
+                FROM rolling_period_facts
+                WHERE {" AND ".join(where)}
+                ORDER BY metric_version DESC
+                LIMIT 1
+                """,
+                params,
+            )
         )
 
     def fetch_rolling_period_facts_by_windows(
@@ -1279,7 +1448,7 @@ class DuckDBRepository:
         scope: str,
         sport: str | None = None,
         metric_version: int | None = None,
-    ) -> dict[int, dict[str, Any]]:
+    ) -> dict[int, RollingPeriodFactRow]:
         if not self._read_model_enabled() or not window_days:
             return {}
         window_placeholders = ", ".join("?" for _ in window_days)
@@ -1293,17 +1462,19 @@ class DuckDBRepository:
         if metric_version is not None:
             where.append("metric_version = ?")
             params.append(metric_version)
-        rows = self._fetchall(
-            f"""
-            SELECT *
-            FROM rolling_period_facts
-            WHERE {" AND ".join(where)}
-            ORDER BY window_days ASC, metric_version DESC
-            """,
-            params,
+        typed_rows: list[RollingPeriodFactRow] = self._all(
+            self._fetchall(
+                f"""
+                SELECT *
+                FROM rolling_period_facts
+                WHERE {" AND ".join(where)}
+                ORDER BY window_days ASC, metric_version DESC
+                """,
+                params,
+            )
         )
-        by_window: dict[int, dict[str, Any]] = {}
-        for row in rows:
+        by_window: dict[int, RollingPeriodFactRow] = {}
+        for row in typed_rows:
             window = _as_int(row["window_days"])
             by_window.setdefault(window, row)
         return by_window
