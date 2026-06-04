@@ -1,0 +1,36 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-04T20:27:47.705Z",
+  "phase": "15",
+  "phase_name": "self-invalidating-read-model-source-fingerprint-auto-recompu",
+  "phase_dir": ".planning/phases/15-self-invalidating-read-model-source-fingerprint-auto-recompu",
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "paused",
+  "context": "milestone-boundary",
+  "completed_tasks": [
+    {"name": "Phase 15 executed + verified (21/21), milestone v1.1 -> 100%", "status": "done"},
+    {"name": "Fixed prod kudos-sync TypeError; container healthy; durable typed repo method", "status": "done", "commit": "393e6d4/184cfea"},
+    {"name": "reportAny paid down 463 -> 0, basedpyright baseline removed (reportAny hard-enforced)", "status": "done", "commit": "bc38e0c"},
+    {"name": "Added CI gates: import-linter (3 contracts) + basedpyright reportAny; pyright->basedpyright; CI lints whole repo", "status": "done", "commit": "3ec53d1"},
+    {"name": "Removed dead back-compat/migration cruft (ensure_provenance_columns, schema_migration_log, sport aliases, deploy/smoke.py wrapper)", "status": "done", "commit": "6be9004/2b76d73/3a203cf"},
+    {"name": "Expert-panel decision: sidecar seeding fail-loud; dropped redundant MAX-fallback + dual-seed", "status": "done", "commit": "6fc5b18"},
+    {"name": "health.py: corrupt health file fails loud (unhealthy) instead of fake-healthy", "status": "done", "commit": "5ef2fde"}
+  ],
+  "remaining_tasks": [
+    {"name": "Run /gsd-complete-milestone to formally archive milestone v1.1 (STATE status=complete, 100%, but not yet archived)", "status": "not_started"},
+    {"name": "OPTIONAL: remove the provably-redundant start_time_local read-time fallback in metric_services._activity_payload — needs fixture surgery (make tests/test_metric_services._repo_with_facts materialize start_time_local instead of NULL). Attempted + reverted this session for marginal benefit at low context.", "status": "not_started"}
+  ],
+  "blockers": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "NEVER backward compatibility on ANY project; the instant 'backward-compat/shim/migrate old DB/legacy' appears, STOP and investigate the urge", "rationale": "single dev instance, one DB, no backups, no external consumers — recorded in ~/.claude/memory/feedback_no_backward_compat.md, ~/AGENTS.md, and project memory"},
+    {"decision": "Spawn subagents on model='sonnet' to save Opus tokens; reserve Opus for subtle architecture", "rationale": "operator directive"},
+    {"decision": "Fail-loud over silent-wrong; no defensive/fallback code for scenarios that can't occur on a single healthy instance", "rationale": "codebase value, reinforced by expert panel"},
+    {"decision": "basedpyright reads [tool.pyright] NOT [tool.basedpyright]", "rationale": "verified empirically; put config in [tool.pyright]"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "/gsd-complete-milestone — formally close milestone v1.1 (everything is committed, pushed, CI green, 389 tests pass).",
+  "context_notes": "Phase 15 done and verified. Session was a long post-phase maintenance sweep: a real prod bug fix, a full reportAny typing pass (463->0), two new CI gates, and aggressive removal of back-compat/migration/fallback cruft. Tree clean, ahead 0/behind 0. 389 tests pass; gates green (ruff, basedpyright reportAny=0, lint-imports 3, pytest). The big behavioural rule established: no backward compatibility, ever, on any project — fail loud, delete dead insurance."
+}
