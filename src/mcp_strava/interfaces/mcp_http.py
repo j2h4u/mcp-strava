@@ -71,17 +71,17 @@ def _envelope_payload(envelope: ServiceEnvelope) -> dict[str, Any]:
     }
 
 
-def _data_shape(value: Any) -> dict[str, Any]:
+def _data_shape(value: object) -> dict[str, object]:
     if isinstance(value, dict):
         return {"type": "dict", "keys": sorted(value.keys())[:30]}
     if isinstance(value, list):
-        first = value[0] if value else None
+        first: object = value[0] if value else None
         first_keys = sorted(first.keys())[:30] if isinstance(first, dict) else None
         return {"type": "list", "count": len(value), "first_keys": first_keys}
     return {"type": type(value).__name__}
 
 
-def _warning_codes(warnings: Any) -> list[str]:
+def _warning_codes(warnings: object) -> list[str]:
     """Extract warning ``code`` strings for log lines.
 
     Logging only ``warnings_count`` tells an operator a warning fired but not
@@ -93,7 +93,7 @@ def _warning_codes(warnings: Any) -> list[str]:
     return [str(item.get("code", "unknown")) if isinstance(item, dict) else str(item) for item in warnings]
 
 
-def _emit_log(event: str, **fields: Any) -> None:
+def _emit_log(event: str, **fields: object) -> None:
     print(json.dumps({"event": event, **fields}, ensure_ascii=False, sort_keys=True), file=sys.stderr, flush=True)
 
 

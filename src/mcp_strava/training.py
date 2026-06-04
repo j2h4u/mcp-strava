@@ -68,8 +68,8 @@ def calc_banister_series(daily_trimp, end_date=None):
     first_dt = datetime.strptime(all_dates[0], "%Y-%m-%d")
     warmup_start = first_dt - timedelta(days=Config.Model.BANISTER_WARMUP_DAYS)
 
-    alpha_f = Config.Model.Banister.ALPHA_FITNESS
-    alpha_fa = Config.Model.Banister.ALPHA_FATIGUE
+    alpha_f: float = Config.Model.Banister.ALPHA_FITNESS
+    alpha_fa: float = Config.Model.Banister.ALPHA_FATIGUE
 
     current = warmup_start
     f = 0.0

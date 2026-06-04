@@ -286,6 +286,8 @@ def main(argv: list[str] | None = None) -> int:
         default=_poll_seconds(os.environ.get("MCP_STRAVA_REFRESH_POLL_SECONDS")),
     )
     args = parser.parse_args(argv)
+    arg_once = bool(getattr(args, "once", False))
+    arg_poll_seconds = int(getattr(args, "poll_seconds", 60))
 
     settings = get_settings()
     if settings.database_path.suffix.lower() == ".duckdb" and settings.runtime_profile in {
@@ -299,10 +301,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    if args.once:
+    if arg_once:
         return run_pending_once()
 
-    run_forever(poll_seconds=args.poll_seconds)
+    run_forever(poll_seconds=arg_poll_seconds)
     return 0
 
 

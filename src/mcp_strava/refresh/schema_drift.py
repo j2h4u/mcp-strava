@@ -13,7 +13,6 @@ model. It writes nothing to the database.
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from mcp_strava.api_schema import validate_batch, validate_response
 
@@ -22,7 +21,7 @@ def _emit(event: str, **fields: object) -> None:
     print(json.dumps({"event": event, **fields}, ensure_ascii=False), flush=True)
 
 
-def journal_schema_drift(data: Any, endpoint_name: str, *, is_batch: bool = False) -> None:
+def journal_schema_drift(data: object, endpoint_name: str, *, is_batch: bool = False) -> None:
     """Validate one Strava response (or a list of them) and journal any drift.
 
     Side-effect only: emits a ``strava_schema_drift`` event when the validator

@@ -51,7 +51,7 @@ class StravaRateInfo:
 
 @dataclass(frozen=True)
 class StravaResponse:
-    data: Any
+    data: object
     rate_info: StravaRateInfo
     status: int
 

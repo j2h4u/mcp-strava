@@ -7,6 +7,8 @@ Import what you need::
     threshold = Config.Thresholds.PACE_CV_MAX
 """
 
+import math as _math
+
 # ═══════════════════════════════════════════════════════════════
 #  Config — hierarchical constants
 # ═══════════════════════════════════════════════════════════════
@@ -106,8 +108,8 @@ class Config:
         class Banister:
             TAU_FATIGUE = 10  # short-term load decay (age-adjusted: slower recovery at 50+)
             TAU_FITNESS = 42  # long-term fitness decay
-            ALPHA_FATIGUE = 1 - pow(0.5, 1.0 / TAU_FATIGUE)  # ≈ 0.067
-            ALPHA_FITNESS = 1 - pow(0.5, 1.0 / TAU_FITNESS)  # ≈ 0.016
+            ALPHA_FATIGUE: float = 1.0 - _math.exp(_math.log(0.5) / TAU_FATIGUE)  # ≈ 0.067
+            ALPHA_FITNESS: float = 1.0 - _math.exp(_math.log(0.5) / TAU_FITNESS)  # ≈ 0.016
 
         class ACWR:
             TAU_ATL = 7  # acute load EWMA window

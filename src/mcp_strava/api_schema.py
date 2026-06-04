@@ -15,7 +15,6 @@ nothing to the DB (the raw JSON is already persisted in full).
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
 
 # ═══════════════════════════════════════════════════════════════════
 #  Status constants
@@ -44,9 +43,9 @@ class FieldSchema:
     type_hint: str  # "int", "float", "str", "bool", "list", "dict", "float?"
     status: str  # Status.* constant
     description: str = ""
-    summit_null_value: Any | None = None  # What free accounts get for this field
+    summit_null_value: object = None  # What free accounts get for this field
 
-    def is_summit_active(self, value: Any) -> bool:
+    def is_summit_active(self, value: object) -> bool:
         """
         Check if a Summit field is suddenly non-null for a free account.
         Returns True if the field looks "active" (not the null-equivalent).
@@ -75,9 +74,9 @@ class EndpointSchema:
     endpoint: str  # "GET /athlete/activities"
     fields: dict[str, FieldSchema] = field(default_factory=dict)
 
-    def unknown_keys(self, data: dict[str, Any]) -> list[dict[str, Any]]:
+    def unknown_keys(self, data: dict[str, object]) -> list[dict[str, object]]:
         """Return keys in data but NOT in schema."""
-        result = []
+        result: list[dict[str, object]] = []
         for key in data:
             if key not in self.fields:
                 val = data[key]
@@ -90,9 +89,9 @@ class EndpointSchema:
                 )
         return result
 
-    def active_summit_fields(self, data: dict[str, Any]) -> list[dict[str, Any]]:
+    def active_summit_fields(self, data: dict[str, object]) -> list[dict[str, object]]:
         """Return Summit fields that are now non-null/non-zero."""
-        result = []
+        result: list[dict[str, object]] = []
         for key, value in data.items():
             fs = self.fields.get(key)
             if fs and fs.is_summit_active(value):
@@ -111,8 +110,8 @@ class ValidationResult:
     """Result of validating a response against a schema."""
 
     endpoint: str
-    unknown_fields: list[dict[str, Any]] = field(default_factory=list)
-    active_summit: list[dict[str, Any]] = field(default_factory=list)
+    unknown_fields: list[dict[str, object]] = field(default_factory=list)
+    active_summit: list[dict[str, object]] = field(default_factory=list)
     checked_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
     @property
@@ -265,7 +264,7 @@ SCHEMA_REGISTRY: dict[str, EndpointSchema] = {
 
 
 def validate_response(
-    data: dict[str, Any],
+    data: dict[str, object],
     endpoint_name: str,
 ) -> ValidationResult:
     """
@@ -293,7 +292,7 @@ def validate_response(
 
 
 def validate_batch(
-    items: list[dict[str, Any]],
+    items: list[dict[str, object]],
     endpoint_name: str,
     max_samples: int = 3,
 ) -> ValidationResult:
@@ -306,15 +305,17 @@ def validate_batch(
         return ValidationResult(endpoint=f"unknown:{endpoint_name}")
 
     # Collect findings from first N items
-    all_unknown = {}
-    all_summit = {}
+    all_unknown: dict[str, dict[str, object]] = {}
+    all_summit: dict[str, dict[str, object]] = {}
     for _i, item in enumerate(items[:max_samples]):
         if not isinstance(item, dict):
             continue
         for f in schema.unknown_keys(item):
-            all_unknown[f["field"]] = f
+            key = str(f["field"])
+            all_unknown[key] = f
         for f in schema.active_summit_fields(item):
-            all_summit[f["field"]] = f
+            key = str(f["field"])
+            all_summit[key] = f
 
     return ValidationResult(
         endpoint=schema.endpoint,

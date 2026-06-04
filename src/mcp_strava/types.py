@@ -76,7 +76,7 @@ class StravaActivity:
 class StravaStreamChannel:
     """One channel from Strava streams response (e.g. time, heartrate)."""
 
-    data: list = field(default_factory=list)
+    data: list[object] = field(default_factory=list)
     original_size: int | None = None
     resolution: str | None = None
     series_type: str | None = None
@@ -224,7 +224,7 @@ def parse_strava_streams(raw: dict) -> StravaStreams:
     )
 
 
-def parse_strava_stream_channels(raw: dict[str, Any]) -> dict[str, StravaStreamChannel]:
+def parse_strava_stream_channels(raw: dict[str, object]) -> dict[str, StravaStreamChannel]:
     """Parse raw keyed stream response and preserve every returned channel."""
     channels: dict[str, StravaStreamChannel] = {}
     for key, value in raw.items():
@@ -722,7 +722,7 @@ class ReadModelMetadata:
 class ServiceEnvelope:
     """Shared product service response envelope."""
 
-    data: Any
+    data: object
     freshness: FreshnessMetadata
     completeness: CompletenessMetadata
     warnings: list[ServiceWarning] = field(default_factory=list)
@@ -815,11 +815,12 @@ def smart_round(value: float) -> int | float:
     return round(value, 4)
 
 
-def dc_to_dict(obj: Any, *, round_floats: bool = False) -> Any:
+def dc_to_dict(obj: object, *, round_floats: bool = False) -> object:
     """Recursively convert dataclass (or list/dict of dataclasses) to plain dict.
     Safe for json.dumps()."""
     if hasattr(obj, "__dataclass_fields__"):
-        return {k: dc_to_dict(v, round_floats=round_floats) for k, v in obj.__dict__.items() if k != "_raw"}
+        dc_fields: dict[str, object] = vars(obj)
+        return {k: dc_to_dict(v, round_floats=round_floats) for k, v in dc_fields.items() if k != "_raw"}
     if isinstance(obj, list):
         return [dc_to_dict(v, round_floats=round_floats) for v in obj]
     if isinstance(obj, dict):

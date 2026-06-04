@@ -5,7 +5,7 @@ import sys
 from dataclasses import is_dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.duckdb.connection import MirrorConn, MirrorDbLocked
@@ -27,6 +27,11 @@ from mcp_strava.sync import (
 from mcp_strava.types import dc_to_dict
 
 backfill_stream_channels = refresh_runtime.run_stream_channel_catchup
+
+
+def _as_str(v: object) -> str:
+    """Convert any value to str without passing Any to str()."""
+    return str(v)
 
 
 class _DryRunStravaTransport:
@@ -54,7 +59,7 @@ def cmd_sql(args):
             cols = [item[0] for item in cursor.description]
             header = "| " + " | ".join(cols) + " |"
             sep = "| " + " | ".join(["---"] * len(cols)) + " |"
-            body = ["| " + " | ".join(str(r[i]) for i in range(len(cols))) + " |" for r in rows]
+            body = ["| " + " | ".join(_as_str(cast(object, r[i])) for i in range(len(cols))) + " |" for r in rows]
             print("\n".join([header, sep] + body))
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
@@ -145,13 +150,13 @@ def cmd_log(args):
             "FROM sync_log ORDER BY id DESC LIMIT ?",
             (limit,),
         ).fetchall()
-    rows: list[dict[str, Any]] = [dict(zip(_log_cols, row, strict=False)) for row in raw_rows]
+    rows: list[dict[str, object]] = [dict(zip(_log_cols, row, strict=False)) for row in raw_rows]
     if not rows:
         print("No sync log entries yet.")
         return
     for r in rows:
         ok = "✓" if r["status"] == "ok" else "✗"
-        parts = [f"{str(r['timestamp'])[:19]} {ok}"]
+        parts = [f"{_as_str(r['timestamp'])[:19]} {ok}"]
         if r["activities_new"]:
             parts.append(f"+{r['activities_new']} new")
         if r["streams_fetched"]:
@@ -162,7 +167,7 @@ def cmd_log(args):
             parts.append(f"{r['kudos_fetched']} kudos")
         parts.append(f"{r['api_calls'] or 0} calls")
         if r["error"]:
-            parts.append(str(r["error"])[:80])
+            parts.append(_as_str(r["error"])[:80])
         print("  ".join(parts))
 
 
@@ -227,7 +232,8 @@ def _phase_payload(result) -> dict:
     if isinstance(result, RefreshSkipped):
         return {"status": "skipped", "reason": result.reason}
     if is_dataclass(result):
-        return dc_to_dict(result)
+        converted = dc_to_dict(result)
+        return converted if isinstance(converted, dict) else {}
     return result
 
 
@@ -402,7 +408,8 @@ def _usage_error(message):
 
 
 def _print_product_envelope(envelope, *, json_output, title, renderer):
-    payload = dc_to_dict(envelope)
+    converted = dc_to_dict(envelope)
+    payload: dict[str, object] = converted if isinstance(converted, dict) else {}
     if json_output:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return

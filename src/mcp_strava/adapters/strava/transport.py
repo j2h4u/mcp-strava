@@ -6,6 +6,7 @@ import json
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from typing import cast
 
 from mcp_strava.adapters.strava.rate_limit import RateLimitPolicy
 from mcp_strava.adapters.strava.types import Clock, Sleeper, StravaResponse, StravaUnavailable
@@ -97,18 +98,19 @@ class StravaTransport:
         return opener(request, timeout=30)
 
     @staticmethod
-    def _read_json(response):
+    def _read_json(response) -> object:
         if hasattr(response, "__enter__"):
             with response as opened:
-                return json.loads(opened.read().decode())
-        return json.loads(response.read().decode())
+                return cast(object, json.loads(opened.read().decode()))
+        return cast(object, json.loads(response.read().decode()))
 
     @staticmethod
     def _retry_after_seconds(exc: urllib.error.HTTPError) -> int:
-        retry_after = None
-        headers = getattr(exc, "headers", None)
-        if headers:
-            retry_after = headers.get("Retry-After")
+        retry_after: str | None = None
+        if exc.headers:
+            raw_val = exc.headers.get("Retry-After")
+            if isinstance(raw_val, str):
+                retry_after = raw_val
         try:
             return int(retry_after) + 1 if retry_after is not None else 15
         except TypeError, ValueError:

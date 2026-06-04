@@ -15,7 +15,7 @@ from mcp_strava.adapters.duckdb.repository import DuckDBRepository, summary_payl
 from mcp_strava.metric_registry import cached_logic_fingerprint
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.refresh.schema_drift import journal_schema_drift
-from mcp_strava.types import parse_strava_activity, parse_strava_stream_channels
+from mcp_strava.types import StravaStreamChannel, parse_strava_activity, parse_strava_stream_channels
 
 
 def _emit(event: str, **fields: object) -> None:
@@ -78,7 +78,7 @@ def _safe_quick_sync_start_day(latest_raw: object | None) -> str:
     return (date(year, month, day) - timedelta(days=7)).isoformat()
 
 
-def _channel_value(channels: dict[str, Any], channel_key: str, idx: int) -> Any:
+def _channel_value(channels: dict[str, StravaStreamChannel], channel_key: str, idx: int) -> object:
     channel = channels.get(channel_key)
     if channel is None or idx >= len(channel.data):
         return None

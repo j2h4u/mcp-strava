@@ -14,6 +14,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 _DEFAULT_PATH = Path("/tmp/mcp-strava-refresh-health.json")
 DEFAULT_MAX_CONSECUTIVE_FAILURES = 3
@@ -31,9 +32,10 @@ def _now_iso() -> str:
     return datetime.now().isoformat()
 
 
-def _read(path: Path) -> dict:
+def _read(path: Path) -> dict[str, object]:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        parsed = cast(object, json.loads(path.read_text(encoding="utf-8")))
+        return parsed if isinstance(parsed, dict) else {}
     except OSError, json.JSONDecodeError:
         return {}
 
@@ -50,7 +52,8 @@ def record_cycle(outcome: str, *, error_type: str | None = None, error: str | No
     try:
         current = _read(path)
         is_error = outcome == "error"
-        failures = int(current.get("consecutive_failures", 0)) + 1 if is_error else 0
+        prev_failures = current.get("consecutive_failures", 0)
+        failures = (int(prev_failures) if isinstance(prev_failures, (int, float, str)) else 0) + 1 if is_error else 0
         payload = {
             "last_attempt_at": _now_iso(),
             "last_outcome": outcome,
@@ -116,7 +119,8 @@ def check_refresh_health() -> None:
     if not path.exists():
         return
     data = _read(path)
-    failures = int(data.get("consecutive_failures", 0))
+    raw_failures = data.get("consecutive_failures", 0)
+    failures = int(raw_failures) if isinstance(raw_failures, (int, float, str)) else 0
     threshold = _max_consecutive_failures()
     if failures >= threshold:
         raise RuntimeError(
@@ -134,7 +138,7 @@ def check_refresh_health() -> None:
     last_attempt = data.get("last_attempt_at")
     if last_attempt:
         try:
-            age = (datetime.now() - datetime.fromisoformat(last_attempt)).total_seconds()
+            age = (datetime.now() - datetime.fromisoformat(str(last_attempt))).total_seconds()
         except TypeError, ValueError:
             age = None
         if age is not None:

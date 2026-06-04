@@ -7,6 +7,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from typing import cast
 
 from mcp_strava.adapters.strava.types import Clock, RefreshedTokens, Sleeper, StravaUnavailable
 
@@ -43,7 +44,7 @@ class TokenRefreshTransport:
                 return RefreshedTokens(
                     access_token=str(data["access_token"]),
                     refresh_token=str(data["refresh_token"]),
-                    expires_at=int(data["expires_at"]),
+                    expires_at=int(str(data["expires_at"])),
                 )
             except urllib.error.HTTPError as exc:
                 if 400 <= int(exc.code) < 500:
@@ -75,8 +76,10 @@ class TokenRefreshTransport:
         return opener(request, timeout=30)
 
     @staticmethod
-    def _read_json(response) -> dict:
+    def _read_json(response) -> dict[str, object]:
         if hasattr(response, "__enter__"):
             with response as opened:
-                return json.loads(opened.read().decode())
-        return json.loads(response.read().decode())
+                parsed = cast(object, json.loads(opened.read().decode()))
+                return parsed if isinstance(parsed, dict) else {}
+        parsed = cast(object, json.loads(response.read().decode()))
+        return parsed if isinstance(parsed, dict) else {}
