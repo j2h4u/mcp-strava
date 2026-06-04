@@ -26,11 +26,18 @@
 
 ---
 
-## Still open after 2026-06-04 session
+## Resolved / obsolete after 2026-06-04 session
 
-- **⏳ Deploy preflight vs self-heal seed ordering** (above) — the one genuinely
-  unclosed item. Deploy-layer fix: run the additive sidecar/provenance migration
-  before/within preflight, or make preflight tolerant of the repository's idempotent
-  self-heal seed, so a pre-Phase-15 live DB self-migrates instead of crash-looping.
-  Low urgency (only bites a DB created before Phase 15; the live dev instance was
-  already migrated by hand).
+- **✅ OBSOLETE (2026-06-04) — Deploy preflight vs self-heal seed ordering:** the
+  premise was a database created before Phase 15 (missing `read_model_logic_version`).
+  There is exactly ONE dev DB on this host, already migrated by hand, and no backups —
+  so no such old DB exists or can be restored. The dead provenance-migration code was
+  removed entirely (`6be9004`): the registry-driven base DDL creates every column and
+  the sidecar table on a fresh DB, so a new DB is complete from `create_schema` with no
+  migration step. Preflight asserts tables that the base schema always creates → no
+  ordering problem remains. (A briefly-added preflight self-heal that defended this
+  non-scenario was reverted unpushed.) Nothing open here.
+
+## Nothing open
+
+All items from the 2026-06-04 session are resolved or obsolete.
