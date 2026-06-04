@@ -416,7 +416,6 @@ def test_fact_column_sql_metadata_rejects_unsafe_fragments_before_rendering():
 
 def test_activity_metric_facts_generated_sql_matches_current_contract():
     from mcp_strava.metric_registry import (
-        activity_metric_fact_add_column_sql,
         activity_metric_facts_table_sql,
         materialized_fact_column_definition_sql,
     )
@@ -436,9 +435,6 @@ def test_activity_metric_facts_generated_sql_matches_current_contract():
         == "zone1_seconds BIGINT NOT NULL DEFAULT 0"
     )
     assert materialized_fact_column_definition_sql("activity_metric_facts", "calories_kcal") == ("calories_kcal DOUBLE")
-    assert activity_metric_fact_add_column_sql("calories_kcal") == (
-        "ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS calories_kcal DOUBLE"
-    )
 
     ddl = activity_metric_facts_table_sql()
     assert ddl.startswith("CREATE TABLE activity_metric_facts (")

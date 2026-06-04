@@ -1,9 +1,7 @@
 """DuckDB schema inventory for the primary Strava mirror."""
 
 from mcp_strava.metric_registry import (
-    activity_metric_fact_add_column_sql,
     activity_metric_facts_table_sql,
-    materialized_fact_column_definition,
 )
 
 DUCKDB_TABLES: tuple[str, ...] = (
@@ -290,16 +288,6 @@ DUCKDB_VIEWS: tuple[str, ...] = (
     "v_metric_version_status",
 )
 
-ACTIVITY_METRIC_FACT_LATE_COLUMNS: tuple[str, ...] = (
-    "observed_min_hr",
-    "observed_max_hr",
-    "hr_zone_model",
-    "hr_max_used",
-    "hr_rest_used",
-    "calories_kcal",
-    "start_time_local",
-)
-
 DUCKDB_AGGREGATE_VIEW_SQL = """
 CREATE OR REPLACE VIEW v_activity_aggregate_facts AS
 SELECT
@@ -526,20 +514,6 @@ FROM (
 )
 GROUP BY metric_version;
 """
-
-
-def ensure_provenance_columns(conn) -> None:
-    """Additive migration: add later-introduced activity_metric_facts columns
-    (HR provenance + calories) if they do not already exist. Safe to call on any
-    existing DuckDB file; new columns are NULL on old rows until re-materialized."""
-    for column_name in ACTIVITY_METRIC_FACT_LATE_COLUMNS:
-        definition = materialized_fact_column_definition("activity_metric_facts", column_name)
-        if not definition.nullable and definition.default_sql is None:
-            raise RuntimeError(
-                f"Unsafe additive migration for activity_metric_facts.{column_name}: NOT NULL without DEFAULT"
-            )
-        sql = activity_metric_fact_add_column_sql(column_name)
-        conn.execute(sql)
 
 
 def create_aggregate_views(conn) -> None:

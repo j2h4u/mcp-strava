@@ -580,53 +580,6 @@ def test_materializer_populates_start_time_local_from_start_date_local(tmp_path:
     assert fact["start_time_local"] == "06:00"
 
 
-def test_start_time_local_migrates_additively_on_existing_db(tmp_path: Path) -> None:
-    """ensure_provenance_columns adds start_time_local to a live DB without it.
-
-    Simulate a pre-15-05 file: build a table from the registry DDL but with
-    start_time_local removed, insert an old row (column absent), then run the
-    additive migration. The column is added (NULL on the old row) and the
-    migration is idempotent (ADD COLUMN IF NOT EXISTS) on a second run.
-    """
-    import duckdb
-
-    from mcp_strava.adapters.duckdb.schema import ensure_provenance_columns
-    from mcp_strava.metric_registry import (
-        MATERIALIZED_FACT_COLUMN_REGISTRY,
-        activity_metric_facts_table_sql,
-    )
-
-    # Registry DDL minus the new column = the pre-15-05 table shape.
-    full_ddl = activity_metric_facts_table_sql()
-    legacy_ddl = full_ddl.replace("    start_time_local VARCHAR,\n", "")
-    assert "start_time_local" not in legacy_ddl
-    assert "start_time_local" in MATERIALIZED_FACT_COLUMN_REGISTRY["activity_metric_facts"]
-
-    db_path = tmp_path / "legacy.duckdb"
-    raw = duckdb.connect(str(db_path))
-    raw.execute(legacy_ddl)
-    raw.execute(
-        """
-        INSERT INTO activity_metric_facts
-            (activity_id, activity_day, sport_type, source_hash, source_revision,
-             metric_version, computed_at, completeness_status)
-        VALUES (960, DATE '2026-05-21', 'Run', 'h', 1, 1, '2026-05-24T12:00:00', 'complete')
-        """
-    )
-    cols_before = {r[1] for r in raw.execute("PRAGMA table_info('activity_metric_facts')").fetchall()}
-    assert "start_time_local" not in cols_before
-
-    ensure_provenance_columns(raw)
-    cols_after = {r[1] for r in raw.execute("PRAGMA table_info('activity_metric_facts')").fetchall()}
-    assert "start_time_local" in cols_after
-    # Old row is NULL on the freshly-added column until re-materialized.
-    value = raw.execute("SELECT start_time_local FROM activity_metric_facts WHERE activity_id = 960").fetchone()
-    assert value is not None and value[0] is None
-    # Idempotent: a second migration pass over the already-migrated table is a no-op.
-    ensure_provenance_columns(raw)
-    raw.close()
-
-
 def test_WR_04_partial_batch_does_not_undercount_daily_facts(tmp_path: Path) -> None:
     """WR-04: a limited recompute batch must not write an UNDER-COUNTED daily fact.
 

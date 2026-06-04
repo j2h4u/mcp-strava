@@ -2302,11 +2302,6 @@ def activity_metric_facts_table_sql() -> str:
     return "CREATE TABLE activity_metric_facts (\n" + ",\n".join(columns) + "\n);"
 
 
-def activity_metric_fact_add_column_sql(column_name: str) -> str:
-    column_definition = materialized_fact_column_definition_sql("activity_metric_facts", column_name)
-    return f"ALTER TABLE activity_metric_facts ADD COLUMN IF NOT EXISTS {column_definition}"
-
-
 def aggregate_query_allowed_columns() -> frozenset[str]:
     columns: set[str] = set(AGGREGATE_QUERY_PROJECTION_COLUMNS)
     for table in MATERIALIZED_FACT_COLUMN_REGISTRY.values():
@@ -2487,7 +2482,6 @@ COMPUTE_SOURCE_MODULES: tuple[str, ...] = (
     "mcp_strava.adapters.duckdb.connection",
     "mcp_strava.adapters.duckdb.read_model_materializer",
     "mcp_strava.adapters.duckdb.repository",
-    "mcp_strava.adapters.duckdb.schema",
     "mcp_strava.cardiac_drift",
     "mcp_strava.constants",
     "mcp_strava.hr_zones",

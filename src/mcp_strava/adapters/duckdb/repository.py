@@ -17,7 +17,6 @@ from mcp_strava.adapters.duckdb.connection import (
     open_expected_mirror_db,
     open_fixture_db,
 )
-from mcp_strava.adapters.duckdb.schema import ensure_provenance_columns
 from mcp_strava.constants import Config
 from mcp_strava.metrics import discounted_effective_trimp
 from mcp_strava.sports import SPORT_TRAINING as TRAINING_SPORTS
@@ -523,19 +522,7 @@ class DuckDBRepository:
         return repo
 
     def _ensure_schema_extensions(self) -> None:
-        """Additive migration: ensure provenance columns exist on a live DB.
-
-        On a fresh DB the ``activity_metric_facts`` table does not exist yet, so
-        the ALTER raises ``CatalogException`` — that case is expected and ignored
-        (``create_schema`` runs later). Any other failure (permission, IO, schema
-        corruption) is a real problem and must surface rather than be swallowed
-        into a later, harder-to-diagnose column-not-found error.
-        """
-        try:
-            ensure_provenance_columns(self.conn)
-        except duckdb.CatalogException:
-            # Table not created yet (fresh DB before create_schema) — expected.
-            pass
+        """Seed the read_model_logic_version sidecar on construction."""
         self._seed_logic_version()
 
     def _seed_logic_version(self) -> None:
@@ -543,31 +530,20 @@ class DuckDBRepository:
         CURRENT live fingerprint, so the first refresh after deploy sees
         stored == live and does NOT recompute (adopt-current by construction).
 
-        Robustness: compute_logic_fingerprint() does runtime source reads
-        (import_module + inspect.getsource) that can raise ImportError or an
-        OSError — neither is a duckdb.CatalogException, so the constructor-level
-        guard would NOT catch them. They are wrapped here in their own
-        try/except Exception (log-warn-skip): on failure the sidecar is left
+        Robustness: the whole body is wrapped in try/except Exception
+        (log-warn-skip). It tolerates (a) compute_logic_fingerprint()'s runtime
+        source reads (import_module + inspect.getsource) raising ImportError/
+        OSError, and (b) the read_model_logic_version table not existing yet
+        (CatalogException) when the repo is opened before create_schema or on a
+        schema-missing fail-soft path. On any failure the sidecar is left
         unseeded and current_metric_version() falls back to the fact-table max,
-        so reads stay safe. Adoption then self-heals at the 15-03 materialize
+        so reads stay safe; adoption then self-heals at the materialize
         chokepoint (stored is None -> adopt-current, no dirty enqueue).
         """
-        # CREATE IF NOT EXISTS so the seed path works on a live pre-15-02 DB that
-        # predates create_schema's DDL; idempotent and order-independent.
-        self.conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS read_model_logic_version (
-                id BIGINT PRIMARY KEY,
-                metric_version BIGINT NOT NULL,
-                logic_fingerprint VARCHAR NOT NULL,
-                changed_at VARCHAR NOT NULL
-            )
-            """
-        )
-        existing = self.conn.execute("SELECT 1 FROM read_model_logic_version WHERE id=1").fetchone()
-        if existing is not None:
-            return
         try:
+            existing = self.conn.execute("SELECT 1 FROM read_model_logic_version WHERE id=1").fetchone()
+            if existing is not None:
+                return
             from mcp_strava.metric_registry import compute_logic_fingerprint
 
             fingerprint = compute_logic_fingerprint()
