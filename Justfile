@@ -22,8 +22,10 @@ fmt-check:
 typecheck:
     uv run basedpyright src
 
-# Dead-code scan. Keep separate from `check` so false positives can be triaged
-# without blocking routine lint/type cleanup.
+# Dead-code scan (also wired into `check`). At --min-confidence 80 this is
+# currently false-positive-free; if a real false positive ever appears (vulture
+# can't see decorator/dynamic use), add a vulture whitelist rather than dropping
+# it from the gate — dead code removal is a core value of this codebase.
 dead-code:
     uv run vulture src tests --min-confidence 80
 
@@ -32,8 +34,8 @@ fix:
     uv run ruff check --fix src tests
     uv run ruff format src tests
 
-# All static checks: lint, formatting, types
-check: lint fmt-check typecheck
+# All static checks: lint, formatting, types, dead code
+check: lint fmt-check typecheck dead-code
 
 test:
     uv run pytest -q
