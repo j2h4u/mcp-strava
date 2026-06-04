@@ -1497,42 +1497,6 @@ def test_chokepoint_materializes_at_bumped_version_on_fingerprint_mismatch(tmp_p
     assert fact_at_2 is not None, "the recompute must write facts at the bumped version"
 
 
-def test_chokepoint_adopts_current_when_sidecar_unseeded(tmp_path):
-    """Adopt-current self-heal: when the sidecar is UNSEEDED (stored is None,
-    e.g. a transient 15-02 seed failure), the stage writes the sidecar to
-    (current/fallback version, live fingerprint) and enqueues ZERO dirty rows —
-    no recompute. The next cycle is then a no-op (stored == live)."""
-    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-    from mcp_strava.metric_registry import cached_logic_fingerprint
-    from mcp_strava.refresh._sync_ops import materialize_read_model_stage
-    from tests._fixtures_duckdb import create_empty_fixture_db
-
-    fixture = tmp_path / "adopt.duckdb"
-    create_empty_fixture_db(fixture)
-    with DuckDBRepository.from_path(fixture) as repo:
-        _seed_one_dirty_activity(repo)
-        # Simulate a skipped seed: delete the sidecar row so current_logic_version() is None.
-        repo.conn.execute("DELETE FROM read_model_logic_version WHERE id = 1")
-        repo._current_metric_version_cache = None
-        assert repo.current_logic_version() is None
-
-        dirty_before = len(repo.dirty_activity_rows())
-        materialize_read_model_stage(repo, "2026-05-24T12:00:00", None)
-
-        stored = repo.current_logic_version()
-        # A second cycle must be a no-op: stored == live, version unchanged.
-        version_after_adopt = repo.current_metric_version()
-        materialize_read_model_stage(repo, "2026-05-24T13:00:00", None)
-        version_after_noop = repo.current_metric_version()
-
-    assert stored is not None, "adopt-current must write the sidecar"
-    assert stored["logic_fingerprint"] == cached_logic_fingerprint(), "adopt writes the LIVE fingerprint"
-    # Adoption does NOT enqueue a mass recompute: the only dirty rows are the
-    # pre-existing seed dirty rows, never multiplied by a version bump.
-    assert version_after_adopt == version_after_noop, "adopt then match -> version must not bump"
-    assert dirty_before >= 1
-
-
 def test_chokepoint_bump_and_enqueue_are_atomic_on_enqueue_failure(tmp_path):
     """WR-01 atomicity: on a fingerprint mismatch the stage bumps the logic version
     AND mass-enqueues the recompute. If the enqueue fails AFTER the bump (process

@@ -388,11 +388,12 @@ def test_logic_version_seed_is_idempotent_across_constructions() -> None:
     assert count == 1
 
 
-def test_logic_version_seed_skips_on_import_error_and_reads_fall_back(monkeypatch) -> None:
-    """ImportError safety: if compute_logic_fingerprint raises inside the seed,
-    from_connection() still succeeds (does not propagate), the sidecar is left
-    unseeded, and current_metric_version() returns the fact-table fallback (1 on
-    an empty DB) rather than crashing. Adoption then self-heals at 15-03.
+def test_logic_version_seed_fails_loud_on_import_error(monkeypatch) -> None:
+    """Fail-loud: if compute_logic_fingerprint raises inside the seed, it
+    propagates out of from_connection() rather than silently leaving the sidecar
+    unseeded. On this deployment getsource always works; a real failure should
+    crash, not hide. Only the table-absent case is tolerated (see the
+    schema-missing fail-soft test).
     """
     import duckdb
 
@@ -406,12 +407,8 @@ def test_logic_version_seed_skips_on_import_error_and_reads_fall_back(monkeypatc
 
     conn = duckdb.connect(":memory:")
     create_schema(conn)
-    repo = DuckDBRepository.from_connection(conn)  # must NOT raise
-
-    assert repo.current_logic_version() is None  # left unseeded
-    count = conn.execute("SELECT COUNT(*) FROM read_model_logic_version").fetchone()[0]
-    assert count == 0
-    assert repo.current_metric_version() == 1  # fact-table-max (empty) -> 1, no crash
+    with pytest.raises(ImportError, match="simulated missing compute module"):
+        DuckDBRepository.from_connection(conn)
 
 
 # ─── Walk TRIMP discount: per-sport daily aggregation + effective-trimp wiring ───

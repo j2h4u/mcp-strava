@@ -530,15 +530,12 @@ class DuckDBRepository:
         CURRENT live fingerprint, so the first refresh after deploy sees
         stored == live and does NOT recompute (adopt-current by construction).
 
-        Robustness: the whole body is wrapped in try/except Exception
-        (log-warn-skip). It tolerates (a) compute_logic_fingerprint()'s runtime
-        source reads (import_module + inspect.getsource) raising ImportError/
-        OSError, and (b) the read_model_logic_version table not existing yet
-        (CatalogException) when the repo is opened before create_schema or on a
-        schema-missing fail-soft path. On any failure the sidecar is left
-        unseeded and current_metric_version() falls back to the fact-table max,
-        so reads stay safe; adoption then self-heals at the materialize
-        chokepoint (stored is None -> adopt-current, no dirty enqueue).
+        Tolerates ONLY the table-not-created-yet case (CatalogException) — the
+        schema-missing / repo-opened-before-create_schema fail-soft path — by
+        emitting a structured event and skipping. Anything else (e.g.
+        compute_logic_fingerprint() failing to read source) propagates loudly:
+        on this deployment getsource always works, and a real failure should
+        crash, not silently leave the sidecar unseeded.
         """
         try:
             existing = self.conn.execute("SELECT 1 FROM read_model_logic_version WHERE id=1").fetchone()
@@ -556,7 +553,7 @@ class DuckDBRepository:
                 """,
                 [seed_version, fingerprint, self._now_iso()],
             )
-        except Exception as exc:  # noqa: BLE001 — log-warn-skip; reads fall back, 15-03 self-heals
+        except duckdb.CatalogException as exc:  # table absent (schema-missing fail-soft); everything else fails loud
             _emit(
                 "read_model_logic_version_seed_skipped",
                 error_type=type(exc).__name__,
@@ -1130,20 +1127,16 @@ class DuckDBRepository:
     def current_metric_version(self) -> int:
         """Return the system-managed metric_version.
 
-        Source of truth is the read_model_logic_version sidecar. When the sidecar
-        is unseeded (a transient seed failure left it empty/absent), fall back to
-        the max metric_version present across fact tables, else 1 — so reads never
-        break when the sidecar is absent/unseeded. The resolved value is memoized for the
-        repo lifetime to avoid re-scanning the 4-table UNION per call;
+        The sidecar is the single source of truth. The constructor seeds it
+        whenever the schema exists, so on a healthy DB `stored` is never None;
+        the only None case is the schema-missing fail-soft path (no read model
+        yet), where 1 is the sane default. Memoized for the repo lifetime;
         bump_logic_version() clears the memo so a post-bump read sees the new int.
         """
         if self._current_metric_version_cache is not None:
             return self._current_metric_version_cache
         stored = self.current_logic_version()
-        if stored is not None:
-            resolved = int(stored["metric_version"])
-        else:
-            resolved = self._max_fact_metric_version() or 1
+        resolved = int(stored["metric_version"]) if stored is not None else 1
         self._current_metric_version_cache = resolved
         return resolved
 

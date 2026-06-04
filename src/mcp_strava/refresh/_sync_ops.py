@@ -289,10 +289,8 @@ def materialize_read_model_stage(
     - stored != live  -> a compute module changed since the sidecar was last
       written. Bump metric_version to N+1, record the new fingerprint, and enqueue
       EVERY activity for recompute (wiring the orphan enqueue_metric_version_recompute).
-    - stored is None  -> the sidecar is unseeded (the 15-02 adopt-current seed was
-      skipped by a transient fault). ADOPT-CURRENT to self-heal: write the sidecar
-      with the current/fallback version + live fingerprint and enqueue NOTHING, so
-      stored becomes == live and the next cycle is a no-op. No restart required.
+    - stored is None  -> invariant violation: the constructor seed populates the
+      sidecar whenever the schema exists. Fail loud — never silently adopt.
     - stored == live  -> no-op; just materialize at the current version.
 
     The version materialized at is re-resolved INTERNALLY from
@@ -310,18 +308,11 @@ def materialize_read_model_stage(
     trigger_reason = "materialize_read_model"
 
     if stored is None:
-        # Unseeded sidecar -> adopt-current self-heal (no recompute). Write the
-        # current/fallback version (fact-table max, else 1) with the live
-        # fingerprint so stored becomes == live; enqueue zero dirty rows.
-        adopt_version = repo.current_metric_version()
-        repo.bump_logic_version(adopt_version, live, now_iso)
-        _emit(
-            "read_model_logic_adopted",
-            adopt_version=adopt_version,
-            current_fingerprint=live,
-            queued_at=now_iso,
-        )
-    elif stored["logic_fingerprint"] != live:
+        # Invariant: the constructor seed populates the sidecar whenever the
+        # schema exists (and fails loud otherwise), so it is never None here.
+        # Reaching this is a real bug, not a recoverable state — fail loud.
+        raise RuntimeError("read_model_logic_version sidecar is unseeded at materialize")
+    if stored["logic_fingerprint"] != live:
         # A compute module's source changed -> bump + mass-enqueue recompute.
         # WR-01: the version advance and the mass-enqueue MUST land atomically.
         # bump_logic_version + enqueue_metric_version_recompute each
