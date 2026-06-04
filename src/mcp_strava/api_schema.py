@@ -112,7 +112,7 @@ class ValidationResult:
     endpoint: str
     unknown_fields: list[dict[str, object]] = field(default_factory=list)
     active_summit: list[dict[str, object]] = field(default_factory=list)
-    checked_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    checked_at: str = field(default_factory=lambda: datetime.now().isoformat())  # noqa: DTZ005 — human-facing local audit timestamp (devtools schema report)
 
     @property
     def has_findings(self) -> bool:

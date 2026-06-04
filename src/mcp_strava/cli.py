@@ -366,7 +366,7 @@ def _pop_json_flag(args):
 
 
 def _today_day() -> str:
-    return datetime.now().date().isoformat()
+    return datetime.now().date().isoformat()  # noqa: DTZ005 — local calendar day for CLI display
 
 
 def _parse_workouts_recent_options(args):

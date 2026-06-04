@@ -373,7 +373,7 @@ def default_warm_latency_calls(*, workout_id: int, today: str | date | None = No
 
 def _coerce_day(value: str | date | None) -> date:
     if value is None:
-        return date.today()
+        return date.today()  # noqa: DTZ011 — local calendar default day for the devtools client
     if isinstance(value, date):
         return value
     return date.fromisoformat(value)

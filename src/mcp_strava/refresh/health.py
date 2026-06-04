@@ -29,7 +29,9 @@ def health_path() -> Path:
 
 
 def _now_iso() -> str:
-    return datetime.now().isoformat()
+    # Self-consistent local pair with the age read below (health file written + read on the
+    # same host); WR-02 deliberately left this local since it never crosses the UTC boundary.
+    return datetime.now().isoformat()  # noqa: DTZ005
 
 
 def _read(path: Path) -> dict[str, object]:
@@ -144,7 +146,7 @@ def check_refresh_health() -> None:
     last_attempt = data.get("last_attempt_at")
     if last_attempt:
         try:
-            age = (datetime.now() - datetime.fromisoformat(str(last_attempt))).total_seconds()
+            age = (datetime.now() - datetime.fromisoformat(str(last_attempt))).total_seconds()  # noqa: DTZ005 — local pair with _now_iso (same-host write/read)
         except TypeError, ValueError:
             age = None
         if age is not None:

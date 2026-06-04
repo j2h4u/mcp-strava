@@ -49,10 +49,12 @@ target-version = "py314"
 #   PERF: Perflint (manual loops that should be comprehensions).
 #   SIM: flake8-simplify (collapsible-if, yoda conditions, suppressible-exception).
 #   PTH: enforce pathlib over os.* (matches the project Python conventions).
+#   DTZ: every datetime.now()/strptime must declare tz intent. Instants are explicit UTC-naive
+#     (datetime.now(UTC).replace(tzinfo=None), matching the WR-02 freshness basis); the few
+#     deliberate local-wall-clock sites (display/calendar) carry an explicit `# noqa: DTZ005`.
 # Deliberately NOT selected: D/ANN (basedpyright owns typing; docstrings not mandated),
-#   COM/ISC001 (conflict with the formatter), S101/PLR/TRY003 (test asserts + opinionated noise),
-#   DTZ (fights the intentional naive-local calendar values — revisit as its own decision).
-select = ["E4", "E7", "E9", "F", "I", "B", "UP", "C4", "PIE", "ISC", "RSE", "FLY", "RUF", "PERF", "SIM", "PTH"]
+#   COM/ISC001 (conflict with the formatter), S101/PLR/TRY003 (test asserts + opinionated noise).
+select = ["E4", "E7", "E9", "F", "I", "B", "UP", "C4", "PIE", "ISC", "RSE", "FLY", "RUF", "PERF", "SIM", "PTH", "DTZ"]
 # RUF001-003: ambiguous-unicode false positives on intentional Cyrillic in comments/docstrings.
 # ISC001: single-line implicit string concat — conflicts with `ruff format`.
 ignore = ["RUF001", "RUF002", "RUF003", "ISC001"]
@@ -60,7 +62,8 @@ ignore = ["RUF001", "RUF002", "RUF003", "ISC001"]
 [tool.ruff.lint.per-file-ignores]
 # PERF401 (manual list-comprehension) is a runtime-perf lint; test fixtures build
 # data for clarity, not speed — the loop form is fine there.
-"tests/**" = ["PERF401"]
+# DTZ: tests construct fixed naive datetimes deliberately to pin behavior.
+"tests/**" = ["PERF401", "DTZ"]
 
 [tool.ruff.format]
 quote-style = "double"

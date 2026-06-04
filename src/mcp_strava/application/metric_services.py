@@ -433,7 +433,7 @@ def get_fitness_state_service(
     signal_first_use: bool = True,
     connection=None,
 ) -> ServiceEnvelope:
-    checked_at = now or datetime.now()
+    checked_at = now or datetime.now()  # noqa: DTZ005 — local wall-clock for as_of_day/relative_time display (freshness uses _freshness_clock)
     with _connection_context(connection) as conn:
         repo = DuckDBRepository.from_connection(conn)
         freshness = build_freshness_metadata(repo, _freshness_clock(now), _policy(), signal_first_use=signal_first_use)
@@ -478,7 +478,7 @@ def list_workouts_service(
         raise ValueError("limit must be an integer")
     if limit < 1 or limit > 200:
         raise ValueError("limit must be between 1 and 200")
-    checked_at = now or datetime.now()
+    checked_at = now or datetime.now()  # noqa: DTZ005 — local wall-clock for as_of_day/relative_time display (freshness uses _freshness_clock)
     start_day = start_date or "0001-01-01"
     end_day = _next_day(end_date) if end_date else "9999-12-31"
     with _connection_context(connection) as conn:
@@ -545,7 +545,7 @@ def get_workout_detail_service(
     signal_first_use: bool = True,
     connection=None,
 ) -> ServiceEnvelope:
-    checked_at = now or datetime.now()
+    checked_at = now or datetime.now()  # noqa: DTZ005 — local wall-clock for as_of_day/relative_time display (freshness uses _freshness_clock)
     with _connection_context(connection) as conn:
         repo = DuckDBRepository.from_connection(conn)
         freshness = build_freshness_metadata(repo, _freshness_clock(now), _policy(), signal_first_use=signal_first_use)
@@ -813,7 +813,7 @@ def compare_periods_service(
     signal_first_use: bool = True,
     connection=None,
 ) -> ServiceEnvelope:
-    checked_at = now or datetime.now()
+    checked_at = now or datetime.now()  # noqa: DTZ005 — local wall-clock for as_of_day/relative_time display (freshness uses _freshness_clock)
     with _connection_context(connection) as conn:
         period_a_envelope = get_training_aggregates_service(
             _compare_request(
@@ -1018,7 +1018,7 @@ def project_fitness_state_service(
     if any(name not in allowed for name in scenarios):
         raise ValueError("Supported scenarios are: rest, easy, maintain, custom")
 
-    checked_at = now or datetime.now()
+    checked_at = now or datetime.now()  # noqa: DTZ005 — local wall-clock for as_of_day/relative_time display (freshness uses _freshness_clock)
     today_day = checked_at.date()
     target_day = date.fromisoformat(target_date)
     horizon_days = (target_day - today_day).days

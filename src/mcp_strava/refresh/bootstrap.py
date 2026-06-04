@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from mcp_strava.adapters.duckdb.connection import MirrorConn
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
@@ -12,7 +12,8 @@ from mcp_strava.settings import Settings, get_settings
 
 
 def _now_iso() -> str:
-    return datetime.now().isoformat()
+    # UTC-naive instant — refresh_state timestamps are read against the WR-02 UTC basis.
+    return datetime.now(UTC).replace(tzinfo=None).isoformat()
 
 
 def ensure_runtime_refresh_schema(settings: Settings) -> None:
@@ -28,7 +29,7 @@ def record_refresh_misconfigured(settings: Settings | None = None) -> None:
     settings = settings or get_settings()
     ensure_runtime_refresh_schema(settings)
     at = _now_iso()
-    backoff_until = (datetime.now() + timedelta(hours=1)).isoformat()
+    backoff_until = (datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1)).isoformat()
     with MirrorConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
         repo.record_refresh_failure(at, "refresh_misconfigured", backoff_until)

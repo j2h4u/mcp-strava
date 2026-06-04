@@ -19,8 +19,8 @@ def ewma(series_dict, tau, end_date=None):
     if not series_dict:
         return {}
     all_dates = sorted(series_dict.keys())
-    start = datetime.strptime(all_dates[0], "%Y-%m-%d")
-    end = datetime.strptime(end_date or all_dates[-1], "%Y-%m-%d")
+    start = datetime.strptime(all_dates[0], "%Y-%m-%d")  # noqa: DTZ007 — calendar-date arithmetic, tz-irrelevant
+    end = datetime.strptime(end_date or all_dates[-1], "%Y-%m-%d")  # noqa: DTZ007 — calendar-date arithmetic, tz-irrelevant
     if end < start:
         return {}
     alpha = 1 - pow(0.5, 1.0 / tau)
@@ -63,9 +63,9 @@ def calc_banister_series(daily_trimp, end_date=None):
     if not daily_trimp:
         return []
     end = end_date or max(daily_trimp.keys())
-    end_dt = datetime.strptime(end, "%Y-%m-%d")
+    end_dt = datetime.strptime(end, "%Y-%m-%d")  # noqa: DTZ007 — calendar-date arithmetic, tz-irrelevant
     all_dates = sorted(daily_trimp.keys())
-    first_dt = datetime.strptime(all_dates[0], "%Y-%m-%d")
+    first_dt = datetime.strptime(all_dates[0], "%Y-%m-%d")  # noqa: DTZ007 — calendar-date arithmetic, tz-irrelevant
     warmup_start = first_dt - timedelta(days=Config.Model.BANISTER_WARMUP_DAYS)
 
     alpha_f: float = Config.Model.Banister.ALPHA_FITNESS

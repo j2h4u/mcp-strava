@@ -1,7 +1,7 @@
 """Offline materialization for DuckDB read-model facts."""
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from statistics import median
 from typing import Any, cast
 
@@ -24,7 +24,8 @@ ROLLING_WINDOWS = MATERIALIZED_ROLLING_WINDOW_DAYS
 
 def _now_parts(now: str | datetime | None) -> tuple[str, str]:
     if now is None:
-        dt = datetime.now()
+        # Instant + calendar source: UTC-naive, matching the WR-02 freshness basis.
+        dt = datetime.now(UTC).replace(tzinfo=None)
     elif isinstance(now, str):
         dt = datetime.fromisoformat(now)
     else:
@@ -385,7 +386,7 @@ def _record_failed_run(repo: DuckDBRepository, started_at: str, metric_version: 
         repo.record_read_model_refresh_run(
             {
                 "started_at": started_at,
-                "finished_at": datetime.now().isoformat(timespec="seconds"),
+                "finished_at": datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds"),
                 "status": "failed",
                 "metric_version": metric_version,
                 "trigger_reason": "materialize_read_model",

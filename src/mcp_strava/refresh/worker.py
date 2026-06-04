@@ -8,7 +8,7 @@ import os
 import sys
 import time
 import traceback
-from datetime import datetime
+from datetime import UTC, datetime
 from threading import Event
 
 import mcp_strava.refresh.runtime as refresh_runtime
@@ -26,7 +26,8 @@ from mcp_strava.settings import get_settings
 
 
 def _now_iso() -> str:
-    return datetime.now().isoformat()
+    # UTC-naive instant — refresh_state timestamps are read against the WR-02 UTC basis.
+    return datetime.now(UTC).replace(tzinfo=None).isoformat()
 
 
 def _emit(event: str, **fields: object) -> None:
