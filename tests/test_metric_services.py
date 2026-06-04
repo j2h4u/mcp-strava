@@ -85,6 +85,7 @@ def _insert_activity(conn, activity_id: int, day: str, *, sport_type: str = "Run
         "id": activity_id,
         "name": f"Workout {activity_id}",
         "sport_type": sport_type,
+        "start_date": f"{day}T07:00:00Z",  # true UTC instant (offset 0 here) — drives relative_time
         "start_date_local": f"{day}T07:00:00",
         "distance": 5000.0,
         "moving_time": 1800,
@@ -355,10 +356,11 @@ def test_relative_time_formatting_and_24h_boundary() -> None:
     assert _relative_time("2026-05-20T09:01:00", now) == "23h 59m"
     # Multi-day: 2 days 2 hours ago.
     assert _relative_time("2026-05-19T07:00:00", now) == "2d 2h"
-    # Trailing 'Z' designator parses (treated as the local wall clock; here = 07:00).
+    # 'Z' is a true UTC instant: 07:00 UTC vs 09:00 UTC -> 2h.
     assert _relative_time("2026-05-21T07:00:00Z", now) == "2h 0m"
-    # Offset-bearing value parses without a naive/aware TypeError.
-    assert _relative_time("2026-05-21T07:00:00+05:00", now) == "2h 0m"
+    # Offset-bearing value is normalized to UTC: 07:00+05:00 == 02:00 UTC, so vs
+    # 09:00 UTC the recency is 7h — the offset is accounted for, not ignored.
+    assert _relative_time("2026-05-21T07:00:00+05:00", now) == "7h 0m"
     # Missing / garbage -> None, no raise.
     assert _relative_time(None, now) is None
     assert _relative_time("", now) is None

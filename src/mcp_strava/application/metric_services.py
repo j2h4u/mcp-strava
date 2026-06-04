@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from contextlib import nullcontext
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
 from mcp_strava.adapters.duckdb.connection import ReadConn
@@ -293,16 +293,17 @@ def _gear_payload(row: ActivityMetricFactRow, summary: dict[str, Any]) -> dict[s
     }
 
 
-def _parse_start_dt(start_date_local: str | None) -> datetime | None:
-    """Parse a Strava start_date_local string to a datetime, or None.
+def _parse_start_dt(value: str | None) -> datetime | None:
+    """Parse a Strava ISO datetime string (start_date / start_date_local) to a
+    datetime, or None.
 
-    Mirrors metrics.parse_local_hhmm's normalization (trailing "Z" -> "+00:00",
-    accepts naive and offset-aware forms) but returns the full datetime so the
-    read-time relative_time can diff it against `now`. None on missing/garbage.
+    Normalizes trailing "Z" -> "+00:00"; accepts naive and offset-aware forms and
+    returns the full datetime so the read-time relative_time can diff it against
+    `now`. None on missing/garbage.
     """
-    if not start_date_local:
+    if not value:
         return None
-    text = start_date_local.strip()
+    text = value.strip()
     if not text:
         return None
     if text.endswith("Z"):
@@ -313,28 +314,26 @@ def _parse_start_dt(start_date_local: str | None) -> datetime | None:
         return None
 
 
-def _relative_time(start_date_local: str | None, now: datetime) -> str | None:
+def _relative_time(start_date: str | None, now: datetime) -> str | None:
     """Human recency of an activity relative to `now`, computed at READ time.
 
-    Parses the activity's full local start datetime (NOT the date-only
-    activity_date) and diffs it against `now`. Under 24h renders "<H>h <M>m";
-    from one full day on renders "<N>d <H>h" (minutes dropped), so the exact-24h
-    boundary renders "1d 0h". Returns None when start_date_local is
-    missing/unparseable.
-
-    To avoid a naive/aware subtraction TypeError, both sides are made comparable:
-    if the parsed datetime is tz-aware, `now` is coerced to the same tzinfo (and
-    vice versa) before subtracting. The result is read-time and deterministic
-    given a fixed `now`, so it is never materialized.
+    Diffs the activity's true UTC `start_date` against a UTC `now`, so elapsed
+    time is offset-correct regardless of where the activity was recorded. Do NOT
+    feed start_date_local here — that is athlete wall-clock time and would skew
+    recency by the local UTC offset (e.g. read "2h ago" for an 8h-old workout).
+    Under 24h renders "<H>h <M>m"; from one full day on renders "<N>d <H>h"
+    (minutes dropped), so the exact-24h boundary renders "1d 0h". Returns None
+    when start_date is missing/unparseable. Read-time only; never materialized.
     """
-    activity_dt = _parse_start_dt(start_date_local)
+    activity_dt = _parse_start_dt(start_date)
     if activity_dt is None:
         return None
-    # Align awareness so (now - activity_dt) never raises on a naive/aware mix.
-    if activity_dt.tzinfo is not None and now.tzinfo is None:
-        now = now.replace(tzinfo=activity_dt.tzinfo)
-    elif activity_dt.tzinfo is None and now.tzinfo is not None:
-        activity_dt = activity_dt.replace(tzinfo=now.tzinfo)
+    # Normalize both operands to UTC-naive: a tz-aware start_date is converted to
+    # UTC; a naive one is taken as already-UTC, matching `now` (the UTC instant).
+    if activity_dt.tzinfo is not None:
+        activity_dt = activity_dt.astimezone(UTC).replace(tzinfo=None)
+    if now.tzinfo is not None:
+        now = now.astimezone(UTC).replace(tzinfo=None)
     total_minutes = int((now - activity_dt).total_seconds() // 60)
     if total_minutes < 0:
         total_minutes = 0  # a future-dated start reads as "0h 0m", not negative
@@ -388,7 +387,7 @@ def _activity_payload(
         "cardiac_drift_quality": row["cardiac_drift_quality"],
         "hrr_pct": _activity_value(row, "hrr_pct"),
         "start_time_local": start_time_local,
-        "relative_time": _relative_time(summary.get("start_date_local"), now),
+        "relative_time": _relative_time(summary.get("start_date"), now),
         "hr_anomaly_count": int(row["anomaly_count"] or 0),  # type: ignore[arg-type]
         "kudos_count": _kudos_count(summary),
         "completeness": _fact_status(row),
@@ -405,13 +404,14 @@ def _latest_as_of_day(checked_at: datetime) -> str:
 
 
 def _freshness_clock(now: datetime | None) -> datetime:
-    """The instant to hand build_freshness_metadata (WR-02).
+    """The shared UTC-naive instant for time-difference computations: freshness
+    staleness (vs UTC-stored last_success_at) and activity recency (vs UTC
+    start_date).
 
     When the caller supplies an explicit `now`, honor it (tests/callers control
-    the clock). Otherwise default to a UTC-naive instant so the staleness
-    comparison against UTC-stored last_success_at is offset-correct. The local
-    `checked_at` is kept separately for calendar/display derivations (as_of_day,
-    relative_time) — only this instant-comparison clock is UTC.
+    the clock). Otherwise default to a UTC-naive instant so those diffs are
+    offset-correct. The local `checked_at` is kept separately for the as_of_day
+    calendar derivation — that stays local; only this instant clock is UTC.
     """
     return now if now is not None else _freshness_now()
 
@@ -478,12 +478,12 @@ def list_workouts_service(
         raise ValueError("limit must be an integer")
     if limit < 1 or limit > 200:
         raise ValueError("limit must be between 1 and 200")
-    checked_at = now or datetime.now()  # noqa: DTZ005 — local wall-clock for as_of_day/relative_time display (freshness uses _freshness_clock)
+    instant = _freshness_clock(now)  # UTC instant for freshness + recency diffs
     start_day = start_date or "0001-01-01"
     end_day = _next_day(end_date) if end_date else "9999-12-31"
     with _connection_context(connection) as conn:
         repo = DuckDBRepository.from_connection(conn)
-        freshness = build_freshness_metadata(repo, _freshness_clock(now), _policy(), signal_first_use=signal_first_use)
+        freshness = build_freshness_metadata(repo, instant, _policy(), signal_first_use=signal_first_use)
         rows = repo.fetch_activity_metric_facts(
             start_day,
             end_day,
@@ -492,7 +492,7 @@ def list_workouts_service(
             limit=limit,
         )
         read_model = _read_model_status(repo)
-        data = [_activity_payload(row, now=checked_at) for row in rows]
+        data = [_activity_payload(row, now=instant) for row in rows]
 
         completeness = CompletenessMetadata(
             status=_status_from_read_model(read_model, has_data=True, missing=[]),
@@ -545,10 +545,10 @@ def get_workout_detail_service(
     signal_first_use: bool = True,
     connection=None,
 ) -> ServiceEnvelope:
-    checked_at = now or datetime.now()  # noqa: DTZ005 — local wall-clock for as_of_day/relative_time display (freshness uses _freshness_clock)
+    instant = _freshness_clock(now)  # UTC instant for freshness + recency diffs
     with _connection_context(connection) as conn:
         repo = DuckDBRepository.from_connection(conn)
-        freshness = build_freshness_metadata(repo, _freshness_clock(now), _policy(), signal_first_use=signal_first_use)
+        freshness = build_freshness_metadata(repo, instant, _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
         resolved_id = repo.latest_activity_id() if activity_id == "latest" else int(activity_id)
         row = (
@@ -578,7 +578,7 @@ def get_workout_detail_service(
         assert resolved_id is not None, "row is non-None only when resolved_id is non-None"
         data = _activity_payload(
             row,
-            now=checked_at,
+            now=instant,
             kudos_names=_kudos_names(repo.kudos_for_activity(resolved_id)),
             include_detail_context=True,
         )

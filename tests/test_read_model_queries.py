@@ -25,6 +25,7 @@ def _insert_activity(conn, activity_id: int, day: str, *, sport_type: str, with_
         "id": activity_id,
         "name": f"Workout {activity_id}",
         "sport_type": sport_type,
+        "start_date": f"{day}T07:00:00Z",  # true UTC instant (offset 0 here) — drives relative_time
         "start_date_local": f"{day}T07:00:00",
         "distance": 5000.0,
         "moving_time": 1800,
