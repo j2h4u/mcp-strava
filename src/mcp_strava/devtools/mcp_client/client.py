@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import math
 import time
+import types
 from contextlib import AsyncExitStack
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from mcp import ClientSession, StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
@@ -66,7 +67,12 @@ class StdioMcpClient:
         await self.start()
         return self
 
-    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: types.TracebackType | None,
+    ) -> None:
         await self.stop()
 
     async def start(self) -> None:
@@ -134,7 +140,12 @@ class HttpMcpClient:
         await self.start()
         return self
 
-    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: types.TracebackType | None,
+    ) -> None:
         await self.stop()
 
     async def start(self) -> None:
@@ -187,19 +198,19 @@ class HttpMcpClient:
         return session
 
 
-def load_script_steps(script_path: Path) -> list[dict[str, Any]]:
-    payload = json.loads(script_path.read_text(encoding="utf-8"))
-    if isinstance(payload, list):
-        steps = payload
-    elif isinstance(payload, dict):
-        raw_steps = payload.get("steps")
+def load_script_steps(script_path: Path) -> list[dict[str, object]]:
+    raw = cast(object, json.loads(script_path.read_text(encoding="utf-8")))
+    if isinstance(raw, list):
+        steps = raw
+    elif isinstance(raw, dict):
+        raw_steps = raw.get("steps")
         if not isinstance(raw_steps, list):
             raise ValueError("script JSON object must contain a list field named 'steps'")
         steps = raw_steps
     else:
         raise ValueError("script JSON must be a list or an object with a 'steps' field")
 
-    normalized_steps: list[dict[str, Any]] = []
+    normalized_steps: list[dict[str, object]] = []
     for index, step in enumerate(steps, start=1):
         if not isinstance(step, dict):
             raise ValueError(f"script step {index} must be an object")
@@ -208,14 +219,14 @@ def load_script_steps(script_path: Path) -> list[dict[str, Any]]:
 
 
 async def execute_script_steps(
-    client: StdioMcpClient | HttpMcpClient, steps: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    results: list[dict[str, Any]] = []
+    client: StdioMcpClient | HttpMcpClient, steps: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    results: list[dict[str, object]] = []
     for index, step in enumerate(steps, start=1):
         action = step.get("action")
         if action == "list_tools":
             result = await client.list_tools()
-            _assert_step_expectations(index=index, action=action, result=result, expect=step.get("expect"))
+            _assert_step_expectations(index=index, action=str(action), result=result, expect=step.get("expect"))
             results.append({"step": index, "action": action, "result": result})
             continue
 
@@ -223,11 +234,12 @@ async def execute_script_steps(
             name = step.get("name")
             if not isinstance(name, str) or not name:
                 raise ValueError(f"script step {index} is missing string field 'name'")
-            arguments = step.get("arguments", {})
-            if not isinstance(arguments, dict):
+            raw_arguments = step.get("arguments", {})
+            if not isinstance(raw_arguments, dict):
                 raise ValueError(f"script step {index} field 'arguments' must be an object")
+            arguments: dict[str, object] = raw_arguments
             result = await client.call_tool(name, arguments)
-            _assert_step_expectations(index=index, action=action, result=result, expect=step.get("expect"))
+            _assert_step_expectations(index=index, action=str(action), result=result, expect=step.get("expect"))
             results.append({"step": index, "action": action, "name": name, "result": result})
             continue
 
@@ -240,7 +252,7 @@ async def execute_script_steps(
                 p95_ms=_optional_float(step.get("p95_ms"), default=DEFAULT_LATENCY_P95_MS, field="p95_ms"),
                 startup_ms=_optional_float(step.get("startup_ms"), default=0.0, field="startup_ms"),
             )
-            _assert_step_expectations(index=index, action=action, result=result, expect=step.get("expect"))
+            _assert_step_expectations(index=index, action=str(action), result=result, expect=step.get("expect"))
             results.append({"step": index, "action": action, "result": result})
             continue
 
@@ -250,7 +262,12 @@ async def execute_script_steps(
 
 async def verify_tool_surface(client: StdioMcpClient | HttpMcpClient) -> list[str]:
     tools = await client.list_tools()
-    tool_names = {name for tool in tools if isinstance(tool, dict) and (name := tool.get("name")) is not None}
+    tool_names: set[str] = set()
+    for tool in tools:
+        if isinstance(tool, dict):
+            name_val = tool.get("name")
+            if isinstance(name_val, str):
+                tool_names.add(name_val)
     missing = sorted(EXPECTED_TOOL_NAMES - tool_names)
     unexpected = sorted(tool_names - EXPECTED_TOOL_NAMES)
     if missing or unexpected:
@@ -261,13 +278,15 @@ async def verify_tool_surface(client: StdioMcpClient | HttpMcpClient) -> list[st
 async def run_basic_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, Any]:
     tool_names = await verify_tool_surface(client)
     workouts = _require_success("list_workouts", await client.call_tool("list_workouts", {"limit": 1}))
+    sc = workouts.get("structuredContent")
+    workouts_data = sc.get("data") if isinstance(sc, dict) else None
     return {
         "status": "ok",
         "mode": "basic",
         "tools": tool_names,
         "called": ["list_workouts"],
         "data_shapes": {
-            "list_workouts": _data_shape(workouts.get("structuredContent", {}).get("data")),
+            "list_workouts": _data_shape(workouts_data),
         },
         "warnings": {
             "list_workouts": _warning_digest(workouts),
@@ -275,7 +294,7 @@ async def run_basic_smoke(client: StdioMcpClient | HttpMcpClient) -> dict[str, A
     }
 
 
-def default_warm_latency_calls(*, workout_id: int, today: str | date | None = None) -> list[dict[str, Any]]:
+def default_warm_latency_calls(*, workout_id: int, today: str | date | None = None) -> list[dict[str, object]]:
     if workout_id < 0:
         raise ValueError("workout_id must be zero or positive")
     today_date = _coerce_day(today)
@@ -312,7 +331,7 @@ def _coerce_day(value: str | date | None) -> date:
     return date.fromisoformat(value)
 
 
-def _product_bundle_aggregate_calls(today_date: date) -> list[dict[str, Any]]:
+def _product_bundle_aggregate_calls(today_date: date) -> list[dict[str, object]]:
     end_exclusive = (today_date + timedelta(days=1)).isoformat()
     return [
         {
@@ -352,7 +371,7 @@ async def resolve_default_warm_latency_calls(
     client: StdioMcpClient | HttpMcpClient,
     *,
     today: str | date | None = None,
-) -> list[dict[str, Any]]:
+) -> list[dict[str, object]]:
     workouts = _require_success("list_workouts", await client.call_tool("list_workouts", {"limit": 1}))
     try:
         workout_id = _extract_first_workout_id(workouts)
@@ -364,7 +383,7 @@ async def resolve_default_warm_latency_calls(
 async def run_warm_latency_gate(
     client: StdioMcpClient | HttpMcpClient,
     *,
-    calls: list[dict[str, Any]] | None = None,
+    calls: list[dict[str, object]] | None = None,
     warmup: int = DEFAULT_LATENCY_WARMUP,
     samples: int = DEFAULT_LATENCY_SAMPLES,
     p95_ms: float = DEFAULT_LATENCY_P95_MS,
@@ -386,7 +405,7 @@ async def run_warm_latency_gate(
 async def measure_warm_tool_latency(
     client: StdioMcpClient | HttpMcpClient,
     *,
-    calls: list[dict[str, Any]],
+    calls: list[dict[str, object]],
     warmup: int = DEFAULT_LATENCY_WARMUP,
     samples: int = DEFAULT_LATENCY_SAMPLES,
     p95_ms: float = DEFAULT_LATENCY_P95_MS,
@@ -407,8 +426,9 @@ async def measure_warm_tool_latency(
     exceeded: list[str] = []
     result_key_counts: dict[str, int] = {}
     for call in normalized_calls:
-        name = str(call["name"])
-        arguments = dict(call["arguments"])
+        name = str(call["name"])  # _normalize_latency_calls guarantees "name" is a non-empty str
+        raw_args = call["arguments"]
+        arguments: dict[str, object] = dict(raw_args) if isinstance(raw_args, dict) else {}
         result_key = _latency_result_key(name, arguments, result_key_counts)
         for _ in range(warmup):
             _require_success(name, await client.call_tool(name, arguments))
@@ -484,13 +504,14 @@ async def run_live_smoke(
             {"target_date": (today_date + timedelta(days=7)).isoformat(), "scenarios": ["rest", "maintain"]},
         ),
     )
-    aggregate_payloads: dict[str, dict[str, Any]] = {}
+    aggregate_payloads: dict[str, dict[str, object]] = {}
     for call in _product_bundle_aggregate_calls(today_date):
-        arguments = dict(call["arguments"])
-        bundle_id = str(arguments["metric_bundle"])
+        raw_args = call["arguments"]
+        arguments_obj: dict[str, object] = dict(raw_args) if isinstance(raw_args, dict) else {}
+        bundle_id = str(arguments_obj["metric_bundle"])
         aggregate_payloads[bundle_id] = _require_success(
             "get_training_aggregates",
-            await client.call_tool("get_training_aggregates", arguments),
+            await client.call_tool("get_training_aggregates", arguments_obj),
         )
 
     payloads = {
@@ -508,14 +529,12 @@ async def run_live_smoke(
         "called": sorted(payloads.keys()),
         "aggregate_bundles": list(aggregate_payloads),
         "workout_id": workout_id,
-        "data_shapes": {
-            name: _data_shape(payload.get("structuredContent", {}).get("data")) for name, payload in payloads.items()
-        },
+        "data_shapes": {name: _data_shape(_get_structured_data(payload)) for name, payload in payloads.items()},
         "warnings": {name: _warning_digest(payload) for name, payload in payloads.items()},
     }
 
 
-def _require_success(name: str, result: dict[str, Any]) -> dict[str, Any]:
+def _require_success(name: str, result: dict[str, object]) -> dict[str, object]:
     if result.get("isError") is True:
         raise McpClientError(f"{name} returned isError=true")
     structured = result.get("structuredContent")
@@ -524,7 +543,7 @@ def _require_success(name: str, result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _extract_first_workout_id(result: dict[str, Any]) -> int:
+def _extract_first_workout_id(result: dict[str, object]) -> int:
     structured = result.get("structuredContent")
     if not isinstance(structured, dict):
         raise McpClientError("list_workouts returned no structuredContent")
@@ -540,12 +559,21 @@ def _extract_first_workout_id(result: dict[str, Any]) -> int:
         if not isinstance(item, dict):
             continue
         for key in ("activity_id", "workout_id", "id"):
-            if key in item:
-                return int(item[key])
+            val = item.get(key)
+            if val is not None:
+                return int(str(val))
     raise McpClientError("list_workouts returned no extractable workout id")
 
 
-def _assert_step_expectations(*, index: int, action: str, result: Any, expect: Any) -> None:
+def _get_structured_data(payload: dict[str, object]) -> object:
+    """Extract ``structuredContent.data`` from a tool result, or ``None``."""
+    sc = payload.get("structuredContent")
+    if isinstance(sc, dict):
+        return sc.get("data")
+    return None
+
+
+def _assert_step_expectations(*, index: int, action: str, result: object, expect: object) -> None:
     if expect is None:
         return
     if not isinstance(expect, dict):
@@ -570,14 +598,14 @@ def _assert_step_expectations(*, index: int, action: str, result: Any, expect: A
         _assert_latency_expectations(index=index, result=result, expect=expect)
 
 
-def _assert_list_tools_expectations(*, index: int, result: Any, expect: dict[str, Any]) -> None:
+def _assert_list_tools_expectations(*, index: int, result: object, expect: dict[str, object]) -> None:
     if not isinstance(result, list):
         raise McpClientError(f"script step {index} list_tools result is not a list")
     include = expect.get("tool_names_include")
     if include is not None:
         if not isinstance(include, list) or not all(isinstance(item, str) for item in include):
             raise ValueError(f"script step {index} field 'expect.tool_names_include' must be a list of strings")
-        tool_names = {tool.get("name") for tool in result if isinstance(tool, dict)}
+        tool_names: set[object] = {tool.get("name") for tool in result if isinstance(tool, dict)}
         missing = [name for name in include if name not in tool_names]
         if missing:
             raise McpClientError(f"script step {index} is missing tools: {missing}")
@@ -592,7 +620,7 @@ def _assert_list_tools_expectations(*, index: int, result: Any, expect: dict[str
             raise McpClientError(f"script step {index} has forbidden tools: {present}")
 
 
-def _assert_call_tool_expectations(*, index: int, result: Any, expect: dict[str, Any]) -> None:
+def _assert_call_tool_expectations(*, index: int, result: object, expect: dict[str, object]) -> None:
     if not isinstance(result, dict):
         raise McpClientError(f"script step {index} call_tool result is not an object")
     expected_is_error = expect.get("is_error")
@@ -604,7 +632,7 @@ def _assert_call_tool_expectations(*, index: int, result: Any, expect: dict[str,
             raise McpClientError(f"script step {index} expected isError={expected_is_error!r}, got {actual_is_error!r}")
 
 
-def _assert_latency_expectations(*, index: int, result: Any, expect: dict[str, Any]) -> None:
+def _assert_latency_expectations(*, index: int, result: object, expect: dict[str, object]) -> None:
     if not isinstance(result, dict):
         raise McpClientError(f"script step {index} latency result is not an object")
     expected_status = expect.get("latency_status")
@@ -624,10 +652,10 @@ def _assert_latency_expectations(*, index: int, result: Any, expect: dict[str, A
             raise McpClientError(f"script step {index} is missing latency tools: {missing}")
 
 
-def _normalize_latency_calls(raw_calls: Any) -> list[dict[str, Any]]:
+def _normalize_latency_calls(raw_calls: object) -> list[dict[str, object]]:
     if not isinstance(raw_calls, list) or not raw_calls:
         raise ValueError("latency calls must be a non-empty list")
-    normalized: list[dict[str, Any]] = []
+    normalized: list[dict[str, object]] = []
     for index, call in enumerate(raw_calls, start=1):
         if not isinstance(call, dict):
             raise ValueError(f"latency call {index} must be an object")
@@ -641,7 +669,7 @@ def _normalize_latency_calls(raw_calls: Any) -> list[dict[str, Any]]:
     return normalized
 
 
-def _latency_result_key(name: str, arguments: dict[str, Any], counts: dict[str, int]) -> str:
+def _latency_result_key(name: str, arguments: dict[str, object], counts: dict[str, int]) -> str:
     metric_bundle = arguments.get("metric_bundle") if name == "get_training_aggregates" else None
     base = f"{name}:{metric_bundle}" if isinstance(metric_bundle, str) and metric_bundle else name
     count = counts.get(base, 0) + 1
@@ -649,7 +677,7 @@ def _latency_result_key(name: str, arguments: dict[str, Any], counts: dict[str, 
     return base if count == 1 else f"{base}#{count}"
 
 
-def _optional_int(value: Any, *, default: int, field: str) -> int:
+def _optional_int(value: object, *, default: int, field: str) -> int:
     if value is None:
         return default
     if not isinstance(value, int):
@@ -657,7 +685,7 @@ def _optional_int(value: Any, *, default: int, field: str) -> int:
     return value
 
 
-def _optional_float(value: Any, *, default: float, field: str) -> float:
+def _optional_float(value: object, *, default: float, field: str) -> float:
     if value is None:
         return default
     if not isinstance(value, (int, float)):
@@ -673,8 +701,8 @@ def _percentile(values: list[float], percentile: int) -> float:
     return ordered[index]
 
 
-def _lookup_path(payload: Any, path: str) -> Any:
-    current = payload
+def _lookup_path(payload: object, path: str) -> object:
+    current: object = payload
     for segment in path.split("."):
         if isinstance(current, list):
             try:
@@ -691,17 +719,17 @@ def _lookup_path(payload: Any, path: str) -> Any:
     return current
 
 
-def _data_shape(value: Any) -> dict[str, Any]:
+def _data_shape(value: object) -> dict[str, object]:
     if isinstance(value, dict):
         return {"type": "dict", "keys": sorted(value.keys())[:30]}
     if isinstance(value, list):
         first = value[0] if value else None
-        first_keys = sorted(first.keys())[:30] if isinstance(first, dict) else None
+        first_keys: list[str] | None = sorted(first.keys())[:30] if isinstance(first, dict) else None
         return {"type": "list", "count": len(value), "first_keys": first_keys}
     return {"type": type(value).__name__}
 
 
-def _warning_digest(payload: dict[str, Any]) -> list[dict[str, str]]:
+def _warning_digest(payload: dict[str, object]) -> list[dict[str, str]]:
     """Summarize a tool payload's warnings as ``[{code, severity}]``.
 
     The smoke output previously reported only a count (e.g. ``1``), which forced
@@ -709,7 +737,9 @@ def _warning_digest(payload: dict[str, Any]) -> list[dict[str, str]]:
     ``code`` (and ``severity``) makes the summary self-explanatory while keeping
     the count derivable via ``len()``.
     """
-    warnings = payload.get("structuredContent", {}).get("warnings") or []
+    sc = payload.get("structuredContent")
+    warnings_raw = sc.get("warnings") if isinstance(sc, dict) else None
+    warnings: list[object] = list(warnings_raw) if isinstance(warnings_raw, list) else []
     digest: list[dict[str, str]] = []
     for entry in warnings:
         if isinstance(entry, dict):
