@@ -158,8 +158,8 @@ class ActivityMetricFactRow(TypedDict):
     Columns: ``activity_metric_facts f`` (SELECT *) joined with
     ``activities a`` (name, date, summary_json, detail_json).
     Metric-specific numeric columns (trimp, zone*_seconds, etc.) are all
-    nullable because they are added via additive migration and may be NULL on
-    rows materialised before a new column was introduced.
+    nullable because a fact row is written incrementally — a column is NULL
+    until the activity is (re)materialised with that metric.
     """
 
     # ── PK / identity ──
@@ -171,7 +171,7 @@ class ActivityMetricFactRow(TypedDict):
     missing_reasons_json: object  # VARCHAR (JSON list)
     source_revision: object  # BIGINT
     computed_at: object  # VARCHAR timestamp
-    # ── Core metric columns (nullable — additive migration) ──
+    # ── Core metric columns (nullable — NULL until materialised) ──
     trimp: object  # DOUBLE | NULL
     distance_m: object  # DOUBLE | NULL
     moving_time_s: object  # BIGINT | NULL
@@ -1124,7 +1124,7 @@ class DuckDBRepository:
                 )
             )
         except duckdb.CatalogException:
-            # Sidecar table absent (partially-migrated DB) — treat as unseeded.
+            # Sidecar table absent (schema not created yet / fail-soft path) — unseeded.
             return None
 
     def current_metric_version(self) -> int:
@@ -1133,7 +1133,7 @@ class DuckDBRepository:
         Source of truth is the read_model_logic_version sidecar. When the sidecar
         is unseeded (a transient seed failure left it empty/absent), fall back to
         the max metric_version present across fact tables, else 1 — so reads never
-        break on a partially-migrated DB. The resolved value is memoized for the
+        break when the sidecar is absent/unseeded. The resolved value is memoized for the
         repo lifetime to avoid re-scanning the 4-table UNION per call;
         bump_logic_version() clears the memo so a post-bump read sees the new int.
         """

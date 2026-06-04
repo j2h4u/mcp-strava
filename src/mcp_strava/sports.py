@@ -195,11 +195,6 @@ SPORT_TRAINING: tuple[str, ...] = _collect("is_training")
 SPORT_RUNNING: tuple[str, ...] = _collect("is_running")
 SPORT_ALL: tuple[str, ...] = tuple(sorted(SPORT_REGISTRY.keys()))
 
-# Backward-compatible aliases
-TRAINING_SPORTS = SPORT_TRAINING
-RUNNING_SPORTS = SPORT_RUNNING
-ALL_SPORTS = SPORT_ALL
-
 
 # ═══════════════════════════════════════════════════════════════════
 #  New type detection (for sync)

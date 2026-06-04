@@ -5,8 +5,7 @@ from pathlib import Path
 
 
 def test_imports():
-    """All 14 public symbols import without errors — including new Config paths."""
-    import mcp_strava.deploy.smoke as deploy_smoke
+    """All public symbols import without errors — including new Config paths."""
     import mcp_strava.interfaces.mcp_http as mcp_http
     import mcp_strava.metric_registry as metric_registry
     from mcp_strava.application.freshness import get_freshness_service
@@ -43,7 +42,6 @@ def test_imports():
     assert get_mirror_coverage_service is not None
     assert metric_registry is not None
     assert mcp_http is not None
-    assert deploy_smoke is not None
     expected_suffix = str(Path("src") / "mcp_strava" / "types.py")
     assert str(package_types.__file__).endswith(expected_suffix)
     print("  OK: all imports + Config paths verified")

@@ -232,7 +232,7 @@ def _activity_fact(
         "hr_max_used": hr_max_used,
         "hr_rest_used": athlete.hr_rest,
         # Local time-of-day (HH:MM) parsed from summary_json.start_date_local via
-        # the shared pure helper. NULL on old rows until re-materialized.
+        # the shared pure helper. NULL until the row is (re)materialised.
         "start_time_local": _start_time_local(activity.summary_json),
     }
 
