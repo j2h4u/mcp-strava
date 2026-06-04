@@ -244,17 +244,16 @@ def parse_strava_stream_channels(raw: dict[str, object]) -> dict[str, StravaStre
 
 def parse_strava_athlete(raw: dict) -> StravaAthlete:
     """Parse raw Strava athlete response into typed dataclass."""
-    shoes = []
-    for s in raw.get("shoes", []):
-        shoes.append(
-            StravaShoe(
-                id=s["id"],
-                name=s.get("name", ""),
-                distance=s.get("distance", 0),
-                primary=s.get("primary", False),
-                _raw=s,
-            )
+    shoes = [
+        StravaShoe(
+            id=s["id"],
+            name=s.get("name", ""),
+            distance=s.get("distance", 0),
+            primary=s.get("primary", False),
+            _raw=s,
         )
+        for s in raw.get("shoes", [])
+    ]
     return StravaAthlete(
         id=raw.get("id", 0),
         shoes=shoes,

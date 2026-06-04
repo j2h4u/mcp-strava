@@ -13,7 +13,6 @@ provides that. If the owner still holds the lock, ``MirrorDbLocked`` is raised.
 
 from __future__ import annotations
 
-import os
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -137,7 +136,7 @@ def compact_database(db_path: str | Path, *, backup: bool = True) -> dict:
 
     # Atomic swap. A stale WAL beside the old file would be replayed against the
     # new content on next open, so drop it after the replace.
-    os.replace(target, source)
+    target.replace(source)
     _wal_sidecar(source).unlink(missing_ok=True)
 
     size_after = source.stat().st_size

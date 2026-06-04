@@ -697,9 +697,7 @@ def _bundle_completeness(
     accounted.update(str(item.get("metric_id")) for item in unavailable if isinstance(item, dict))
     accounted.update(str(item.get("metric_id")) for item in skipped if isinstance(item, dict))
     accounted.update(str(item.get("metric_id")) for item in scope_incompatible if isinstance(item, dict))
-    for metric_id in requested:
-        if metric_id not in accounted:
-            unavailable.append(_reason(metric_id, "data_absent"))
+    unavailable.extend(_reason(metric_id, "data_absent") for metric_id in requested if metric_id not in accounted)
     return {
         "requested_metrics": list(requested),
         "included_metrics": list(included),

@@ -60,7 +60,7 @@ def cmd_sql(args):
             header = "| " + " | ".join(cols) + " |"
             sep = "| " + " | ".join(["---"] * len(cols)) + " |"
             body = ["| " + " | ".join(_as_str(cast(object, r[i])) for i in range(len(cols))) + " |" for r in rows]
-            print("\n".join([header, sep] + body))
+            print("\n".join([header, sep, *body]))
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
 

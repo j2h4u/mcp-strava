@@ -331,7 +331,7 @@ def test_read_model_status_reports_metadata_fields(tmp_path: Path) -> None:
         )
         status = repo.read_model_status(metric_version=1)
 
-    assert READ_MODEL_METADATA_KEYS <= set(status)
+    assert set(status) >= READ_MODEL_METADATA_KEYS
     assert status["status"] == "stale"
     assert status["last_materialized_at"] == "2026-05-21T06:20:00"
     assert status["dirty_count"] == 1

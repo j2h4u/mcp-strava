@@ -36,11 +36,12 @@ def _command_registry_names() -> set[str]:
     for node in module.body:
         if not isinstance(node, ast.Assign):
             continue
-        if any(isinstance(target, ast.Name) and target.id == "COMMANDS" for target in node.targets):
-            if isinstance(node.value, ast.Dict):
-                for key in node.value.keys:
-                    if isinstance(key, ast.Constant) and isinstance(key.value, str):
-                        commands.add(key.value)
+        if any(isinstance(target, ast.Name) and target.id == "COMMANDS" for target in node.targets) and isinstance(
+            node.value, ast.Dict
+        ):
+            for key in node.value.keys:
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    commands.add(key.value)
     return commands
 
 

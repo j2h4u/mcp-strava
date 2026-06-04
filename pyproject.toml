@@ -39,10 +39,28 @@ line-length = 120
 target-version = "py314"
 
 [tool.ruff.lint]
-# E4/E7/E9: syntax/logic pycodestyle (formatter owns line length, so no E5).
-# F: pyflakes real bugs (unused, undefined). I: import order.
-# B: flake8-bugbear likely-bug patterns. UP: pyupgrade -> modern py314 idioms.
-select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
+# Bug-catching core:
+#   E4/E7/E9: syntax/logic pycodestyle (formatter owns line length, so no E5).
+#   F: pyflakes real bugs (unused, undefined). I: import order.
+#   B: flake8-bugbear likely-bug patterns. UP: pyupgrade -> modern py314 idioms.
+# High-signal additions (low false-positive, fit this codebase's clean/no-dead-code values):
+#   C4/PIE/ISC/RSE/FLY: comprehension/misc/concat/raise/f-string tidiness (near-zero hits — regression ratchets).
+#   RUF: Ruff-specific (mutable-class-default, unused-unpacked-var=dead code, unsorted __all__).
+#   PERF: Perflint (manual loops that should be comprehensions).
+#   SIM: flake8-simplify (collapsible-if, yoda conditions, suppressible-exception).
+#   PTH: enforce pathlib over os.* (matches the project Python conventions).
+# Deliberately NOT selected: D/ANN (basedpyright owns typing; docstrings not mandated),
+#   COM/ISC001 (conflict with the formatter), S101/PLR/TRY003 (test asserts + opinionated noise),
+#   DTZ (fights the intentional naive-local calendar values — revisit as its own decision).
+select = ["E4", "E7", "E9", "F", "I", "B", "UP", "C4", "PIE", "ISC", "RSE", "FLY", "RUF", "PERF", "SIM", "PTH"]
+# RUF001-003: ambiguous-unicode false positives on intentional Cyrillic in comments/docstrings.
+# ISC001: single-line implicit string concat — conflicts with `ruff format`.
+ignore = ["RUF001", "RUF002", "RUF003", "ISC001"]
+
+[tool.ruff.lint.per-file-ignores]
+# PERF401 (manual list-comprehension) is a runtime-perf lint; test fixtures build
+# data for clarity, not speed — the loop form is fine there.
+"tests/**" = ["PERF401"]
 
 [tool.ruff.format]
 quote-style = "double"

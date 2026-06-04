@@ -239,7 +239,9 @@ def _fact_status(row: ActivityMetricFactRow) -> dict[str, Any]:
 def _row_get(row: object, key: str, default: object = None) -> object:
     if row is None:
         return default
-    if hasattr(row, "keys") and key in row.keys():  # type: ignore[union-attr]
+    # SIM118 suppressed: row is a polymorphic DuckDB Row | dict; explicit .keys()-membership
+    # is the safe contract — `key in row` is not guaranteed key-membership on Row objects.
+    if hasattr(row, "keys") and key in row.keys():  # type: ignore[union-attr]  # noqa: SIM118
         return row[key]  # type: ignore[index]
     if isinstance(row, dict):
         return row.get(key, default)
@@ -367,7 +369,7 @@ def _activity_payload(
         "elevation_m": _activity_value(row, "elevation_m"),
         "trimp": _activity_value(row, "trimp"),
         "avg_hr": summary.get("average_heartrate"),
-        "max_hr": int(round(summary["max_heartrate"])) if summary.get("max_heartrate") else None,  # type: ignore[arg-type]
+        "max_hr": round(summary["max_heartrate"]) if summary.get("max_heartrate") else None,  # type: ignore[arg-type]
         "time_in_hr_zones_min": _zone_minutes(row),
         "hr_recovery_pauses": int(row["hr_recovery_pause_count"] or 0),  # type: ignore[arg-type]
         "hr_recovery_total_rest_sec": int(row["hr_recovery_total_rest_sec"] or 0),  # type: ignore[arg-type]

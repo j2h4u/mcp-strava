@@ -11,7 +11,7 @@ from mcp_strava.settings import reset_settings_cache
 
 
 def test_found01_pyproject_package_contract() -> None:
-    with open("pyproject.toml", "rb") as fh:
+    with Path("pyproject.toml").open("rb") as fh:
         data = tomllib.load(fh)
 
     assert data["project"]["name"] == "mcp-strava"
@@ -44,9 +44,8 @@ def test_found02_dbconn_fails_closed_for_missing_expected_db(tmp_path: Path, mon
     reset_settings_cache()
 
     try:
-        with pytest.raises(RuntimeError):
-            with MirrorConn():
-                pass
+        with pytest.raises(RuntimeError), MirrorConn():
+            pass
     finally:
         reset_settings_cache()
 

@@ -1,5 +1,6 @@
 """DuckDB connection policy with fail-closed expected DB open."""
 
+import contextlib
 import threading
 from pathlib import Path
 from threading import RLock
@@ -116,10 +117,8 @@ class ReadConn:
         if exc_type is not None:
             conn = _thread_read_connections().pop(self._path, None)
             if conn is not None:
-                try:
+                with contextlib.suppress(Exception):
                     conn.close()
-                except Exception:
-                    pass
         return False
 
 
@@ -129,8 +128,6 @@ def reset_thread_connections() -> None:
     if not connections:
         return
     for conn in list(connections.values()):
-        try:
+        with contextlib.suppress(Exception):
             conn.close()
-        except Exception:
-            pass
     connections.clear()

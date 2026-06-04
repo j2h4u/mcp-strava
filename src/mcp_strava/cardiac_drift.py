@@ -94,7 +94,7 @@ def auto_jenks(x, max_k=6, gvf_threshold=0.85, gvf_gain_min=0.03, min_cluster_si
 
     for k in range(2, min(max_k, n // min_cluster_size, n) + 1):
         try:
-            boundaries, sdcm, sdam, gvf = jenks_breaks(x, k)
+            boundaries, _sdcm, _sdam, gvf = jenks_breaks(x, k)
             sizes = [boundaries[i + 1] - boundaries[i] for i in range(k)]
             min_sz = min(sizes)
             k_results.append((k, gvf, min_sz))
@@ -144,8 +144,8 @@ def _percentile(vals, p):
     if n == 1:
         return vals[0]
     rank = p / 100 * (n - 1)
-    lo = int(math.floor(rank))
-    hi = int(math.ceil(rank))
+    lo = math.floor(rank)
+    hi = math.ceil(rank)
     if lo == hi:
         return vals[lo]
     frac = rank - lo

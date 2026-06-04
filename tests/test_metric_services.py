@@ -225,7 +225,7 @@ def _repo_metric_ids_for_tool(tool_id: str) -> set[str]:
 def _assert_read_model_metadata(payload: dict) -> None:
     metadata = payload["completeness"]["coverage"].get("read_model")
     assert isinstance(metadata, dict)
-    assert READ_MODEL_METADATA_KEYS <= set(metadata)
+    assert set(metadata) >= READ_MODEL_METADATA_KEYS
     assert metadata["last_materialized_at"] == "2026-05-21T06:20:00"
     assert metadata["metric_versions_present"] == [1]
 
@@ -529,7 +529,7 @@ def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_p
     assert set(payload) == ENVELOPE_KEYS
     metadata = payload["completeness"]["coverage"].get("read_model")
     assert isinstance(metadata, dict)
-    assert READ_MODEL_METADATA_KEYS <= set(metadata)
+    assert set(metadata) >= READ_MODEL_METADATA_KEYS
     assert metadata["status"] == "current"
     assert "global" in payload["data"]
     assert "per_sport" in payload["data"]

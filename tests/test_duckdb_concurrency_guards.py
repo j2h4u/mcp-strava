@@ -22,9 +22,9 @@ def _calls_named(tree: ast.AST, name: str) -> list[ast.Call]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             func = node.func
-            if isinstance(func, ast.Name) and func.id == name:
-                calls.append(node)
-            elif isinstance(func, ast.Attribute) and func.attr == name:
+            if (isinstance(func, ast.Name) and func.id == name) or (
+                isinstance(func, ast.Attribute) and func.attr == name
+            ):
                 calls.append(node)
     return calls
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
@@ -483,7 +484,7 @@ def _query_high_load_hike_status(
         return _status_fact(definition, "unavailable", {"hike_day_count": len(rows)}, ["insufficient_hike_history"])
     threshold = _as_float(_obj_dict(definition.threshold)["combined_trimp"])
     best_pair: tuple[object, object, float] | None = None
-    for previous, current in zip(rows, rows[1:], strict=False):
+    for previous, current in itertools.pairwise(rows):
         prev_day_cell = _scalar_cell(previous, 0)
         curr_day_cell = _scalar_cell(current, 0)
         previous_day = _coerce_day(prev_day_cell)
@@ -1251,7 +1252,7 @@ def _quantiles_from_group(row: dict[str, object]) -> dict[str, float] | None:
         if median is None:
             return None
         median_value = _as_float(median)
-        return {label: median_value for label in DEFAULT_AGGREGATE_QUANTILES}
+        return dict.fromkeys(DEFAULT_AGGREGATE_QUANTILES, median_value)
     if not isinstance(values, list):
         return None
     return {label: _as_float(value) for label, value in zip(DEFAULT_AGGREGATE_QUANTILES, values, strict=False)}

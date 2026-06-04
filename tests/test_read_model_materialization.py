@@ -248,10 +248,7 @@ def _seed_dirty_activity_with_pauses(
         is_pause = 50 <= idx <= 82
         velocity = 0.0 if is_pause else 3.0
         # HR drops during the pause so calc_hr_recovery sees a meaningful drop
-        if is_pause:
-            heartrate = max(110, 150 - (idx - 50) * 1)
-        else:
-            heartrate = 140 + (idx % 20)
+        heartrate = max(110, 150 - (idx - 50) * 1) if is_pause else 140 + idx % 20
         rows.append(
             {
                 "time_offset": idx,  # 1-second intervals — required for gap detection in calc_hr_recovery

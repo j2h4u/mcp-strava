@@ -155,7 +155,7 @@ def _assert_no_forbidden_product_surface(payload: dict) -> None:
 
 
 def _assert_completeness_reason_codes(completeness: dict) -> None:
-    assert EXPECTED_COMPLETENESS_KEYS <= set(completeness)
+    assert set(completeness) >= EXPECTED_COMPLETENESS_KEYS
     requested = set(completeness["requested_metrics"])
     for bucket_name in ("unavailable_metrics", "skipped_metrics", "scope_incompatible_metrics"):
         bucket = completeness[bucket_name]
@@ -175,7 +175,7 @@ def _assert_bundle_payload_contract(payload: dict, *, bundle_id: str) -> None:
     for section in bundle["sections"].values():
         _assert_completeness_reason_codes(section["bundle_completeness"])
     assert payload["freshness"]
-    assert READ_MODEL_METADATA_KEYS <= set(payload["completeness"]["coverage"]["read_model"])
+    assert set(payload["completeness"]["coverage"]["read_model"]) >= READ_MODEL_METADATA_KEYS
     _assert_no_forbidden_product_surface(payload)
 
 
@@ -411,7 +411,7 @@ def test_mcp_tools_have_annotations_and_structured_output(monkeypatch) -> None:
         content, payload = asyncio.run(server.call_tool(tool_name, arguments))
         assert payload is not None
         assert set(payload.keys()) == {"data", "freshness", "completeness", "warnings", "rationale"}
-        assert READ_MODEL_METADATA_KEYS <= set(payload["completeness"]["coverage"]["read_model"])
+        assert set(payload["completeness"]["coverage"]["read_model"]) >= READ_MODEL_METADATA_KEYS
         assert len(content) <= 1
 
 

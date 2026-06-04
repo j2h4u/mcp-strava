@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -83,7 +84,7 @@ def test_duckdb_repository_serializes_transactions_and_reads(monkeypatch) -> Non
             self.release()
 
     class FakeResult:
-        description = [("value",)]
+        description: ClassVar = [("value",)]
 
         def fetchone(self):
             return (1,)

@@ -458,7 +458,7 @@ def test_aggregate_query_columns_are_registry_derived():
     from mcp_strava.adapters.duckdb import aggregate_queries
 
     allowed_columns = aggregate_query_allowed_columns()
-    assert aggregate_queries._ALLOWED_COLUMNS == allowed_columns
+    assert allowed_columns == aggregate_queries._ALLOWED_COLUMNS
     assert "zone1_seconds" in allowed_columns
     assert "source_hash" not in allowed_columns
     assert "computed_at" not in allowed_columns

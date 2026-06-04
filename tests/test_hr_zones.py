@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import itertools
+
 import duckdb
 import pytest
 
@@ -27,7 +29,7 @@ def test_zone_bounds_default_model_is_karvonen() -> None:
 def test_bounds_are_strictly_increasing_and_capped() -> None:
     bounds = zone_bounds(180, 50)
     assert bounds[-1] == ZONE_CAP_BPM
-    assert all(earlier < later for earlier, later in zip(bounds, bounds[1:], strict=False))
+    assert all(earlier < later for earlier, later in itertools.pairwise(bounds))
 
 
 def test_unknown_model_raises_with_known_ids() -> None:

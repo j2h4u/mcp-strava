@@ -336,12 +336,14 @@ def build_trimp_sql(bounds: list[int], alias: str = "") -> str:
     """
     c = Config.Zones.COEFF
     h = alias
-    parts = [f"SUM(CASE WHEN {h}heartrate < {bounds[0]} THEN 1 ELSE 0 END) * {c[0]}"]
-    for i in range(1, len(bounds) - 1):
-        parts.append(
+    parts = [
+        f"SUM(CASE WHEN {h}heartrate < {bounds[0]} THEN 1 ELSE 0 END) * {c[0]}",
+        *(
             f"SUM(CASE WHEN {h}heartrate >= {bounds[i - 1]} AND {h}heartrate < {bounds[i]} THEN 1 ELSE 0 END) * {c[i]}"
-        )
-    parts.append(f"SUM(CASE WHEN {h}heartrate >= {bounds[-2]} THEN 1 ELSE 0 END) * {c[-1]}")
+            for i in range(1, len(bounds) - 1)
+        ),
+        f"SUM(CASE WHEN {h}heartrate >= {bounds[-2]} THEN 1 ELSE 0 END) * {c[-1]}",
+    ]
     return "(" + " +\n                ".join(parts) + ") / 60.0 as trimp"
 
 
@@ -359,12 +361,14 @@ def build_zones_sql(bounds: list[int], alias: str = "") -> str:
         SQL string of comma-separated zone SUM expressions.
     """
     h = alias
-    zones = [f"SUM(CASE WHEN {h}heartrate < {bounds[0]} THEN 1 ELSE 0 END) as z1"]
-    for i in range(1, len(bounds) - 1):
-        zones.append(
+    zones = [
+        f"SUM(CASE WHEN {h}heartrate < {bounds[0]} THEN 1 ELSE 0 END) as z1",
+        *(
             f"SUM(CASE WHEN {h}heartrate >= {bounds[i - 1]} AND {h}heartrate < {bounds[i]} THEN 1 ELSE 0 END) as z{i + 1}"
-        )
-    zones.append(f"SUM(CASE WHEN {h}heartrate >= {bounds[-2]} THEN 1 ELSE 0 END) as z{len(bounds)}")
+            for i in range(1, len(bounds) - 1)
+        ),
+        f"SUM(CASE WHEN {h}heartrate >= {bounds[-2]} THEN 1 ELSE 0 END) as z{len(bounds)}",
+    ]
     return ",\n                ".join(zones)
 
 
@@ -1004,9 +1008,7 @@ class DuckDBRepository:
                 [metric_version, last_day],
             )
         )
-        for row in remainder:
-            if _as_int(row["activity_id"]) not in claimed_ids:
-                rows.append(row)
+        rows.extend(row for row in remainder if _as_int(row["activity_id"]) not in claimed_ids)
         return rows
 
     def clear_dirty_activity_rows(self, rows: Iterable[_DirtyActivityRow]) -> int:

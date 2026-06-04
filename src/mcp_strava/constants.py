@@ -8,6 +8,7 @@ Import what you need::
 """
 
 import math as _math
+from typing import ClassVar
 
 # ═══════════════════════════════════════════════════════════════
 #  Config — hierarchical constants
@@ -20,14 +21,14 @@ class Config:
     class Zones:
         """HR zones for TRIMP calculation."""
 
-        COEFF = [0.5, 1, 2, 3, 4, 5]  # Z0 discounted (recovery), Z1-Z5 standard
+        COEFF: ClassVar[list[float]] = [0.5, 1, 2, 3, 4, 5]  # Z0 discounted (recovery), Z1-Z5 standard
 
     class Drift:
         """Intra-activity cardiac drift parameters (Jenks-based, May 2026).
         Per-sport thresholds from expert panel: Run=10%, TrailRun=12%,
         Hike=8% (altitude-affected), Walk=6% (low baseline → sensitive sentinel)."""
 
-        THRESHOLD_BY_SPORT = {
+        THRESHOLD_BY_SPORT: ClassVar[dict[str, float]] = {
             "Run": 10.0,
             "TrailRun": 12.0,
             "VirtualRun": 10.0,

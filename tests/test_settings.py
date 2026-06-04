@@ -116,7 +116,7 @@ def test_load_settings_environment_overrides() -> None:
 def test_load_settings_env_file_compatibility(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "\n".join(
+        "\n".join(  # noqa: FLY002 — multi-line list reads far better than one giant literal
             [
                 "# comment",
                 "   # spaced comment",

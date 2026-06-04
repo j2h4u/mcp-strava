@@ -109,7 +109,7 @@ def _metric_id(item: object) -> str | None:
 def _assert_bundle_completeness(section: dict[str, object], *, requested: set[str] | None = None) -> dict[str, object]:
     completeness = section.get("bundle_completeness")
     assert isinstance(completeness, dict)
-    assert EXPECTED_COMPLETENESS_KEYS <= set(completeness)
+    assert set(completeness) >= EXPECTED_COMPLETENESS_KEYS
 
     requested_metrics = set(completeness["requested_metrics"])
     included_metrics = set(completeness["included_metrics"])

@@ -79,8 +79,8 @@ class FileTokenProvider:
                     handle.write(f"{key}={value}\n")
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(temp_path, self.path)
-            os.chmod(self.path, 0o600)
+            temp_path.replace(self.path)
+            self.path.chmod(0o600)
         except Exception:
             try:
                 temp_path.unlink(missing_ok=True)
@@ -99,7 +99,7 @@ class _FileLock:
         # honours the mode on creation, and chmod repairs a pre-existing file.
         # Keeps the advisory lock from being world-readable next to the token.
         fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
-        os.chmod(self.path, 0o600)
+        self.path.chmod(0o600)
         self._handle = os.fdopen(fd, "a+")
         fcntl.flock(self._handle.fileno(), fcntl.LOCK_EX)
         return self

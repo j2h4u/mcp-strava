@@ -51,7 +51,7 @@ class RateLimitPolicy:
 
     def mark_rate_limited(self) -> None:
         def _zero(window: tuple[int | None, int | None]) -> tuple[int | None, int | None]:
-            used, limit = window
+            _used, limit = window
             if limit is None:
                 return window
             return (limit, limit)

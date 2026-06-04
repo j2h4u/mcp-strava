@@ -675,7 +675,7 @@ def test_supported_buckets_return_factual_half_open_bounds(tmp_path: Path, bucke
     conn.close()
 
     assert rows
-    assert all(D42_ROW_KEYS <= set(row) for row in rows)
+    assert all(set(row) >= D42_ROW_KEYS for row in rows)
     assert all(row["bucket_width"] == bucket for row in rows)
     assert not any(row["bucket_start"] == "2026-06-01" for row in rows)
     first = rows[0]
@@ -1255,7 +1255,7 @@ def test_aggregate_service_returns_factual_envelope_rows_with_freshness(tmp_path
     assert payload["data"]["request"]["scope"] == "global"
     assert len(payload["data"]["rows"]) == 5
     for row in payload["data"]["rows"]:
-        assert D42_ROW_KEYS <= set(row)
+        assert set(row) >= D42_ROW_KEYS
         assert isinstance(row["mirror_freshness"], dict)
         assert isinstance(row["read_model_freshness"], dict)
         assert row["read_model_freshness"]["status"] == "current"

@@ -28,6 +28,7 @@ import inspect
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -55,7 +56,7 @@ def _direct_mcp_strava_imports(module_name: str) -> set[str]:
     path = _module_source_path(module_name)
     if path is None:
         return set()
-    with open(path, encoding="utf-8") as handle:
+    with Path(path).open(encoding="utf-8") as handle:
         tree = ast.parse(handle.read(), filename=path)
     found: set[str] = set()
     for node in ast.walk(tree):
