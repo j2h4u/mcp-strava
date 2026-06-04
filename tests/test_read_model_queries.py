@@ -65,6 +65,7 @@ def _insert_activity_fact(conn, values: dict[str, object]) -> None:
         INSERT INTO activity_metric_facts (
             activity_id, activity_day, sport_type, source_hash, source_revision,
             metric_version, computed_at, completeness_status, missing_reasons_json,
+            start_time_local,
             trimp, zone1_seconds, zone2_seconds, zone3_seconds, zone4_seconds, zone5_seconds,
             hr_recovery_pause_count, hr_recovery_total_rest_sec,
             hr_recovery_median_rate, hr_recovery_best_rate, hr_recovery_worst_rate,
@@ -75,6 +76,7 @@ def _insert_activity_fact(conn, values: dict[str, object]) -> None:
             elapsed_time_s, elevation_gain_m, heartrate_sample_count, stream_sample_count
         ) VALUES (
             ?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?,
+            ?,
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
@@ -90,6 +92,7 @@ def _insert_activity_fact(conn, values: dict[str, object]) -> None:
             values["computed_at"],
             values["completeness_status"],
             values["missing_reasons_json"],
+            values["start_time_local"],
             values["trimp"],
             values["zone1_seconds"],
             values["zone2_seconds"],
@@ -146,6 +149,9 @@ def _activity_fact(
         "computed_at": "2026-05-21T06:00:00",
         "completeness_status": completeness_status,
         "missing_reasons_json": json.dumps(missing_reasons),
+        # Materialized from the activity's "{day}T07:00:00" start_date_local,
+        # mirroring read_model_materializer._start_time_local (parse_local_hhmm).
+        "start_time_local": "07:00",
         "trimp": trimp,
         "zone1_seconds": 120,
         "zone2_seconds": 240,

@@ -21,7 +21,6 @@ from mcp_strava.application.aggregate_services import (
 from mcp_strava.application.freshness import _freshness_now, build_freshness_metadata
 from mcp_strava.constants import Config
 from mcp_strava.metric_registry import METRIC_REGISTRY
-from mcp_strava.metrics import parse_local_hhmm
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
 from mcp_strava.training import forward_simulate
@@ -352,12 +351,11 @@ def _activity_payload(
     include_detail_context: bool = False,
 ) -> dict[str, Any]:
     summary = _summary_json(row)
-    # start_time_local: prefer the materialized fact column (source of truth);
-    # fall back to parsing summary.start_date_local with the SAME pure helper only
-    # when the column is NULL on an un-rematerialized row. Never re-slice [11:16].
+    # start_time_local is a materialized fact column (HH:MM), parsed once at
+    # materialization from summary.start_date_local via metrics.parse_local_hhmm.
+    # A NULL here means the source had no parseable local start — surfaced as-is,
+    # never re-derived at read time (the fingerprint recompute keeps it current).
     start_time_local = _row_get(row, "start_time_local")
-    if start_time_local is None:
-        start_time_local = parse_local_hhmm(summary.get("start_date_local"))
     payload = {
         "activity_id": int(row["activity_id"]),  # type: ignore[arg-type]
         "activity_date": row["activity_day"],

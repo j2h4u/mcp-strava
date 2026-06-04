@@ -368,9 +368,9 @@ def test_relative_time_formatting_and_24h_boundary() -> None:
 def test_workout_payloads_carry_start_time_local_and_relative_time(tmp_path: Path) -> None:
     """list_workouts + get_workout_detail expose start_time_local and relative_time.
 
-    The fixture facts have NULL start_time_local (inserted before the column was
-    materialized), so start_time_local falls back to parse_local_hhmm over the
-    activity's start_date_local ('07:00'). relative_time is read-time from `now`.
+    The fixture facts materialize start_time_local ('07:00') as a fact column,
+    mirroring the runtime materializer; the read path surfaces the column as-is
+    with no re-parse fallback. relative_time is read-time from `now`.
     """
     from mcp_strava.application.metric_services import get_workout_detail_service, list_workouts_service
 
