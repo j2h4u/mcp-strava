@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from mcp_strava.adapters.duckdb.aggregate_models import AggregateRequest
 from mcp_strava.adapters.duckdb.aggregate_queries import (
-    AggregateRequest,
     build_aggregate_query,
     query_training_aggregates,
     validate_aggregate_request,

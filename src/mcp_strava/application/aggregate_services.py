@@ -7,11 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 
-from mcp_strava.adapters.duckdb.aggregate_queries import (
-    AggregateRequest,
-    query_training_aggregates,
-    validate_aggregate_request,
-)
+from mcp_strava.adapters.duckdb.aggregate_models import AggregateRequest
+from mcp_strava.adapters.duckdb.aggregate_queries import query_training_aggregates, validate_aggregate_request
 from mcp_strava.adapters.duckdb.connection import ReadConn
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.application.freshness import _freshness_now, build_freshness_metadata
