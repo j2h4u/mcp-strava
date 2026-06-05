@@ -6,16 +6,22 @@ smoke := "python -m mcp_strava.devtools.mcp_client.cli smoke-basic --compact --u
 default:
     @just --list
 
+# Build syntax check — compile all sources (matches CI)
 build:
     uv run python -m compileall -q src deploy tests
 
-# Lint with ruff (report only)
+# Lint with ruff — whole repo, matching CI's `ruff check .` (NOT just src/tests:
+# deploy/ and root scripts are linted too, or stale findings there slip past).
 lint:
-    uv run ruff check src tests
+    uv run ruff check .
 
-# Check formatting without writing
+# Check formatting without writing — whole repo, matching CI
 fmt-check:
-    uv run ruff format --check src tests
+    uv run ruff format --check .
+
+# Import-layer contracts (import-linter; matches CI's `lint-imports`)
+import-contracts:
+    uv run lint-imports
 
 # Static type checking — basedpyright is the canonical checker (matches CI:
 # `uv run basedpyright src`). It reads the [tool.pyright] table in pyproject.
@@ -29,13 +35,19 @@ typecheck:
 dead-code:
     uv run vulture src tests --min-confidence 80
 
-# Auto-fix lint findings + formatting
+# Auto-fix lint findings + formatting (whole repo, matching CI scope)
 fix:
-    uv run ruff check --fix src tests
-    uv run ruff format src tests
+    uv run ruff check --fix .
+    uv run ruff format .
 
-# All static checks: lint, formatting, types, dead code
-check: lint fmt-check typecheck dead-code
+# Full static gate — mirrors CI's `quality` job exactly: whole-repo lint +
+# format, types, import contracts, build syntax check, dead-code scan.
+check: fmt-check lint typecheck import-contracts build dead-code
+
+# Pre-push preflight: the full CI static gate plus unit tests, locally.
+# (Docker build + MCP smoke is `just test`.)
+preflight: check
+    uv run pytest -q
 
 test:
     uv run pytest -q
