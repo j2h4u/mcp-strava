@@ -4,6 +4,11 @@ from typing import ClassVar
 import pytest
 
 from mcp_strava.adapters.duckdb.connection import open_expected_mirror_db, open_fixture_db
+from mcp_strava.adapters.duckdb.daily_load_queries import (
+    daily_load_points_between,
+    observed_trimp_history,
+    observed_trimp_history_by_sport,
+)
 from mcp_strava.adapters.duckdb.kudos_store import activities_missing_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.schema import create_schema
 
@@ -506,8 +511,8 @@ def test_observed_trimp_history_by_sport_breaks_down_same_range_as_total(tmp_pat
         _seed_hr_activity_with_streams(repo, activity_id=802, day="2026-05-21", sport_type="Walk")
         bounds = _zone_bounds_for(repo, "2026-05-21")
 
-        total = repo.observed_trimp_history(bounds=bounds, since_day="2026-05-21", until_day="2026-05-21")
-        by_sport = repo.observed_trimp_history_by_sport(bounds=bounds, since_day="2026-05-21", until_day="2026-05-21")
+        total = observed_trimp_history(repo, bounds=bounds, since_day="2026-05-21", until_day="2026-05-21")
+        by_sport = observed_trimp_history_by_sport(repo, bounds=bounds, since_day="2026-05-21", until_day="2026-05-21")
 
     assert set(by_sport) == set(total), "by-sport and total must cover the same days"
     day_map = by_sport["2026-05-21"]
@@ -533,8 +538,8 @@ def test_daily_load_points_discount_walk_portion_only(tmp_path: Path) -> None:
         _seed_hr_activity_with_streams(repo, activity_id=813, day="2026-05-22", sport_type="Run")
         bounds = _zone_bounds_for(repo, "2026-05-22")
 
-        by_sport = repo.observed_trimp_history_by_sport(bounds=bounds, since_day="2026-05-21", until_day="2026-05-22")
-        points = {p.date: p for p in repo.daily_load_points_between("2026-05-21", "2026-05-22", bounds=bounds)}
+        by_sport = observed_trimp_history_by_sport(repo, bounds=bounds, since_day="2026-05-21", until_day="2026-05-22")
+        points = {p.date: p for p in daily_load_points_between(repo, "2026-05-21", "2026-05-22", bounds=bounds)}
 
     run_raw = by_sport["2026-05-21"]["Run"]
     walk_raw = by_sport["2026-05-21"]["Walk"]
@@ -582,7 +587,7 @@ def test_walk_discount_recomputes_end_to_end_on_fingerprint_mismatch(tmp_path: P
         _seed_hr_activity_with_streams(repo, activity_id=821, day="2026-05-21", sport_type="Run")
         _seed_hr_activity_with_streams(repo, activity_id=822, day="2026-05-21", sport_type="Walk")
         bounds = _zone_bounds_for(repo, "2026-05-21")
-        by_sport = repo.observed_trimp_history_by_sport(bounds=bounds, since_day="2026-05-21", until_day="2026-05-21")
+        by_sport = observed_trimp_history_by_sport(repo, bounds=bounds, since_day="2026-05-21", until_day="2026-05-21")
         expected_effective = discounted_effective_trimp(by_sport["2026-05-21"])
 
         # First cycle: stored == live (seed adopted current) -> normal materialize at N=1.

@@ -8,6 +8,7 @@ from statistics import median
 from typing import Any, cast
 
 from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id, activity_materialization_sources
+from mcp_strava.adapters.duckdb.daily_load_queries import daily_load_points_between
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.constants import Config
 from mcp_strava.hr_zones import get_zone_model
@@ -415,7 +416,7 @@ def _materialize_daily_facts(
     computed_at: str,
     bounds: list[int],
 ) -> dict[str, float]:
-    points = repo.daily_load_points_between(start_day, end_day, bounds=bounds)
+    points = daily_load_points_between(repo, start_day, end_day, bounds=bounds)
     # One GROUP BY range read for the whole window, replacing the former per-day
     # daily_fact_sums() call inside this loop (the ~2000-read full-recompute lever).
     sums_by_day = repo.daily_fact_sums_between(start_day, end_day, metric_version)
