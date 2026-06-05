@@ -666,12 +666,12 @@ def test_materialize_batched_fact_upserts_match_sequential(tmp_path, monkeypatch
     behaviour) and once at the default 250 (batched) — and assert every row of all four
     fact tables matches. Catches silent column-level drift the value-asserting tests miss.
     """
-    from mcp_strava.adapters.duckdb import repository as repo_module
+    from mcp_strava.adapters.duckdb import read_model_repository as read_model_repo_module
 
     fact_tables = ("activity_metric_facts", "daily_load_facts", "training_model_daily", "rolling_period_facts")
 
     def _materialize_and_dump(cap: int) -> dict[str, list]:
-        monkeypatch.setattr(repo_module, "_FACT_UPSERT_BATCH_ROWS", cap)
+        monkeypatch.setattr(read_model_repo_module, "_FACT_UPSERT_BATCH_ROWS", cap)
         run_dir = tmp_path / f"cap{cap}"
         run_dir.mkdir()
         _fixture, repo = _create_duckdb_read_model_repo(run_dir)
