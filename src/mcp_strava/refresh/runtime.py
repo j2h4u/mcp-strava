@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
+from mcp_strava.adapters.duckdb.sync_log_store import append_sync_log
 from mcp_strava.adapters.strava import StravaUnavailable
 from mcp_strava.refresh import _sync_ops
 from mcp_strava.refresh.checkpoints import Stage, is_active_backfill_stage, is_stream_channel_backfill_stage
@@ -116,7 +117,8 @@ def run_once(
             kudos_fetched = _sync_ops._sync_kudos(repo, transport, now_iso)
         refresh_store.set_checkpoint(Stage.COMPLETE.value, None)
         refresh_store.record_refresh_success(now_iso)
-        repo.append_sync_log(
+        append_sync_log(
+            repo,
             timestamp=now_iso,
             status="ok",
             activities_seen=activities_seen,
@@ -183,7 +185,8 @@ def run_catchup(
                 _lease_renewer(refresh_store, clock, owner, policy.lease_duration_seconds),
             )
         refresh_store.set_checkpoint(Stage.COMPLETE_BACKFILL.value, None)
-        repo.append_sync_log(
+        append_sync_log(
+            repo,
             timestamp=now_iso,
             status="ok",
             activities_seen=None,

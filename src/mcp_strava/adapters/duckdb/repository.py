@@ -45,9 +45,6 @@ from mcp_strava.adapters.duckdb.repository_utils import (
     as_str as _as_str,
 )
 from mcp_strava.adapters.duckdb.repository_utils import (
-    as_str_opt as _as_str_opt,
-)
-from mcp_strava.adapters.duckdb.repository_utils import (
     normalize_cell as _normalize_cell,
 )
 from mcp_strava.adapters.duckdb.repository_utils import (
@@ -65,7 +62,6 @@ from mcp_strava.types import (
     DailyLoadPoint,
     ReadModelMetadata,
     RepositoryActivityRow,
-    RepositorySyncLogEntry,
 )
 
 
@@ -2280,68 +2276,6 @@ class DuckDBRepository:
             [self._next_id("athlete_zones"), fetched_at, zones_json],
         )
         self._commit_if_standalone()
-
-    # Sync metadata
-    def append_sync_log(
-        self,
-        *,
-        timestamp: str,
-        status: str,
-        activities_seen: int | None,
-        activities_new: int | None,
-        streams_fetched: int | None,
-        details_fetched: int | None,
-        api_calls: int | None,
-        error: str | None,
-        kudos_fetched: int | None,
-    ) -> None:
-        self._execute(
-            """
-            INSERT INTO sync_log (
-                id, timestamp, status, activities_seen, activities_new,
-                streams_fetched, details_fetched, api_calls, error, kudos_fetched
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                self._next_id("sync_log"),
-                timestamp,
-                status,
-                activities_seen,
-                activities_new,
-                streams_fetched,
-                details_fetched,
-                api_calls,
-                error,
-                kudos_fetched,
-            ],
-        )
-        self._commit_if_standalone()
-
-    def read_sync_log(self, limit: int = 20) -> list[RepositorySyncLogEntry]:
-        rows = self._fetchall(
-            """
-            SELECT timestamp, status, activities_seen, activities_new,
-                   streams_fetched, details_fetched, api_calls, error, kudos_fetched
-            FROM sync_log
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            [limit],
-        )
-        return [
-            RepositorySyncLogEntry(
-                timestamp=str(row["timestamp"]),
-                status=str(row["status"]),
-                activities_seen=_as_int_opt(row["activities_seen"]),
-                activities_new=_as_int_opt(row["activities_new"]),
-                streams_fetched=_as_int_opt(row["streams_fetched"]),
-                details_fetched=_as_int_opt(row["details_fetched"]),
-                api_calls=_as_int_opt(row["api_calls"]),
-                error=_as_str_opt(row["error"]),
-                kudos_fetched=_as_int_opt(row["kudos_fetched"]),
-            )
-            for row in rows
-        ]
 
     def activities_missing_streams(self, since: str | None = None) -> list[RepositoryActivityRow]:
         rows = self._fetchall(

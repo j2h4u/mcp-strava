@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from mcp_strava.adapters.duckdb.connection import MirrorConn
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.sync_log_store import append_sync_log
 from mcp_strava.adapters.strava import SystemClock, SystemSleeper, _build_strava_transport
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import Settings, get_settings
@@ -35,7 +36,8 @@ def record_refresh_misconfigured(settings: Settings | None = None) -> None:
         repo = DuckDBRepository.from_connection(conn)
         refresh_store = RefreshStateStore.from_connection(conn)
         refresh_store.record_refresh_failure(at, "refresh_misconfigured", backoff_until)
-        repo.append_sync_log(
+        append_sync_log(
+            repo,
             timestamp=at,
             status="error",
             activities_seen=None,

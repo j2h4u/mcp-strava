@@ -10,6 +10,7 @@ import pytest
 
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.sync_log_store import read_sync_log
 from mcp_strava.adapters.strava import StravaResponse, StravaUnavailable
 from mcp_strava.adapters.strava.types import StravaRateInfo
 from tests._fixtures_duckdb import create_fixture_db
@@ -166,7 +167,7 @@ def test_run_once_completes_daily_refresh_per_REFRESH_01_STRAVA_03(tmp_path):
     with _repo(tmp_path) as repo:
         result = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock))
         state = _refresh_store(repo).get_refresh_state()
-        logs = repo.read_sync_log()
+        logs = read_sync_log(repo)
 
     assert result.status == "ok"
     assert state.checkpoint_stage == Stage.COMPLETE.value

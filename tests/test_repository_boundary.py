@@ -6,6 +6,7 @@ import pytest
 from mcp_strava.adapters.duckdb.kudos_store import kudos_for_activity, list_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.sync_log_store import append_sync_log, read_sync_log
 from tests._fixtures_duckdb import create_empty_fixture_db
 
 
@@ -144,7 +145,8 @@ def test_repository_boundary_covers_activity_stream_zone_kudos_and_synclog(tmp_p
         assert list_kudos(repo, limit=5)
         assert kudos_for_activity(repo, 1)
 
-        repo.append_sync_log(
+        append_sync_log(
+            repo,
             timestamp="2026-05-21T09:00:00Z",
             status="ok",
             activities_seen=1,
@@ -155,7 +157,7 @@ def test_repository_boundary_covers_activity_stream_zone_kudos_and_synclog(tmp_p
             error=None,
             kudos_fetched=1,
         )
-        assert repo.read_sync_log(limit=5)
+        assert read_sync_log(repo, limit=5)
 
 
 def test_replace_stream_rows_and_channel_metadata_stores_null_values_json_when_no_extra_values(
