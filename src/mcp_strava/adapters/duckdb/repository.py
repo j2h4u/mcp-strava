@@ -1,6 +1,5 @@
 """DuckDB repository boundary for primary Strava mirror storage."""
 
-import hashlib
 import json
 import re
 from collections.abc import Iterable
@@ -17,6 +16,7 @@ from mcp_strava.adapters.duckdb.connection import (
     open_expected_mirror_db,
     open_fixture_db,
 )
+from mcp_strava.adapters.duckdb.source_hashing import canonical_semantic_value, semantic_json_hash
 from mcp_strava.constants import Config
 from mcp_strava.metrics import discounted_effective_trimp
 from mcp_strava.sports import SPORT_TRAINING as TRAINING_SPORTS
@@ -398,79 +398,6 @@ def build_trimp_sql(bounds: list[int], alias: str = "") -> str:
     return "(" + " +\n                ".join(parts) + ") / 60.0 as trimp"
 
 
-NON_SEMANTIC_SOURCE_KEYS = frozenset(
-    {
-        "synced_at",
-        "fetched_at",
-        "timestamp",
-        "updated_at",
-        "modified_at",
-        "batch_id",
-    }
-)
-
-
-def _loads_json_if_possible(value: object) -> object:
-    if not isinstance(value, str):
-        return value
-    stripped = value.strip()
-    if not stripped or stripped[0] not in "[{":
-        return value
-    try:
-        # json.loads returns Any; pin it to object here so the parsed value stays
-        # opaque to callers (this helper feeds the semantic-hash canonicalizer,
-        # which treats every node as object) instead of leaking Any outward.
-        return cast("object", json.loads(stripped))
-    except json.JSONDecodeError:
-        return value
-
-
-def _canonical_semantic_value(value: object) -> object:
-    value = _loads_json_if_possible(value)
-    if isinstance(value, dict):
-        return {
-            str(key): _canonical_semantic_value(item)
-            for key, item in sorted(value.items(), key=lambda kv: str(kv[0]))
-            if str(key).lower() not in NON_SEMANTIC_SOURCE_KEYS
-        }
-    if isinstance(value, list):
-        return [_canonical_semantic_value(item) for item in value]
-    if isinstance(value, date):
-        return value.isoformat()
-    return value
-
-
-def _semantic_json_hash(value: object) -> str:
-    payload = json.dumps(
-        _canonical_semantic_value(value),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def summary_payload_changed(stored_summary_json: object, new_summary_json: object) -> bool:
-    """True when two Strava summary payloads differ in semantic content.
-
-    Compares canonicalized content (sorted keys, non-semantic keys like
-    synced_at/fetched_at dropped) so that re-syncing an unchanged activity is
-    not treated as a change. The daily refresh re-sees the same ~600 activities
-    every cycle; rewriting an unchanged PRIMARY-KEY-indexed row churns the
-    DuckDB ART index, which bloats the file (freed index blocks are never
-    reused) and re-triggers the upstream ART stale-update-read corruption.
-
-    A plain string-equality fast path covers the common case (Strava returns
-    byte-identical JSON for an unchanged activity); the semantic hash is the
-    fallback that tolerates key reordering or whitespace differences.
-    """
-    if stored_summary_json is None:
-        return True
-    if stored_summary_json == new_summary_json:
-        return False
-    return _semantic_json_hash(stored_summary_json) != _semantic_json_hash(new_summary_json)
-
-
 def _normalize_cell(value: object) -> object:
     if isinstance(value, date):
         return value.isoformat()
@@ -790,8 +717,8 @@ class DuckDBRepository:
         if activity is None:
             return None
 
-        summary_hash = _semantic_json_hash(activity.get("summary_json"))
-        detail_hash = _semantic_json_hash(activity.get("detail_json"))
+        summary_hash = semantic_json_hash(activity.get("summary_json"))
+        detail_hash = semantic_json_hash(activity.get("detail_json"))
 
         stream_columns = sorted(self._table_columns("streams"))
         streams: list[Row] = []
@@ -803,9 +730,9 @@ class DuckDBRepository:
             )
             for row in rows:
                 if "values_json" in row:
-                    row["values_json"] = _canonical_semantic_value(row["values_json"])
+                    row["values_json"] = canonical_semantic_value(row["values_json"])
                 streams.append(row)
-        streams_hash = _semantic_json_hash(streams)
+        streams_hash = semantic_json_hash(streams)
 
         channels = self._fetchall(
             """
@@ -816,11 +743,11 @@ class DuckDBRepository:
             """,
             [activity_id],
         )
-        channels_hash = _semantic_json_hash(channels)
+        channels_hash = semantic_json_hash(channels)
 
         source_payload = {
             "activity": {
-                key: _canonical_semantic_value(value)
+                key: canonical_semantic_value(value)
                 for key, value in activity.items()
                 if key not in {"summary_json", "detail_json"}
             },
@@ -835,7 +762,7 @@ class DuckDBRepository:
             "detail_hash": detail_hash,
             "streams_hash": streams_hash,
             "channels_hash": channels_hash,
-            "source_hash": _semantic_json_hash(source_payload),
+            "source_hash": semantic_json_hash(source_payload),
         }
 
     def update_activity_source_state_and_enqueue_dirty(

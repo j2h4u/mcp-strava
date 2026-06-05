@@ -11,7 +11,8 @@ from typing import Any
 from mcp_strava.adapters.duckdb.read_model_materializer import (
     materialize_read_model as materialize_duckdb_read_model,
 )
-from mcp_strava.adapters.duckdb.repository import DuckDBRepository, summary_payload_changed
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.source_hashing import summary_payload_changed
 from mcp_strava.metric_registry import cached_logic_fingerprint
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.refresh.schema_drift import journal_schema_drift
