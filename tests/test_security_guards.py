@@ -271,10 +271,8 @@ def test_product_bundle_services_do_not_call_request_time_recompute_or_admin_han
         "check_z5_minutes",
         "check_hr_anomalies",
         "activity_stream_rows",
-        "stream_hr_velocity_rows",
         "stream_hr_velocity_simple_rows",
         "stream_hr_velocity_time_rows",
-        "stream_hr_time_rows",
         "stream_altitude_rows",
         "api_request",
         "refresh_token",
@@ -478,14 +476,11 @@ def test_metric_services_do_not_import_or_call_request_time_recompute_helpers() 
         "weekly_digest",
         "daily_report_from_connection",
         "activity_stream_rows",
-        "stream_hr_velocity_rows",
         "stream_hr_velocity_simple_rows",
         "stream_hr_velocity_time_rows",
-        "stream_hr_time_rows",
         "stream_altitude_rows",
         "activity_trimp",
         "activity_cc",
-        "activity_z5_seconds",
     }
     violations: list[str] = []
     for node in ast.walk(module):

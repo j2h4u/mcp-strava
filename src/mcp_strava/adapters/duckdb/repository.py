@@ -27,7 +27,6 @@ from mcp_strava.types import (
     RefreshRequestRow,
     RefreshStateRow,
     RepositoryActivityRow,
-    RepositoryDailyLoadStatus,
     RepositorySyncLogEntry,
 )
 
@@ -397,31 +396,6 @@ def build_trimp_sql(bounds: list[int], alias: str = "") -> str:
         f"SUM(CASE WHEN {h}heartrate >= {bounds[-2]} THEN 1 ELSE 0 END) * {c[-1]}",
     ]
     return "(" + " +\n                ".join(parts) + ") / 60.0 as trimp"
-
-
-def build_zones_sql(bounds: list[int], alias: str = "") -> str:
-    """Build the zone-seconds SQL fragment from precomputed integer zone bounds.
-
-    Returns a SQL string with z1..z{n} SUM CASE expressions separated by commas,
-    matching the structure of the old _build_trimp_cases() zones portion.
-
-    Args:
-        bounds: Ordered zone upper bounds list including cap.
-        alias:  Optional column alias prefix, e.g. "s.".
-
-    Returns:
-        SQL string of comma-separated zone SUM expressions.
-    """
-    h = alias
-    zones = [
-        f"SUM(CASE WHEN {h}heartrate < {bounds[0]} THEN 1 ELSE 0 END) as z1",
-        *(
-            f"SUM(CASE WHEN {h}heartrate >= {bounds[i - 1]} AND {h}heartrate < {bounds[i]} THEN 1 ELSE 0 END) as z{i + 1}"
-            for i in range(1, len(bounds) - 1)
-        ),
-        f"SUM(CASE WHEN {h}heartrate >= {bounds[-2]} THEN 1 ELSE 0 END) as z{len(bounds)}",
-    ]
-    return ",\n                ".join(zones)
 
 
 NON_SEMANTIC_SOURCE_KEYS = frozenset(
@@ -982,23 +956,6 @@ class DuckDBRepository:
             )
         )
 
-    def mark_dirty_activity_attempt_failed(
-        self,
-        activity_id: int,
-        activity_day: str,
-        metric_version: int,
-        last_error: str,
-    ) -> None:
-        self._execute(
-            """
-            UPDATE metric_dirty_activities
-            SET attempt_count = attempt_count + 1, last_error = ?
-            WHERE activity_id = ? AND activity_day = CAST(? AS DATE) AND metric_version = ?
-            """,
-            [last_error, activity_id, activity_day, metric_version],
-        )
-        self._commit_if_standalone()
-
     def enqueue_metric_version_recompute(self, metric_version: int, reason: str, queued_at: str) -> int:
         if not self._read_model_enabled():
             return 0
@@ -1552,45 +1509,6 @@ class DuckDBRepository:
         )
         return [self._to_activity_row(row) for row in rows]
 
-    def list_activities(
-        self,
-        *,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        sport: str | None = None,
-        limit: int = 20,
-        cursor: str | None = None,
-    ) -> list[RepositoryActivityRow]:
-        where: list[str] = []
-        params: list[object] = []
-        if start_date is not None:
-            where.append("activity_day >= CAST(? AS DATE)")
-            params.append(start_date)
-        if end_date is not None:
-            where.append("activity_day <= CAST(? AS DATE)")
-            params.append(end_date)
-        if sport is not None:
-            where.append("sport_type = ?")
-            params.append(sport)
-        if cursor is not None:
-            where.append("date < ?")
-            params.append(cursor)
-        where_sql = " WHERE " + " AND ".join(where) if where else ""
-        rows = self._fetchall(
-            """
-            SELECT id, date, name, sport_type, distance, moving_time, elapsed_time,
-                   total_elevation_gain, summary_json, detail_json, synced_at
-            FROM activities
-            """
-            + where_sql
-            + """
-            ORDER BY activity_day DESC, id DESC
-            LIMIT ?
-            """,
-            [*params, limit],
-        )
-        return [self._to_activity_row(row) for row in rows]
-
     def activity_by_id(self, activity_id: int) -> RepositoryActivityRow | None:
         row = self._fetchone(
             """
@@ -1628,41 +1546,6 @@ class DuckDBRepository:
                 source_revision=_as_int(row["source_revision"]),
             )
         return sources
-
-    def activity_rows_between(self, start_day: str, end_day: str) -> list[RepositoryActivityRow]:
-        rows = self._fetchall(
-            """
-            SELECT id, date, name, sport_type, distance, moving_time, elapsed_time,
-                   total_elevation_gain, summary_json, detail_json, synced_at
-            FROM activities
-            WHERE activity_day BETWEEN CAST(? AS DATE) AND CAST(? AS DATE)
-            ORDER BY activity_day ASC, id ASC
-            """,
-            [start_day, end_day],
-        )
-        return [self._to_activity_row(row) for row in rows]
-
-    def daily_activity_presence(self, day: str) -> bool:
-        return (
-            self._fetchone(
-                "SELECT 1 FROM activities WHERE activity_day = CAST(? AS DATE) LIMIT 1",
-                [day],
-            )
-            is not None
-        )
-
-    def first_activity_day(self, sport_filter: str | None = None) -> str | None:
-        sport_sql, sport_params = self._sport_where_clause(sport_filter)
-        row = self._fetchone(
-            """
-            SELECT MIN(activity_day) AS day
-            FROM activities a
-            WHERE 1=1
-            """
-            + sport_sql,
-            sport_params,
-        )
-        return str(row["day"]) if row and row["day"] else None
 
     def latest_activity_at(self) -> str | None:
         row = self._fetchone("SELECT MAX(date) AS latest FROM activities")
@@ -1864,51 +1747,6 @@ class DuckDBRepository:
             by_sport.setdefault(day, {})[str(row["sport"])] = round(_as_float(row["trimp"]), 1)
         return by_sport
 
-    def daily_load_status(self, day: str) -> RepositoryDailyLoadStatus:
-        activity_count = _as_int(
-            self._scalar("SELECT COUNT(*) FROM activities WHERE activity_day = CAST(? AS DATE)", [day])
-        )
-        stream_count = _as_int(
-            self._scalar(
-                """
-                SELECT COUNT(*)
-                FROM streams s
-                JOIN activities a ON a.id = s.activity_id
-                WHERE a.activity_day = CAST(? AS DATE)
-                """,
-                [day],
-            )
-        )
-        hr_count = _as_int(
-            self._scalar(
-                """
-                SELECT COUNT(*)
-                FROM streams s
-                JOIN activities a ON a.id = s.activity_id
-                WHERE a.activity_day = CAST(? AS DATE)
-                  AND s.heartrate IS NOT NULL
-                """,
-                [day],
-            )
-        )
-        if activity_count == 0:
-            status = "REST"
-        elif stream_count == 0:
-            status = "UNKNOWN"
-        elif hr_count == 0:
-            status = "PARTIAL"
-        else:
-            status = "OBSERVED"
-        return RepositoryDailyLoadStatus(
-            day=day,
-            status=status,
-            observed_trimp=0.0,
-            effective_trimp=0.0,
-            activity_count=activity_count,
-            stream_points=stream_count,
-            heartrate_points=hr_count,
-        )
-
     def daily_load_points_between(
         self,
         start_day: str,
@@ -2041,21 +1879,6 @@ class DuckDBRepository:
             for point in self.daily_load_points_between(start_day, end_day, bounds=bounds, sport_filter=sport_filter)
         }
 
-    def activity_moving_time(self, activity_id: int) -> int | None:
-        row = self._fetchone("SELECT moving_time FROM activities WHERE id = ?", [activity_id])
-        return _as_int(row["moving_time"]) if row and row["moving_time"] is not None else None
-
-    def stream_hr_velocity_rows(self, activity_id: int, min_velocity: float) -> list[dict[str, Any]]:
-        return self._fetchall(
-            """
-            SELECT time_offset, heartrate, velocity, grade FROM streams
-            WHERE activity_id = ? AND heartrate IS NOT NULL AND velocity IS NOT NULL
-              AND velocity > ?
-            ORDER BY time_offset
-            """,
-            [activity_id, min_velocity],
-        )
-
     def stream_hr_velocity_simple_rows(self, activity_id: int, min_velocity: float) -> list[dict[str, Any]]:
         return self._fetchall(
             """
@@ -2118,33 +1941,6 @@ class DuckDBRepository:
                 {"time_offset": row["time_offset"], "heartrate": row["heartrate"], "velocity": row["velocity"]}
             )
         return grouped
-
-    def activity_hr_summary(self, activity_id: int) -> tuple[float | None, int]:
-        row = self._fetchone(
-            """
-            SELECT AVG(heartrate) AS avg_hr, COUNT(*) AS n
-            FROM streams WHERE activity_id=? AND heartrate IS NOT NULL
-            """,
-            [activity_id],
-        )
-        return (_as_float(row["avg_hr"]), _as_int(row["n"])) if row and row["avg_hr"] is not None else (None, 0)
-
-    def activity_avg_velocity(self, activity_id: int) -> float | None:
-        row = self._fetchone(
-            "SELECT AVG(velocity) AS avg_vel FROM streams WHERE activity_id=? AND velocity IS NOT NULL",
-            [activity_id],
-        )
-        return _as_float(row["avg_vel"]) if row and row["avg_vel"] is not None else None
-
-    def stream_hr_time_rows(self, activity_id: int) -> list[dict[str, Any]]:
-        return self._fetchall(
-            """
-            SELECT time_offset, heartrate FROM streams
-            WHERE activity_id = ? AND heartrate IS NOT NULL
-            ORDER BY time_offset
-            """,
-            [activity_id],
-        )
 
     def stream_altitude_rows(self, activity_id: int) -> list[dict[str, Any]]:
         return self._fetchall(
@@ -2525,44 +2321,6 @@ class DuckDBRepository:
         row = self._fetchone("SELECT MAX(heartrate) AS hr FROM streams WHERE heartrate IS NOT NULL")
         return _as_float(row["hr"]) if row and row["hr"] is not None else None
 
-    def activity_z5_seconds(self, activity_id: int, z5_threshold: int) -> int:
-        return _as_int(
-            self._scalar(
-                "SELECT COUNT(*) AS sec FROM streams WHERE activity_id = ? AND heartrate >= ?",
-                [activity_id, z5_threshold],
-            )
-        )
-
-    def activity_efficiency_rows(self) -> list[dict[str, Any]]:
-        return self._fetchall(
-            """
-            SELECT a.activity_day AS day, a.sport_type,
-                   a.distance / 1000 AS dist_km, a.moving_time / 60.0 AS time_min,
-                   a.total_elevation_gain AS elev,
-                   AVG(s.heartrate) AS avg_hr, AVG(s.velocity) AS avg_vel
-            FROM activities a
-            JOIN streams s ON a.id = s.activity_id
-            WHERE s.heartrate IS NOT NULL AND s.velocity > 0
-            GROUP BY a.id, a.activity_day, a.sport_type, a.distance, a.moving_time, a.total_elevation_gain
-            HAVING avg_hr > 0 AND avg_vel > 0
-            """
-        )
-
-    def total_distance_km_between(self, start_day: str, end_day: str, sports: tuple[str, ...] | list[str]) -> float:
-        if not sports:
-            return 0.0
-        placeholders = ",".join("?" * len(sports))
-        row = self._fetchone(
-            f"""
-            SELECT SUM(distance)/1000 AS km FROM activities
-            WHERE sport_type IN ({placeholders})
-              AND activity_day >= CAST(? AS DATE)
-              AND activity_day <= CAST(? AS DATE)
-            """,
-            [*sports, start_day, end_day],
-        )
-        return _as_float(row["km"]) if row else 0.0
-
     def insert_stream_rows_chunked(
         self,
         activity_id: int,
@@ -2643,18 +2401,6 @@ class DuckDBRepository:
                 )
             values_clause = ", ".join([placeholder] * len(chunk))
             self._execute(f"INSERT INTO streams ({columns}) VALUES {values_clause}", params)
-
-    def delete_stream_rows_for_activity(self, activity_id: int) -> None:
-        self.begin()
-        try:
-            self._execute("DELETE FROM streams WHERE activity_id = ?", [activity_id])
-            self.update_activity_source_state_and_enqueue_dirty(
-                activity_id, metric_version=self.current_metric_version()
-            )
-        except Exception:
-            self.rollback()
-            raise
-        self.commit()
 
     def upsert_stream_channel_metadata(
         self,

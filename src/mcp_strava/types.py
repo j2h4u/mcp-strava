@@ -629,19 +629,6 @@ class RefreshRequestRow:
     consumed_at: str | None = None
 
 
-@dataclass
-class RepositoryDailyLoadStatus:
-    """Daily load status split between observed/effective values."""
-
-    day: str
-    status: str  # REST | UNKNOWN | PARTIAL | OBSERVED
-    observed_trimp: float
-    effective_trimp: float
-    activity_count: int = 0
-    stream_points: int = 0
-    heartrate_points: int = 0
-
-
 DailyLoadStatus = Literal["REST", "UNKNOWN", "PARTIAL", "OBSERVED"]
 
 
