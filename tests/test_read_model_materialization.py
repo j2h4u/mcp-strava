@@ -6,6 +6,7 @@ import pytest
 from mcp_strava.adapters.duckdb.read_model_materializer import (
     _activity_fact,
     _activity_facts_batched,
+    _record_failed_run,
     materialize_read_model,
 )
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
@@ -211,6 +212,28 @@ def test_WR_03_record_failed_run_commits_under_process_lock(tmp_path: Path, monk
         "(_commit_if_standalone), not via a raw unlocked repo.conn.commit()"
     )
     assert all(commit_under_lock), "every failed-run commit must run under duckdb_process_lock()"
+
+
+def test_record_failed_run_logs_when_bookkeeping_fails(caplog) -> None:
+    class FailingBookkeepingRepo:
+        rolled_back = False
+
+        def record_read_model_refresh_run(self, _values):
+            raise RuntimeError("bookkeeping insert failed")
+
+        def _commit_if_standalone(self):
+            raise AssertionError("commit should not run after failed insert")
+
+        def rollback(self):
+            self.rolled_back = True
+
+    repo = FailingBookkeepingRepo()
+
+    with caplog.at_level("WARNING", logger="mcp_strava.adapters.duckdb.read_model_materializer"):
+        _record_failed_run(repo, "2026-05-24T12:00:00", 1, RuntimeError("materialize failed"))  # type: ignore[arg-type]
+
+    assert repo.rolled_back
+    assert "read-model failed-run recording failed: bookkeeping insert failed" in caplog.text
 
 
 # ---------------------------------------------------------------------------
