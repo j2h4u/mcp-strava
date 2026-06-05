@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from tests._fixtures_duckdb import create_empty_fixture_db
 
@@ -202,7 +203,24 @@ def test_replace_stream_rows_and_channel_metadata_stores_null_values_json_when_n
     assert row[0] is None
 
 
-def test_repository_exposes_refresh_methods() -> None:
+def test_repository_keeps_refresh_state_out_of_activity_boundary() -> None:
+    retired = {
+        "get_refresh_state",
+        "acquire_refresh_lease",
+        "release_refresh_lease",
+        "set_checkpoint",
+        "record_refresh_attempt",
+        "record_refresh_success",
+        "record_refresh_failure",
+        "enqueue_refresh_request",
+        "pending_refresh_requests",
+        "mark_refresh_requests_consumed",
+    }
+
+    assert not (retired & set(dir(DuckDBRepository)))
+
+
+def test_refresh_state_store_exposes_refresh_methods() -> None:
     expected = {
         "get_refresh_state",
         "acquire_refresh_lease",
@@ -214,11 +232,9 @@ def test_repository_exposes_refresh_methods() -> None:
         "enqueue_refresh_request",
         "pending_refresh_requests",
         "mark_refresh_requests_consumed",
-        "activities_missing_streams",
-        "activities_missing_details",
     }
 
-    assert expected <= set(dir(DuckDBRepository))
+    assert expected <= set(dir(RefreshStateStore))
 
 
 def test_acquire_refresh_lease_is_single_writer(tmp_path: Path) -> None:
@@ -226,10 +242,11 @@ def test_acquire_refresh_lease_is_single_writer(tmp_path: Path) -> None:
     create_empty_fixture_db(fixture)
 
     with DuckDBRepository.from_path(fixture) as repo:
-        assert repo.acquire_refresh_lease("owner-a", "2026-05-21T12:10:00Z", "2026-05-21T12:00:00Z")
-        assert not repo.acquire_refresh_lease("owner-b", "2026-05-21T12:10:00Z", "2026-05-21T12:00:00Z")
-        repo.release_refresh_lease("owner-a")
-        assert repo.acquire_refresh_lease("owner-b", "2026-05-21T12:10:00Z", "2026-05-21T12:00:00Z")
+        store = RefreshStateStore.from_connection(repo.conn)
+        assert store.acquire_refresh_lease("owner-a", "2026-05-21T12:10:00Z", "2026-05-21T12:00:00Z")
+        assert not store.acquire_refresh_lease("owner-b", "2026-05-21T12:10:00Z", "2026-05-21T12:00:00Z")
+        store.release_refresh_lease("owner-a")
+        assert store.acquire_refresh_lease("owner-b", "2026-05-21T12:10:00Z", "2026-05-21T12:00:00Z")
 
 
 def test_enqueue_refresh_request_is_idempotent_per_D19(tmp_path: Path) -> None:
@@ -237,13 +254,14 @@ def test_enqueue_refresh_request_is_idempotent_per_D19(tmp_path: Path) -> None:
     create_empty_fixture_db(fixture)
 
     with DuckDBRepository.from_path(fixture) as repo:
-        assert repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
-        assert not repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
-        assert not repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
-        assert len(repo.pending_refresh_requests()) == 1
-        assert repo.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 1
-        assert repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
-        assert len(repo.pending_refresh_requests()) == 1
+        store = RefreshStateStore.from_connection(repo.conn)
+        assert store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        assert not store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        assert not store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        assert len(store.pending_refresh_requests()) == 1
+        assert store.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 1
+        assert store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        assert len(store.pending_refresh_requests()) == 1
 
 
 def test_mark_refresh_requests_consumed_marks_all_pending_per_D19(tmp_path: Path) -> None:
@@ -252,14 +270,15 @@ def test_mark_refresh_requests_consumed_marks_all_pending_per_D19(tmp_path: Path
     fixture = tmp_path / "repo.duckdb"
     create_empty_fixture_db(fixture)
 
-    assert list(signature(DuckDBRepository.mark_refresh_requests_consumed).parameters) == ["self", "consumed_at"]
+    assert list(signature(RefreshStateStore.mark_refresh_requests_consumed).parameters) == ["self", "consumed_at"]
     with DuckDBRepository.from_path(fixture) as repo:
-        repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
-        repo.enqueue_refresh_request("manual", "2026-05-21")
-        repo.enqueue_refresh_request("timer", "2026-05-21")
-        assert repo.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 3
-        assert repo.pending_refresh_requests() == []
-        assert repo.mark_refresh_requests_consumed("2026-05-21T12:01:00Z") == 0
+        store = RefreshStateStore.from_connection(repo.conn)
+        store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        store.enqueue_refresh_request("manual", "2026-05-21")
+        store.enqueue_refresh_request("timer", "2026-05-21")
+        assert store.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 3
+        assert store.pending_refresh_requests() == []
+        assert store.mark_refresh_requests_consumed("2026-05-21T12:01:00Z") == 0
 
 
 def test_record_refresh_failure_rejects_unknown_reason_code(tmp_path: Path) -> None:
@@ -267,9 +286,10 @@ def test_record_refresh_failure_rejects_unknown_reason_code(tmp_path: Path) -> N
     create_empty_fixture_db(fixture)
 
     with DuckDBRepository.from_path(fixture) as repo:
-        repo.record_refresh_failure("2026-05-21T12:00:00Z", "rate_limited", "2026-05-21T12:15:00Z")
+        store = RefreshStateStore.from_connection(repo.conn)
+        store.record_refresh_failure("2026-05-21T12:00:00Z", "rate_limited", "2026-05-21T12:15:00Z")
         with pytest.raises(ValueError):
-            repo.record_refresh_failure("2026-05-21T12:00:00Z", "secret-token-leak", None)
+            store.record_refresh_failure("2026-05-21T12:00:00Z", "secret-token-leak", None)
 
 
 def test_pending_refresh_requests_and_mark_consumed_roundtrip(tmp_path: Path) -> None:
@@ -277,13 +297,14 @@ def test_pending_refresh_requests_and_mark_consumed_roundtrip(tmp_path: Path) ->
     create_empty_fixture_db(fixture)
 
     with DuckDBRepository.from_path(fixture) as repo:
-        assert repo.enqueue_refresh_request("first_use_of_day", "2026-05-21")
-        pending = repo.pending_refresh_requests()
+        store = RefreshStateStore.from_connection(repo.conn)
+        assert store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        pending = store.pending_refresh_requests()
         assert len(pending) == 1
         assert pending[0].reason == "first_use_of_day"
         assert pending[0].consumed_at is None
-        assert repo.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 1
-        assert repo.pending_refresh_requests() == []
+        assert store.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 1
+        assert store.pending_refresh_requests() == []
 
 
 def test_activities_missing_streams_filters_by_since_per_D16(tmp_path: Path) -> None:

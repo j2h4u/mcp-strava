@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.refresh import RefreshPolicy
 from mcp_strava.types import dc_to_dict
@@ -40,7 +41,7 @@ def repo(tmp_path: Path):
             ],
         )
         # Ensure refresh_state row id=1 exists so _set_refresh_state can update it.
-        opened.get_refresh_state()
+        RefreshStateStore.from_connection(opened.conn).get_refresh_state()
         yield opened
 
 
@@ -51,6 +52,10 @@ def _set_refresh_state(repo: DuckDBRepository, **values: str | None) -> None:
         tuple(values.values()),
     )
     repo.conn.commit()
+
+
+def _refresh_store(repo: DuckDBRepository) -> RefreshStateStore:
+    return RefreshStateStore.from_connection(repo.conn)
 
 
 def test_APP_04_D_08_D_12_freshness_metadata_distinguishes_refresh_and_activity(repo: DuckDBRepository) -> None:
@@ -98,7 +103,7 @@ def test_APP_04_D_04_cross_midnight_first_use_uses_local_day_not_age(repo: DuckD
     assert metadata.freshness_state == "fresh"
     assert metadata.refresh_requested is True
     assert metadata.refresh_request_reason == "first_use_of_day"
-    requests = repo.pending_refresh_requests()
+    requests = _refresh_store(repo).pending_refresh_requests()
     assert len(requests) == 1
     assert requests[0].reason == "first_use_of_day"
     assert requests[0].requested_for_day == "2026-05-21"
@@ -115,7 +120,7 @@ def test_APP_04_D_06_first_use_refresh_request_is_idempotent(repo: DuckDBReposit
 
     assert first.refresh_requested is True
     assert second.refresh_requested is False
-    assert len(repo.pending_refresh_requests()) == 1
+    assert len(_refresh_store(repo).pending_refresh_requests()) == 1
 
 
 def test_APP_04_refresh_failed_and_delayed_are_factual_metadata(repo: DuckDBRepository) -> None:
@@ -140,7 +145,7 @@ def test_APP_04_refresh_failed_and_delayed_are_factual_metadata(repo: DuckDBRepo
     assert metadata.last_error_code == "rate_limited"
     assert metadata.backoff_until == "2026-05-21T11:00:00"
     assert metadata.refresh_requested is False
-    assert repo.pending_refresh_requests() == []
+    assert _refresh_store(repo).pending_refresh_requests() == []
 
 
 def test_APP_04_get_freshness_service_returns_shared_envelope(repo: DuckDBRepository) -> None:
@@ -172,7 +177,9 @@ def test_get_freshness_service_uses_primary_repository_factory_for_connections(
     class FakeConnection:
         pass
 
-    class FakeRepository:
+    connection = FakeConnection()
+
+    class FakeRefreshStore:
         def get_refresh_state(self) -> RefreshStateRow:
             return RefreshStateRow(
                 id=1,
@@ -187,13 +194,12 @@ def test_get_freshness_service_uses_primary_repository_factory_for_connections(
                 checkpoint_cursor=None,
             )
 
+    class FakeRepository:
+        conn = connection
+
         def latest_activity_at(self) -> str:
             return "2026-05-21T07:00:00"
 
-        def enqueue_refresh_request(self, *_args) -> bool:
-            raise AssertionError("signal_first_use=False must not enqueue refresh")
-
-    connection = FakeConnection()
     seen_connections: list[object] = []
 
     def fake_repository_from_connection(conn):
@@ -201,6 +207,11 @@ def test_get_freshness_service_uses_primary_repository_factory_for_connections(
         return FakeRepository()
 
     monkeypatch.setattr(freshness.DuckDBRepository, "from_connection", staticmethod(fake_repository_from_connection))
+    monkeypatch.setattr(
+        freshness.RefreshStateStore,
+        "from_connection",
+        staticmethod(lambda conn: FakeRefreshStore()),
+    )
 
     envelope = freshness.get_freshness_service(
         now=datetime.fromisoformat("2026-05-21T09:00:00"),

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from mcp_strava.adapters.duckdb.connection import MirrorConn
+from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.strava import SystemClock, SystemSleeper, _build_strava_transport
 from mcp_strava.refresh.policy import RefreshPolicy
@@ -19,9 +20,9 @@ def _now_iso() -> str:
 def ensure_runtime_refresh_schema(settings: Settings) -> None:
     del settings
     with MirrorConn() as conn:
-        repo = DuckDBRepository.from_connection(conn)
-        repo.get_refresh_state()
-        repo.pending_refresh_requests()
+        refresh_store = RefreshStateStore.from_connection(conn)
+        refresh_store.get_refresh_state()
+        refresh_store.pending_refresh_requests()
 
 
 def record_refresh_misconfigured(settings: Settings | None = None) -> None:
@@ -32,7 +33,8 @@ def record_refresh_misconfigured(settings: Settings | None = None) -> None:
     backoff_until = (datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1)).isoformat()
     with MirrorConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
-        repo.record_refresh_failure(at, "refresh_misconfigured", backoff_until)
+        refresh_store = RefreshStateStore.from_connection(conn)
+        refresh_store.record_refresh_failure(at, "refresh_misconfigured", backoff_until)
         repo.append_sync_log(
             timestamp=at,
             status="error",

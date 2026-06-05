@@ -11,6 +11,7 @@ from typing import Any
 from mcp_strava.adapters.duckdb.read_model_materializer import (
     materialize_read_model as materialize_duckdb_read_model,
 )
+from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.duckdb.source_hashing import summary_payload_changed
 from mcp_strava.metric_registry import cached_logic_fingerprint
@@ -240,9 +241,10 @@ def sync_streams(
     since: str | None = None,
     checkpoint_stage: Stage = Stage.STREAMS,
 ) -> int:
+    refresh_store = RefreshStateStore.from_connection(repo.conn)
     fetched = 0
     for activity in repo.activities_missing_streams(since):
-        repo.set_checkpoint(checkpoint_stage.value, str(activity.id))
+        refresh_store.set_checkpoint(checkpoint_stage.value, str(activity.id))
         response = transport.fetch(f"/activities/{activity.id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
         if isinstance(response.data, dict):
             journal_schema_drift(response.data, "streams")
@@ -259,9 +261,10 @@ def sync_details(
     since: str | None = None,
     checkpoint_stage: Stage = Stage.DETAILS,
 ) -> int:
+    refresh_store = RefreshStateStore.from_connection(repo.conn)
     fetched = 0
     for activity in repo.activities_missing_details(since):
-        repo.set_checkpoint(checkpoint_stage.value, str(activity.id))
+        refresh_store.set_checkpoint(checkpoint_stage.value, str(activity.id))
         response = transport.fetch(f"/activities/{activity.id}")
         if isinstance(response.data, dict):
             journal_schema_drift(response.data, "detailed_activity")
@@ -407,13 +410,14 @@ def sync_stream_channels_backfill(
     checkpoint_stage: Stage = Stage.STREAM_CHANNELS_BACKFILL,
     on_progress: Callable[[], None] | None = None,
 ) -> dict:
+    refresh_store = RefreshStateStore.from_connection(repo.conn)
     estimate = estimate_stream_channel_backfill(repo, since=since, limit=limit)
     completed = 0
     for item in estimate["candidates"]:
         activity_id = int(item["activity_id"])
         if on_progress is not None:
             on_progress()
-        repo.set_checkpoint(checkpoint_stage.value, str(activity_id))
+        refresh_store.set_checkpoint(checkpoint_stage.value, str(activity_id))
         response = transport.fetch(f"/activities/{activity_id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
         if not isinstance(response.data, dict):
             continue

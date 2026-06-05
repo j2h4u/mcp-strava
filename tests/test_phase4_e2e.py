@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from tests._fixtures_duckdb import create_empty_fixture_db
 
@@ -49,7 +50,7 @@ def _create_fixture_db(path: Path) -> None:
             ],
         )
         # Ensure refresh_state row id=1 exists, then mark a successful refresh.
-        repo.get_refresh_state()
+        RefreshStateStore.from_connection(repo.conn).get_refresh_state()
         repo.conn.execute(
             """
             UPDATE refresh_state

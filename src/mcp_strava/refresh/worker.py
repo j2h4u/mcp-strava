@@ -13,6 +13,7 @@ from threading import Event
 
 import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.duckdb.connection import MirrorConn
+from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.maintenance.compact import storage_stats
 from mcp_strava.refresh import RefreshSkipped, Stage, _sync_ops, health
@@ -148,9 +149,9 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> int:
     refresh_policy = RefreshPolicy.from_settings(settings)
 
     with MirrorConn() as conn:
-        repo = DuckDBRepository.from_connection(conn)
-        state = repo.get_refresh_state()
-        pending_count = len(repo.pending_refresh_requests())
+        refresh_store = RefreshStateStore.from_connection(conn)
+        state = refresh_store.get_refresh_state()
+        pending_count = len(refresh_store.pending_refresh_requests())
         blocked_reason = _refresh_blocked_reason(state, now_iso)
         if blocked_reason is not None:
             if emit_idle:
@@ -173,8 +174,9 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> int:
 
     with MirrorConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
-        pending_count = len(repo.pending_refresh_requests())
-        state = repo.get_refresh_state()
+        refresh_store = RefreshStateStore.from_connection(conn)
+        pending_count = len(refresh_store.pending_refresh_requests())
+        state = refresh_store.get_refresh_state()
         stream_backfill_due = _stream_channel_backfill_due(state)
         if pending_count == 0 and not refresh_due and not stream_backfill_due:
             if emit_idle:
@@ -195,13 +197,13 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> int:
 
             if isinstance(result, RefreshSkipped):
                 if result.reason == "already_complete":
-                    consumed = repo.mark_refresh_requests_consumed(_now_iso())
+                    consumed = refresh_store.mark_refresh_requests_consumed(_now_iso())
                     _emit("refresh_request_consumed", result="already_complete", consumed=consumed)
                 else:
                     _emit("refresh_skipped", reason=result.reason)
                     return 0
             elif result.status == "ok":
-                consumed = repo.mark_refresh_requests_consumed(_now_iso())
+                consumed = refresh_store.mark_refresh_requests_consumed(_now_iso())
                 _emit(
                     "refresh_ok",
                     consumed=consumed,

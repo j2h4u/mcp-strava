@@ -38,19 +38,19 @@ def evaluate_freshness(state: RefreshStateRow, now: datetime, policy: RefreshPol
 
 
 def enqueue_refresh_request_if_stale(
-    repo,
+    refresh_store,
     now: datetime,
     policy: RefreshPolicy,
     *,
     reason: str = "first_use_of_day",
     requested_for_day: str | None = None,
 ) -> bool:
-    state = repo.get_refresh_state()
+    state = refresh_store.get_refresh_state()
     freshness = evaluate_freshness(state, now, policy)
     if freshness not in {"aging", "stale"}:
         return False
     day = requested_for_day or now.date().isoformat()
-    return repo.enqueue_refresh_request(reason, day, now.isoformat())
+    return refresh_store.enqueue_refresh_request(reason, day, now.isoformat())
 
 
 def _parse_dt(value: str | None) -> datetime | None:

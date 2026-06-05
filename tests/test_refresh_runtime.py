@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import duckdb
 import pytest
 
+from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.strava import StravaResponse, StravaUnavailable
 from mcp_strava.adapters.strava.types import StravaRateInfo
@@ -100,6 +101,10 @@ def _repo(tmp_path: Path) -> DuckDBRepository:
     return DuckDBRepository.from_path(path)
 
 
+def _refresh_store(repo: DuckDBRepository) -> RefreshStateStore:
+    return RefreshStateStore.from_connection(repo.conn)
+
+
 def test_sync_summaries_skips_rewrite_when_summary_unchanged(tmp_path):
     """Re-syncing an unchanged activity must NOT rewrite the activities row.
 
@@ -160,7 +165,7 @@ def test_run_once_completes_daily_refresh_per_REFRESH_01_STRAVA_03(tmp_path):
     clock = FakeClock()
     with _repo(tmp_path) as repo:
         result = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock))
-        state = repo.get_refresh_state()
+        state = _refresh_store(repo).get_refresh_state()
         logs = repo.read_sync_log()
 
     assert result.status == "ok"
@@ -207,11 +212,12 @@ def test_run_once_force_still_honors_lease_and_backoff_per_D15(tmp_path):
 
     clock = FakeClock()
     with _repo(tmp_path) as repo:
-        assert repo.acquire_refresh_lease("other", "2026-05-21T12:10:00", "2026-05-21T12:00:00")
+        store = _refresh_store(repo)
+        assert store.acquire_refresh_lease("other", "2026-05-21T12:10:00", "2026-05-21T12:00:00")
         skipped = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock), force=True)
         assert skipped.reason == "refresh_in_progress"
-        repo.release_refresh_lease("other")
-        repo.record_refresh_failure("2026-05-21T12:00:00", "rate_limited", "2026-05-21T13:00:00")
+        store.release_refresh_lease("other")
+        store.record_refresh_failure("2026-05-21T12:00:00", "rate_limited", "2026-05-21T13:00:00")
         skipped = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock), force=True)
 
     assert skipped.reason == "refresh_delayed"
@@ -229,7 +235,7 @@ def test_run_once_failure_persists_backoff_and_resumes_per_D09_D13(tmp_path):
             clock,
             FakeSleeper(clock),
         )
-        state = repo.get_refresh_state()
+        state = _refresh_store(repo).get_refresh_state()
         skipped = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock))
 
     assert result.status == "failed"
@@ -253,7 +259,7 @@ def test_run_once_after_stream_failure_resumes_without_summary_page_walk_per_D09
             clock,
             FakeSleeper(clock),
         )
-        failed_state = repo.get_refresh_state()
+        failed_state = _refresh_store(repo).get_refresh_state()
         clock.advance(policy.backoff_seconds_on_rate_limit_default + 1)
         resumed_transport = FakeStravaTransport()
         resumed = run_once(repo, resumed_transport, policy, clock, FakeSleeper(clock))
@@ -326,7 +332,7 @@ def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch
     )
 
     with _repo(tmp_path) as repo:
-        repo.set_checkpoint(Stage.READ_MODEL_MATERIALIZE.value, None)
+        _refresh_store(repo).set_checkpoint(Stage.READ_MODEL_MATERIALIZE.value, None)
         result = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock), force=True)
 
     assert result.status == "ok"
@@ -349,7 +355,7 @@ def test_materialization_lost_lease_fails_closed(monkeypatch, tmp_path):
     monkeypatch.setattr(_sync_ops, "materialize_read_model_stage", fake_materialize, raising=False)
 
     with _repo(tmp_path) as repo:
-        repo.renew_refresh_lease = lambda *_args, **_kwargs: False  # type: ignore[method-assign]
+        monkeypatch.setattr(RefreshStateStore, "renew_refresh_lease", lambda *_args, **_kwargs: False)
         with pytest.raises(RuntimeError, match="refresh lease lost during read-model materialization"):
             run_once(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper(), force=True)
 
@@ -373,7 +379,7 @@ def test_run_backfill_skips_summaries_and_kudos_per_D16(tmp_path):
             synced_at="2026-05-21T07:00:00Z",
         )
         result = run_catchup(repo, transport, RefreshPolicy(), clock, FakeSleeper(clock), since="2026-05-20")
-        state = repo.get_refresh_state()
+        state = _refresh_store(repo).get_refresh_state()
 
     assert result.status == "ok"
     assert state.checkpoint_stage == Stage.COMPLETE_BACKFILL.value
@@ -429,7 +435,7 @@ def test_run_backfill_failure_preserves_backfill_checkpoint_per_D16(tmp_path):
             FakeSleeper(clock),
             since="2026-05-20",
         )
-        state = repo.get_refresh_state()
+        state = _refresh_store(repo).get_refresh_state()
 
     assert result.status == "failed"
     assert state.checkpoint_stage == Stage.STREAMS_BACKFILL.value
@@ -518,18 +524,19 @@ def test_freshness_evaluate_all_states_per_D05(tmp_path):
     policy = RefreshPolicy(warn_age_hours=12, max_age_hours=24, recent_failure_window_seconds=3600)
 
     with _repo(tmp_path) as repo:
-        repo.record_refresh_success("2026-05-21T11:00:00")
-        assert evaluate_freshness(repo.get_refresh_state(), now, policy) == "fresh"
-        repo.record_refresh_success("2026-05-20T23:00:00")
-        assert evaluate_freshness(repo.get_refresh_state(), now, policy) == "aging"
-        repo.record_refresh_success("2026-05-20T11:00:00")
-        assert evaluate_freshness(repo.get_refresh_state(), now, policy) == "stale"
-        repo.record_refresh_failure("2026-05-21T11:30:00", "network_unstable", None)
-        assert evaluate_freshness(repo.get_refresh_state(), now, policy) == "refresh_failed"
-        repo.record_refresh_failure("2026-05-21T11:30:00", "rate_limited", "2026-05-21T13:00:00")
-        assert evaluate_freshness(repo.get_refresh_state(), now, policy) == "refresh_delayed"
-        repo.acquire_refresh_lease("owner", "2026-05-21T12:10:00", "2026-05-21T12:00:00")
-        assert evaluate_freshness(repo.get_refresh_state(), now, policy) == "refresh_in_progress"
+        store = _refresh_store(repo)
+        store.record_refresh_success("2026-05-21T11:00:00")
+        assert evaluate_freshness(store.get_refresh_state(), now, policy) == "fresh"
+        store.record_refresh_success("2026-05-20T23:00:00")
+        assert evaluate_freshness(store.get_refresh_state(), now, policy) == "aging"
+        store.record_refresh_success("2026-05-20T11:00:00")
+        assert evaluate_freshness(store.get_refresh_state(), now, policy) == "stale"
+        store.record_refresh_failure("2026-05-21T11:30:00", "network_unstable", None)
+        assert evaluate_freshness(store.get_refresh_state(), now, policy) == "refresh_failed"
+        store.record_refresh_failure("2026-05-21T11:30:00", "rate_limited", "2026-05-21T13:00:00")
+        assert evaluate_freshness(store.get_refresh_state(), now, policy) == "refresh_delayed"
+        store.acquire_refresh_lease("owner", "2026-05-21T12:10:00", "2026-05-21T12:00:00")
+        assert evaluate_freshness(store.get_refresh_state(), now, policy) == "refresh_in_progress"
 
 
 def test_enqueue_refresh_request_if_stale_is_idempotent_per_D04_REFRESH_02(tmp_path):
@@ -537,17 +544,18 @@ def test_enqueue_refresh_request_if_stale_is_idempotent_per_D04_REFRESH_02(tmp_p
 
     now = datetime(2026, 5, 21, 12, 0, 0)
     with _repo(tmp_path) as repo:
-        repo.record_refresh_success("2026-05-20T11:00:00")
+        store = _refresh_store(repo)
+        store.record_refresh_success("2026-05-20T11:00:00")
         assert enqueue_refresh_request_if_stale(
-            repo, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21"
+            store, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21"
         )
         assert not enqueue_refresh_request_if_stale(
-            repo, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21"
+            store, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21"
         )
         assert not enqueue_refresh_request_if_stale(
-            repo, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21"
+            store, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21"
         )
-        assert len(repo.pending_refresh_requests()) == 1
+        assert len(store.pending_refresh_requests()) == 1
 
 
 def test_worker_materializes_read_model_in_bounded_batch(monkeypatch):
@@ -695,6 +703,7 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
             del metric_version
             return {"dirty_count": 0}
 
+    class FakeRefreshStore:
         def get_refresh_state(self):
             return state
 
@@ -733,6 +742,7 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
     # exercise the periodic-refresh cycle, not materialization, so stub it out.
     monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", lambda *_a, **_k: {"dirty_rows_cleared": 0})
     monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
+    monkeypatch.setattr(worker.RefreshStateStore, "from_connection", staticmethod(lambda _conn: FakeRefreshStore()))
     monkeypatch.setattr(
         worker,
         "build_refresh_collaborators",
@@ -778,6 +788,7 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
             del metric_version
             return {"dirty_count": 0}
 
+    class FakeRefreshStore:
         def get_refresh_state(self):
             return state
 
@@ -801,6 +812,7 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
     # exercise the periodic-refresh cycle, not materialization, so stub it out.
     monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", lambda *_a, **_k: {"dirty_rows_cleared": 0})
     monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
+    monkeypatch.setattr(worker.RefreshStateStore, "from_connection", staticmethod(lambda _conn: FakeRefreshStore()))
     monkeypatch.setattr(
         worker,
         "build_refresh_collaborators",
@@ -846,6 +858,7 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
             del metric_version
             return {"dirty_count": 0}
 
+    class FakeRefreshStore:
         def get_refresh_state(self):
             return state
 
@@ -860,6 +873,7 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
     # exercise the periodic-refresh cycle, not materialization, so stub it out.
     monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", lambda *_a, **_k: {"dirty_rows_cleared": 0})
     monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
+    monkeypatch.setattr(worker.RefreshStateStore, "from_connection", staticmethod(lambda _conn: FakeRefreshStore()))
     monkeypatch.setattr(
         worker,
         "build_refresh_collaborators",
@@ -1192,7 +1206,7 @@ def test_run_once_rejects_active_stream_channel_backfill_checkpoint(tmp_path):
     from mcp_strava.refresh import RefreshPolicy, Stage, run_once
 
     with _repo(tmp_path) as repo:
-        repo.set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, "500")
+        _refresh_store(repo).set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, "500")
         with pytest.raises(RuntimeError, match="admin catchup"):
             run_once(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper())
 
@@ -1201,7 +1215,7 @@ def test_run_catchup_rejects_stream_channel_backfill_checkpoint(tmp_path):
     from mcp_strava.refresh import RefreshPolicy, Stage, run_catchup
 
     with _repo(tmp_path) as repo:
-        repo.set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, "500")
+        _refresh_store(repo).set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, "500")
         with pytest.raises(RuntimeError, match="admin catchup"):
             run_catchup(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper())
 
@@ -1271,7 +1285,7 @@ def test_stream_channel_backfill_uses_only_streams_endpoint(tmp_path):
     assert not any(path.endswith("/kudos?per_page=100") for path in transport.calls_by_path)
 
 
-def test_stream_channel_backfill_renews_long_lease_during_progress(tmp_path):
+def test_stream_channel_backfill_renews_long_lease_during_progress(monkeypatch, tmp_path):
     from mcp_strava.refresh import RefreshPolicy, run_stream_channel_catchup
 
     clock = FakeClock()
@@ -1323,13 +1337,13 @@ def test_stream_channel_backfill_renews_long_lease_during_progress(tmp_path):
             ],
         )
         renewals: list[str] = []
-        original_renew = repo.renew_refresh_lease
+        original_renew = RefreshStateStore.renew_refresh_lease
 
-        def record_renewal(owner: str, expires_at: str) -> bool:
+        def record_renewal(store: RefreshStateStore, owner: str, expires_at: str) -> bool:
             renewals.append(expires_at)
-            return original_renew(owner, expires_at)
+            return original_renew(store, owner, expires_at)
 
-        repo.renew_refresh_lease = record_renewal  # type: ignore[method-assign]
+        monkeypatch.setattr(RefreshStateStore, "renew_refresh_lease", record_renewal)
         result = run_stream_channel_catchup(
             repo,
             WaitingStreamsTransport(),
@@ -1388,7 +1402,7 @@ def test_stream_channel_backfill_rate_limit_keeps_checkpoint_and_rows(tmp_path):
             FakeClock(),
             FakeSleeper(),
         )
-        state = repo.get_refresh_state()
+        state = _refresh_store(repo).get_refresh_state()
         rows = repo.activity_stream_rows(500)
 
     assert result["status"] in {"failed", "delayed"}

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.strava import StravaUnavailable
 from mcp_strava.refresh import _sync_ops
 from mcp_strava.refresh.checkpoints import Stage, is_active_backfill_stage, is_stream_channel_backfill_stage
@@ -58,13 +59,14 @@ def run_once(
     force: bool = False,
     mode: str = "daily",
 ) -> RefreshResult | RefreshSkipped:
+    refresh_store = RefreshStateStore.from_connection(repo.conn)
     now_iso = _now_iso(clock)
     expires_at = _plus_seconds_iso(clock, policy.lease_duration_seconds)
-    if not repo.acquire_refresh_lease(owner, expires_at, now_iso):
+    if not refresh_store.acquire_refresh_lease(owner, expires_at, now_iso):
         return RefreshSkipped("refresh_in_progress")
 
     try:
-        state = repo.get_refresh_state()
+        state = refresh_store.get_refresh_state()
         if state.backoff_until and state.backoff_until > now_iso:
             return RefreshSkipped("refresh_delayed")
         if is_active_backfill_stage(state.checkpoint_stage):
@@ -83,7 +85,7 @@ def run_once(
             return RefreshSkipped("already_complete")
 
         start_index = _daily_start_index(state.checkpoint_stage)
-        repo.record_refresh_attempt(now_iso)
+        refresh_store.record_refresh_attempt(now_iso)
         activities_seen = 0
         activities_new = 0
         streams_fetched = 0
@@ -91,29 +93,29 @@ def run_once(
         kudos_fetched = 0
 
         if start_index <= _stage_index(Stage.SUMMARIES):
-            repo.set_checkpoint(Stage.SUMMARIES.value, None)
+            refresh_store.set_checkpoint(Stage.SUMMARIES.value, None)
             activities_seen, activities_new = _sync_ops.sync_summaries(repo, transport, now_iso)
         if start_index <= _stage_index(Stage.STREAMS):
-            repo.set_checkpoint(Stage.STREAMS.value, None)
+            refresh_store.set_checkpoint(Stage.STREAMS.value, None)
             streams_fetched = _sync_ops.sync_streams(repo, transport)
         if start_index <= _stage_index(Stage.DETAILS):
-            repo.set_checkpoint(Stage.DETAILS.value, None)
+            refresh_store.set_checkpoint(Stage.DETAILS.value, None)
             details_fetched = _sync_ops.sync_details(repo, transport)
         if start_index <= _stage_index(Stage.SCHEMA_VALIDATE):
-            repo.set_checkpoint(Stage.SCHEMA_VALIDATE.value, None)
+            refresh_store.set_checkpoint(Stage.SCHEMA_VALIDATE.value, None)
             _sync_ops.schema_validate(repo)
         if start_index <= _stage_index(Stage.READ_MODEL_MATERIALIZE):
-            repo.set_checkpoint(Stage.READ_MODEL_MATERIALIZE.value, None)
+            refresh_store.set_checkpoint(Stage.READ_MODEL_MATERIALIZE.value, None)
             _sync_ops.materialize_read_model_stage(
                 repo,
                 now_iso,
-                _lease_renewer(repo, clock, owner, policy.lease_duration_seconds),
+                _lease_renewer(refresh_store, clock, owner, policy.lease_duration_seconds),
             )
         if start_index <= _stage_index(Stage.KUDOS):
-            repo.set_checkpoint(Stage.KUDOS.value, None)
+            refresh_store.set_checkpoint(Stage.KUDOS.value, None)
             kudos_fetched = _sync_ops._sync_kudos(repo, transport, now_iso)
-        repo.set_checkpoint(Stage.COMPLETE.value, None)
-        repo.record_refresh_success(now_iso)
+        refresh_store.set_checkpoint(Stage.COMPLETE.value, None)
+        refresh_store.record_refresh_success(now_iso)
         repo.append_sync_log(
             timestamp=now_iso,
             status="ok",
@@ -136,9 +138,9 @@ def run_once(
             kudos_fetched=kudos_fetched,
         )
     except StravaUnavailable as exc:
-        return _handle_failure(repo, clock, policy, exc.reason, mode, detail=exc.detail or None)
+        return _handle_failure(refresh_store, clock, policy, exc.reason, mode, detail=exc.detail or None)
     finally:
-        repo.release_refresh_lease(owner)
+        refresh_store.release_refresh_lease(owner)
 
 
 def run_catchup(
@@ -151,35 +153,36 @@ def run_catchup(
     since: str | None = None,
     owner: str = "refresh-backfill",
 ) -> RefreshResult | RefreshSkipped:
+    refresh_store = RefreshStateStore.from_connection(repo.conn)
     now_iso = _now_iso(clock)
     expires_at = _plus_seconds_iso(clock, policy.lease_duration_seconds)
-    if not repo.acquire_refresh_lease(owner, expires_at, now_iso):
+    if not refresh_store.acquire_refresh_lease(owner, expires_at, now_iso):
         return RefreshSkipped("refresh_in_progress")
 
     try:
-        state = repo.get_refresh_state()
+        state = refresh_store.get_refresh_state()
         if state.backoff_until and state.backoff_until > now_iso:
             return RefreshSkipped("refresh_delayed")
         if is_stream_channel_backfill_stage(state.checkpoint_stage):
             raise RuntimeError("incompatible checkpoint - stream-channel backfill must resume via admin catchup")
         start_index = _backfill_start_index(state.checkpoint_stage)
-        repo.record_refresh_attempt(now_iso)
+        refresh_store.record_refresh_attempt(now_iso)
         streams_fetched = 0
         details_fetched = 0
         if start_index <= _backfill_stage_index(Stage.STREAMS_BACKFILL):
-            repo.set_checkpoint(Stage.STREAMS_BACKFILL.value, None)
+            refresh_store.set_checkpoint(Stage.STREAMS_BACKFILL.value, None)
             streams_fetched = _sync_ops.sync_streams(repo, transport, since, Stage.STREAMS_BACKFILL)
         if start_index <= _backfill_stage_index(Stage.DETAILS_BACKFILL):
-            repo.set_checkpoint(Stage.DETAILS_BACKFILL.value, None)
+            refresh_store.set_checkpoint(Stage.DETAILS_BACKFILL.value, None)
             details_fetched = _sync_ops.sync_details(repo, transport, since, Stage.DETAILS_BACKFILL)
         if start_index <= _backfill_stage_index(Stage.READ_MODEL_MATERIALIZE_BACKFILL):
-            repo.set_checkpoint(Stage.READ_MODEL_MATERIALIZE_BACKFILL.value, None)
+            refresh_store.set_checkpoint(Stage.READ_MODEL_MATERIALIZE_BACKFILL.value, None)
             _sync_ops.materialize_read_model_stage(
                 repo,
                 now_iso,
-                _lease_renewer(repo, clock, owner, policy.lease_duration_seconds),
+                _lease_renewer(refresh_store, clock, owner, policy.lease_duration_seconds),
             )
-        repo.set_checkpoint(Stage.COMPLETE_BACKFILL.value, None)
+        refresh_store.set_checkpoint(Stage.COMPLETE_BACKFILL.value, None)
         repo.append_sync_log(
             timestamp=now_iso,
             status="ok",
@@ -199,9 +202,9 @@ def run_catchup(
             details_fetched=details_fetched,
         )
     except StravaUnavailable as exc:
-        return _handle_failure(repo, clock, policy, exc.reason, "backfill", detail=exc.detail or None)
+        return _handle_failure(refresh_store, clock, policy, exc.reason, "backfill", detail=exc.detail or None)
     finally:
-        repo.release_refresh_lease(owner)
+        refresh_store.release_refresh_lease(owner)
 
 
 def run_stream_channel_catchup(
@@ -216,19 +219,20 @@ def run_stream_channel_catchup(
     dry_run: bool = False,
     owner: str = "refresh-backfill-stream-channels",
 ) -> dict | RefreshSkipped:
+    refresh_store = RefreshStateStore.from_connection(repo.conn)
     now_iso = _now_iso(clock)
     lease_seconds = max(policy.lease_duration_seconds, _STREAM_CHANNEL_BACKFILL_MIN_LEASE_SECONDS)
     expires_at = _plus_seconds_iso(clock, lease_seconds)
-    if not repo.acquire_refresh_lease(owner, expires_at, now_iso):
+    if not refresh_store.acquire_refresh_lease(owner, expires_at, now_iso):
         return RefreshSkipped("refresh_in_progress")
 
     def renew_lease() -> None:
-        renewed = repo.renew_refresh_lease(owner, _plus_seconds_iso(clock, lease_seconds))
+        renewed = refresh_store.renew_refresh_lease(owner, _plus_seconds_iso(clock, lease_seconds))
         if not renewed:
             raise RuntimeError("refresh lease lost during stream-channel backfill")
 
     try:
-        state = repo.get_refresh_state()
+        state = refresh_store.get_refresh_state()
         if state.backoff_until and state.backoff_until > now_iso:
             return RefreshSkipped("refresh_delayed")
         estimate = _sync_ops.estimate_stream_channel_backfill(repo, since=since, limit=limit)
@@ -244,7 +248,7 @@ def run_stream_channel_catchup(
                 "estimated_api_calls": estimate["estimated_api_calls"],
             }
         if estimate["activities_to_backfill"] == 0:
-            repo.set_checkpoint(Stage.COMPLETE.value, None)
+            refresh_store.set_checkpoint(Stage.COMPLETE.value, None)
             return {
                 "status": "ok",
                 "mode": "backfill_stream_channels",
@@ -256,8 +260,8 @@ def run_stream_channel_catchup(
                 "estimated_api_calls": 0,
                 "completed": 0,
             }
-        repo.record_refresh_attempt(now_iso)
-        repo.set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, state.checkpoint_cursor)
+        refresh_store.record_refresh_attempt(now_iso)
+        refresh_store.set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, state.checkpoint_cursor)
         renew_lease()
         result = _sync_ops.sync_stream_channels_backfill(
             repo,
@@ -270,9 +274,9 @@ def run_stream_channel_catchup(
         _sync_ops.materialize_read_model_stage(
             repo,
             now_iso,
-            _lease_renewer(repo, clock, owner, lease_seconds),
+            _lease_renewer(refresh_store, clock, owner, lease_seconds),
         )
-        repo.set_checkpoint(Stage.COMPLETE.value, None)
+        refresh_store.set_checkpoint(Stage.COMPLETE.value, None)
         return {
             "status": "ok",
             "mode": "backfill_stream_channels",
@@ -285,8 +289,10 @@ def run_stream_channel_catchup(
             "completed": result["completed"],
         }
     except StravaUnavailable as exc:
-        _handle_failure(repo, clock, policy, exc.reason, "backfill_stream_channels", detail=exc.detail or None)
-        repo.set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, repo.get_refresh_state().checkpoint_cursor)
+        _handle_failure(refresh_store, clock, policy, exc.reason, "backfill_stream_channels", detail=exc.detail or None)
+        refresh_store.set_checkpoint(
+            Stage.STREAM_CHANNELS_BACKFILL.value, refresh_store.get_refresh_state().checkpoint_cursor
+        )
         return {
             "status": "failed",
             "mode": "backfill_stream_channels",
@@ -300,14 +306,14 @@ def run_stream_channel_catchup(
             "estimated_api_calls": 0,
         }
     finally:
-        repo.release_refresh_lease(owner)
+        refresh_store.release_refresh_lease(owner)
 
 
 def _handle_failure(
-    repo, clock, policy: RefreshPolicy, reason: str, mode: str, detail: dict[str, int | None] | None = None
+    refresh_store, clock, policy: RefreshPolicy, reason: str, mode: str, detail: dict[str, int | None] | None = None
 ) -> RefreshResult:
     now_iso = _now_iso(clock)
-    repo.record_refresh_failure(now_iso, reason, _plus_seconds_iso(clock, _backoff_seconds(reason, policy)))
+    refresh_store.record_refresh_failure(now_iso, reason, _plus_seconds_iso(clock, _backoff_seconds(reason, policy)))
     return RefreshResult(status="failed", reason=reason, mode=mode, rate_info=detail or None)
 
 
@@ -341,9 +347,9 @@ def _backfill_start_index(stage: str | None) -> int:
     return 0
 
 
-def _lease_renewer(repo, clock, owner: str, lease_seconds: int):
+def _lease_renewer(refresh_store, clock, owner: str, lease_seconds: int):
     def renew() -> None:
-        renewed = repo.renew_refresh_lease(owner, _plus_seconds_iso(clock, lease_seconds))
+        renewed = refresh_store.renew_refresh_lease(owner, _plus_seconds_iso(clock, lease_seconds))
         if not renewed:
             raise RuntimeError(_READ_MODEL_LEASE_ERROR)
 
