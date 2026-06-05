@@ -19,6 +19,7 @@ from mcp_strava.adapters.duckdb.read_model_materializer import (
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.duckdb.source_hashing import summary_payload_changed
+from mcp_strava.adapters.duckdb.stream_coverage_queries import activities_missing_stream_channels
 from mcp_strava.metric_registry import cached_logic_fingerprint
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.refresh.schema_drift import journal_schema_drift
@@ -384,7 +385,8 @@ def estimate_stream_channel_backfill(
     since: str | None = None,
     limit: int | None = None,
 ) -> dict:
-    candidates = repo.activities_missing_stream_channels(
+    candidates = activities_missing_stream_channels(
+        repo,
         since=since,
         limit=limit,
         requested_channels=STREAM_KEYS,

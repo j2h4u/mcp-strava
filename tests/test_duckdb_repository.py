@@ -669,6 +669,16 @@ def test_mirror_coverage_count_methods_return_typed_values(tmp_path: Path) -> No
     carrying lat/lng and an empty values_json) plus one channel metadata row, then
     assert each method returns a plain, correctly-typed value."""
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.adapters.duckdb.stream_coverage_queries import (
+        count_activities,
+        count_activities_missing_channel_metadata,
+        count_activities_with_streams,
+        count_stream_gps_points,
+        count_stream_points,
+        count_streams_missing_extra_values,
+        mirror_table_exists,
+        stream_table_columns,
+    )
 
     fixture = tmp_path / "strava.duckdb"
     _create_duckdb_fixture(fixture)
@@ -677,23 +687,23 @@ def test_mirror_coverage_count_methods_return_typed_values(tmp_path: Path) -> No
         _seed_hr_activity_with_streams(repo, activity_id=301, day="2026-05-21", sport_type="Run")
 
         # Column introspection: canonical schema has lat/lng/values_json, no latlng.
-        columns = repo.stream_table_columns()
+        columns = stream_table_columns(repo)
         assert isinstance(columns, set)
         assert {"lat", "lng", "values_json"} <= columns
         assert "latlng" not in columns
 
         # Table existence via information_schema.
-        assert repo.mirror_table_exists("streams") is True
-        assert repo.mirror_table_exists("stream_channels") is True
-        assert repo.mirror_table_exists("table_that_does_not_exist") is False
+        assert mirror_table_exists(repo, "streams") is True
+        assert mirror_table_exists(repo, "stream_channels") is True
+        assert mirror_table_exists(repo, "table_that_does_not_exist") is False
 
         # Counts (180 stream points seeded for one activity).
-        assert repo.count_activities() == 1
-        assert repo.count_activities_with_streams() == 1
-        assert repo.count_stream_points() == 180
+        assert count_activities(repo) == 1
+        assert count_activities_with_streams(repo) == 1
+        assert count_stream_points(repo) == 180
         assert all(
             isinstance(v, int)
-            for v in (repo.count_activities(), repo.count_activities_with_streams(), repo.count_stream_points())
+            for v in (count_activities(repo), count_activities_with_streams(repo), count_stream_points(repo))
         )
 
         # GPS: every seeded point has lat/lng set. has_latlng=False (the canonical
@@ -701,16 +711,16 @@ def test_mirror_coverage_count_methods_return_typed_values(tmp_path: Path) -> No
         # reference the absent column. The application only passes has_latlng=True
         # after confirming the column exists via stream_table_columns(), so the
         # widened predicate is exercised in test_count_stream_gps_points_widens... .
-        assert repo.count_stream_gps_points(has_latlng=False) == 180
+        assert count_stream_gps_points(repo, has_latlng=False) == 180
 
         # The seeded activity has exactly one channel metadata row, so it is NOT
         # missing channel metadata entirely.
-        assert repo.count_activities_missing_channel_metadata() == 0
+        assert count_activities_missing_channel_metadata(repo) == 0
 
         # values_json is "{}" for every seeded point (present, non-empty), so none
         # are missing extra values; with has_values_json False, all 180 count.
-        assert repo.count_streams_missing_extra_values(has_values_json=True) == 0
-        assert repo.count_streams_missing_extra_values(has_values_json=False) == 180
+        assert count_streams_missing_extra_values(repo, has_values_json=True) == 0
+        assert count_streams_missing_extra_values(repo, has_values_json=False) == 180
 
 
 def test_count_stream_gps_points_widens_predicate_when_latlng_column_present(tmp_path: Path) -> None:
@@ -719,6 +729,7 @@ def test_count_stream_gps_points_widens_predicate_when_latlng_column_present(tmp
     variant by adding the column post-create (the schema-drift case the branch
     defends against) and seeding a point whose lat/lng are NULL but latlng is set."""
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.adapters.duckdb.stream_coverage_queries import count_stream_gps_points, stream_table_columns
 
     fixture = tmp_path / "strava.duckdb"
     _create_duckdb_fixture(fixture)
@@ -731,25 +742,33 @@ def test_count_stream_gps_points_widens_predicate_when_latlng_column_present(tmp
             "INSERT INTO streams (activity_id, time_offset, lat, lng, latlng) VALUES (401, 9999, NULL, NULL, '43.2,76.9')"
         )
 
-        assert "latlng" in repo.stream_table_columns()
+        assert "latlng" in stream_table_columns(repo)
         # lat/lng-only count: the 180 seeded points (the latlng-only point excluded).
-        assert repo.count_stream_gps_points(has_latlng=False) == 180
+        assert count_stream_gps_points(repo, has_latlng=False) == 180
         # Widened: the extra latlng-only point is now also counted.
-        assert repo.count_stream_gps_points(has_latlng=True) == 181
+        assert count_stream_gps_points(repo, has_latlng=True) == 181
 
 
 def test_mirror_coverage_counts_on_empty_mirror_are_zero(tmp_path: Path) -> None:
     """On a freshly-created empty mirror the count methods return 0 (never None),
     confirming the centralized _scalar_int NULL->0 collapse."""
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.adapters.duckdb.stream_coverage_queries import (
+        count_activities,
+        count_activities_missing_channel_metadata,
+        count_activities_with_streams,
+        count_stream_gps_points,
+        count_stream_points,
+        count_streams_missing_extra_values,
+    )
 
     fixture = tmp_path / "strava.duckdb"
     _create_duckdb_fixture(fixture)
 
     with DuckDBRepository.from_path(fixture) as repo:
-        assert repo.count_activities() == 0
-        assert repo.count_activities_with_streams() == 0
-        assert repo.count_stream_points() == 0
-        assert repo.count_stream_gps_points(has_latlng=False) == 0
-        assert repo.count_activities_missing_channel_metadata() == 0
-        assert repo.count_streams_missing_extra_values(has_values_json=True) == 0
+        assert count_activities(repo) == 0
+        assert count_activities_with_streams(repo) == 0
+        assert count_stream_points(repo) == 0
+        assert count_stream_gps_points(repo, has_latlng=False) == 0
+        assert count_activities_missing_channel_metadata(repo) == 0
+        assert count_streams_missing_extra_values(repo, has_values_json=True) == 0
