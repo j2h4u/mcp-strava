@@ -51,7 +51,7 @@ def test_known_model_ids_includes_karvonen() -> None:
 
 def test_build_trimp_sql_identity() -> None:
     """build_trimp_sql(bounds) produces the expected SQL structure."""
-    from mcp_strava.adapters.duckdb.repository import build_trimp_sql
+    from mcp_strava.adapters.duckdb.trimp_sql import build_trimp_sql
 
     sql = build_trimp_sql([122, 136, 150, 163, 177, 300])
     assert "/ 60.0 as trimp" in sql
@@ -63,7 +63,7 @@ def test_build_trimp_sql_identity() -> None:
 
 def test_build_trimp_sql_alias() -> None:
     """build_trimp_sql with alias='s.' prefixes column references."""
-    from mcp_strava.adapters.duckdb.repository import build_trimp_sql
+    from mcp_strava.adapters.duckdb.trimp_sql import build_trimp_sql
 
     sql_plain = build_trimp_sql([122, 136, 150, 163, 177, 300], alias="")
     sql_s = build_trimp_sql([122, 136, 150, 163, 177, 300], alias="s.")
