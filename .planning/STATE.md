@@ -245,8 +245,8 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-06-05
-Stopped at: Post-v1.1 perf sweep finished. Pushed Phase 1 (materializer write batching, 99dad87) — CI green. Phase 2 (89603c1): batched the materializer's per-day daily-fact READS into one GROUP BY range scan (the ~2000-read full-recompute lever), parity-gated, 391 passed. Milestone v1.1 still complete-but-unarchived — next /gsd-complete-milestone.
-Resume file: None
+Stopped at: Post-v1.1 Phase 3 expert panel complete. Converged design: batch DuckDB reads/window scans for _activity_fact, keep complex pure metric functions as canonical semantic oracle for this slice, gate with method-level parity, full four-table dump parity, and statement-count evidence. No runtime code changed. Local main remains ahead of origin by 3; v1.1 still complete-but-unarchived.
+Resume file: .planning/quick/260605-gsd-phase-3-duckdb-compute-pushdown-panel/EXPERT-PANEL.md
 
 ### Post-milestone admin-CLI cleanup (tasks 10-13) — CLOSED 2026-05-28
 
