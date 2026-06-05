@@ -245,7 +245,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-06-05
-Stopped at: Quick task 260605-mna complete: Phase 3 _activity_fact batch-read slice implemented and validated. Targeted materializer tests 16 passed; just check passed; full pytest 394 passed in 58.72s. v1.1 still complete-but-unarchived.
+Stopped at: Quick task 260605-mna complete: Phase 3 _activity_fact batch-read slice implemented and validated. Targeted materializer tests 17 passed; just check passed; canonical `time -p just test` passed with pytest 395 passed in 64.44s and full wall-clock real 120.56s. v1.1 still complete-but-unarchived.
 Resume file: .planning/quick/260605-mna-implement-phase-3-activity-fact-duckdb-b/260605-mna-SUMMARY.md
 
 ### Post-milestone admin-CLI cleanup (tasks 10-13) — CLOSED 2026-05-28

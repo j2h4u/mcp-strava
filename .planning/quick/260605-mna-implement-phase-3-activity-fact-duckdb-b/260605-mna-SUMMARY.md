@@ -2,7 +2,7 @@
 status: complete
 quick_id: 260605-mna
 date: 2026-06-05
-commit: 4e45c2c
+commit: 4e45c2c, 1d80139
 ---
 
 # Quick Task 260605-mna Summary
@@ -24,14 +24,17 @@ Implement the first Phase 3 `_activity_fact` DuckDB batch-read performance slice
 - Preserved Phase 10 pure metric semantics: `calc_hr_recovery`, `calc_vertical_speed`, `calc_cardiac_drift`, and `calc_hrr_pct` remain canonical Python functions.
 - Preserved day-inclusive running max HR and per-activity observed max for `%HRR`.
 - Hoisted `repo.training_model_row(as_of_day, metric_version)` out of the rolling-window loop.
+- Optimized batch running-max HR lookup to pre-aggregate per-day HR before applying a running window.
+- Moved batch activity-fact reads and pure computations before the write transaction so cold-start MCP reads are not blocked by long materialization compute.
 - Added tests for:
   - batch repository reads vs existing per-activity methods
   - batched activity facts vs sequential `_activity_fact`
   - no per-activity scalar read fanout during materialization
+  - batch reads run before the materializer write transaction
 
 ## Verification
 
-- `uv run pytest tests/test_read_model_materialization.py -q` -> 16 passed in 26.94s
+- `uv run pytest tests/test_read_model_materialization.py -q` -> 17 passed in 26.84s
 - `just check` -> passed
   - ruff format check
   - ruff check
@@ -39,7 +42,11 @@ Implement the first Phase 3 `_activity_fact` DuckDB batch-read performance slice
   - import contracts
   - compileall
   - vulture
-- `uv run pytest -q -n auto` -> 394 passed in 58.72s
+- `time -p just test` -> passed
+  - pytest phase: 395 passed in 64.44s
+  - Docker build/start/health: passed
+  - MCP smoke-basic: passed
+  - wall-clock: real 120.56s
 
 ## Notes
 
