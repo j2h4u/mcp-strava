@@ -336,35 +336,35 @@ def test_list_workouts_service_respects_filters_and_returns_compact_rows(tmp_pat
 
 
 def test_relative_time_formatting_and_24h_boundary() -> None:
-    """_relative_time renders 'Hh Mm' under 24h and 'Nd Hh' from one day on.
+    """relative_time renders 'Hh Mm' under 24h and 'Nd Hh' from one day on.
 
     The exact-24h boundary renders '1d 0h' (minutes dropped once we cross a day).
     A trailing-Z and an offset-bearing start_date_local both parse; missing or
     garbage input yields None without raising.
     """
-    from mcp_strava.application.metric_services import _relative_time
+    from mcp_strava.application.activity_payloads import relative_time
 
     now = datetime.fromisoformat("2026-05-21T09:00:00")
 
     # Under 24h: 2h 0m ago.
-    assert _relative_time("2026-05-21T07:00:00", now) == "2h 0m"
+    assert relative_time("2026-05-21T07:00:00", now) == "2h 0m"
     # 90 minutes ago -> 1h 30m.
-    assert _relative_time("2026-05-21T07:30:00", now) == "1h 30m"
+    assert relative_time("2026-05-21T07:30:00", now) == "1h 30m"
     # Exactly 24h ago -> crosses a day -> '1d 0h' (minutes dropped).
-    assert _relative_time("2026-05-20T09:00:00", now) == "1d 0h"
+    assert relative_time("2026-05-20T09:00:00", now) == "1d 0h"
     # Just under 24h (23h 59m) stays in the 'Hh Mm' format.
-    assert _relative_time("2026-05-20T09:01:00", now) == "23h 59m"
+    assert relative_time("2026-05-20T09:01:00", now) == "23h 59m"
     # Multi-day: 2 days 2 hours ago.
-    assert _relative_time("2026-05-19T07:00:00", now) == "2d 2h"
+    assert relative_time("2026-05-19T07:00:00", now) == "2d 2h"
     # 'Z' is a true UTC instant: 07:00 UTC vs 09:00 UTC -> 2h.
-    assert _relative_time("2026-05-21T07:00:00Z", now) == "2h 0m"
+    assert relative_time("2026-05-21T07:00:00Z", now) == "2h 0m"
     # Offset-bearing value is normalized to UTC: 07:00+05:00 == 02:00 UTC, so vs
     # 09:00 UTC the recency is 7h — the offset is accounted for, not ignored.
-    assert _relative_time("2026-05-21T07:00:00+05:00", now) == "7h 0m"
+    assert relative_time("2026-05-21T07:00:00+05:00", now) == "7h 0m"
     # Missing / garbage -> None, no raise.
-    assert _relative_time(None, now) is None
-    assert _relative_time("", now) is None
-    assert _relative_time("not-a-timestamp", now) is None
+    assert relative_time(None, now) is None
+    assert relative_time("", now) is None
+    assert relative_time("not-a-timestamp", now) is None
 
 
 def test_workout_payloads_carry_start_time_local_and_relative_time(tmp_path: Path) -> None:
