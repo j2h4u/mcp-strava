@@ -1,90 +1,92 @@
 set shell := ["bash", "-uc"]
 
 compose := "docker compose -f deploy/docker-compose.yml"
-smoke := "python -m mcp_strava.devtools.mcp_client.cli smoke-basic --compact --url http://127.0.0.1:8080/mcp"
+mcp_url := "http://127.0.0.1:8080/mcp"
+smoke_basic := "python -m mcp_strava.devtools.mcp_client.cli smoke-basic --compact --url " + mcp_url
 
+# Show available repo commands.
 default:
     @just --list
 
-# Build syntax check — compile all sources (matches CI)
-build:
+# Compile Python sources for syntax errors.
+compile:
     uv run python -m compileall -q src deploy tests
 
-# Lint with ruff — whole repo, matching CI's `ruff check .` (NOT just src/tests:
-# deploy/ and root scripts are linted too, or stale findings there slip past).
+# Lint with ruff across the whole repo.
 lint:
     uv run ruff check .
 
-# Check formatting without writing — whole repo, matching CI
+# Check formatting without writing.
 fmt-check:
     uv run ruff format --check .
 
-# Import-layer contracts (import-linter; matches CI's `lint-imports`)
+# Check import-layer architecture contracts.
 import-contracts:
     uv run lint-imports
 
-# Static type checking — basedpyright is the canonical checker (matches CI:
-# `uv run basedpyright src`). It reads the [tool.pyright] table in pyproject.
+# Run the canonical static type checker.
 typecheck:
     uv run basedpyright src
 
-# Dead-code scan (also wired into `check`). At --min-confidence 80 this is
-# currently false-positive-free; if a real false positive ever appears (vulture
-# can't see decorator/dynamic use), add a vulture whitelist rather than dropping
-# it from the gate — dead code removal is a core value of this codebase.
+# Scan for dead code with vulture.
 dead-code:
     uv run vulture src tests --min-confidence 80
 
-# Auto-fix lint findings + formatting (whole repo, matching CI scope)
+# Auto-fix ruff findings and formatting.
 fix:
     uv run ruff check --fix .
     uv run ruff format .
 
-# Full static gate — mirrors CI's `quality` job exactly: whole-repo lint +
-# format, types, import contracts, build syntax check, dead-code scan.
-check: fmt-check lint typecheck import-contracts build dead-code
+# Static quality gate: format, lint, types, imports, compile, dead code.
+check: fmt-check lint typecheck import-contracts compile dead-code
 
-# Pre-push preflight: the full CI static gate plus unit tests, locally.
-# (Docker build + MCP smoke is `just test`.)
-preflight: check
+# Unit tests only.
+unit:
     uv run pytest -q -n auto
 
-test:
-    uv run pytest -q -n auto
+# Build the Docker image.
+docker-build:
     {{compose}} build
-    {{compose}} up -d --force-recreate --remove-orphans --wait --wait-timeout 90
-    {{compose}} exec -T mcp-strava {{smoke}}
 
+# Recreate and wait for the local Docker service.
+docker-up:
+    {{compose}} up -d --force-recreate --remove-orphans --wait --wait-timeout 90
+
+# Basic MCP smoke against a running Docker service.
+mcp-smoke-basic:
+    {{compose}} exec -T mcp-strava {{smoke_basic}}
+
+# Full MCP smoke against a running Docker service.
 mcp-smoke-full timeout="5":
-    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli smoke-live --timeout {{timeout}} --compact --url http://127.0.0.1:8080/mcp
+    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli smoke-live --timeout {{timeout}} --compact --url {{mcp_url}}
 
+# Read-model perf gate against a running Docker service.
 mcp-read-model-perf samples="20" warmup="2" p95_ms="100":
-    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli perf-read-model --samples {{samples}} --warmup {{warmup}} --p95-ms {{p95_ms}} --compact --url http://127.0.0.1:8080/mcp
+    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli perf-read-model --samples {{samples}} --warmup {{warmup}} --p95-ms {{p95_ms}} --compact --url {{mcp_url}}
 
-phase9-bundle-smoke timeout="5":
+# Docker runtime gate: unit tests, Docker build/recreate, basic MCP smoke.
+runtime-verify: unit docker-build docker-up mcp-smoke-basic
+
+# Full local gate for agents before claiming completion.
+verify: check runtime-verify
+
+# Surface smoke with targeted MCP tests plus live full MCP smoke.
+mcp-surface-smoke timeout="5": docker-build docker-up
     uv run pytest -q tests/test_mcp_surface.py tests/test_mcp_test_client.py
-    {{compose}} build
-    {{compose}} up -d --force-recreate --remove-orphans --wait --wait-timeout 90
-    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli smoke-live --timeout {{timeout}} --compact --url http://127.0.0.1:8080/mcp
+    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli smoke-live --timeout {{timeout}} --compact --url {{mcp_url}}
 
+# List MCP tools on a running Docker service.
 mcp-list-tools:
-    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli list-tools --url http://127.0.0.1:8080/mcp
+    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli list-tools --url {{mcp_url}}
 
+# Call one MCP tool on a running Docker service.
 mcp-call tool arguments="{}":
-    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli call-tool --name {{tool}} --arguments '{{arguments}}' --url http://127.0.0.1:8080/mcp
+    {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli call-tool --name {{tool}} --arguments '{{arguments}}' --url {{mcp_url}}
 
-# Run an admin CLI command against the live mirror.
-# DuckDB takes an exclusive file lock on the writer side, so admin commands
-# cannot run while the owner container is up. This recipe stops the owner,
-# runs the admin command in a one-shot container against the same volume,
-# and restarts the owner unconditionally (trap on EXIT covers Ctrl-C and
-# admin failures).
+# Run an admin CLI command in a one-shot container.
 admin *args:
     #!/usr/bin/env bash
     set -euo pipefail
     trap '{{compose}} start mcp-strava >/dev/null' EXIT
     {{compose}} stop mcp-strava
     {{compose}} run --rm --no-deps -T --entrypoint python mcp-strava -m mcp_strava admin {{args}}
-
-alias tests := test
-alias smoke := test

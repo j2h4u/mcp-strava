@@ -89,7 +89,7 @@ scope: full-repo
 
 **CI Pipeline:**
 - None (no GitHub Actions or equivalent configured in this repo)
-- Local validation via `just check` (lint + typecheck) and `just test` (pytest + docker build + smoke)
+- Local validation via `just check` (static quality), `just unit` (pytest), `just runtime-verify` (pytest + Docker build/start + MCP smoke), and `just verify` (full local gate)
 
 ## Environment Configuration
 

@@ -22,9 +22,11 @@ scope: full-repo
 ```bash
 uv run pytest -q                              # Run all 357 tests as of Phase 14 UAT
 uv run pytest -q tests/test_mcp_surface.py   # Single file
-just test                                     # Full suite + docker build + smoke
-just check                                    # lint + fmt-check + typecheck (no tests)
-just build                                    # compileall src + deploy + tests (syntax only)
+just unit                                     # Pytest only
+just check                                    # Static quality gate
+just runtime-verify                          # Unit tests + Docker build/start + MCP smoke
+just verify                                  # Static quality gate + runtime verification
+just compile                                 # compileall src + deploy + tests (syntax only)
 ```
 
 ## Test File Organization
@@ -259,7 +261,7 @@ def _envelope(data: dict, *, unavailable: bool = False) -> ServiceEnvelope:
 
 ## Coverage
 
-**Requirements:** No coverage target enforced — no `--cov` flag in default `just test` invocation
+**Requirements:** No coverage target enforced — no `--cov` flag in default `just unit` invocation
 
 **View Coverage:**
 ```bash

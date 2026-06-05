@@ -134,10 +134,10 @@ After the token file exists, routine token refresh and Strava rate-limit handlin
 ## Local Docker Usage
 
 ```bash
-just test
+just runtime-verify
 ```
 
-This builds the image, starts the `mcp-strava` container, waits for health, and runs a direct MCP smoke test against the product server at `http://127.0.0.1:8080/mcp`.
+This runs unit tests, builds the image, starts the `mcp-strava` container, waits for health, and runs a direct MCP smoke test against the product server at `http://127.0.0.1:8080/mcp`.
 
 ## Configuration
 
@@ -158,10 +158,19 @@ uv run python -m mcp_strava workouts recent --limit 10
 # Analyze the latest workout
 uv run python -m mcp_strava workout analyze latest
 
-# Full local validation: pytest, Docker build/start, MCP smoke
-just test
+# Static quality gate: format, lint, types, imports, compile, dead code
+just check
 
-# Full MCP smoke
+# Unit tests only
+just unit
+
+# Runtime validation: unit tests, Docker build/start, MCP smoke
+just runtime-verify
+
+# Full local validation before claiming completion
+just verify
+
+# Full MCP smoke against the running Docker service
 just mcp-smoke-full
 
 # Read-model latency gate
@@ -169,9 +178,6 @@ just mcp-read-model-perf
 
 # List exposed MCP tools
 just mcp-list-tools
-
-# Run all Python tests
-uv run pytest -q
 ```
 
 ## Runtime State
