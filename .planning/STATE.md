@@ -245,8 +245,8 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-06-05
-Stopped at: Post-v1.1 Phase 3 expert panel complete. Converged design: batch DuckDB reads/window scans for _activity_fact, keep complex pure metric functions as canonical semantic oracle for this slice, gate with method-level parity, full four-table dump parity, and statement-count evidence. No runtime code changed. Local main remains ahead of origin by 3; v1.1 still complete-but-unarchived.
-Resume file: .planning/quick/260605-gsd-phase-3-duckdb-compute-pushdown-panel/EXPERT-PANEL.md
+Stopped at: Quick task 260605-mna complete: Phase 3 _activity_fact batch-read slice implemented and validated. Targeted materializer tests 16 passed; just check passed; full pytest 394 passed in 58.72s. v1.1 still complete-but-unarchived.
+Resume file: .planning/quick/260605-mna-implement-phase-3-activity-fact-duckdb-b/260605-mna-SUMMARY.md
 
 ### Post-milestone admin-CLI cleanup (tasks 10-13) — CLOSED 2026-05-28
 
@@ -270,3 +270,4 @@ Resume file: .planning/quick/260605-gsd-phase-3-duckdb-compute-pushdown-panel/EX
 | 260526-lal centralize materialized analytic fact registry and add drift audit | 2026-05-26 | `.planning/quick/260526-lal-centralize-materialized-analytic-fact-re/260526-lal-SUMMARY.md` |
 | 260527-nbq compute HR zones on the fly and drop hardcoded athlete HR constants | 2026-05-27 | `.planning/quick/260527-nbq-wire-hr-zone-computation-on-the-fly-into/260527-nbq-SUMMARY.md` |
 | 260531-nv0 format pre-existing unrelated ruff drift | 2026-05-31 | `.planning/quick/260531-nv0-format-pre-existing-unrelated-ruff-forma/260531-nv0-SUMMARY.md` |
+| 260605-mna implement Phase 3 _activity_fact DuckDB batch reads | 2026-06-05 | `.planning/quick/260605-mna-implement-phase-3-activity-fact-duckdb-b/260605-mna-SUMMARY.md` |
