@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import duckdb
 
+from mcp_strava.adapters.duckdb.activity_rows import to_activity_row
 from mcp_strava.adapters.duckdb.connection import (
     DuckDBConn,
     duckdb_process_lock,
@@ -1076,7 +1077,7 @@ class DuckDBRepository:
             """,
             [limit],
         )
-        return [self._to_activity_row(row) for row in rows]
+        return [to_activity_row(row) for row in rows]
 
     def activity_by_id(self, activity_id: int) -> RepositoryActivityRow | None:
         row = self._fetchone(
@@ -1088,7 +1089,7 @@ class DuckDBRepository:
             """,
             [activity_id],
         )
-        return self._to_activity_row(row) if row else None
+        return to_activity_row(row) if row else None
 
     def activity_materialization_sources(self, activity_ids: Iterable[int]) -> dict[int, ActivityMaterializationSource]:
         ids = sorted({int(activity_id) for activity_id in activity_ids})
@@ -1108,7 +1109,7 @@ class DuckDBRepository:
         )
         sources: dict[int, ActivityMaterializationSource] = {}
         for row in rows:
-            activity = self._to_activity_row(row)
+            activity = to_activity_row(row)
             sources[activity.id] = ActivityMaterializationSource(
                 activity=activity,
                 source_hash=str(row["source_hash"]),
@@ -2115,18 +2116,3 @@ class DuckDBRepository:
             raise
         self.commit()
         return len(payload)
-
-    def _to_activity_row(self, row) -> RepositoryActivityRow:
-        return RepositoryActivityRow(
-            id=int(row["id"]),
-            date=str(row["date"]),
-            name=str(row["name"]),
-            sport_type=str(row["sport_type"]),
-            distance=float(row["distance"] or 0.0),
-            moving_time=int(row["moving_time"] or 0),
-            elapsed_time=int(row["elapsed_time"] or 0),
-            total_elevation_gain=float(row["total_elevation_gain"] or 0.0),
-            summary_json=row["summary_json"],
-            detail_json=row["detail_json"],
-            synced_at=row["synced_at"],
-        )

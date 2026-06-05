@@ -2485,6 +2485,7 @@ def metric_catalog_payload() -> dict[str, Any]:
 # fingerprint too. Self-inclusion is fine because the source is read at runtime
 # via ``import_module`` inside the function, not at module-import time.
 COMPUTE_SOURCE_MODULES: tuple[str, ...] = (
+    "mcp_strava.adapters.duckdb.activity_rows",
     "mcp_strava.adapters.duckdb.connection",
     "mcp_strava.adapters.duckdb.read_model_materializer",
     "mcp_strava.adapters.duckdb.repository",
