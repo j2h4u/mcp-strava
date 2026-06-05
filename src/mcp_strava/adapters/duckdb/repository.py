@@ -1117,21 +1117,6 @@ class DuckDBRepository:
             )
         return sources
 
-    def latest_activity_at(self) -> str | None:
-        row = self._fetchone("SELECT MAX(date) AS latest FROM activities")
-        return str(row["latest"]) if row and row["latest"] else None
-
-    def latest_activity_id(self) -> int | None:
-        row = self._fetchone(
-            """
-            SELECT id
-            FROM activities
-            ORDER BY activity_day DESC, id DESC
-            LIMIT 1
-            """
-        )
-        return _as_int(row["id"]) if row and row["id"] is not None else None
-
     def upsert_activity_summary(
         self,
         *,

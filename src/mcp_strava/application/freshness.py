@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 from datetime import UTC, datetime
 
+from mcp_strava.adapters.duckdb.activity_lookup_queries import latest_activity_at
 from mcp_strava.adapters.duckdb.connection import MirrorConn
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
@@ -68,7 +69,7 @@ def build_freshness_metadata(
     """Build factual freshness metadata and optionally signal first use today."""
     refresh_store = RefreshStateStore.from_connection(repo.conn)
     state = refresh_store.get_refresh_state()
-    last_activity_at = repo.latest_activity_at()
+    last_activity_at = latest_activity_at(repo)
     freshness_state = evaluate_freshness(state, now, policy)
     today = now.date().isoformat()
 

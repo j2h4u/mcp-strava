@@ -6,6 +6,7 @@ from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 from typing import Any, cast
 
+from mcp_strava.adapters.duckdb.activity_lookup_queries import latest_activity_id
 from mcp_strava.adapters.duckdb.connection import ReadConn
 from mcp_strava.adapters.duckdb.kudos_store import kudos_for_activity
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
@@ -281,7 +282,7 @@ def get_workout_detail_service(
         repo = DuckDBRepository.from_connection(conn)
         freshness = build_freshness_metadata(repo, instant, _policy(), signal_first_use=signal_first_use)
         read_model = _read_model_status(repo)
-        resolved_id = repo.latest_activity_id() if activity_id == "latest" else int(activity_id)
+        resolved_id = latest_activity_id(repo) if activity_id == "latest" else int(activity_id)
         row = (
             repo.fetch_activity_metric_fact(resolved_id, metric_version=repo.current_metric_version())
             if resolved_id is not None

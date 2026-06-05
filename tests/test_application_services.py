@@ -197,8 +197,10 @@ def test_get_freshness_service_uses_primary_repository_factory_for_connections(
     class FakeRepository:
         conn = connection
 
-        def latest_activity_at(self) -> str:
-            return "2026-05-21T07:00:00"
+        def _fetchone(self, sql: str, params=None) -> dict[str, str]:
+            assert "MAX(date)" in sql
+            assert params is None
+            return {"latest": "2026-05-21T07:00:00"}
 
     seen_connections: list[object] = []
 
