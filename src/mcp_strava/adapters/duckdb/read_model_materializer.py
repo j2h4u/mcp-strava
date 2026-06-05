@@ -615,12 +615,16 @@ def materialize_read_model(
             hr_max=int(global_hr_max), hr_rest=athlete.hr_rest
         )
 
-    repo.begin()
     try:
-        activity_count = 0
         activity_facts: list[dict[str, object]] = _activity_facts_batched(
             repo, dirty_rows, metric_version, computed_at, _settings, renew_lease=renew_lease
         )
+    except Exception as exc:
+        _record_failed_run(repo, computed_at, metric_version, exc)
+        raise
+
+    repo.begin()
+    try:
         activity_count = len(activity_facts)
         repo.upsert_activity_metric_facts(activity_facts)
 

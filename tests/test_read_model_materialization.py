@@ -791,3 +791,54 @@ def test_materializer_avoids_per_activity_scalar_read_fanout(tmp_path: Path) -> 
         materialize_read_model(counting_repo, metric_version=1, now="2026-05-24T12:00:00")
 
     assert counting_repo.hot_scalar_reads == 0
+
+
+def test_materializer_batch_reads_run_before_write_transaction(tmp_path: Path) -> None:
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+
+    class TransactionDepthRepo(DuckDBRepository):
+        batch_read_depths: list[int]
+
+        def __init__(self, conn):
+            super().__init__(conn)
+            self.batch_read_depths = []
+
+        def _record_batch_read_depth(self) -> None:
+            self.batch_read_depths.append(self._transaction_depth)
+
+        def activity_materialization_sources(self, *args, **kwargs):
+            self._record_batch_read_depth()
+            return super().activity_materialization_sources(*args, **kwargs)
+
+        def activity_stream_scalars_for_materialization(self, *args, **kwargs):
+            self._record_batch_read_depth()
+            return super().activity_stream_scalars_for_materialization(*args, **kwargs)
+
+        def max_heartrate_to_dates(self, *args, **kwargs):
+            self._record_batch_read_depth()
+            return super().max_heartrate_to_dates(*args, **kwargs)
+
+        def activity_zone_trimp_for_bounds(self, *args, **kwargs):
+            self._record_batch_read_depth()
+            return super().activity_zone_trimp_for_bounds(*args, **kwargs)
+
+        def stream_hr_velocity_simple_rows_for_activities(self, *args, **kwargs):
+            self._record_batch_read_depth()
+            return super().stream_hr_velocity_simple_rows_for_activities(*args, **kwargs)
+
+        def stream_hr_velocity_time_rows_for_activities(self, *args, **kwargs):
+            self._record_batch_read_depth()
+            return super().stream_hr_velocity_time_rows_for_activities(*args, **kwargs)
+
+        def stream_altitude_rows_for_activities(self, *args, **kwargs):
+            self._record_batch_read_depth()
+            return super().stream_altitude_rows_for_activities(*args, **kwargs)
+
+    with repo:
+        _seed_dirty_activity_with_streams(repo, activity_id=980, day="2026-05-21")
+        depth_repo = TransactionDepthRepo(repo.conn)
+
+        materialize_read_model(depth_repo, metric_version=1, now="2026-05-24T12:00:00")
+
+    assert depth_repo.batch_read_depths
+    assert set(depth_repo.batch_read_depths) == {0}

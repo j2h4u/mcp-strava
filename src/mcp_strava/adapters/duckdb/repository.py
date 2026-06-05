@@ -2397,12 +2397,31 @@ class DuckDBRepository:
             f"""
             WITH requested(day) AS (
               VALUES {", ".join("(CAST(? AS DATE))" for _ in days)}
+            ),
+            day_hr AS (
+              SELECT a.activity_day AS day, MAX(s.heartrate) AS day_hr_max
+              FROM activities a
+              JOIN streams s ON s.activity_id = a.id
+              WHERE s.heartrate IS NOT NULL
+                AND a.activity_day <= (SELECT MAX(day) FROM requested)
+              GROUP BY a.activity_day
+            ),
+            running_hr AS (
+              SELECT day,
+                     MAX(day_hr_max) OVER (
+                       ORDER BY day ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                     ) AS hr_max
+              FROM day_hr
             )
-            SELECT r.day AS day, MAX(s.heartrate) AS hr_max
+            SELECT r.day AS day,
+                   (
+                     SELECT hr_max
+                     FROM running_hr h
+                     WHERE h.day <= r.day
+                     ORDER BY h.day DESC
+                     LIMIT 1
+                   ) AS hr_max
             FROM requested r
-            LEFT JOIN activities a ON a.activity_day <= r.day
-            LEFT JOIN streams s ON s.activity_id = a.id AND s.heartrate IS NOT NULL
-            GROUP BY r.day
             """,
             days,
         )
