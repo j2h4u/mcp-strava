@@ -2097,15 +2097,20 @@ class DuckDBRepository:
         z = [_as_int(row[f"z{idx}"]) for idx in range(1, 6)]
         return z[0], z[1], z[2], z[3], z[4]
 
-    def daily_fact_sums(self, activity_day: str, metric_version: int) -> dict[str, Any]:
-        """Return the SUM aggregates over activity_metric_facts for one day and metric version.
+    def daily_fact_sums_between(self, start_day: str, end_day: str, metric_version: int) -> dict[str, dict[str, Any]]:
+        """Return per-day SUM aggregates over activity_metric_facts for a date range.
 
-        Used when rolling up per-activity facts into daily_load_facts. A no-GROUP-BY
-        aggregate always yields exactly one row, so the result is never None.
+        One GROUP BY range scan replaces the materializer's N single-day reads when
+        rolling per-activity facts into daily_load_facts — the dominant read cost on a
+        full-history recompute (~one read per calendar day, ~2000 on a multi-year
+        mirror). Keyed by ISO day string. Days with no facts (REST/UNKNOWN/PARTIAL) are
+        simply absent from the result; the caller substitutes an all-NULL row, matching
+        the no-GROUP-BY shape the old per-day query returned for an empty day.
         """
-        row = self._fetchone(
+        rows = self._fetchall(
             """
             SELECT
+              activity_day AS day,
               SUM(distance_m) AS distance_m,
               SUM(moving_time_s) AS moving_time_s,
               SUM(elevation_gain_m) AS elevation_gain_m,
@@ -2113,12 +2118,13 @@ class DuckDBRepository:
               SUM(zone5_seconds) AS zone5_seconds,
               SUM(anomaly_count) AS anomaly_count
             FROM activity_metric_facts
-            WHERE activity_day = CAST(? AS DATE) AND metric_version = ?
+            WHERE activity_day BETWEEN CAST(? AS DATE) AND CAST(? AS DATE)
+              AND metric_version = ?
+            GROUP BY activity_day
             """,
-            [activity_day, metric_version],
+            [start_day, end_day, metric_version],
         )
-        assert row is not None  # SUM/COUNT with no GROUP BY always returns one row
-        return row
+        return {str(row["day"]): row for row in rows}
 
     def rolling_load_aggregate(self, start: str, as_of_day: str, metric_version: int) -> dict[str, Any]:
         """Return the rolling-window load aggregate from daily_load_facts between start and as_of_day.

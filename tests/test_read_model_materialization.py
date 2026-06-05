@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -645,3 +646,44 @@ def test_materialize_batched_fact_upserts_match_sequential(tmp_path, monkeypatch
     for table in fact_tables:
         assert batched[table] == sequential[table], f"{table} diverged between batched and sequential upserts"
         assert len(batched[table]) > 0, f"{table} should have rows (fixture is non-empty)"
+
+
+def test_daily_fact_sums_between_matches_per_day_reads(tmp_path: Path) -> None:
+    """Batched daily-fact range read == N single-day reads (Phase 2 read-batching gate).
+
+    daily_fact_sums_between collapses the materializer's former per-day daily_fact_sums()
+    loop into one GROUP BY scan. Prove the grouped result equals an independent no-GROUP-BY
+    per-day aggregate for every day with facts, and that days with no facts are simply
+    absent from the dict — the shape the materializer maps to a zeroed daily fact.
+    """
+    cols = ("distance_m", "moving_time_s", "elevation_gain_m", "zone4_seconds", "zone5_seconds", "anomaly_count")
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+    with repo:
+        _seed_dirty_activity_with_streams(repo, activity_id=920, day="2026-05-21")
+        _seed_dirty_activity_with_streams(repo, activity_id=921, day="2026-05-10")
+        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+
+        start, end = "2026-05-10", "2026-05-24"
+        batched = repo.daily_fact_sums_between(start, end, 1)
+
+        per_day_sql = (
+            f"SELECT {', '.join(f'SUM({c})' for c in cols)} "
+            "FROM activity_metric_facts WHERE activity_day = CAST(? AS DATE) AND metric_version = ?"
+        )
+        days_with_facts: list[str] = []
+        current, last = date.fromisoformat(start), date.fromisoformat(end)
+        while current <= last:
+            day = current.isoformat()
+            reference = repo.conn.execute(per_day_sql, [day, 1]).fetchone()
+            assert reference is not None  # no-GROUP-BY aggregate always returns one row
+            if any(value is not None for value in reference):
+                days_with_facts.append(day)
+                assert day in batched, f"{day} has facts but is absent from the batched read"
+                assert tuple(batched[day][col] for col in cols) == tuple(reference), (
+                    f"{day} batched sums diverge from the per-day reference"
+                )
+            else:
+                assert day not in batched, f"{day} has no facts but appears in the batched read"
+            current += timedelta(days=1)
+
+    assert days_with_facts == ["2026-05-10", "2026-05-21"], "fixture should populate exactly the two seeded days"

@@ -242,6 +242,20 @@ def _activity_fact(
     }
 
 
+# Per-day SUM shape for a day with no activity_metric_facts rows (REST/UNKNOWN/
+# PARTIAL). Mirrors the all-NULL row the old no-GROUP-BY per-day query returned, so
+# days absent from the batched GROUP BY read still produce a zeroed daily fact via the
+# `sums[...] or 0` accessors below — byte-identical to the per-day-read behaviour.
+_EMPTY_DAILY_SUMS: dict[str, Any] = {
+    "distance_m": None,
+    "moving_time_s": None,
+    "elevation_gain_m": None,
+    "zone4_seconds": None,
+    "zone5_seconds": None,
+    "anomaly_count": None,
+}
+
+
 def _daily_missing_reasons(status: str) -> list[str]:
     if status == "UNKNOWN":
         return ["missing_streams"]
@@ -260,10 +274,13 @@ def _materialize_daily_facts(
     bounds: list[int],
 ) -> dict[str, float]:
     points = repo.daily_load_points_between(start_day, end_day, bounds=bounds)
+    # One GROUP BY range read for the whole window, replacing the former per-day
+    # daily_fact_sums() call inside this loop (the ~2000-read full-recompute lever).
+    sums_by_day = repo.daily_fact_sums_between(start_day, end_day, metric_version)
     daily_trimp: dict[str, float] = {}
     fact_rows: list[dict[str, object]] = []
     for point in points:
-        sums = repo.daily_fact_sums(point.date, metric_version)
+        sums = sums_by_day.get(point.date, _EMPTY_DAILY_SUMS)
         missing = _daily_missing_reasons(point.status)
         fact_rows.append(
             {
