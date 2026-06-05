@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
+from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id, activity_materialization_sources
 from mcp_strava.adapters.duckdb.read_model_materializer import (
     _activity_fact,
     _activity_facts_batched,
@@ -731,7 +731,7 @@ def test_activity_materialization_batch_reads_match_per_activity_methods(tmp_pat
         dirty_rows = repo.dirty_activity_rows_for_materialization(1)
         activity_ids = [int(row["activity_id"]) for row in dirty_rows]
 
-        sources = repo.activity_materialization_sources(activity_ids)
+        sources = activity_materialization_sources(repo, activity_ids)
         scalars = repo.activity_stream_scalars_for_materialization(activity_ids, 0.5)
         hr_max_by_day = repo.max_heartrate_to_dates(str(row["activity_day"]) for row in dirty_rows)
 
@@ -830,10 +830,6 @@ def test_materializer_batch_reads_run_before_write_transaction(tmp_path: Path) -
         def _record_batch_read_depth(self) -> None:
             self.batch_read_depths.append(self._transaction_depth)
 
-        def activity_materialization_sources(self, *args, **kwargs):
-            self._record_batch_read_depth()
-            return super().activity_materialization_sources(*args, **kwargs)
-
         def activity_stream_scalars_for_materialization(self, *args, **kwargs):
             self._record_batch_read_depth()
             return super().activity_stream_scalars_for_materialization(*args, **kwargs)
@@ -857,6 +853,11 @@ def test_materializer_batch_reads_run_before_write_transaction(tmp_path: Path) -
         def stream_altitude_rows_for_activities(self, *args, **kwargs):
             self._record_batch_read_depth()
             return super().stream_altitude_rows_for_activities(*args, **kwargs)
+
+        def _fetchall(self, sql, params=None):
+            if "JOIN activity_source_state" in " ".join(sql.split()):
+                self._record_batch_read_depth()
+            return super()._fetchall(sql, params)
 
     with repo:
         _seed_dirty_activity_with_streams(repo, activity_id=980, day="2026-05-21")

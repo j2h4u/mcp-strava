@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 from statistics import median
 from typing import Any, cast
 
-from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
+from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id, activity_materialization_sources
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.constants import Config
 from mcp_strava.hr_zones import get_zone_model
@@ -259,7 +259,7 @@ def _activity_facts_batched(
         raise RuntimeError(_HR_REST_MISSING_MSG)
 
     activity_ids = [int(row["activity_id"]) for row in dirty_rows]
-    sources = repo.activity_materialization_sources(activity_ids)
+    sources = activity_materialization_sources(repo, activity_ids)
     scalars = repo.activity_stream_scalars_for_materialization(activity_ids, Config.Thresholds.VEL_MOVING)
     hr_max_by_day = repo.max_heartrate_to_dates(str(row["activity_day"]) for row in dirty_rows)
 

@@ -9,7 +9,6 @@ from typing import Any, cast
 
 import duckdb
 
-from mcp_strava.adapters.duckdb.activity_rows import to_activity_row
 from mcp_strava.adapters.duckdb.connection import (
     DuckDBConn,
     duckdb_process_lock,
@@ -17,7 +16,6 @@ from mcp_strava.adapters.duckdb.connection import (
     open_fixture_db,
 )
 from mcp_strava.adapters.duckdb.repository_models import (
-    ActivityMaterializationSource,
     ActivityMetricFactRow,
     ActivityStreamScalars,
     ActivityZoneTrimp,
@@ -1063,32 +1061,6 @@ class DuckDBRepository:
             window = _as_int(row["window_days"])
             by_window.setdefault(window, row)
         return by_window
-
-    def activity_materialization_sources(self, activity_ids: Iterable[int]) -> dict[int, ActivityMaterializationSource]:
-        ids = sorted({int(activity_id) for activity_id in activity_ids})
-        if not ids:
-            return {}
-        placeholders = _placeholders(len(ids))
-        rows = self._fetchall(
-            f"""
-            SELECT a.id, a.date, a.name, a.sport_type, a.distance, a.moving_time,
-                   a.elapsed_time, a.total_elevation_gain, a.summary_json, a.detail_json,
-                   a.synced_at, s.source_hash, s.source_revision
-            FROM activities a
-            JOIN activity_source_state s ON s.activity_id = a.id
-            WHERE a.id IN ({placeholders})
-            """,
-            ids,
-        )
-        sources: dict[int, ActivityMaterializationSource] = {}
-        for row in rows:
-            activity = to_activity_row(row)
-            sources[activity.id] = ActivityMaterializationSource(
-                activity=activity,
-                source_hash=str(row["source_hash"]),
-                source_revision=_as_int(row["source_revision"]),
-            )
-        return sources
 
     def upsert_activity_summary(
         self,
