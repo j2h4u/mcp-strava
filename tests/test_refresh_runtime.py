@@ -11,6 +11,7 @@ import pytest
 from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.stream_read_queries import activity_stream_rows
 from mcp_strava.adapters.duckdb.sync_log_store import read_sync_log
 from mcp_strava.adapters.strava import StravaResponse, StravaUnavailable
 from mcp_strava.adapters.strava.types import StravaRateInfo
@@ -1015,7 +1016,7 @@ def test_sync_streams_requests_all_configured_channels_and_writes_projection_met
             synced_at="2026-05-21T07:00:00Z",
         )
         fetched = sync_streams(repo, transport, since="2026-05-20")
-        stream_rows = repo.activity_stream_rows(500)
+        stream_rows = activity_stream_rows(repo, 500)
         channel_rows = repo._fetchall(
             "SELECT channel_key, original_size, resolution, series_type, status, error FROM stream_channels WHERE activity_id = 500 ORDER BY channel_key"
         )
@@ -1405,7 +1406,7 @@ def test_stream_channel_backfill_rate_limit_keeps_checkpoint_and_rows(tmp_path):
             FakeSleeper(),
         )
         state = _refresh_store(repo).get_refresh_state()
-        rows = repo.activity_stream_rows(500)
+        rows = activity_stream_rows(repo, 500)
 
     assert result["status"] in {"failed", "delayed"}
     assert state.checkpoint_stage == Stage.STREAM_CHANNELS_BACKFILL.value

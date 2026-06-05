@@ -9,6 +9,7 @@ from mcp_strava.adapters.duckdb.athlete_zone_store import insert_athlete_zones, 
 from mcp_strava.adapters.duckdb.kudos_store import kudos_for_activity, list_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.stream_read_queries import activity_stream_rows
 from mcp_strava.adapters.duckdb.sync_log_store import append_sync_log, read_sync_log
 from tests._fixtures_duckdb import create_empty_fixture_db
 
@@ -94,7 +95,7 @@ def test_repository_boundary_covers_activity_stream_zone_kudos_and_synclog(tmp_p
             chunk_size=5,
         )
 
-        stream_rows = repo.activity_stream_rows(1)
+        stream_rows = activity_stream_rows(repo, 1)
         assert len(stream_rows) == 11
 
         with pytest.raises(KeyError):
@@ -118,7 +119,7 @@ def test_repository_boundary_covers_activity_stream_zone_kudos_and_synclog(tmp_p
                 ],
                 chunk_size=5,
             )
-        assert len(repo.activity_stream_rows(1)) == 11
+        assert len(activity_stream_rows(repo, 1)) == 11
 
         replaced = repo.replace_stream_rows_chunked(
             1,
@@ -139,7 +140,7 @@ def test_repository_boundary_covers_activity_stream_zone_kudos_and_synclog(tmp_p
             ],
         )
         assert replaced == 1
-        assert len(repo.activity_stream_rows(1)) == 1
+        assert len(activity_stream_rows(repo, 1)) == 1
 
         insert_athlete_zones(repo, "2026-05-21T07:00:00Z", "[]")
         assert latest_athlete_zones(repo) is not None

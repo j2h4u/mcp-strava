@@ -1130,19 +1130,6 @@ class DuckDBRepository:
             raise
         self.commit()
 
-    # Streams and load
-    def activity_stream_rows(self, activity_id: int) -> list[dict[str, Any]]:
-        return self._fetchall(
-            """
-            SELECT activity_id, time_offset, heartrate, velocity, altitude,
-                   cadence, lat, lng, grade, gap_speed, gap_distance, is_moving, values_json
-            FROM streams
-            WHERE activity_id = ?
-            ORDER BY time_offset ASC
-            """,
-            [activity_id],
-        )
-
     def _sport_where_clause(self, sport_filter: str | None) -> tuple[str, list[object]]:
         params: list[object] = []
         if sport_filter == "training":
