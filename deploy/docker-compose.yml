@@ -20,8 +20,6 @@ services:
       MCP_STRAVA_REFRESH_WORKER_ENABLED: "1"
       MCP_STRAVA_REFRESH_POLL_SECONDS: "60"
       MCP_STRAVA_REFRESH_INTERVAL_SECONDS: "3600"
-      MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE: "50"
-      MCP_STRAVA_READ_MODEL_BATCH_SIZE: "25"
     volumes:
       - /opt/docker/mcp-strava:/runtime
     expose: ["8080"]

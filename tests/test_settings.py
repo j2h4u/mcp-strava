@@ -74,8 +74,6 @@ def test_load_settings_reads_process_environment_when_environ_omitted(
         "MCP_STRAVA_FRESHNESS_WARN_AGE_HOURS",
         "MCP_STRAVA_FRESHNESS_MAX_AGE_HOURS",
         "MCP_STRAVA_REFRESH_INTERVAL_SECONDS",
-        "MCP_STRAVA_STREAM_BACKFILL_BATCH_SIZE",
-        "MCP_STRAVA_READ_MODEL_BATCH_SIZE",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("MCP_STRAVA_PROJECT_ROOT", str(tmp_path))
