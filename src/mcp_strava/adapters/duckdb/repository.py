@@ -2281,63 +2281,6 @@ class DuckDBRepository:
         )
         self._commit_if_standalone()
 
-    # Kudos
-    def list_kudos(self, limit: int = 100) -> list[dict[str, Any]]:
-        return self._fetchall(
-            """
-            SELECT activity_id, firstname, lastname, fetched_at
-            FROM kudos
-            ORDER BY fetched_at DESC
-            LIMIT ?
-            """,
-            [limit],
-        )
-
-    def kudos_for_activity(self, activity_id: int) -> list[dict[str, Any]]:
-        return self._fetchall(
-            """
-            SELECT activity_id, firstname, lastname, fetched_at
-            FROM kudos
-            WHERE activity_id = ?
-            ORDER BY firstname, lastname
-            """,
-            [activity_id],
-        )
-
-    def activities_missing_kudos(self, window_days: int | None = None) -> list[int]:
-        """Activity ids that have kudos on Strava but none mirrored locally yet.
-
-        Selects activities whose summary `kudos_count > 0` and that have no rows
-        in the local `kudos` table, newest first; optionally bounded to the last
-        `window_days`. Returns ids only — the caller fetches each activity's
-        kudoers from the API. Keeps the raw DB-API rows inside the repository so
-        callers receive typed `int`s, never positional tuples (the boundary that
-        prevents the `row['id']`-on-a-tuple class of bug).
-        """
-        query = """
-            SELECT a.id FROM activities a
-            WHERE CAST(json_extract(a.summary_json, '$.kudos_count') AS INTEGER) > 0
-              AND NOT EXISTS (SELECT 1 FROM kudos k WHERE k.activity_id = a.id)
-        """
-        params: list[object] = []
-        if window_days is not None:
-            query += " AND a.date >= date('now', ?)"
-            params.append(f"-{window_days} days")
-        query += " ORDER BY a.date DESC"
-        return [_as_int(row["id"]) for row in self._fetchall(query, params)]
-
-    def upsert_kudos(self, activity_id: int, firstname: str, lastname: str, fetched_at: str) -> None:
-        self._execute(
-            """
-            INSERT INTO kudos (activity_id, firstname, lastname, fetched_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(activity_id, firstname, lastname) DO UPDATE SET
-              fetched_at = excluded.fetched_at
-            """,
-            [activity_id, firstname, lastname, fetched_at],
-        )
-        self._commit_if_standalone()
-
     # Sync metadata
     def append_sync_log(
         self,

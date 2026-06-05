@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from mcp_strava.adapters.duckdb.kudos_store import kudos_for_activity, list_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from tests._fixtures_duckdb import create_empty_fixture_db
@@ -44,7 +45,7 @@ def _guard_load_paths_do_not_use_raw_activity_stream_sql() -> list[str]:
     return violations
 
 
-def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_path: Path) -> None:
+def test_repository_boundary_covers_activity_stream_zone_kudos_and_synclog(tmp_path: Path) -> None:
     fixture = tmp_path / "repo.duckdb"
     create_empty_fixture_db(fixture)
 
@@ -139,9 +140,9 @@ def test_repository_methods_cover_activity_stream_zone_kudos_and_synclog(tmp_pat
         repo.insert_athlete_zones("2026-05-21T07:00:00Z", "[]")
         assert repo.latest_athlete_zones() is not None
 
-        repo.upsert_kudos(1, "A", "B", "2026-05-21T08:00:00Z")
-        assert repo.list_kudos(limit=5)
-        assert repo.kudos_for_activity(1)
+        upsert_kudos(repo, 1, "A", "B", "2026-05-21T08:00:00Z")
+        assert list_kudos(repo, limit=5)
+        assert kudos_for_activity(repo, 1)
 
         repo.append_sync_log(
             timestamp="2026-05-21T09:00:00Z",

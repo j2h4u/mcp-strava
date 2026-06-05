@@ -4,6 +4,7 @@ from typing import ClassVar
 import pytest
 
 from mcp_strava.adapters.duckdb.connection import open_expected_mirror_db, open_fixture_db
+from mcp_strava.adapters.duckdb.kudos_store import activities_missing_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.schema import create_schema
 
 
@@ -654,9 +655,9 @@ def test_activities_missing_kudos_filters_and_returns_typed_ids(tmp_path: Path) 
         _seed(repo, 201, kudos_count=3)  # has kudos upstream, none mirrored -> included
         _seed(repo, 202, kudos_count=0)  # no kudos upstream -> excluded
         _seed(repo, 203, kudos_count=5)  # already mirrored below -> excluded
-        repo.upsert_kudos(203, "Ada", "Lovelace", "2026-05-21T07:00:00Z")
+        upsert_kudos(repo, 203, "Ada", "Lovelace", "2026-05-21T07:00:00Z")
 
-        ids = repo.activities_missing_kudos()
+        ids = activities_missing_kudos(repo)
 
         assert ids == [201]
         assert all(isinstance(i, int) for i in ids)

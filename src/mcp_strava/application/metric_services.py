@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, cast
 
 from mcp_strava.adapters.duckdb.connection import ReadConn
+from mcp_strava.adapters.duckdb.kudos_store import kudos_for_activity
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.duckdb.repository_models import (
     RollingPeriodFactRow,
@@ -309,7 +310,7 @@ def get_workout_detail_service(
         data = activity_payload(
             row,
             now=instant,
-            kudos_names=kudos_names(repo.kudos_for_activity(resolved_id)),
+            kudos_names=kudos_names(kudos_for_activity(repo, resolved_id)),
             include_detail_context=True,
         )
         missing = parse_json_list(row["missing_reasons_json"])
