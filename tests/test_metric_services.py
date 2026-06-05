@@ -758,7 +758,7 @@ def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_
 
 
 def test_project_fitness_state_service_supports_standard_scenarios(tmp_path: Path) -> None:
-    from mcp_strava.application.metric_services import project_fitness_state_service
+    from mcp_strava.application.projection_services import project_fitness_state_service
 
     repo = _repo_with_facts(tmp_path / "project.db")
     try:
@@ -798,8 +798,8 @@ def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path) -> None:
         get_fitness_state_service,
         get_workout_detail_service,
         list_workouts_service,
-        project_fitness_state_service,
     )
+    from mcp_strava.application.projection_services import project_fitness_state_service
 
     repo = _repo_with_facts(tmp_path / "registry-match.db")
     try:
@@ -893,7 +893,7 @@ def test_metric_services_use_duckdb_repository_for_duckdb_connections(
 
 
 def test_project_fitness_state_service_validates_custom_rows(tmp_path: Path) -> None:
-    from mcp_strava.application.metric_services import project_fitness_state_service
+    from mcp_strava.application.projection_services import project_fitness_state_service
 
     conn = _fixture_conn_compare(tmp_path / "project-custom.db")
     try:
