@@ -2265,40 +2265,6 @@ class DuckDBRepository:
             return self.count_stream_points()
         return self._scalar_int("SELECT COUNT(*) FROM streams WHERE values_json IS NULL OR values_json = ''")
 
-    def activities_missing_streams(self, since: str | None = None) -> list[RepositoryActivityRow]:
-        rows = self._fetchall(
-            """
-            SELECT a.id, a.date, a.name, a.sport_type, a.distance, a.moving_time,
-                   a.elapsed_time, a.total_elevation_gain, a.summary_json,
-                   a.detail_json, a.synced_at
-            FROM activities a
-            LEFT JOIN streams s ON s.activity_id = a.id
-            WHERE s.activity_id IS NULL
-              AND (? IS NULL OR a.activity_day >= CAST(? AS DATE))
-            GROUP BY a.id, a.date, a.name, a.sport_type, a.distance, a.moving_time,
-                     a.elapsed_time, a.total_elevation_gain, a.summary_json,
-                     a.detail_json, a.synced_at, a.activity_day
-            ORDER BY a.activity_day DESC, a.id DESC
-            """,
-            [since, since],
-        )
-        return [self._to_activity_row(row) for row in rows]
-
-    def activities_missing_details(self, since: str | None = None) -> list[RepositoryActivityRow]:
-        rows = self._fetchall(
-            """
-            SELECT id, date, name, sport_type, distance, moving_time,
-                   elapsed_time, total_elevation_gain, summary_json,
-                   detail_json, synced_at
-            FROM activities
-            WHERE detail_json IS NULL
-              AND (? IS NULL OR activity_day >= CAST(? AS DATE))
-            ORDER BY activity_day DESC, id DESC
-            """,
-            [since, since],
-        )
-        return [self._to_activity_row(row) for row in rows]
-
     def _to_activity_row(self, row) -> RepositoryActivityRow:
         return RepositoryActivityRow(
             id=int(row["id"]),

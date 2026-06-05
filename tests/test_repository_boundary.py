@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from mcp_strava.adapters.duckdb.activity_selectors import activities_missing_details, activities_missing_streams
 from mcp_strava.adapters.duckdb.athlete_zone_store import insert_athlete_zones, latest_athlete_zones
 from mcp_strava.adapters.duckdb.kudos_store import kudos_for_activity, list_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
@@ -328,7 +329,7 @@ def test_activities_missing_streams_filters_by_since_per_D16(tmp_path: Path) -> 
             summary_json="{}",
             synced_at="2026-05-20T07:00:00Z",
         )
-        rows = repo.activities_missing_streams("2026-05-19")
+        rows = activities_missing_streams(repo, "2026-05-19")
 
     assert [row.id for row in rows] == [101]
 
@@ -350,7 +351,7 @@ def test_activities_missing_details_filters_by_since_per_D16(tmp_path: Path) -> 
             summary_json="{}",
             synced_at="2026-05-20T07:00:00Z",
         )
-        rows = repo.activities_missing_details("2026-05-19")
+        rows = activities_missing_details(repo, "2026-05-19")
 
     assert [row.id for row in rows] == [101]
 

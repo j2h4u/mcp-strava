@@ -8,6 +8,10 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from mcp_strava.adapters.duckdb.activity_selectors import (
+    activities_missing_details,
+    activities_missing_streams,
+)
 from mcp_strava.adapters.duckdb.kudos_store import activities_missing_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.read_model_materializer import (
     materialize_read_model as materialize_duckdb_read_model,
@@ -244,7 +248,7 @@ def sync_streams(
 ) -> int:
     refresh_store = RefreshStateStore.from_connection(repo.conn)
     fetched = 0
-    for activity in repo.activities_missing_streams(since):
+    for activity in activities_missing_streams(repo, since):
         refresh_store.set_checkpoint(checkpoint_stage.value, str(activity.id))
         response = transport.fetch(f"/activities/{activity.id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
         if isinstance(response.data, dict):
@@ -264,7 +268,7 @@ def sync_details(
 ) -> int:
     refresh_store = RefreshStateStore.from_connection(repo.conn)
     fetched = 0
-    for activity in repo.activities_missing_details(since):
+    for activity in activities_missing_details(repo, since):
         refresh_store.set_checkpoint(checkpoint_stage.value, str(activity.id))
         response = transport.fetch(f"/activities/{activity.id}")
         if isinstance(response.data, dict):
