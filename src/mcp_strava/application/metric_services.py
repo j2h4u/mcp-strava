@@ -8,9 +8,9 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
 from mcp_strava.adapters.duckdb.connection import ReadConn
-from mcp_strava.adapters.duckdb.repository import (
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.repository_models import (
     ActivityMetricFactRow,
-    DuckDBRepository,
     RollingPeriodFactRow,
     TrainingModelDayRow,
 )

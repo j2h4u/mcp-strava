@@ -16,6 +16,15 @@ from mcp_strava.adapters.duckdb.connection import (
     open_expected_mirror_db,
     open_fixture_db,
 )
+from mcp_strava.adapters.duckdb.repository_models import (
+    ActivityMaterializationSource,
+    ActivityMetricFactRow,
+    ActivityStreamScalars,
+    ActivityZoneTrimp,
+    DailyLoadFactRow,
+    RollingPeriodFactRow,
+    TrainingModelDayRow,
+)
 from mcp_strava.adapters.duckdb.source_hashing import canonical_semantic_value, semantic_json_hash
 from mcp_strava.adapters.duckdb.trimp_sql import build_trimp_sql
 from mcp_strava.constants import Config
@@ -99,33 +108,6 @@ class _SourceStateRow(TypedDict):
     changed_at: object
 
 
-@dataclass(frozen=True)
-class ActivityMaterializationSource:
-    activity: RepositoryActivityRow
-    source_hash: str
-    source_revision: int
-
-
-@dataclass(frozen=True)
-class ActivityStreamScalars:
-    stream_count: int
-    hr_count: int
-    min_hr: int | None
-    max_hr: int | None
-    cardiac_cost: float | None
-    median_hr: float | None
-
-
-@dataclass(frozen=True)
-class ActivityZoneTrimp:
-    zone1_seconds: int
-    zone2_seconds: int
-    zone3_seconds: int
-    zone4_seconds: int
-    zone5_seconds: int
-    trimp: float
-
-
 class _SourceRevisionRow(TypedDict):
     source_hash: str
     source_revision: int
@@ -163,165 +145,6 @@ class _ChannelStatusRow(TypedDict):
 
 class _ValuesJsonRow(TypedDict):
     values_json: object
-
-
-# ─── Wide fact-read TypedDicts (public repository read boundary) ───
-#
-# Each TypedDict below maps one SELECTed column set to a concrete shape so
-# that application-layer callers never see ``dict[str, Any]``. The cast from
-# ``Row`` (``dict[str, object]``) to these TypedDicts happens via ``_all``/
-# ``_one`` — exactly one controlled cast per public read method.
-#
-# Nullable columns (SQL NULL / outer-join) are typed ``X | None``.
-# DATE columns come back as ISO strings (see ``_normalize_cell``).
-
-
-class ActivityMetricFactRow(TypedDict):
-    """Row returned by ``fetch_activity_metric_facts`` / ``fetch_activity_metric_fact``.
-
-    Columns: ``activity_metric_facts f`` (SELECT *) joined with
-    ``activities a`` (name, date, summary_json, detail_json).
-    Metric-specific numeric columns (trimp, zone*_seconds, etc.) are all
-    nullable because a fact row is written incrementally — a column is NULL
-    until the activity is (re)materialised with that metric.
-    """
-
-    # ── PK / identity ──
-    activity_id: object  # int stored as BIGINT; object to match _normalize_cell
-    activity_day: object  # DATE → ISO str
-    metric_version: object  # BIGINT
-    # ── Completeness ──
-    completeness_status: object  # VARCHAR
-    missing_reasons_json: object  # VARCHAR (JSON list)
-    source_revision: object  # BIGINT
-    computed_at: object  # VARCHAR timestamp
-    # ── Core metric columns (nullable — NULL until materialised) ──
-    trimp: object  # DOUBLE | NULL
-    distance_m: object  # DOUBLE | NULL
-    moving_time_s: object  # BIGINT | NULL
-    elapsed_time_s: object  # BIGINT | NULL
-    elevation_gain_m: object  # DOUBLE | NULL
-    zone1_seconds: object  # BIGINT | NULL
-    zone2_seconds: object  # BIGINT | NULL
-    zone3_seconds: object  # BIGINT | NULL
-    zone4_seconds: object  # BIGINT | NULL
-    zone5_seconds: object  # BIGINT | NULL
-    hr_recovery_pause_count: object  # BIGINT | NULL
-    hr_recovery_total_rest_sec: object  # BIGINT | NULL
-    hr_recovery_median_rate: object  # DOUBLE | NULL
-    hr_recovery_best_rate: object  # DOUBLE | NULL
-    hr_recovery_worst_rate: object  # DOUBLE | NULL
-    hr_recovery_avg_rate: object  # DOUBLE | NULL
-    vertical_speed_vmh: object  # DOUBLE | NULL
-    vertical_speed_total_ascent_m: object  # DOUBLE | NULL
-    vertical_speed_duration_hours: object  # DOUBLE | NULL
-    cardiac_cost: object  # DOUBLE | NULL
-    adjusted_cardiac_cost: object  # DOUBLE | NULL
-    cardiac_drift_pct: object  # DOUBLE | NULL
-    cardiac_drift_significant: object  # BIGINT | NULL
-    cardiac_drift_severity: object  # VARCHAR | NULL
-    cardiac_drift_quality: object  # VARCHAR | NULL
-    hrr_pct: object  # DOUBLE | NULL
-    anomaly_count: object  # BIGINT | NULL
-    start_time_local: object  # VARCHAR | NULL
-    sport_type: object  # VARCHAR
-    # ── Joined from activities ──
-    activity_name: object  # VARCHAR | NULL
-    activity_date: object  # VARCHAR | NULL
-    summary_json: object  # VARCHAR | NULL
-    detail_json: object  # VARCHAR | NULL
-
-
-class DailyLoadFactRow(TypedDict):
-    """Row returned by ``fetch_daily_load_facts``.
-
-    Columns: ``SELECT * FROM daily_load_facts``.
-    """
-
-    day: object  # DATE → ISO str
-    scope: object  # VARCHAR
-    sport_type: object  # VARCHAR
-    metric_version: object  # BIGINT
-    computed_at: object  # VARCHAR
-    completeness_status: object  # VARCHAR
-    missing_reasons_json: object  # VARCHAR
-    activity_count: object  # BIGINT
-    stream_point_count: object  # BIGINT
-    heartrate_point_count: object  # BIGINT
-    observed_trimp: object  # DOUBLE | NULL
-    effective_trimp: object  # DOUBLE
-    distance_m: object  # DOUBLE
-    moving_time_s: object  # BIGINT
-    elevation_gain_m: object  # DOUBLE
-    zone4_seconds: object  # BIGINT
-    zone5_seconds: object  # BIGINT
-    high_zone_seconds: object  # BIGINT
-    anomaly_count: object  # BIGINT
-
-
-class TrainingModelDayRow(TypedDict):
-    """Row returned by ``fetch_latest_training_model_day``.
-
-    Columns: ``SELECT * FROM training_model_daily``.
-    """
-
-    day: object  # DATE → ISO str
-    scope: object  # VARCHAR
-    sport_type: object  # VARCHAR
-    metric_version: object  # BIGINT
-    computed_at: object  # VARCHAR
-    completeness_status: object  # VARCHAR
-    missing_reasons_json: object  # VARCHAR
-    effective_trimp: object  # DOUBLE
-    observed_trimp: object  # DOUBLE | NULL
-    fitness: object  # DOUBLE | NULL
-    fatigue: object  # DOUBLE | NULL
-    form: object  # DOUBLE | NULL
-    form_zone: object  # VARCHAR | NULL
-    acwr_zone: object  # VARCHAR | NULL
-    acwr: object  # DOUBLE | NULL
-    load_7d: object  # DOUBLE | NULL
-    load_28d: object  # DOUBLE | NULL
-    load_42d: object  # DOUBLE | NULL
-    input_days: object  # BIGINT
-    missing_days: object  # BIGINT
-
-
-class RollingPeriodFactRow(TypedDict):
-    """Row returned by ``fetch_rolling_period_facts`` /
-    ``fetch_rolling_period_facts_by_windows``.
-
-    Columns: ``SELECT * FROM rolling_period_facts``.
-    """
-
-    as_of_day: object  # DATE → ISO str
-    window_days: object  # BIGINT
-    scope: object  # VARCHAR
-    sport_type: object  # VARCHAR
-    metric_version: object  # BIGINT
-    computed_at: object  # VARCHAR
-    completeness_status: object  # VARCHAR
-    missing_reasons_json: object  # VARCHAR
-    activity_count: object  # BIGINT
-    active_days: object  # BIGINT
-    rest_days: object  # BIGINT
-    observed_trimp: object  # DOUBLE | NULL
-    effective_trimp: object  # DOUBLE
-    distance_m: object  # DOUBLE
-    moving_time_s: object  # BIGINT
-    elevation_gain_m: object  # DOUBLE
-    high_zone_seconds: object  # BIGINT
-    anomaly_count: object  # BIGINT
-    fitness: object  # DOUBLE | NULL
-    fatigue: object  # DOUBLE | NULL
-    form: object  # DOUBLE | NULL
-    form_zone: object  # VARCHAR | NULL
-    acwr_zone: object  # VARCHAR | NULL
-    acwr: object  # DOUBLE | NULL
-    median_cardiac_cost: object  # DOUBLE | NULL
-    median_adjusted_cardiac_cost: object  # DOUBLE | NULL
-    median_hr_recovery: object  # DOUBLE | NULL
-    median_cardiac_drift_pct: object  # DOUBLE | NULL
 
 
 def _emit(event: str, **fields: object) -> None:
