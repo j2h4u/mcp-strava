@@ -12,6 +12,7 @@ from mcp_strava.adapters.duckdb.connection import DuckDBConn
 from mcp_strava.adapters.duckdb.schema import create_aggregate_views
 from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.metric_registry import (
+    AGGREGATE_BUCKET_INTERVALS,
     DEFAULT_AGGREGATE_QUANTILES,
     METRIC_REGISTRY,
     STATUS_FACT_REGISTRY,
@@ -1069,13 +1070,7 @@ def _bucket_expression(request: AggregateRequest, day_column: str, effective_sta
         return f"DATE '{effective_start.isoformat()}'"
     if request.bucket == "all_time":
         return f"DATE '{effective_start.isoformat()}'"
-    widths = {
-        "day": "1 day",
-        "week": "1 week",
-        "month": "1 month",
-        "year": "1 year",
-    }
-    return f"time_bucket(INTERVAL '{widths[request.bucket]}', CAST({day_column} AS DATE))"
+    return f"time_bucket(INTERVAL '{AGGREGATE_BUCKET_INTERVALS[request.bucket]}', CAST({day_column} AS DATE))"
 
 
 def _sport_output_expression(request: AggregateRequest) -> str:

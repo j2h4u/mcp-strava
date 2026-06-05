@@ -417,7 +417,7 @@ def _freshness_clock(now: datetime | None) -> datetime:
 
 
 def _rolling_by_window(repo: DuckDBRepository, as_of_day: str) -> dict[int, RollingPeriodFactRow]:
-    windows = (7, 14, 28, 90)
+    windows = tuple(sorted({window for window, _column, _scale in ROLLING_FACTS.values()}))
     version = repo.current_metric_version()
     return repo.fetch_rolling_period_facts_by_windows(
         as_of_day,

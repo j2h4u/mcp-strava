@@ -6,6 +6,7 @@ import pytest
 from mcp_strava.adapters.duckdb import schema
 from mcp_strava.adapters.duckdb.schema import DUCKDB_TABLES, DUCKDB_VIEWS, create_schema
 from mcp_strava.metric_registry import (
+    AGGREGATE_BUCKET_INTERVALS,
     AGGREGATE_METRIC_BUNDLES,
     AGGREGATE_MODES,
     EXCLUDED_INTERPRETATIONS,
@@ -266,6 +267,7 @@ def test_compare_periods_registry_metrics_resolve_through_aggregate_bundle():
 def test_aggregate_registry_contract_enumerates_supported_modes_and_filters():
     assert set(AGGREGATE_MODES) == EXPECTED_AGGREGATE_MODES
     assert set(SUPPORTED_AGGREGATE_BUCKETS) == EXPECTED_AGGREGATE_BUCKETS
+    assert set(AGGREGATE_BUCKET_INTERVALS) == EXPECTED_AGGREGATE_BUCKETS - {"all_time"}
     assert set(SUPPORTED_AGGREGATE_SCOPES) == EXPECTED_AGGREGATE_SCOPES
     assert set(SUPPORTED_ROLLING_WINDOW_DAYS) == EXPECTED_ROLLING_WINDOWS
     assert set(MATERIALIZED_ROLLING_WINDOW_DAYS) == EXPECTED_ROLLING_WINDOWS

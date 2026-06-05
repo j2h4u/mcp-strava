@@ -34,7 +34,13 @@ AGGREGATE_MODES = (
     "distribution",
     "kudos_count",
 )
-SUPPORTED_AGGREGATE_BUCKETS = ("day", "week", "month", "year", "all_time")
+AGGREGATE_BUCKET_INTERVALS = {
+    "day": "1 day",
+    "week": "1 week",
+    "month": "1 month",
+    "year": "1 year",
+}
+SUPPORTED_AGGREGATE_BUCKETS = (*AGGREGATE_BUCKET_INTERVALS, "all_time")
 SUPPORTED_AGGREGATE_SCOPES = ("global", "per_sport", "both")
 SUPPORTED_ROLLING_WINDOW_DAYS = (7, 14, 28, 42, 90)
 MATERIALIZED_ROLLING_WINDOW_DAYS = SUPPORTED_ROLLING_WINDOW_DAYS
