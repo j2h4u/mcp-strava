@@ -312,6 +312,25 @@ def _emit(event: str, **fields: object) -> None:
 # injection. Defense-in-depth for the single-user threat model.
 _SQL_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+# Stream-row insert column order (must match the streams table) and the per-statement
+# row cap for batched multi-row INSERTs in _insert_stream_rows. See that method for why.
+_STREAM_INSERT_COLUMNS = (
+    "activity_id",
+    "time_offset",
+    "heartrate",
+    "velocity",
+    "altitude",
+    "cadence",
+    "lat",
+    "lng",
+    "grade",
+    "gap_speed",
+    "gap_distance",
+    "is_moving",
+    "values_json",
+)
+_STREAM_INSERT_STMT_ROWS = 250
+
 
 def _safe_identifier(name: str) -> str:
     if not _SQL_IDENTIFIER.match(name):
@@ -619,12 +638,6 @@ class DuckDBRepository:
             return self.conn.execute(sql, list(params or []))
         with duckdb_process_lock():
             return self.conn.execute(sql, list(params or []))
-
-    def _executemany(self, sql: str, params: Iterable[Iterable[object]]):
-        if self._transaction_depth > 0:
-            return self.conn.executemany(sql, params)
-        with duckdb_process_lock():
-            return self.conn.executemany(sql, params)
 
     def _fetchone(self, sql: str, params: Iterable[object] | None = None) -> Row | None:
         if self._transaction_depth > 0:
@@ -2290,47 +2303,41 @@ class DuckDBRepository:
         return len(payload)
 
     def _insert_stream_rows(self, activity_id: int, rows: list[dict], chunk_size: int) -> None:
-        for start in range(0, len(rows), chunk_size):
-            chunk = rows[start : start + chunk_size]
-            bound = [
-                (
-                    activity_id,
-                    row["time_offset"],
-                    row.get("heartrate"),
-                    row.get("velocity"),
-                    row.get("altitude"),
-                    row.get("cadence"),
-                    row.get("lat"),
-                    row.get("lng"),
-                    row.get("grade"),
-                    row.get("gap_speed"),
-                    row.get("gap_distance"),
-                    row.get("is_moving"),
-                    row.get("values_json"),
+        # DuckDB is columnar: a per-row ``executemany`` — and the never-firing
+        # ``ON CONFLICT DO UPDATE`` this used to carry — runs ~3.5x slower than batched
+        # multi-row INSERTs. Every caller writes a clean slate (replace_* DELETE the
+        # activity's rows first; insert_stream_rows_chunked targets a fresh activity), so a
+        # plain INSERT is correct and a genuine (activity_id, time_offset) duplicate SHOULD
+        # fail loudly rather than silently upsert. The per-statement row count is capped
+        # (not the caller's chunk_size) because DuckDB parses the VALUES literal and that
+        # cost grows with the placeholder count; 250 rows stays one statement for
+        # test-size blocks while keeping long rides off the quadratic-parse tail.
+        columns = ", ".join(_STREAM_INSERT_COLUMNS)
+        placeholder = "(" + ", ".join(["?"] * len(_STREAM_INSERT_COLUMNS)) + ")"
+        step = min(chunk_size, _STREAM_INSERT_STMT_ROWS)
+        for start in range(0, len(rows), step):
+            chunk = rows[start : start + step]
+            params: list[object] = []
+            for row in chunk:
+                params.extend(
+                    (
+                        activity_id,
+                        row["time_offset"],
+                        row.get("heartrate"),
+                        row.get("velocity"),
+                        row.get("altitude"),
+                        row.get("cadence"),
+                        row.get("lat"),
+                        row.get("lng"),
+                        row.get("grade"),
+                        row.get("gap_speed"),
+                        row.get("gap_distance"),
+                        row.get("is_moving"),
+                        row.get("values_json"),
+                    )
                 )
-                for row in chunk
-            ]
-            self._executemany(
-                """
-                INSERT INTO streams
-                (activity_id, time_offset, heartrate, velocity, altitude, cadence,
-                 lat, lng, grade, gap_speed, gap_distance, is_moving, values_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(activity_id, time_offset) DO UPDATE SET
-                    heartrate=excluded.heartrate,
-                    velocity=excluded.velocity,
-                    altitude=excluded.altitude,
-                    cadence=excluded.cadence,
-                    lat=excluded.lat,
-                    lng=excluded.lng,
-                    grade=excluded.grade,
-                    gap_speed=excluded.gap_speed,
-                    gap_distance=excluded.gap_distance,
-                    is_moving=excluded.is_moving,
-                    values_json=excluded.values_json
-                """,
-                bound,
-            )
+            values_clause = ", ".join([placeholder] * len(chunk))
+            self._execute(f"INSERT INTO streams ({columns}) VALUES {values_clause}", params)
 
     def delete_stream_rows_for_activity(self, activity_id: int) -> None:
         self.begin()
