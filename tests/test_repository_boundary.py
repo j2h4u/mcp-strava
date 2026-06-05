@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from mcp_strava.adapters.duckdb.athlete_zone_store import insert_athlete_zones, latest_athlete_zones
 from mcp_strava.adapters.duckdb.kudos_store import kudos_for_activity, list_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
@@ -138,8 +139,8 @@ def test_repository_boundary_covers_activity_stream_zone_kudos_and_synclog(tmp_p
         assert replaced == 1
         assert len(repo.activity_stream_rows(1)) == 1
 
-        repo.insert_athlete_zones("2026-05-21T07:00:00Z", "[]")
-        assert repo.latest_athlete_zones() is not None
+        insert_athlete_zones(repo, "2026-05-21T07:00:00Z", "[]")
+        assert latest_athlete_zones(repo) is not None
 
         upsert_kudos(repo, 1, "A", "B", "2026-05-21T08:00:00Z")
         assert list_kudos(repo, limit=5)

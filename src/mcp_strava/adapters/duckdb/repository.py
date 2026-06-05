@@ -2265,18 +2265,6 @@ class DuckDBRepository:
             return self.count_stream_points()
         return self._scalar_int("SELECT COUNT(*) FROM streams WHERE values_json IS NULL OR values_json = ''")
 
-    # Zones
-    def latest_athlete_zones(self) -> str | None:
-        row = self._fetchone("SELECT zones_json FROM athlete_zones ORDER BY fetched_at DESC LIMIT 1")
-        return str(row["zones_json"]) if row else None
-
-    def insert_athlete_zones(self, fetched_at: str, zones_json: str) -> None:
-        self._execute(
-            "INSERT INTO athlete_zones (id, fetched_at, zones_json) VALUES (?, ?, ?)",
-            [self._next_id("athlete_zones"), fetched_at, zones_json],
-        )
-        self._commit_if_standalone()
-
     def activities_missing_streams(self, since: str | None = None) -> list[RepositoryActivityRow]:
         rows = self._fetchall(
             """
