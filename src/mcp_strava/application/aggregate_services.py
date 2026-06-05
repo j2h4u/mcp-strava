@@ -139,7 +139,7 @@ def _product_bundle_payload(
 ) -> dict[str, Any] | None:
     if bundle_id is None:
         return None
-    from mcp_strava.application.product_facts import format_aggregate_product_bundle
+    from mcp_strava.application.product_bundle_format import format_aggregate_product_bundle
 
     return format_aggregate_product_bundle(bundle_id, rows, read_model=read_model)
 
