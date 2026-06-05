@@ -1,6 +1,8 @@
 """Offline materialization for DuckDB read-model facts."""
 
 import json
+import logging
+import time
 from datetime import UTC, date, datetime, timedelta
 from statistics import median
 from typing import Any, cast
@@ -20,6 +22,8 @@ from mcp_strava.settings import Settings, get_settings
 from mcp_strava.training import acwr_zone, calc_banister_series, form_zone
 
 ROLLING_WINDOWS = MATERIALIZED_ROLLING_WINDOW_DAYS
+
+logger = logging.getLogger(__name__)
 
 
 def _now_parts(now: str | datetime | None) -> tuple[str, str]:
@@ -257,10 +261,11 @@ def _materialize_daily_facts(
 ) -> dict[str, float]:
     points = repo.daily_load_points_between(start_day, end_day, bounds=bounds)
     daily_trimp: dict[str, float] = {}
+    fact_rows: list[dict[str, object]] = []
     for point in points:
         sums = repo.daily_fact_sums(point.date, metric_version)
         missing = _daily_missing_reasons(point.status)
-        repo.upsert_daily_load_fact(
+        fact_rows.append(
             {
                 "day": point.date,
                 "scope": "all",
@@ -284,6 +289,7 @@ def _materialize_daily_facts(
             }
         )
         daily_trimp[point.date] = float(point.effective_trimp or 0.0)
+    repo.upsert_daily_load_facts(fact_rows)
     return daily_trimp
 
 
@@ -298,6 +304,7 @@ def _materialize_model_facts(
 ) -> None:
     series = calc_banister_series(daily_trimp, end_date=end_day)
     wanted = set(_date_range(start_day, end_day))
+    fact_rows: list[dict[str, object]] = []
     for point in series:
         if point["date"] not in wanted:
             continue
@@ -306,7 +313,7 @@ def _materialize_model_facts(
         fatigue = float(point["fatigue"])
         form = float(point["form"])
         acwr = round(fatigue / fitness, 3) if fitness > 0 else None
-        repo.upsert_training_model_daily_fact(
+        fact_rows.append(
             {
                 "day": point["date"],
                 "scope": "all",
@@ -330,6 +337,7 @@ def _materialize_model_facts(
                 "missing_days": 0,
             }
         )
+    repo.upsert_training_model_daily_facts(fact_rows)
 
 
 def _materialize_rolling_facts(
@@ -340,12 +348,13 @@ def _materialize_rolling_facts(
     computed_at: str,
 ) -> None:
     as_of = date.fromisoformat(as_of_day)
+    fact_rows: list[dict[str, object]] = []
     for window in ROLLING_WINDOWS:
         start = (as_of - timedelta(days=window - 1)).isoformat()
         row = repo.rolling_load_aggregate(start, as_of_day, metric_version)
         model = repo.training_model_row(as_of_day, metric_version)
         metric_rows = repo.rolling_cardiac_metric_rows(start, as_of_day, metric_version)
-        repo.upsert_rolling_period_fact(
+        fact_rows.append(
             {
                 "as_of_day": as_of_day,
                 "window_days": window,
@@ -379,6 +388,7 @@ def _materialize_rolling_facts(
                 "median_cardiac_drift_pct": _median_or_none([item["cardiac_drift_pct"] for item in metric_rows]),
             }
         )
+    repo.upsert_rolling_period_facts(fact_rows)
 
 
 def _record_failed_run(repo: DuckDBRepository, started_at: str, metric_version: int, error: Exception) -> None:
@@ -429,6 +439,7 @@ def materialize_read_model(
     if not dirty_rows:
         return {"status": "noop", "activities_materialized": 0, "dirty_rows_cleared": 0}
 
+    started = time.perf_counter()
     start_day = min(str(row["activity_day"]) for row in dirty_rows)
     end_day = max(today, max(str(row["activity_day"]) for row in dirty_rows))
 
@@ -449,12 +460,15 @@ def materialize_read_model(
     repo.begin()
     try:
         activity_count = 0
+        activity_facts: list[dict[str, object]] = []
         for dirty in dirty_rows:
-            fact = _activity_fact(repo, dirty, metric_version, computed_at, _settings)
-            repo.upsert_activity_metric_fact(fact)
+            # Compute stays per-activity (and renews the lease as it goes); only the WRITE
+            # is batched after the loop, collapsing N single-row upserts to ~1 statement.
+            activity_facts.append(_activity_fact(repo, dirty, metric_version, computed_at, _settings))
             activity_count += 1
             if renew_lease is not None:
                 renew_lease()
+        repo.upsert_activity_metric_facts(activity_facts)
 
         daily_trimp = _materialize_daily_facts(
             repo,
@@ -503,6 +517,16 @@ def materialize_read_model(
         raise
 
     repo.commit()
+    # Operational counter for a domain that has regressed before: surfaces materialize
+    # cost so the next slowdown is visible without a profiler.
+    logger.info(
+        "read-model materialize: activities=%d daily=%d rolling=%d cleared=%d elapsed_ms=%d",
+        activity_count,
+        len(daily_trimp),
+        len(ROLLING_WINDOWS),
+        cleared,
+        int((time.perf_counter() - started) * 1000),
+    )
     return {
         "status": "ok",
         "activities_materialized": activity_count,

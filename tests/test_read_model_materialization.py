@@ -105,7 +105,7 @@ def test_duckdb_materializer_rolls_back_facts_and_keeps_dirty_rows_on_failure(tm
     _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
 
     class FailingDailyFactRepo(DuckDBRepository):
-        def upsert_daily_load_fact(self, *args, **kwargs):
+        def upsert_daily_load_facts(self, *args, **kwargs):
             raise RuntimeError("daily fact failed")
 
     with repo:
@@ -177,7 +177,7 @@ def test_WR_03_record_failed_run_commits_under_process_lock(tmp_path: Path, monk
     commit_under_lock: list[bool] = []
 
     class FailingDailyFactRepo(DuckDBRepository):
-        def upsert_daily_load_fact(self, *args, **kwargs):
+        def upsert_daily_load_facts(self, *args, **kwargs):
             raise RuntimeError("daily fact failed")
 
         def _commit_if_standalone(self) -> None:
@@ -613,3 +613,35 @@ def test_WR_04_partial_batch_does_not_undercount_daily_facts(tmp_path: Path) -> 
     assert fact_920 is not None and fact_921 is not None, (
         "both same-day activities must be materialized before their day is rolled up"
     )
+
+
+def test_materialize_batched_fact_upserts_match_sequential(tmp_path, monkeypatch):
+    """Batched fact upserts are byte-identical to single-row upserts.
+
+    Parity gate for the batching refactor: materialize the SAME multi-day fixture twice —
+    once with the per-statement row cap forced to 1 (the old single-row-per-statement
+    behaviour) and once at the default 250 (batched) — and assert every row of all four
+    fact tables matches. Catches silent column-level drift the value-asserting tests miss.
+    """
+    from mcp_strava.adapters.duckdb import repository as repo_module
+
+    fact_tables = ("activity_metric_facts", "daily_load_facts", "training_model_daily", "rolling_period_facts")
+
+    def _materialize_and_dump(cap: int) -> dict[str, list]:
+        monkeypatch.setattr(repo_module, "_FACT_UPSERT_BATCH_ROWS", cap)
+        run_dir = tmp_path / f"cap{cap}"
+        run_dir.mkdir()
+        _fixture, repo = _create_duckdb_read_model_repo(run_dir)
+        try:
+            _seed_dirty_activity_with_streams(repo, activity_id=920, day="2026-05-21")
+            _seed_dirty_activity_with_streams(repo, activity_id=921, day="2026-05-10")
+            materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+            return {table: repo.conn.execute(f"SELECT * FROM {table} ORDER BY ALL").fetchall() for table in fact_tables}
+        finally:
+            repo.close()
+
+    sequential = _materialize_and_dump(1)
+    batched = _materialize_and_dump(250)
+    for table in fact_tables:
+        assert batched[table] == sequential[table], f"{table} diverged between batched and sequential upserts"
+        assert len(batched[table]) > 0, f"{table} should have rows (fixture is non-empty)"

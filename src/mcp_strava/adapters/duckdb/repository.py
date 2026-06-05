@@ -331,6 +331,12 @@ _STREAM_INSERT_COLUMNS = (
 )
 _STREAM_INSERT_STMT_ROWS = 250
 
+# Per-statement row cap for batched fact upserts (_upsert_facts_batch). Same rationale
+# as _STREAM_INSERT_STMT_ROWS: one multi-row INSERT collapses the materializer's per-day
+# loops (~141 Banister-warmup days) to ~1-2 statements, but DuckDB parses the VALUES
+# literal so the cap keeps long ranges off the quadratic-parse tail.
+_FACT_UPSERT_BATCH_ROWS = 250
+
 
 def _safe_identifier(name: str) -> str:
     if not _SQL_IDENTIFIER.match(name):
@@ -1058,34 +1064,72 @@ class DuckDBRepository:
         )
 
     def _upsert_fact(self, table: str, values: dict[str, object], conflict_columns: tuple[str, ...]) -> None:
+        self._upsert_facts_batch(table, [values], conflict_columns)
+
+    def _upsert_facts_batch(self, table: str, rows: list[dict[str, object]], conflict_columns: tuple[str, ...]) -> None:
+        """Upsert many fact rows in batched multi-row INSERT … ON CONFLICT statements.
+
+        One codepath for both single and many rows (``_upsert_fact`` delegates here), so
+        the batched and per-row paths can never diverge. All rows must share the first
+        row's column set (callers build them from one literal shape); a row missing a key
+        raises KeyError below — fail loud, not silent. Rows are chunked at
+        _FACT_UPSERT_BATCH_ROWS. The conflict columns must be unique across the batch
+        (the fact keys are: per (day|as_of_day, scope, sport_type, window?, metric_version)
+        or (activity_id, metric_version) — unique within one materialize pass), or DuckDB
+        rejects a row that the same statement would touch twice.
+        """
+        if not rows:
+            return
         _safe_identifier(table)
-        columns = tuple(_safe_identifier(col) for col in values)
+        columns = tuple(_safe_identifier(col) for col in rows[0])
         for col in conflict_columns:
             _safe_identifier(col)
-        placeholders = ", ".join("?" for _ in columns)
+        placeholder = "(" + ", ".join("?" for _ in columns) + ")"
         update_columns = [col for col in columns if col not in conflict_columns]
         assignments = ", ".join(f"{col}=excluded.{col}" for col in update_columns)
         conflict = ", ".join(conflict_columns)
-        sql = f"""
-            INSERT INTO {table} ({", ".join(columns)})
-            VALUES ({placeholders})
-            ON CONFLICT({conflict}) DO UPDATE SET {assignments}
-        """
-        self._execute(sql, [values[col] for col in columns])
+        column_list = ", ".join(columns)
+        for start in range(0, len(rows), _FACT_UPSERT_BATCH_ROWS):
+            chunk = rows[start : start + _FACT_UPSERT_BATCH_ROWS]
+            params: list[object] = []
+            for row in chunk:
+                params.extend(row[col] for col in columns)
+            values_clause = ", ".join([placeholder] * len(chunk))
+            self._execute(
+                f"INSERT INTO {table} ({column_list}) VALUES {values_clause}"
+                f" ON CONFLICT({conflict}) DO UPDATE SET {assignments}",
+                params,
+            )
 
     def upsert_activity_metric_fact(self, values: dict[str, object]) -> None:
         self._upsert_fact("activity_metric_facts", values, ("activity_id", "metric_version"))
 
+    def upsert_activity_metric_facts(self, rows: list[dict[str, object]]) -> None:
+        self._upsert_facts_batch("activity_metric_facts", rows, ("activity_id", "metric_version"))
+
     def upsert_daily_load_fact(self, values: dict[str, object]) -> None:
         self._upsert_fact("daily_load_facts", values, ("day", "scope", "sport_type", "metric_version"))
 
+    def upsert_daily_load_facts(self, rows: list[dict[str, object]]) -> None:
+        self._upsert_facts_batch("daily_load_facts", rows, ("day", "scope", "sport_type", "metric_version"))
+
     def upsert_training_model_daily_fact(self, values: dict[str, object]) -> None:
         self._upsert_fact("training_model_daily", values, ("day", "scope", "sport_type", "metric_version"))
+
+    def upsert_training_model_daily_facts(self, rows: list[dict[str, object]]) -> None:
+        self._upsert_facts_batch("training_model_daily", rows, ("day", "scope", "sport_type", "metric_version"))
 
     def upsert_rolling_period_fact(self, values: dict[str, object]) -> None:
         self._upsert_fact(
             "rolling_period_facts",
             values,
+            ("as_of_day", "window_days", "scope", "sport_type", "metric_version"),
+        )
+
+    def upsert_rolling_period_facts(self, rows: list[dict[str, object]]) -> None:
+        self._upsert_facts_batch(
+            "rolling_period_facts",
+            rows,
             ("as_of_day", "window_days", "scope", "sport_type", "metric_version"),
         )
 
