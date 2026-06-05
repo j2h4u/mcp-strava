@@ -10,6 +10,8 @@ for system python3 environments without numpy.
 
 import math
 
+_JENKS_FALLBACK_ERRORS = (ArithmeticError, IndexError, ValueError)
+
 # ═══════════════════════════════════════════════════════════════════════
 # JENKS NATURAL BREAKS — pure Python DP
 # ═══════════════════════════════════════════════════════════════════════
@@ -108,14 +110,14 @@ def auto_jenks(x, max_k=6, gvf_threshold=0.85, gvf_gain_min=0.03, min_cluster_si
             if gvf_gain < gvf_gain_min and k >= 3:
                 break
             prev_gvf = gvf
-        except Exception:
+        except _JENKS_FALLBACK_ERRORS:
             break
 
     if best_k == 1:
         try:
             best_boundaries, _, _, gvf = jenks_breaks(x, 2)
             best_k = 2
-        except Exception:
+        except _JENKS_FALLBACK_ERRORS:
             gvf = 1.0
 
     gvf_final = k_results[-1][1] if k_results else 1.0
