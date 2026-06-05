@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 
 import duckdb
 
@@ -22,7 +22,12 @@ from mcp_strava.adapters.duckdb.repository_models import (
     ActivityStreamScalars,
     ActivityZoneTrimp,
     DailyLoadFactRow,
+    DirtyActivityRow,
+    LogicVersionRow,
     RollingPeriodFactRow,
+    SourceComponents,
+    SourceRevisionRow,
+    SourceStateRow,
     TrainingModelDayRow,
 )
 from mcp_strava.adapters.duckdb.source_hashing import canonical_semantic_value, semantic_json_hash
@@ -47,104 +52,6 @@ from mcp_strava.types import (
 # ``_one``/``_all``, so the unavoidable ``Any -> typed`` narrowing happens
 # exactly once, at the ``_fetchall``/``_fetchone`` consumption boundary.
 Row = dict[str, object]
-
-
-# ─── Typed row shapes (per-query result contracts) ───
-#
-# These TypedDicts describe the column shape each read query returns. Casting the
-# generic ``Row`` to one of these (via ``_one``/``_all``) lets ``row["id"]`` stay
-# (no caller churn) while typing the access precisely: ``int(row["id"])`` is then
-# ``int(int)``, not ``int(Any)``. Numeric cells are typed ``int | None`` /
-# ``float | None`` because aggregates (SUM/AVG) and outer-joined columns can be
-# SQL NULL; the repository narrows the None with ``or 0`` / ``is not None``.
-
-
-class _IdRow(TypedDict):
-    id: int
-
-
-class _DayCountRow(TypedDict):
-    """``day``/``c`` grouped-count rows from the daily-load count queries."""
-
-    day: object
-    c: int
-
-
-class _TrimpDayRow(TypedDict):
-    day: object
-    trimp: float | None
-
-
-class _TrimpDaySportRow(TypedDict):
-    day: object
-    sport: object
-    trimp: float | None
-
-
-class _DirtyActivityRow(TypedDict):
-    """A row of ``metric_dirty_activities`` (``SELECT *``); the materialization
-    variant additionally carries the joined ``source_hash`` column."""
-
-    activity_id: int
-    activity_day: object
-    metric_version: int
-    source_revision: int
-    reason: str
-    queued_at: object
-    attempt_count: int
-    last_error: str | None
-    source_hash: str
-
-
-class _SourceStateRow(TypedDict):
-    activity_id: int
-    activity_day: object
-    summary_hash: str
-    detail_hash: str
-    streams_hash: str
-    channels_hash: str
-    source_hash: str
-    source_revision: int
-    changed_at: object
-
-
-class _SourceRevisionRow(TypedDict):
-    source_hash: str
-    source_revision: int
-
-
-class _SourceComponents(TypedDict):
-    """Computed provenance hashes for one activity (all values are strings)."""
-
-    activity_day: str
-    summary_hash: str
-    detail_hash: str
-    streams_hash: str
-    channels_hash: str
-    source_hash: str
-
-
-class _LogicVersionRow(TypedDict):
-    metric_version: int
-    logic_fingerprint: str
-    changed_at: object
-
-
-class _ScalarVersionRow(TypedDict):
-    v: int | None
-
-
-class _LeaseRow(TypedDict):
-    lease_owner: str | None
-    lease_expires_at: object
-
-
-class _ChannelStatusRow(TypedDict):
-    status: str
-
-
-class _ValuesJsonRow(TypedDict):
-    values_json: object
 
 
 def _emit(event: str, **fields: object) -> None:
@@ -497,7 +404,7 @@ class DuckDBRepository:
             self._read_model_enabled_cache = self._table_exists("activity_source_state")
         return self._read_model_enabled_cache
 
-    def _read_activity_source_components(self, activity_id: int) -> _SourceComponents | None:
+    def _read_activity_source_components(self, activity_id: int) -> SourceComponents | None:
         activity = self._fetchone(
             """
             SELECT id, activity_day, date, name, sport_type, distance, moving_time,
@@ -572,7 +479,7 @@ class DuckDBRepository:
         if components is None:
             return False
 
-        existing: _SourceRevisionRow | None = self._one(
+        existing: SourceRevisionRow | None = self._one(
             self._fetchone(
                 """
                 SELECT source_hash, source_revision
@@ -654,7 +561,7 @@ class DuckDBRepository:
 
     def dirty_activity_rows(
         self, metric_version: int | None = None, activity_id: int | None = None
-    ) -> list[_DirtyActivityRow]:
+    ) -> list[DirtyActivityRow]:
         where: list[str] = []
         params: list[object] = []
         if metric_version is not None:
@@ -702,7 +609,7 @@ class DuckDBRepository:
         self,
         metric_version: int,
         limit: int | None = None,
-    ) -> list[_DirtyActivityRow]:
+    ) -> list[DirtyActivityRow]:
         base_sql = """
             SELECT d.*, s.source_hash
             FROM metric_dirty_activities d
@@ -713,7 +620,7 @@ class DuckDBRepository:
         if limit is None:
             return self._all(self._fetchall(base_sql, [metric_version]))
 
-        rows: list[_DirtyActivityRow] = self._all(self._fetchall(base_sql + " LIMIT ?", [metric_version, limit]))
+        rows: list[DirtyActivityRow] = self._all(self._fetchall(base_sql + " LIMIT ?", [metric_version, limit]))
         if not rows:
             return rows
 
@@ -727,7 +634,7 @@ class DuckDBRepository:
         # limited slice can be partially cut; pull in its remaining dirty rows.
         last_day = _as_str(rows[-1]["activity_day"])
         claimed_ids = {_as_int(r["activity_id"]) for r in rows if _as_str(r["activity_day"]) == last_day}
-        remainder: list[_DirtyActivityRow] = self._all(
+        remainder: list[DirtyActivityRow] = self._all(
             self._fetchall(
                 base_sql.replace(
                     "WHERE d.metric_version = ?", "WHERE d.metric_version = ? AND d.activity_day = CAST(? AS DATE)"
@@ -738,7 +645,7 @@ class DuckDBRepository:
         rows.extend(row for row in remainder if _as_int(row["activity_id"]) not in claimed_ids)
         return rows
 
-    def clear_dirty_activity_rows(self, rows: Iterable[_DirtyActivityRow]) -> int:
+    def clear_dirty_activity_rows(self, rows: Iterable[DirtyActivityRow]) -> int:
         count = 0
         for row in rows:
             activity_id = _as_int(row["activity_id"])
@@ -763,7 +670,7 @@ class DuckDBRepository:
                 count += 1
         return count
 
-    def source_state_for_activity(self, activity_id: int) -> _SourceStateRow | None:
+    def source_state_for_activity(self, activity_id: int) -> SourceStateRow | None:
         return self._one(
             self._fetchone(
                 "SELECT * FROM activity_source_state WHERE activity_id = ?",
@@ -874,7 +781,7 @@ class DuckDBRepository:
             return None
         return _as_int(row["v"])
 
-    def current_logic_version(self) -> _LogicVersionRow | None:
+    def current_logic_version(self) -> LogicVersionRow | None:
         """Return the singleton sidecar row ({metric_version, logic_fingerprint,
         changed_at}) or None when the table is empty/absent (unseeded DB)."""
         try:

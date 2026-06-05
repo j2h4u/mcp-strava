@@ -8,6 +8,54 @@ from typing import TypedDict
 from mcp_strava.types import RepositoryActivityRow
 
 
+class DirtyActivityRow(TypedDict):
+    """A row of ``metric_dirty_activities`` joined with source state."""
+
+    activity_id: int
+    activity_day: object
+    metric_version: int
+    source_revision: int
+    reason: str
+    queued_at: object
+    attempt_count: int
+    last_error: str | None
+    source_hash: str
+
+
+class SourceStateRow(TypedDict):
+    activity_id: int
+    activity_day: object
+    summary_hash: str
+    detail_hash: str
+    streams_hash: str
+    channels_hash: str
+    source_hash: str
+    source_revision: int
+    changed_at: object
+
+
+class SourceRevisionRow(TypedDict):
+    source_hash: str
+    source_revision: int
+
+
+class SourceComponents(TypedDict):
+    """Computed provenance hashes for one activity."""
+
+    activity_day: str
+    summary_hash: str
+    detail_hash: str
+    streams_hash: str
+    channels_hash: str
+    source_hash: str
+
+
+class LogicVersionRow(TypedDict):
+    metric_version: int
+    logic_fingerprint: str
+    changed_at: object
+
+
 @dataclass(frozen=True)
 class ActivityMaterializationSource:
     activity: RepositoryActivityRow
