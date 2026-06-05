@@ -16,8 +16,8 @@ from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
     get_training_aggregates_service,
 )
+from mcp_strava.application.comparison_services import compare_periods_service
 from mcp_strava.application.metric_services import (
-    compare_periods_service,
     get_fitness_state_service,
     get_workout_detail_service,
     list_workouts_service,

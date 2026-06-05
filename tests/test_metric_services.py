@@ -509,7 +509,7 @@ def test_get_workout_detail_service_returns_full_metric_bundle_and_missing_reaso
 
 
 def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_path: Path) -> None:
-    from mcp_strava.application.metric_services import compare_periods_service
+    from mcp_strava.application.comparison_services import compare_periods_service
 
     db_path = _aggregate_fixture(tmp_path / "compare.duckdb")
     conn = open_fixture_db(db_path)
@@ -595,28 +595,9 @@ def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_p
 
 
 def test_compare_periods_service_delegates_to_bounded_all_time_aggregates(monkeypatch: pytest.MonkeyPatch) -> None:
-    import mcp_strava.application.metric_services as metric_services
+    import mcp_strava.application.comparison_services as comparison_services
 
     calls: list[object] = []
-
-    class FakeRepo:
-        def read_model_status(self, *_args, **_kwargs) -> dict[str, object]:
-            return _read_model_current()
-
-        def get_refresh_state(self):
-            return None
-
-        def latest_activity_timestamp(self):
-            return None
-
-        def fetch_activity_metric_facts(self, *_args, **_kwargs) -> list:
-            return []
-
-        def fetch_latest_training_model_day(self, *_args, **_kwargs):
-            return None
-
-        def fetch_rolling_period_facts(self, *_args, **_kwargs):
-            return None
 
     def fake_aggregate_service(request, **kwargs):
         calls.append(request)
@@ -683,22 +664,9 @@ def test_compare_periods_service_delegates_to_bounded_all_time_aggregates(monkey
             rationale=[ServiceRationale(code="aggregate_layer", message="Prepared aggregate rows.")],
         )
 
-    monkeypatch.setattr(metric_services.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
-    monkeypatch.setattr(
-        metric_services,
-        "build_freshness_metadata",
-        lambda *_args, **_kwargs: FreshnessMetadata(
-            freshness_state="fresh",
-            checked_at="2026-05-21T09:00:00",
-            last_successful_refresh_at="2026-05-21T06:00:00",
-            refresh_age_seconds=10800,
-            last_activity_at="2026-05-21T06:20:00",
-            last_activity_age_seconds=9600,
-        ),
-    )
-    monkeypatch.setattr(metric_services, "get_training_aggregates_service", fake_aggregate_service, raising=False)
+    monkeypatch.setattr(comparison_services, "get_training_aggregates_service", fake_aggregate_service, raising=False)
 
-    envelope = metric_services.compare_periods_service(
+    envelope = comparison_services.compare_periods_service(
         period_a_start="2026-05-01",
         period_a_end="2026-05-08",
         period_b_start="2026-05-08",
@@ -731,7 +699,7 @@ def test_compare_periods_service_delegates_to_bounded_all_time_aggregates(monkey
 
 
 def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_path: Path) -> None:
-    from mcp_strava.application.metric_services import compare_periods_service
+    from mcp_strava.application.comparison_services import compare_periods_service
 
     db_path = _aggregate_fixture(tmp_path / "compare-run.duckdb")
     conn = open_fixture_db(db_path)
@@ -793,8 +761,8 @@ def test_project_fitness_state_service_supports_standard_scenarios(tmp_path: Pat
 
 
 def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path) -> None:
+    from mcp_strava.application.comparison_services import compare_periods_service
     from mcp_strava.application.metric_services import (
-        compare_periods_service,
         get_fitness_state_service,
         get_workout_detail_service,
         list_workouts_service,
