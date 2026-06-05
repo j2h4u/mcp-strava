@@ -15,6 +15,10 @@ from mcp_strava.settings import get_settings
 from mcp_strava.training import forward_simulate
 from mcp_strava.types import CompletenessMetadata, ServiceEnvelope, ServiceRationale
 
+PROJECTION_MAX_HORIZON_DAYS = 90
+MAINTAIN_LOOKBACK_DAYS = 28
+WEEKEND_DAYS = {4, 5, 6}
+
 
 def _connection_context(connection):
     return nullcontext(connection) if connection is not None else ReadConn()
@@ -103,7 +107,7 @@ def _scenario_trimps(
             "activity_template_trimp": easy_value,
         }
     if scenario == "maintain":
-        lookback_start = (today_day - timedelta(days=27)).isoformat()
+        lookback_start = (today_day - timedelta(days=MAINTAIN_LOOKBACK_DAYS - 1)).isoformat()
         lookback = {k: v for k, v in history_daily_trimp.items() if lookback_start <= k <= today_day.isoformat()}
         nonzero = [v for v in lookback.values() if v > 0]
         avg_nonzero = float(round(sum(nonzero) / len(nonzero), 2)) if nonzero else 0.0
@@ -143,8 +147,8 @@ def project_fitness_state_service(
     horizon_days = (target_day - today_day).days
     if horizon_days < 0:
         raise ValueError("target_date must be today or later")
-    if horizon_days > 90:
-        raise ValueError("projection horizon must be <= 90 days")
+    if horizon_days > PROJECTION_MAX_HORIZON_DAYS:
+        raise ValueError(f"projection horizon must be <= {PROJECTION_MAX_HORIZON_DAYS} days")
 
     days = [today_day + timedelta(days=offset) for offset in range(horizon_days + 1)]
     with _connection_context(connection) as conn:
@@ -155,7 +159,7 @@ def project_fitness_state_service(
         baseline = repo.fetch_latest_training_model_day(version, as_of_day=today_day.isoformat())
         if baseline is None:
             baseline = repo.fetch_latest_training_model_day(version)
-        history_start = (today_day - timedelta(days=27)).isoformat()
+        history_start = (today_day - timedelta(days=MAINTAIN_LOOKBACK_DAYS - 1)).isoformat()
         history_daily_trimp = _daily_trimp_history(repo, history_start, today_day.isoformat())
 
     # baseline["fitness"]/["fatigue"] are ``object`` (TrainingModelDayRow); float() narrows.
@@ -194,7 +198,7 @@ def project_fitness_state_service(
             for index, row in enumerate(sim)
         ]
         metadata: dict[str, Any] = {"missing_reasons": []}
-        if target_day.weekday() in {4, 5, 6}:
+        if target_day.weekday() in WEEKEND_DAYS:
             monday = target_day + timedelta(days=(7 - target_day.weekday()))
             monday_sim = forward_simulate(
                 baseline_fitness,

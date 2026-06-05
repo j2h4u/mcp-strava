@@ -16,6 +16,7 @@ from mcp_strava.metric_registry import (
     DEFAULT_AGGREGATE_QUANTILES,
     METRIC_REGISTRY,
     SUPPORTED_AGGREGATE_BUCKETS,
+    SUPPORTED_AGGREGATE_SCOPES,
     SUPPORTED_ROLLING_WINDOW_DAYS,
     aggregate_query_allowed_columns,
     metrics_for_aggregate_bundle,
@@ -93,7 +94,7 @@ _METRIC_VALUE_EXPRESSIONS = {
 def validate_aggregate_request(request: AggregateRequest) -> tuple[MetricDefinition, ...]:
     if request.bucket not in SUPPORTED_AGGREGATE_BUCKETS:
         raise ValueError(f"Unsupported aggregate bucket: {request.bucket}")
-    if request.scope not in {"global", "per_sport", "both"}:
+    if request.scope not in SUPPORTED_AGGREGATE_SCOPES:
         raise ValueError(f"Unsupported aggregate scope: {request.scope}")
     if request.sport_filter is not None and request.sport_filter not in ALL_SPORTS:
         raise ValueError(f"Unsupported sport filter: {request.sport_filter}")
@@ -176,7 +177,7 @@ def _metric_definition(metric_id: str) -> MetricDefinition:
 
 def _validate_metric_scope(metric: MetricDefinition, scope: str) -> None:
     if scope == "both":
-        if not set(metric.supported_scopes) & {"global", "per_sport", "both"}:
+        if not set(metric.supported_scopes) & set(SUPPORTED_AGGREGATE_SCOPES):
             raise ValueError(f"Metric {metric.metric_id} has no supported aggregate scope")
         return
     scopes = set(metric.supported_scopes)
