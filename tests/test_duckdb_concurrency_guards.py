@@ -136,6 +136,23 @@ def test_open_mirror_translates_duckdb_lock_to_mirror_db_locked(tmp_path, monkey
     assert isinstance(excinfo.value.__cause__, duckdb.IOException)
 
 
+def test_reset_thread_connections_reports_close_failures(capsys: pytest.CaptureFixture[str]) -> None:
+    from mcp_strava.adapters.duckdb import connection as conn_module
+
+    class BadConnection:
+        def close(self) -> None:
+            raise RuntimeError("close exploded")
+
+    conn_module._thread_state.read_connections = {"bad": BadConnection()}
+
+    conn_module.reset_thread_connections()
+
+    captured = capsys.readouterr()
+    assert "duckdb connection close failed" in captured.err
+    assert "RuntimeError" in captured.err
+    assert conn_module._thread_state.read_connections == {}
+
+
 def test_admin_dispatch_prints_lock_hint_and_exits_2(monkeypatch, capsys):
     from mcp_strava import cli
     from mcp_strava.adapters.duckdb.connection import MirrorDbLocked

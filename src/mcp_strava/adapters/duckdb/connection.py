@@ -1,6 +1,6 @@
 """DuckDB connection policy with fail-closed expected DB open."""
 
-import contextlib
+import sys
 import threading
 from pathlib import Path
 from threading import RLock
@@ -94,6 +94,17 @@ def _thread_read_connections() -> dict[str, DuckDBConn]:
     return connections
 
 
+def _close_safely(conn: DuckDBConn, *, context: str) -> None:
+    try:
+        conn.close()
+    except Exception as exc:
+        print(
+            f"duckdb connection close failed during {context}: {type(exc).__name__}: {str(exc)[:200]}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
 class ReadConn:
     """Thread-local reused read connection — opened once per (thread, db path).
 
@@ -117,8 +128,7 @@ class ReadConn:
         if exc_type is not None:
             conn = _thread_read_connections().pop(self._path, None)
             if conn is not None:
-                with contextlib.suppress(Exception):
-                    conn.close()
+                _close_safely(conn, context="read connection eviction")
         return False
 
 
@@ -128,6 +138,5 @@ def reset_thread_connections() -> None:
     if not connections:
         return
     for conn in list(connections.values()):
-        with contextlib.suppress(Exception):
-            conn.close()
+        _close_safely(conn, context="thread connection reset")
     connections.clear()

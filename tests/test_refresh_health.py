@@ -45,6 +45,19 @@ def test_idle_cycle_counts_as_healthy_and_resets_failures():
     assert data["consecutive_failures"] == 0
 
 
+def test_record_cycle_reports_write_failures_without_raising(monkeypatch, capsys):
+    def _raise_permission_error(*_args, **_kwargs):
+        raise PermissionError("health path unwritable")
+
+    monkeypatch.setattr(health.Path, "mkdir", _raise_permission_error)
+
+    health.record_cycle("ok")
+
+    captured = capsys.readouterr()
+    assert "refresh health recording failed" in captured.err
+    assert "PermissionError" in captured.err
+
+
 def test_check_refresh_health_passes_below_threshold():
     health.record_cycle("error", error_type="X", error="x")
     health.record_cycle("error", error_type="X", error="x")

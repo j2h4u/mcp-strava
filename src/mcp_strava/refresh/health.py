@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import cast
@@ -73,8 +74,12 @@ def record_cycle(outcome: str, *, error_type: str | None = None, error: str | No
         tmp = path.with_name(f".{path.name}.tmp")
         tmp.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
         tmp.replace(path)
-    except Exception:  # health recording must never break the worker loop
-        pass
+    except Exception as exc:  # health recording must never break the worker loop
+        print(
+            f"refresh health recording failed: {type(exc).__name__}: {str(exc)[:200]}",
+            file=sys.stderr,
+            flush=True,
+        )
 
 
 def _max_consecutive_failures() -> int:
