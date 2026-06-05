@@ -47,10 +47,10 @@ check: fmt-check lint typecheck import-contracts build dead-code
 # Pre-push preflight: the full CI static gate plus unit tests, locally.
 # (Docker build + MCP smoke is `just test`.)
 preflight: check
-    uv run pytest -q
+    uv run pytest -q -n auto
 
 test:
-    uv run pytest -q
+    uv run pytest -q -n auto
     {{compose}} build
     {{compose}} up -d --force-recreate --remove-orphans --wait --wait-timeout 90
     {{compose}} exec -T mcp-strava {{smoke}}
