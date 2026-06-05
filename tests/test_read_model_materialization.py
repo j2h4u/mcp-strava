@@ -3,8 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from mcp_strava.adapters.duckdb.read_model_materializer import materialize_read_model
+from mcp_strava.adapters.duckdb.read_model_materializer import (
+    _activity_fact,
+    _activity_facts_batched,
+    materialize_read_model,
+)
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.hr_zones import get_zone_model
+from mcp_strava.settings import get_settings
 from tests._fixtures_duckdb import create_empty_fixture_db
 
 
@@ -687,3 +693,101 @@ def test_daily_fact_sums_between_matches_per_day_reads(tmp_path: Path) -> None:
             current += timedelta(days=1)
 
     assert days_with_facts == ["2026-05-10", "2026-05-21"], "fixture should populate exactly the two seeded days"
+
+
+def test_activity_materialization_batch_reads_match_per_activity_methods(tmp_path: Path) -> None:
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+    settings = get_settings()
+    athlete = settings.athlete
+    assert athlete.hr_rest is not None
+    with repo:
+        _seed_activity_with_hr(repo, activity_id=801, day="2026-05-20", heartrates=[150] * 160 + [190] * 20)
+        _seed_activity_with_hr(repo, activity_id=802, day="2026-05-21", heartrates=[120] * 175 + [150] * 5)
+        _seed_dirty_activity_no_hr(repo, activity_id=803, day="2026-05-22")
+        dirty_rows = repo.dirty_activity_rows_for_materialization(1)
+        activity_ids = [int(row["activity_id"]) for row in dirty_rows]
+
+        sources = repo.activity_materialization_sources(activity_ids)
+        scalars = repo.activity_stream_scalars_for_materialization(activity_ids, 0.5)
+        hr_max_by_day = repo.max_heartrate_to_dates(str(row["activity_day"]) for row in dirty_rows)
+
+        bounds_by_activity_id = {}
+        for row in dirty_rows:
+            activity_id = int(row["activity_id"])
+            scalar = scalars[activity_id]
+            hr_max = hr_max_by_day[str(row["activity_day"])]
+            if hr_max is not None and scalar.hr_count > 0:
+                bounds_by_activity_id[activity_id] = get_zone_model(athlete.hr_zone_model).zone_bounds(
+                    hr_max=hr_max,
+                    hr_rest=athlete.hr_rest,
+                )
+        zones = repo.activity_zone_trimp_for_bounds(bounds_by_activity_id)
+
+        for row in dirty_rows:
+            activity_id = int(row["activity_id"])
+            assert sources[activity_id].activity == repo.activity_by_id(activity_id)
+            assert sources[activity_id].source_hash == repo.source_state_for_activity(activity_id)["source_hash"]
+
+            stream_count, hr_count = repo.stream_counts_for_activity(activity_id)
+            min_hr, max_hr = repo.activity_hr_range(activity_id)
+            scalar = scalars[activity_id]
+            assert (scalar.stream_count, scalar.hr_count) == (stream_count, hr_count)
+            assert (scalar.min_hr, scalar.max_hr) == (min_hr, max_hr)
+            assert scalar.cardiac_cost == repo.activity_cc(activity_id, 0.5)
+            assert scalar.median_hr == repo.activity_median_heartrate(activity_id)
+            assert hr_max_by_day[str(row["activity_day"])] == repo.max_heartrate_to_date(str(row["activity_day"]))
+
+            if activity_id in bounds_by_activity_id:
+                expected_zones = repo.zone_seconds_for_activity(activity_id, bounds_by_activity_id[activity_id])
+                expected_trimp = repo.activity_trimp(activity_id, bounds=bounds_by_activity_id[activity_id])
+                actual_zones = zones[activity_id]
+                assert (
+                    actual_zones.zone1_seconds,
+                    actual_zones.zone2_seconds,
+                    actual_zones.zone3_seconds,
+                    actual_zones.zone4_seconds,
+                    actual_zones.zone5_seconds,
+                ) == expected_zones
+                assert actual_zones.trimp == expected_trimp
+
+
+def test_activity_facts_batched_match_sequential_reference(tmp_path: Path) -> None:
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+    with repo:
+        _seed_dirty_activity_with_streams(repo, activity_id=920, day="2026-05-21")
+        _seed_dirty_activity_with_pauses(repo, activity_id=921, day="2026-05-21")
+        _seed_dirty_activity_no_hr(repo, activity_id=922, day="2026-05-22")
+        dirty_rows = repo.dirty_activity_rows_for_materialization(1)
+        settings = get_settings()
+        computed_at = "2026-05-24T12:00:00"
+
+        sequential = [_activity_fact(repo, row, 1, computed_at, settings) for row in dirty_rows]
+        batched = _activity_facts_batched(repo, dirty_rows, 1, computed_at, settings)
+
+    assert batched == sequential
+
+
+def test_materializer_avoids_per_activity_scalar_read_fanout(tmp_path: Path) -> None:
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+
+    class CountingRepo(DuckDBRepository):
+        hot_scalar_reads = 0
+
+        def _fetchone(self, sql, params=None):
+            compact = " ".join(sql.split())
+            if (
+                ("FROM activities" in compact and "WHERE id = ?" in compact)
+                or "FROM activity_source_state WHERE activity_id = ?" in compact
+                or ("FROM streams" in compact and "WHERE activity_id = ?" in compact)
+            ):
+                self.hot_scalar_reads += 1
+            return super()._fetchone(sql, params)
+
+    with repo:
+        for idx in range(5):
+            _seed_dirty_activity_with_streams(repo, activity_id=950 + idx, day=f"2026-05-{10 + idx:02d}")
+        counting_repo = CountingRepo(repo.conn)
+
+        materialize_read_model(counting_repo, metric_version=1, now="2026-05-24T12:00:00")
+
+    assert counting_repo.hot_scalar_reads == 0

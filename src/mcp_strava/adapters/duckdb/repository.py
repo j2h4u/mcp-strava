@@ -102,6 +102,33 @@ class _SourceStateRow(TypedDict):
     changed_at: object
 
 
+@dataclass(frozen=True)
+class ActivityMaterializationSource:
+    activity: RepositoryActivityRow
+    source_hash: str
+    source_revision: int
+
+
+@dataclass(frozen=True)
+class ActivityStreamScalars:
+    stream_count: int
+    hr_count: int
+    min_hr: int | None
+    max_hr: int | None
+    cardiac_cost: float | None
+    median_hr: float | None
+
+
+@dataclass(frozen=True)
+class ActivityZoneTrimp:
+    zone1_seconds: int
+    zone2_seconds: int
+    zone3_seconds: int
+    zone4_seconds: int
+    zone5_seconds: int
+    trimp: float
+
+
 class _SourceRevisionRow(TypedDict):
     source_hash: str
     source_revision: int
@@ -520,6 +547,10 @@ def _as_int_opt(value: object) -> int | None:
 def _as_str_opt(value: object) -> str | None:
     """Narrow a nullable cell to ``str | None`` (preserve SQL NULL as None)."""
     return None if value is None else str(value)
+
+
+def _placeholders(count: int) -> str:
+    return ", ".join("?" for _ in range(count))
 
 
 @dataclass
@@ -1572,6 +1603,32 @@ class DuckDBRepository:
         )
         return self._to_activity_row(row) if row else None
 
+    def activity_materialization_sources(self, activity_ids: Iterable[int]) -> dict[int, ActivityMaterializationSource]:
+        ids = sorted({int(activity_id) for activity_id in activity_ids})
+        if not ids:
+            return {}
+        placeholders = _placeholders(len(ids))
+        rows = self._fetchall(
+            f"""
+            SELECT a.id, a.date, a.name, a.sport_type, a.distance, a.moving_time,
+                   a.elapsed_time, a.total_elevation_gain, a.summary_json, a.detail_json,
+                   a.synced_at, s.source_hash, s.source_revision
+            FROM activities a
+            JOIN activity_source_state s ON s.activity_id = a.id
+            WHERE a.id IN ({placeholders})
+            """,
+            ids,
+        )
+        sources: dict[int, ActivityMaterializationSource] = {}
+        for row in rows:
+            activity = self._to_activity_row(row)
+            sources[activity.id] = ActivityMaterializationSource(
+                activity=activity,
+                source_hash=str(row["source_hash"]),
+                source_revision=_as_int(row["source_revision"]),
+            )
+        return sources
+
     def activity_rows_between(self, start_day: str, end_day: str) -> list[RepositoryActivityRow]:
         rows = self._fetchall(
             """
@@ -2009,6 +2066,27 @@ class DuckDBRepository:
             [activity_id, min_velocity],
         )
 
+    def stream_hr_velocity_simple_rows_for_activities(
+        self, activity_ids: Iterable[int], min_velocity: float
+    ) -> dict[int, list[dict[str, Any]]]:
+        ids = sorted({int(activity_id) for activity_id in activity_ids})
+        if not ids:
+            return {}
+        rows = self._fetchall(
+            f"""
+            SELECT activity_id, heartrate, velocity FROM streams
+            WHERE activity_id IN ({_placeholders(len(ids))})
+              AND heartrate IS NOT NULL AND velocity > ?
+            ORDER BY activity_id, time_offset
+            """,
+            [*ids, min_velocity],
+        )
+        grouped: dict[int, list[dict[str, Any]]] = {activity_id: [] for activity_id in ids}
+        for row in rows:
+            activity_id = _as_int(row["activity_id"])
+            grouped.setdefault(activity_id, []).append({"heartrate": row["heartrate"], "velocity": row["velocity"]})
+        return grouped
+
     def stream_hr_velocity_time_rows(self, activity_id: int) -> list[dict[str, Any]]:
         return self._fetchall(
             """
@@ -2018,6 +2096,28 @@ class DuckDBRepository:
             """,
             [activity_id],
         )
+
+    def stream_hr_velocity_time_rows_for_activities(
+        self, activity_ids: Iterable[int]
+    ) -> dict[int, list[dict[str, Any]]]:
+        ids = sorted({int(activity_id) for activity_id in activity_ids})
+        if not ids:
+            return {}
+        rows = self._fetchall(
+            f"""
+            SELECT activity_id, time_offset, heartrate, velocity FROM streams
+            WHERE activity_id IN ({_placeholders(len(ids))}) AND heartrate IS NOT NULL
+            ORDER BY activity_id, time_offset
+            """,
+            ids,
+        )
+        grouped: dict[int, list[dict[str, Any]]] = {activity_id: [] for activity_id in ids}
+        for row in rows:
+            activity_id = _as_int(row["activity_id"])
+            grouped.setdefault(activity_id, []).append(
+                {"time_offset": row["time_offset"], "heartrate": row["heartrate"], "velocity": row["velocity"]}
+            )
+        return grouped
 
     def activity_hr_summary(self, activity_id: int) -> tuple[float | None, int]:
         row = self._fetchone(
@@ -2056,6 +2156,24 @@ class DuckDBRepository:
             [activity_id],
         )
 
+    def stream_altitude_rows_for_activities(self, activity_ids: Iterable[int]) -> dict[int, list[dict[str, Any]]]:
+        ids = sorted({int(activity_id) for activity_id in activity_ids})
+        if not ids:
+            return {}
+        rows = self._fetchall(
+            f"""
+            SELECT activity_id, time_offset, altitude FROM streams
+            WHERE activity_id IN ({_placeholders(len(ids))}) AND altitude IS NOT NULL
+            ORDER BY activity_id, time_offset
+            """,
+            ids,
+        )
+        grouped: dict[int, list[dict[str, Any]]] = {activity_id: [] for activity_id in ids}
+        for row in rows:
+            activity_id = _as_int(row["activity_id"])
+            grouped.setdefault(activity_id, []).append({"time_offset": row["time_offset"], "altitude": row["altitude"]})
+        return grouped
+
     def stream_counts_for_activity(self, activity_id: int) -> tuple[int, int]:
         """Return (stream_count, hr_count) for an activity.
 
@@ -2072,6 +2190,55 @@ class DuckDBRepository:
         )
         assert row is not None, "aggregate COUNT always returns a row"
         return _as_int(row["stream_count"]), _as_int(row["hr_count"])
+
+    def activity_stream_scalars_for_materialization(
+        self, activity_ids: Iterable[int], min_velocity: float
+    ) -> dict[int, ActivityStreamScalars]:
+        ids = sorted({int(activity_id) for activity_id in activity_ids})
+        if not ids:
+            return {}
+        rows = self._fetchall(
+            f"""
+            SELECT
+              activity_id,
+              COUNT(*) AS stream_count,
+              SUM(CASE WHEN heartrate IS NOT NULL THEN 1 ELSE 0 END) AS hr_count,
+              MIN(heartrate) AS min_hr,
+              MAX(heartrate) AS max_hr,
+              AVG(CASE WHEN heartrate IS NOT NULL AND velocity > ? THEN heartrate ELSE NULL END) AS avg_hr_for_cc,
+              AVG(CASE WHEN heartrate IS NOT NULL AND velocity > ? THEN velocity ELSE NULL END) AS avg_vel_for_cc,
+              median(heartrate) AS median_hr
+            FROM streams
+            WHERE activity_id IN ({_placeholders(len(ids))})
+            GROUP BY activity_id
+            """,
+            [min_velocity, min_velocity, *ids],
+        )
+        scalars: dict[int, ActivityStreamScalars] = {
+            activity_id: ActivityStreamScalars(
+                stream_count=0,
+                hr_count=0,
+                min_hr=None,
+                max_hr=None,
+                cardiac_cost=None,
+                median_hr=None,
+            )
+            for activity_id in ids
+        }
+        for row in rows:
+            avg_vel = _as_float(row["avg_vel_for_cc"]) if row["avg_vel_for_cc"] is not None else None
+            avg_hr = _as_float(row["avg_hr_for_cc"]) if row["avg_hr_for_cc"] is not None else None
+            cardiac_cost = round(avg_hr / avg_vel, 2) if avg_hr and avg_vel and avg_vel > 0 else None
+            activity_id = _as_int(row["activity_id"])
+            scalars[activity_id] = ActivityStreamScalars(
+                stream_count=_as_int(row["stream_count"]),
+                hr_count=_as_int(row["hr_count"]),
+                min_hr=_as_int_opt(row["min_hr"]),
+                max_hr=_as_int_opt(row["max_hr"]),
+                cardiac_cost=cardiac_cost,
+                median_hr=_as_float(row["median_hr"]) if row["median_hr"] is not None else None,
+            )
+        return scalars
 
     def zone_seconds_for_activity(self, activity_id: int, bounds: list[int]) -> tuple[int, int, int, int, int]:
         """Return (z1, z2, z3, z4, z5) second counts using precomputed zone bounds.
@@ -2222,6 +2389,25 @@ class DuckDBRepository:
         )
         return _as_int(row["hr_max"]) if row and row["hr_max"] is not None else None
 
+    def max_heartrate_to_dates(self, activity_days: Iterable[str]) -> dict[str, int | None]:
+        days = sorted({str(day) for day in activity_days})
+        if not days:
+            return {}
+        rows = self._fetchall(
+            f"""
+            WITH requested(day) AS (
+              VALUES {", ".join("(CAST(? AS DATE))" for _ in days)}
+            )
+            SELECT r.day AS day, MAX(s.heartrate) AS hr_max
+            FROM requested r
+            LEFT JOIN activities a ON a.activity_day <= r.day
+            LEFT JOIN streams s ON s.activity_id = a.id AND s.heartrate IS NOT NULL
+            GROUP BY r.day
+            """,
+            days,
+        )
+        return {str(row["day"]): _as_int(row["hr_max"]) if row["hr_max"] is not None else None for row in rows}
+
     def activity_hr_range(self, activity_id: int) -> tuple[int | None, int | None]:
         """Return (min_hr, max_hr) from stream heartrate samples for an activity.
 
@@ -2265,6 +2451,56 @@ class DuckDBRepository:
             [activity_id],
         )
         return _as_float(row["median_hr"]) if row and row["median_hr"] is not None else None
+
+    def activity_zone_trimp_for_bounds(
+        self, bounds_by_activity_id: dict[int, list[int]]
+    ) -> dict[int, ActivityZoneTrimp]:
+        if not bounds_by_activity_id:
+            return {}
+        coeff = Config.Zones.COEFF
+        values_sql: list[str] = []
+        params: list[object] = []
+        for activity_id, bounds in sorted(bounds_by_activity_id.items()):
+            values_sql.append("(?, ?, ?, ?, ?, ?)")
+            params.extend([activity_id, bounds[0], bounds[1], bounds[2], bounds[3], bounds[-2]])
+        rows = self._fetchall(
+            f"""
+            WITH bounds(activity_id, b0, b1, b2, b3, b_last_zone) AS (
+              VALUES {", ".join(values_sql)}
+            )
+            SELECT
+              b.activity_id,
+              SUM(CASE WHEN s.heartrate < b.b0 THEN 1 ELSE 0 END) AS z1,
+              SUM(CASE WHEN s.heartrate >= b.b0 AND s.heartrate < b.b1 THEN 1 ELSE 0 END) AS z2,
+              SUM(CASE WHEN s.heartrate >= b.b1 AND s.heartrate < b.b2 THEN 1 ELSE 0 END) AS z3,
+              SUM(CASE WHEN s.heartrate >= b.b2 AND s.heartrate < b.b3 THEN 1 ELSE 0 END) AS z4,
+              SUM(CASE WHEN s.heartrate >= b.b_last_zone THEN 1 ELSE 0 END) AS z5,
+              (
+                SUM(CASE WHEN s.heartrate < b.b0 THEN 1 ELSE 0 END) * {coeff[0]} +
+                SUM(CASE WHEN s.heartrate >= b.b0 AND s.heartrate < b.b1 THEN 1 ELSE 0 END) * {coeff[1]} +
+                SUM(CASE WHEN s.heartrate >= b.b1 AND s.heartrate < b.b2 THEN 1 ELSE 0 END) * {coeff[2]} +
+                SUM(CASE WHEN s.heartrate >= b.b2 AND s.heartrate < b.b3 THEN 1 ELSE 0 END) * {coeff[3]} +
+                SUM(CASE WHEN s.heartrate >= b.b3 AND s.heartrate < b.b_last_zone THEN 1 ELSE 0 END) * {coeff[4]} +
+                SUM(CASE WHEN s.heartrate >= b.b_last_zone THEN 1 ELSE 0 END) * {coeff[5]}
+              ) / 60.0 AS trimp
+            FROM bounds b
+            LEFT JOIN streams s ON s.activity_id = b.activity_id AND s.heartrate IS NOT NULL
+            GROUP BY b.activity_id
+            """,
+            params,
+        )
+        result: dict[int, ActivityZoneTrimp] = {}
+        for row in rows:
+            activity_id = _as_int(row["activity_id"])
+            result[activity_id] = ActivityZoneTrimp(
+                zone1_seconds=_as_int(row["z1"]),
+                zone2_seconds=_as_int(row["z2"]),
+                zone3_seconds=_as_int(row["z3"]),
+                zone4_seconds=_as_int(row["z4"]),
+                zone5_seconds=_as_int(row["z5"]),
+                trimp=round(_as_float(row["trimp"]), 1) if row["trimp"] is not None else 0.0,
+            )
+        return result
 
     def max_heartrate(self) -> float | None:
         row = self._fetchone("SELECT MAX(heartrate) AS hr FROM streams WHERE heartrate IS NOT NULL")
