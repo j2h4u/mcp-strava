@@ -244,8 +244,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-04T00:00:00.000Z
-Stopped at: Completed 15-06 gap-closure (WR-01..04 advisory WARNINGs hardened via TDD)
+Last session: 2026-06-05
+Stopped at: Post-v1.1 perf sweep finished. Pushed Phase 1 (materializer write batching, 99dad87) — CI green. Phase 2 (89603c1): batched the materializer's per-day daily-fact READS into one GROUP BY range scan (the ~2000-read full-recompute lever), parity-gated, 391 passed. Milestone v1.1 still complete-but-unarchived — next /gsd-complete-milestone.
 Resume file: None
 
 ### Post-milestone admin-CLI cleanup (tasks 10-13) — CLOSED 2026-05-28
