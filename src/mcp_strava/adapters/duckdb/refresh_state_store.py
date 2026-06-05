@@ -5,9 +5,19 @@ from dataclasses import dataclass, field
 from typing import cast
 
 from mcp_strava.adapters.duckdb.connection import DuckDBConn, duckdb_process_lock
+from mcp_strava.adapters.duckdb.repository_utils import (
+    Row,
+)
+from mcp_strava.adapters.duckdb.repository_utils import (
+    as_int as _as_int,
+)
+from mcp_strava.adapters.duckdb.repository_utils import (
+    as_str_opt as _as_str_opt,
+)
+from mcp_strava.adapters.duckdb.repository_utils import (
+    normalize_cell as _normalize_cell,
+)
 from mcp_strava.types import ALLOWED_REASON_CODES, RefreshRequestRow, RefreshStateRow
-
-Row = dict[str, object]
 
 
 @dataclass
@@ -228,23 +238,3 @@ class RefreshStateStore:
         )
         self._commit_if_standalone()
         return len(pending)
-
-
-def _normalize_cell(value: object) -> object:
-    return value
-
-
-def _as_int(value: object, default: int = 0) -> int:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, (float, str)):
-        return int(value)
-    raise TypeError(f"expected an int-like cell, got {type(value).__name__}")
-
-
-def _as_str_opt(value: object) -> str | None:
-    return None if value is None else str(value)
