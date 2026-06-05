@@ -5,6 +5,7 @@ import itertools
 import duckdb
 import pytest
 
+from mcp_strava.adapters.duckdb.stream_metric_queries import activity_trimp
 from mcp_strava.hr_zones import (
     DEFAULT_MODEL_ID,
     ZONE_CAP_BPM,
@@ -119,7 +120,7 @@ def test_trimp_regression() -> None:
 
     repo = DuckDBRepository.from_connection(conn)
     bounds = [122, 136, 150, 163, 177, 300]
-    result = repo.activity_trimp(1, bounds=bounds)
+    result = activity_trimp(repo, 1, bounds=bounds)
 
     # Manual: 10 rows in z4 (coeff=3) → 10 * 3 / 60 = 0.5
     assert result == pytest.approx(0.5, abs=0.01), f"Expected ~0.5 but got {result}"

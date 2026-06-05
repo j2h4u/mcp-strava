@@ -2494,6 +2494,7 @@ COMPUTE_SOURCE_MODULES: tuple[str, ...] = (
     "mcp_strava.adapters.duckdb.repository_models",
     "mcp_strava.adapters.duckdb.repository_utils",
     "mcp_strava.adapters.duckdb.source_hashing",
+    "mcp_strava.adapters.duckdb.stream_metric_queries",
     "mcp_strava.adapters.duckdb.trimp_sql",
     "mcp_strava.cardiac_drift",
     "mcp_strava.constants",

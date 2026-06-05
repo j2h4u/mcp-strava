@@ -11,6 +11,7 @@ from mcp_strava.adapters.duckdb.daily_load_queries import (
 )
 from mcp_strava.adapters.duckdb.kudos_store import activities_missing_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.schema import create_schema
+from mcp_strava.adapters.duckdb.stream_metric_queries import max_heartrate_to_date
 
 
 def _create_duckdb_fixture(path: Path) -> None:
@@ -493,7 +494,7 @@ def _zone_bounds_for(repo, end_day: str):
     from mcp_strava.settings import get_settings
 
     athlete = get_settings().athlete
-    global_hr_max = repo.max_heartrate_to_date(end_day)
+    global_hr_max = max_heartrate_to_date(repo, end_day)
     return get_zone_model(athlete.hr_zone_model).zone_bounds(hr_max=int(global_hr_max), hr_rest=athlete.hr_rest)
 
 

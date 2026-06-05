@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from mcp_strava.adapters.duckdb.connection import DuckDBConn
 from mcp_strava.adapters.duckdb.schema import create_aggregate_views
+from mcp_strava.adapters.duckdb.stream_metric_queries import max_heartrate
 from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.metric_registry import STATUS_FACT_REGISTRY
 from mcp_strava.settings import get_settings
@@ -164,7 +165,7 @@ def _query_excessive_z5_status(
         if athlete.hr_rest is None:
             raise RuntimeError(_HR_REST_MISSING_MSG)
         repo = DuckDBRepository.from_connection(conn)
-        hr_max = repo.max_heartrate()
+        hr_max = max_heartrate(repo)
         if hr_max is None:
             # No HR data in DB: no Z5 events are possible; use max int as unreachable threshold.
             z5_lower_bound = 300

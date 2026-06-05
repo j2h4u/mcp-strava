@@ -11,6 +11,18 @@ from mcp_strava.adapters.duckdb.read_model_materializer import (
     materialize_read_model,
 )
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.stream_metric_queries import (
+    activity_cc,
+    activity_hr_range,
+    activity_median_heartrate,
+    activity_stream_scalars_for_materialization,
+    activity_trimp,
+    activity_zone_trimp_for_bounds,
+    max_heartrate_to_date,
+    max_heartrate_to_dates,
+    stream_counts_for_activity,
+    zone_seconds_for_activity,
+)
 from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.settings import get_settings
 from tests._fixtures_duckdb import create_empty_fixture_db
@@ -556,8 +568,8 @@ def test_duckdb_materializer_hrr_uses_per_activity_max_not_running_max(tmp_path:
         materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
 
         easy_fact = repo.fetch_activity_metric_fact(802, metric_version=1)
-        running_max = repo.max_heartrate_to_date("2026-05-21")
-        per_activity_max = repo.activity_hr_range(802)[1]
+        running_max = max_heartrate_to_date(repo, "2026-05-21")
+        per_activity_max = activity_hr_range(repo, 802)[1]
 
     assert running_max == 190, "running cross-activity max should be 190 (from day-1 hard effort)"
     assert per_activity_max == 150, "day-2 activity's own observed max should be 150"
@@ -732,8 +744,8 @@ def test_activity_materialization_batch_reads_match_per_activity_methods(tmp_pat
         activity_ids = [int(row["activity_id"]) for row in dirty_rows]
 
         sources = activity_materialization_sources(repo, activity_ids)
-        scalars = repo.activity_stream_scalars_for_materialization(activity_ids, 0.5)
-        hr_max_by_day = repo.max_heartrate_to_dates(str(row["activity_day"]) for row in dirty_rows)
+        scalars = activity_stream_scalars_for_materialization(repo, activity_ids, 0.5)
+        hr_max_by_day = max_heartrate_to_dates(repo, (str(row["activity_day"]) for row in dirty_rows))
 
         bounds_by_activity_id = {}
         for row in dirty_rows:
@@ -745,25 +757,25 @@ def test_activity_materialization_batch_reads_match_per_activity_methods(tmp_pat
                     hr_max=hr_max,
                     hr_rest=athlete.hr_rest,
                 )
-        zones = repo.activity_zone_trimp_for_bounds(bounds_by_activity_id)
+        zones = activity_zone_trimp_for_bounds(repo, bounds_by_activity_id)
 
         for row in dirty_rows:
             activity_id = int(row["activity_id"])
             assert sources[activity_id].activity == activity_by_id(repo, activity_id)
             assert sources[activity_id].source_hash == repo.source_state_for_activity(activity_id)["source_hash"]
 
-            stream_count, hr_count = repo.stream_counts_for_activity(activity_id)
-            min_hr, max_hr = repo.activity_hr_range(activity_id)
+            stream_count, hr_count = stream_counts_for_activity(repo, activity_id)
+            min_hr, max_hr = activity_hr_range(repo, activity_id)
             scalar = scalars[activity_id]
             assert (scalar.stream_count, scalar.hr_count) == (stream_count, hr_count)
             assert (scalar.min_hr, scalar.max_hr) == (min_hr, max_hr)
-            assert scalar.cardiac_cost == repo.activity_cc(activity_id, 0.5)
-            assert scalar.median_hr == repo.activity_median_heartrate(activity_id)
-            assert hr_max_by_day[str(row["activity_day"])] == repo.max_heartrate_to_date(str(row["activity_day"]))
+            assert scalar.cardiac_cost == activity_cc(repo, activity_id, 0.5)
+            assert scalar.median_hr == activity_median_heartrate(repo, activity_id)
+            assert hr_max_by_day[str(row["activity_day"])] == max_heartrate_to_date(repo, str(row["activity_day"]))
 
             if activity_id in bounds_by_activity_id:
-                expected_zones = repo.zone_seconds_for_activity(activity_id, bounds_by_activity_id[activity_id])
-                expected_trimp = repo.activity_trimp(activity_id, bounds=bounds_by_activity_id[activity_id])
+                expected_zones = zone_seconds_for_activity(repo, activity_id, bounds_by_activity_id[activity_id])
+                expected_trimp = activity_trimp(repo, activity_id, bounds=bounds_by_activity_id[activity_id])
                 actual_zones = zones[activity_id]
                 assert (
                     actual_zones.zone1_seconds,
@@ -830,32 +842,17 @@ def test_materializer_batch_reads_run_before_write_transaction(tmp_path: Path) -
         def _record_batch_read_depth(self) -> None:
             self.batch_read_depths.append(self._transaction_depth)
 
-        def activity_stream_scalars_for_materialization(self, *args, **kwargs):
-            self._record_batch_read_depth()
-            return super().activity_stream_scalars_for_materialization(*args, **kwargs)
-
-        def max_heartrate_to_dates(self, *args, **kwargs):
-            self._record_batch_read_depth()
-            return super().max_heartrate_to_dates(*args, **kwargs)
-
-        def activity_zone_trimp_for_bounds(self, *args, **kwargs):
-            self._record_batch_read_depth()
-            return super().activity_zone_trimp_for_bounds(*args, **kwargs)
-
-        def stream_hr_velocity_simple_rows_for_activities(self, *args, **kwargs):
-            self._record_batch_read_depth()
-            return super().stream_hr_velocity_simple_rows_for_activities(*args, **kwargs)
-
-        def stream_hr_velocity_time_rows_for_activities(self, *args, **kwargs):
-            self._record_batch_read_depth()
-            return super().stream_hr_velocity_time_rows_for_activities(*args, **kwargs)
-
-        def stream_altitude_rows_for_activities(self, *args, **kwargs):
-            self._record_batch_read_depth()
-            return super().stream_altitude_rows_for_activities(*args, **kwargs)
-
         def _fetchall(self, sql, params=None):
-            if "JOIN activity_source_state" in " ".join(sql.split()):
+            compact = " ".join(sql.split())
+            if (
+                "JOIN activity_source_state" in compact
+                or "COUNT(*) AS stream_count" in compact
+                or "WITH requested(day)" in compact
+                or "WITH bounds(activity_id" in compact
+                or "SELECT activity_id, time_offset, heartrate, velocity FROM streams" in compact
+                or "SELECT activity_id, time_offset, altitude FROM streams" in compact
+                or "SELECT activity_id, heartrate, velocity FROM streams" in compact
+            ):
                 self._record_batch_read_depth()
             return super()._fetchall(sql, params)
 

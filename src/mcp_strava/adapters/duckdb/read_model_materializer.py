@@ -10,6 +10,24 @@ from typing import Any, cast
 from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id, activity_materialization_sources
 from mcp_strava.adapters.duckdb.daily_load_queries import daily_load_points_between
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.stream_metric_queries import (
+    activity_cc,
+    activity_hr_range,
+    activity_median_heartrate,
+    activity_stream_scalars_for_materialization,
+    activity_trimp,
+    activity_zone_trimp_for_bounds,
+    max_heartrate_to_date,
+    max_heartrate_to_dates,
+    stream_altitude_rows,
+    stream_altitude_rows_for_activities,
+    stream_counts_for_activity,
+    stream_hr_velocity_simple_rows,
+    stream_hr_velocity_simple_rows_for_activities,
+    stream_hr_velocity_time_rows,
+    stream_hr_velocity_time_rows_for_activities,
+    zone_seconds_for_activity,
+)
 from mcp_strava.constants import Config
 from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
@@ -136,7 +154,7 @@ def _activity_fact(
     if source is None:
         raise RuntimeError(f"Dirty activity missing source state: {activity_id}")
 
-    stream_count, hr_count = repo.stream_counts_for_activity(activity_id)
+    stream_count, hr_count = stream_counts_for_activity(repo, activity_id)
 
     # Validate hr_rest before any zone computation.
     athlete = settings.athlete
@@ -145,7 +163,7 @@ def _activity_fact(
 
     # Running max-HR-to-date for this activity's day.
     activity_day = str(dirty_row["activity_day"])
-    hr_max_observed = repo.max_heartrate_to_date(activity_day)
+    hr_max_observed = max_heartrate_to_date(repo, activity_day)
 
     # When no HR samples exist at all (for any activity up to this date),
     # zones are all zero and TRIMP is 0. No fallback max is fabricated.
@@ -156,18 +174,18 @@ def _activity_fact(
         bounds = None
     else:
         bounds = get_zone_model(athlete.hr_zone_model).zone_bounds(hr_max=int(hr_max_observed), hr_rest=athlete.hr_rest)
-        zone1, zone2, zone3, zone4, zone5 = repo.zone_seconds_for_activity(activity_id, bounds)
-        trimp_val = repo.activity_trimp(activity_id, bounds=bounds)
+        zone1, zone2, zone3, zone4, zone5 = zone_seconds_for_activity(repo, activity_id, bounds)
+        trimp_val = activity_trimp(repo, activity_id, bounds=bounds)
         hr_max_used = int(hr_max_observed)
 
-    min_hr, max_hr = repo.activity_hr_range(activity_id)
-    cc = repo.activity_cc(activity_id, Config.Thresholds.VEL_MOVING)
+    min_hr, max_hr = activity_hr_range(repo, activity_id)
+    cc = activity_cc(repo, activity_id, Config.Thresholds.VEL_MOVING)
 
     # ── Pure metric computation (wires the 14 previously-default columns) ──
-    hr_rows = repo.stream_hr_velocity_time_rows(activity_id)
-    alt_rows = repo.stream_altitude_rows(activity_id)
-    drift_rows = repo.stream_hr_velocity_simple_rows(activity_id, Config.Thresholds.VEL_MOVING)
-    median_hr = repo.activity_median_heartrate(activity_id)
+    hr_rows = stream_hr_velocity_time_rows(repo, activity_id)
+    alt_rows = stream_altitude_rows(repo, activity_id)
+    drift_rows = stream_hr_velocity_simple_rows(repo, activity_id, Config.Thresholds.VEL_MOVING)
+    median_hr = activity_median_heartrate(repo, activity_id)
 
     hr_rec = calc_hr_recovery(hr_rows)
     vspeed = calc_vertical_speed(alt_rows)
@@ -261,8 +279,8 @@ def _activity_facts_batched(
 
     activity_ids = [int(row["activity_id"]) for row in dirty_rows]
     sources = activity_materialization_sources(repo, activity_ids)
-    scalars = repo.activity_stream_scalars_for_materialization(activity_ids, Config.Thresholds.VEL_MOVING)
-    hr_max_by_day = repo.max_heartrate_to_dates(str(row["activity_day"]) for row in dirty_rows)
+    scalars = activity_stream_scalars_for_materialization(repo, activity_ids, Config.Thresholds.VEL_MOVING)
+    hr_max_by_day = max_heartrate_to_dates(repo, (str(row["activity_day"]) for row in dirty_rows))
 
     bounds_by_activity_id: dict[int, list[int]] = {}
     hr_max_used_by_activity_id: dict[int, int | None] = {}
@@ -278,11 +296,11 @@ def _activity_facts_batched(
         bounds_by_activity_id[activity_id] = bounds
         hr_max_used_by_activity_id[activity_id] = int(hr_max_observed)
 
-    zone_trimp_by_activity_id = repo.activity_zone_trimp_for_bounds(bounds_by_activity_id)
-    hr_rows_by_activity_id = repo.stream_hr_velocity_time_rows_for_activities(activity_ids)
-    alt_rows_by_activity_id = repo.stream_altitude_rows_for_activities(activity_ids)
-    drift_rows_by_activity_id = repo.stream_hr_velocity_simple_rows_for_activities(
-        activity_ids, Config.Thresholds.VEL_MOVING
+    zone_trimp_by_activity_id = activity_zone_trimp_for_bounds(repo, bounds_by_activity_id)
+    hr_rows_by_activity_id = stream_hr_velocity_time_rows_for_activities(repo, activity_ids)
+    alt_rows_by_activity_id = stream_altitude_rows_for_activities(repo, activity_ids)
+    drift_rows_by_activity_id = stream_hr_velocity_simple_rows_for_activities(
+        repo, activity_ids, Config.Thresholds.VEL_MOVING
     )
 
     fact_rows: list[dict[str, Any]] = []
@@ -607,7 +625,7 @@ def materialize_read_model(
     # Compute a session-level bounds for daily-fact aggregation (global max at end_day).
     # Per-activity facts use per-activity running max; this bounds is only used to
     # aggregate already-computed TRIMP via observed_trimp_history (cross-activity daily sum).
-    global_hr_max = repo.max_heartrate_to_date(end_day)
+    global_hr_max = max_heartrate_to_date(repo, end_day)
     if global_hr_max is None:
         # No HR data at all — use a sentinel bounds that returns 0 TRIMP for all rows.
         session_bounds = get_zone_model(athlete.hr_zone_model).zone_bounds(
