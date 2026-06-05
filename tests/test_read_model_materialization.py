@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
 from mcp_strava.adapters.duckdb.read_model_materializer import (
     _activity_fact,
     _activity_facts_batched,
@@ -748,7 +749,7 @@ def test_activity_materialization_batch_reads_match_per_activity_methods(tmp_pat
 
         for row in dirty_rows:
             activity_id = int(row["activity_id"])
-            assert sources[activity_id].activity == repo.activity_by_id(activity_id)
+            assert sources[activity_id].activity == activity_by_id(repo, activity_id)
             assert sources[activity_id].source_hash == repo.source_state_for_activity(activity_id)["source_hash"]
 
             stream_count, hr_count = repo.stream_counts_for_activity(activity_id)

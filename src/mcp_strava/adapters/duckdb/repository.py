@@ -62,7 +62,6 @@ from mcp_strava.sports import SPORT_TRAINING as TRAINING_SPORTS
 from mcp_strava.types import (
     DailyLoadPoint,
     ReadModelMetadata,
-    RepositoryActivityRow,
 )
 
 
@@ -1064,32 +1063,6 @@ class DuckDBRepository:
             window = _as_int(row["window_days"])
             by_window.setdefault(window, row)
         return by_window
-
-    # Activities
-    def recent_activities(self, limit: int = 15) -> list[RepositoryActivityRow]:
-        rows = self._fetchall(
-            """
-            SELECT id, date, name, sport_type, distance, moving_time, elapsed_time,
-                   total_elevation_gain, summary_json, detail_json, synced_at
-            FROM activities
-            ORDER BY activity_day DESC, id DESC
-            LIMIT ?
-            """,
-            [limit],
-        )
-        return [to_activity_row(row) for row in rows]
-
-    def activity_by_id(self, activity_id: int) -> RepositoryActivityRow | None:
-        row = self._fetchone(
-            """
-            SELECT id, date, name, sport_type, distance, moving_time, elapsed_time,
-                   total_elevation_gain, summary_json, detail_json, synced_at
-            FROM activities
-            WHERE id = ?
-            """,
-            [activity_id],
-        )
-        return to_activity_row(row) if row else None
 
     def activity_materialization_sources(self, activity_ids: Iterable[int]) -> dict[int, ActivityMaterializationSource]:
         ids = sorted({int(activity_id) for activity_id in activity_ids})

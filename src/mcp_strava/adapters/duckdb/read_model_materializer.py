@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 from statistics import median
 from typing import Any, cast
 
+from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.constants import Config
 from mcp_strava.hr_zones import get_zone_model
@@ -127,7 +128,7 @@ def _activity_fact(
     settings: Settings,
 ) -> dict[str, Any]:
     activity_id = int(dirty_row["activity_id"])
-    activity = repo.activity_by_id(activity_id)
+    activity = activity_by_id(repo, activity_id)
     if activity is None:
         raise RuntimeError(f"Dirty activity missing source row: {activity_id}")
     source = repo.source_state_for_activity(activity_id)

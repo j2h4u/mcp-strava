@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import duckdb
 import pytest
 
+from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.duckdb.sync_log_store import read_sync_log
@@ -141,16 +142,16 @@ def test_sync_summaries_skips_rewrite_when_summary_unchanged(tmp_path):
     transport = _SummaryTransport(activity)
     with _repo(tmp_path) as repo:
         seen1, new1 = sync_summaries(repo, transport, "2026-05-29T00:00:00")
-        first = repo.activity_by_id(500)
+        first = activity_by_id(repo, 500)
 
         # Same content, later sync timestamp -> must be a no-op (no row rewrite).
         seen2, new2 = sync_summaries(repo, transport, "2026-05-29T01:00:00")
-        unchanged = repo.activity_by_id(500)
+        unchanged = activity_by_id(repo, 500)
 
         # Genuinely changed content -> must still write through.
         transport.payload = {**activity, "name": "Renamed Run"}
         sync_summaries(repo, transport, "2026-05-29T02:00:00")
-        changed = repo.activity_by_id(500)
+        changed = activity_by_id(repo, 500)
 
     assert (seen1, new1) == (1, 1)
     assert (seen2, new2) == (1, 0)

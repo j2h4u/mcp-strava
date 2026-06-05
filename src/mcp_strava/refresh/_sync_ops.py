@@ -8,6 +8,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
 from mcp_strava.adapters.duckdb.activity_selectors import (
     activities_missing_details,
     activities_missing_streams,
@@ -212,7 +213,7 @@ def sync_summaries(repo, transport, now_iso: str) -> tuple[int, int]:
         journal_schema_drift(data, "summary_activity", is_batch=True)
         for raw in data:
             act = parse_strava_activity(raw)
-            existing = repo.activity_by_id(act.id)
+            existing = activity_by_id(repo, act.id)
             summary_json = json.dumps(raw)
             # Skip the write when an existing activity is semantically unchanged:
             # the daily refresh re-sees every activity each cycle, and rewriting

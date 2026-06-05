@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from mcp_strava.adapters.duckdb.activity_lookup_queries import recent_activities
 from mcp_strava.adapters.duckdb.activity_selectors import activities_missing_details, activities_missing_streams
 from mcp_strava.adapters.duckdb.athlete_zone_store import insert_athlete_zones, latest_athlete_zones
 from mcp_strava.adapters.duckdb.kudos_store import kudos_for_activity, list_kudos, upsert_kudos
@@ -65,7 +66,7 @@ def test_repository_boundary_covers_activity_stream_zone_kudos_and_synclog(tmp_p
             summary_json="{}",
             synced_at="2026-05-21T07:00:00Z",
         )
-        rows = repo.recent_activities(limit=5)
+        rows = recent_activities(repo, limit=5)
         assert rows and rows[0].id == 1
 
         repo.insert_stream_rows_chunked(
@@ -369,7 +370,7 @@ def test_repository_module_does_not_call_strava_network(monkeypatch: pytest.Monk
     monkeypatch.setattr(strava_client.StravaClient, "refresh_token", _boom)
 
     with DuckDBRepository.from_path(fixture) as repo:
-        repo.recent_activities(limit=1)
+        recent_activities(repo, limit=1)
 
 
 def test_load_paths_use_repository_instead_of_raw_activity_stream_sql() -> None:
