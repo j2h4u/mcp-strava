@@ -103,16 +103,11 @@ The response contains `access_token`, `refresh_token`, and `expires_at`.
 
 ### 4. Write The Token File
 
-For local development, create `.env` in the repo root:
+For local development, copy the tracked template and fill the values in `.env`:
 
 ```bash
-cat > .env <<'EOF'
-STRAVA_CLIENT_ID=...
-STRAVA_CLIENT_SECRET=...
-STRAVA_ACCESS_TOKEN=...
-STRAVA_REFRESH_TOKEN=...
-STRAVA_EXPIRES_AT=...
-EOF
+cp .env.example .env
+$EDITOR .env
 chmod 600 .env
 ```
 
