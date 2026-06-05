@@ -1,7 +1,6 @@
 """DuckDB repository boundary for primary Strava mirror storage."""
 
 import json
-import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
@@ -30,6 +29,33 @@ from mcp_strava.adapters.duckdb.repository_models import (
     SourceStateRow,
     TrainingModelDayRow,
 )
+from mcp_strava.adapters.duckdb.repository_utils import (
+    Row,
+)
+from mcp_strava.adapters.duckdb.repository_utils import (
+    as_float as _as_float,
+)
+from mcp_strava.adapters.duckdb.repository_utils import (
+    as_int as _as_int,
+)
+from mcp_strava.adapters.duckdb.repository_utils import (
+    as_int_opt as _as_int_opt,
+)
+from mcp_strava.adapters.duckdb.repository_utils import (
+    as_str as _as_str,
+)
+from mcp_strava.adapters.duckdb.repository_utils import (
+    as_str_opt as _as_str_opt,
+)
+from mcp_strava.adapters.duckdb.repository_utils import (
+    normalize_cell as _normalize_cell,
+)
+from mcp_strava.adapters.duckdb.repository_utils import (
+    placeholders as _placeholders,
+)
+from mcp_strava.adapters.duckdb.repository_utils import (
+    safe_identifier as _safe_identifier,
+)
 from mcp_strava.adapters.duckdb.source_hashing import canonical_semantic_value, semantic_json_hash
 from mcp_strava.adapters.duckdb.trimp_sql import build_trimp_sql
 from mcp_strava.constants import Config
@@ -42,29 +68,11 @@ from mcp_strava.types import (
     RepositorySyncLogEntry,
 )
 
-# The generic DB-API row boundary. A raw row out of DuckDB is a heterogeneous
-# mapping of column name -> cell value whose static shape the fetch helpers
-# cannot know, so the honest type is ``dict[str, object]`` — NOT ``dict[str,
-# Any]``. ``object`` keeps the values opaque (so a stray ``row["x"] + 1`` is a
-# type error, not silently ``Any``) while still allowing the ``str(...)`` /
-# ``bool(...)`` narrowing the repository does. Each public read method then casts
-# this generic row to a precise ``TypedDict`` (the *RowDict types below) via
-# ``_one``/``_all``, so the unavoidable ``Any -> typed`` narrowing happens
-# exactly once, at the ``_fetchall``/``_fetchone`` consumption boundary.
-Row = dict[str, object]
-
 
 def _emit(event: str, **fields: object) -> None:
     """Emit a structured JSON diagnostic event to stdout (house log style)."""
     print(json.dumps({"event": event, **fields}, ensure_ascii=False), flush=True)
 
-
-# A few internal queries must interpolate table/column names (DuckDB does not
-# parameterize identifiers). All current callers pass schema-defined literals,
-# never Strava-sourced strings — but this guard rejects anything that is not a
-# bare SQL identifier, so a future mistake fails loudly instead of allowing
-# injection. Defense-in-depth for the single-user threat model.
-_SQL_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # Stream-row insert column order (must match the streams table) and the per-statement
 # row cap for batched multi-row INSERTs in _insert_stream_rows. See that method for why.
@@ -90,68 +98,6 @@ _STREAM_INSERT_STMT_ROWS = 250
 # loops (~141 Banister-warmup days) to ~1-2 statements, but DuckDB parses the VALUES
 # literal so the cap keeps long ranges off the quadratic-parse tail.
 _FACT_UPSERT_BATCH_ROWS = 250
-
-
-def _safe_identifier(name: str) -> str:
-    if not _SQL_IDENTIFIER.match(name):
-        raise ValueError(f"unsafe SQL identifier (not a bare table/column name): {name!r}")
-    return name
-
-
-def _normalize_cell(value: object) -> object:
-    if isinstance(value, date):
-        return value.isoformat()
-    return value
-
-
-# ─── Typed cell accessors (object -> scalar narrowing) ───
-#
-# A raw row's cell is ``object`` (see ``Row`` above). For the wide, all-nullable
-# aggregate/stream rows — where a per-shape TypedDict would be ~20 near-identical
-# "every column is ``int|float|None``" definitions — these helpers narrow a single
-# cell instead. They are the structured-row analogue of casting to a TypedDict:
-# explicit, centralized, and (unlike a bare cast) they validate at runtime, so a
-# column that is unexpectedly non-numeric fails loudly here rather than silently
-# coercing. ``None`` collapses to ``default`` (SQL NULL from an empty SUM/AVG or
-# an outer join), matching the ``int(x or 0)`` idiom they replace.
-
-
-def _as_int(value: object, default: int = 0) -> int:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, (float, str)):
-        return int(value)
-    raise TypeError(f"expected an int-like cell, got {type(value).__name__}")
-
-
-def _as_float(value: object, default: float = 0.0) -> float:
-    if value is None:
-        return default
-    if isinstance(value, (int, float, str)):
-        return float(value)
-    raise TypeError(f"expected a float-like cell, got {type(value).__name__}")
-
-
-def _as_str(value: object) -> str:
-    return str(value)
-
-
-def _as_int_opt(value: object) -> int | None:
-    """Narrow a nullable cell to ``int | None`` (preserve SQL NULL as None)."""
-    return None if value is None else _as_int(value)
-
-
-def _as_str_opt(value: object) -> str | None:
-    """Narrow a nullable cell to ``str | None`` (preserve SQL NULL as None)."""
-    return None if value is None else str(value)
-
-
-def _placeholders(count: int) -> str:
-    return ", ".join("?" for _ in range(count))
 
 
 @dataclass

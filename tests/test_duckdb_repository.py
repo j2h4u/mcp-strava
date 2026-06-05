@@ -298,20 +298,20 @@ def test_duckdb_repository_fact_upserts_queries_and_dirty_clear(tmp_path: Path) 
 
 
 def test_safe_identifier_rejects_sql_injection() -> None:
-    """_safe_identifier accepts bare identifiers and rejects anything else.
+    """safe_identifier accepts bare identifiers and rejects anything else.
 
     Panel Security finding (defense-in-depth): a handful of internal queries
     interpolate table/column names because DuckDB cannot parameterize
     identifiers. All current callers pass schema literals, but the guard makes a
     future Strava-sourced string fail loudly instead of injecting.
     """
-    from mcp_strava.adapters.duckdb.repository import _safe_identifier
+    from mcp_strava.adapters.duckdb.repository_utils import safe_identifier
 
-    assert _safe_identifier("activity_metric_facts") == "activity_metric_facts"
-    assert _safe_identifier("observed_max_hr") == "observed_max_hr"
+    assert safe_identifier("activity_metric_facts") == "activity_metric_facts"
+    assert safe_identifier("observed_max_hr") == "observed_max_hr"
     for bad in ["facts; DROP TABLE x", "a'b", "a b", "a-b", "", "1abc", "x)", "a,b"]:
         with pytest.raises(ValueError):
-            _safe_identifier(bad)
+            safe_identifier(bad)
 
 
 def _fresh_logic_version_repo():
