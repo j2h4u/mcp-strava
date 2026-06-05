@@ -128,7 +128,7 @@ Strava API ──► refresh/ + sync.py ──► DuckDB mirror (data/strava.duc
 | Component | Responsibility | File |
 |-----------|----------------|------|
 | CLI dispatcher | Parse product + `admin` subcommands and print JSON/tabular output | `src/mcp_strava/cli.py` |
-| Application services | Freshness, metric services, product facts, aggregates, mirror coverage, product registry | `src/mcp_strava/application/` |
+| Application services | Freshness, metric services, product facts, aggregates, and mirror coverage | `src/mcp_strava/application/` |
 | Metric registry | Metric IDs, aggregate metadata, status facts, and registry-owned fact-column SQL metadata | `src/mcp_strava/metric_registry.py` |
 | Core training | Banister model, progressive signal, weekly plan, forward simulation | `src/mcp_strava/training.py` |
 | Core metrics | Enrichment, decoupling, HR recovery, vertical speed | `src/mcp_strava/metrics.py` |
@@ -157,7 +157,7 @@ Strava API ──► refresh/ + sync.py ──► DuckDB mirror (data/strava.duc
 - Depends on: `application/`, `db.py`, `sync.py`, `refresh/`, `types.py`
 - Used by: direct CLI invocation
 - Purpose: request-time orchestration and freshness gating.
-- Location: `src/mcp_strava/application/` (`freshness.py`, `metric_services.py`, `product_facts.py`, `aggregate_services.py`, `mirror_coverage.py`, `registry.py`) plus root-level `metric_registry.py`
+- Location: `src/mcp_strava/application/` (`freshness.py`, `metric_services.py`, `product_facts.py`, `aggregate_services.py`, `mirror_coverage.py`) plus root-level `metric_registry.py`
 - Depends on: core modules and the DuckDB repository
 - Used by: `cli.py` and `interfaces/mcp_http.py`
 - Purpose: compute derived training and analytics signals.

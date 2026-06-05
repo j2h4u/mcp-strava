@@ -20,7 +20,7 @@ scope: full-repo
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                        Application Layer                                  │
 │  metric_services.py  product_facts.py  aggregate_services.py            │
-│  freshness.py  mirror_coverage.py  registry.py                          │
+│  freshness.py  mirror_coverage.py                                       │
 │  `application/`                                                          │
 └──────────┬───────────────────────────────────────┬───────────────────────┘
            │ reads via                             │ writes via
@@ -125,7 +125,7 @@ The deploy layer owns process lifecycle:
 **Application Layer:**
 - Purpose: Compose repository reads into `ServiceEnvelope` responses; no business logic touching raw API or SQL
 - Location: `src/mcp_strava/application/`
-- Contains: metric services, product fact bundles, aggregate services, freshness assembly, and product registry; root-level `metric_registry.py` provides shared registry metadata consumed by application and adapters
+- Contains: metric services, product fact bundles, aggregate services, freshness assembly, and mirror coverage; root-level `metric_registry.py` provides shared registry metadata consumed by application and adapters
 - Depends on: `adapters/duckdb/` (read via `ReadConn`/`DuckDBRepository`), `metrics.py`, `training.py`, `hr_zones.py`
 - Used by: interfaces layer only
 

@@ -167,7 +167,7 @@ mcp-strava/
 - `cmd_*` prefix for CLI command handler functions in `cli.py`
 
 **Constants:**
-- `UPPER_SNAKE_CASE`: `DUCKDB_TABLES`, `CURRENT_METRIC_VERSION`, `PRODUCT_SERVICE_NAMES`, `MCP_TOOL_NAMES`
+- `UPPER_SNAKE_CASE`: `DUCKDB_TABLES`, `CURRENT_METRIC_VERSION`, `MCP_TOOL_NAMES`
 
 **Type aliases:**
 - `Row = dict[str, Any]` in `repository.py`
@@ -178,8 +178,7 @@ mcp-strava/
 1. Add application service function in `src/mcp_strava/application/metric_services.py` (or new file in `application/` for distinct domain)
 2. Register tool in `src/mcp_strava/interfaces/mcp_http.py` inside `build_mcp_server()` using `@server.tool()`
 3. Add to `MCP_TOOL_NAMES` tuple in `interfaces/mcp_http.py`
-4. Add to `PRODUCT_SERVICES` dict in `application/registry.py` if CLI-accessible
-5. Tests: `tests/test_mcp_surface.py` (MCP contract) + `tests/test_application_services.py` (service logic)
+4. Tests: `tests/test_mcp_surface.py` (MCP contract) + `tests/test_application_services.py` (service logic)
 
 **New CLI command:**
 1. Add `cmd_<name>(args)` function in `src/mcp_strava/cli.py`

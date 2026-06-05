@@ -149,11 +149,11 @@ def test_cli_includes_namespaced_admin_refresh_commands() -> None:
     assert "refresh" not in cli.ADMIN_COMMANDS
 
 
-def test_product_service_registry_excludes_admin_debug_commands() -> None:
-    from mcp_strava.application.registry import PRODUCT_SERVICES
+def test_runtime_product_surfaces_exclude_admin_debug_commands() -> None:
+    import mcp_strava.cli as cli
+    from mcp_strava.interfaces import mcp_http
 
-    forbidden = {
-        "admin",
+    forbidden_operations = {
         "sync",
         "backfill",
         "sql",
@@ -166,7 +166,9 @@ def test_product_service_registry_excludes_admin_debug_commands() -> None:
         "db-check",
     }
 
-    assert forbidden.isdisjoint(PRODUCT_SERVICES)
+    assert "admin" in cli.COMMANDS
+    assert forbidden_operations.isdisjoint(cli.COMMANDS)
+    assert {"admin", *forbidden_operations}.isdisjoint(mcp_http.MCP_TOOL_NAMES)
 
 
 def test_cmd_sql_is_not_reused_as_service_or_mcp_surface() -> None:

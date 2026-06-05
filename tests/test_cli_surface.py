@@ -316,14 +316,13 @@ def test_workout_detail_json_exposes_kudos_names_and_supported_gear_facts(
 
 def test_admin_commands_are_namespaced_and_distinct(monkeypatch: pytest.MonkeyPatch) -> None:
     import mcp_strava.cli as cli
-    from mcp_strava.application.registry import PRODUCT_SERVICES
 
     # Exact contract on the admin command set (drift detector).
     assert set(cli.ADMIN_COMMANDS) == ADMIN_COMMANDS
     assert "admin" in cli.COMMANDS
-    # Admin and product surfaces must not overlap; product services must be present.
-    assert ADMIN_COMMANDS.isdisjoint(PRODUCT_SERVICES)
-    assert {"daily_brief_facts", "weekly_digest_facts", "historical_facts"}.issubset(PRODUCT_SERVICES)
+    # Admin subcommands stay below the namespaced `admin` surface.
+    assert ADMIN_COMMANDS.isdisjoint(cli.COMMANDS)
+    assert {"report", "weekly", "workouts", "workout", "freshness"}.issubset(cli.COMMANDS)
 
 
 def test_admin_mirror_coverage_json_output(
