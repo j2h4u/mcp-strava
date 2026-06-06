@@ -4,9 +4,8 @@ from pathlib import Path
 import pytest
 
 from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id, activity_materialization_sources
+from mcp_strava.adapters.duckdb.read_model_activity_facts import _activity_fact, _activity_facts_batched
 from mcp_strava.adapters.duckdb.read_model_materializer import (
-    _activity_fact,
-    _activity_facts_batched,
     _record_failed_run,
     materialize_read_model,
 )
