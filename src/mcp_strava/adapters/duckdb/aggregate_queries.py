@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from datetime import date, timedelta
-from typing import Any, cast
+from typing import cast
 
+from mcp_strava.adapters.duckdb.aggregate_distribution import _DistributionGroup
 from mcp_strava.adapters.duckdb.aggregate_models import AggregateQuery, AggregateRequest, AggregateRow
+from mcp_strava.adapters.duckdb.aggregate_query_fetch import _rows, _scalar_cell
+from mcp_strava.adapters.duckdb.aggregate_query_sources import SOURCE_DAY_COLUMNS, SOURCE_VIEWS, view_has_sport
 from mcp_strava.adapters.duckdb.aggregate_rows import (
     aggregate_row_from_group,
     as_float,
@@ -15,86 +18,27 @@ from mcp_strava.adapters.duckdb.aggregate_rows import (
     to_iso,
     with_empty_rows,
 )
+from mcp_strava.adapters.duckdb.aggregate_sql_expressions import (
+    _bucket_expression,
+    _denominator_expression,
+    _exclusion_expression,
+    _sample_expression,
+    _sport_output_expression,
+    _value_expression,
+    _where_clause,
+)
 from mcp_strava.adapters.duckdb.connection import DuckDBConn
 from mcp_strava.adapters.duckdb.schema import create_aggregate_views
 from mcp_strava.adapters.duckdb.status_fact_queries import query_status_facts as query_status_facts
 from mcp_strava.metric_registry import (
-    AGGREGATE_BUCKET_INTERVALS,
     METRIC_REGISTRY,
     SUPPORTED_AGGREGATE_BUCKETS,
     SUPPORTED_AGGREGATE_SCOPES,
     SUPPORTED_ROLLING_WINDOW_DAYS,
-    aggregate_query_allowed_columns,
     metrics_for_aggregate_bundle,
 )
 from mcp_strava.sports import SPORT_ALL as ALL_SPORTS
 from mcp_strava.types import MetricDefinition
-
-
-@dataclass
-class _DistributionGroup:
-    """Typed accumulator for one (bucket_start, sport_type) distribution group.
-
-    Replaces an ad-hoc ``dict[str, Any]`` accumulator: the per-group running
-    counts/lists are now precisely typed (so ``+=``/``.extend`` are checked), and
-    ``as_row()`` projects back to the ``dict[str, object]`` row contract that
-    ``aggregate_row_from_group`` consumes — keeping the public grouping shape
-    unchanged while removing the ``Any``."""
-
-    bucket_start: object
-    output_sport_type: str | None
-    distribution: dict[str, int] = field(default_factory=dict)
-    activity_count: int = 0
-    sample_size: int = 0
-    null_count: int = 0
-    excluded_count: int = 0
-    metric_version_count: int = 0
-    materialized_at: str | None = None
-    completeness_statuses: list[object] = field(default_factory=list)
-    missing_reason_payloads: list[object] = field(default_factory=list)
-
-    def as_row(self) -> dict[str, object]:
-        return {
-            "bucket_start": self.bucket_start,
-            "output_sport_type": self.output_sport_type,
-            "distribution": self.distribution,
-            "activity_count": self.activity_count,
-            "sample_size": self.sample_size,
-            "null_count": self.null_count,
-            "excluded_count": self.excluded_count,
-            "metric_version_count": self.metric_version_count,
-            "materialized_at": self.materialized_at,
-            "completeness_statuses": self.completeness_statuses,
-            "missing_reason_payloads": self.missing_reason_payloads,
-        }
-
-
-_VERSION_STATUS_VIEW = "v_metric_version_status"
-_SOURCE_VIEWS = {
-    "activity_summary_fact": "v_activity_aggregate_facts",
-    "activity_metric_fact": "v_activity_aggregate_facts",
-    "daily_load_fact": "v_daily_aggregate_facts",
-    "training_model_fact": "v_training_model_state_facts",
-    "rolling_period_fact": "v_rolling_aggregate_facts",
-    "social_fact": "v_activity_aggregate_facts",
-    "historical_fact": "v_historical_context_facts",
-}
-_SOURCE_DAY_COLUMNS = {
-    "activity_summary_fact": "activity_day",
-    "activity_metric_fact": "activity_day",
-    "daily_load_fact": "day",
-    "training_model_fact": "day",
-    "rolling_period_fact": "as_of_day",
-    "social_fact": "activity_day",
-    "historical_fact": "day",
-}
-_ALLOWED_COLUMNS = aggregate_query_allowed_columns()
-_METRIC_VALUE_EXPRESSIONS = {
-    "distance_km": "distance_m / 1000.0",
-    "moving_time_min": "moving_time_s / 60.0",
-    "elapsed_time_min": "elapsed_time_s / 60.0",
-    "elevation_m": "elevation_gain_m",
-}
 
 
 def validate_aggregate_request(request: AggregateRequest) -> tuple[MetricDefinition, ...]:
@@ -126,7 +70,7 @@ def validate_aggregate_request(request: AggregateRequest) -> tuple[MetricDefinit
         _validate_metric_rolling_window(metric, request)
         if request.bucket not in set(metric.supported_buckets):
             raise ValueError(f"Metric {metric.metric_id} does not support bucket {request.bucket}")
-        if metric.aggregate_source not in _SOURCE_VIEWS:
+        if metric.aggregate_source not in SOURCE_VIEWS:
             raise ValueError(f"Metric {metric.metric_id} has unsupported aggregate source")
         _value_expression(metric)
         _sample_expression(metric)
@@ -247,14 +191,14 @@ def _effective_range_for_metric(
     if conn is None:
         return end_day, end_day
     source = str(metric.aggregate_source)
-    day_column = _SOURCE_DAY_COLUMNS[source]
-    view = _SOURCE_VIEWS[source]
+    day_column = SOURCE_DAY_COLUMNS[source]
+    view = SOURCE_VIEWS[source]
     # Pin the all-time range derivation to the current version too (R11): an
     # unpinned MIN() would let a stale-version fact widen the range and pull old
     # rows into the bucket. The fact views expose metric_version.
     where = [f"{day_column} < CAST(? AS DATE)", "metric_version = ?"]
     params: list[object] = [end_day.isoformat(), metric_version]
-    if request.sport_filter is not None and _view_has_sport(source):
+    if request.sport_filter is not None and view_has_sport(source):
         where.append("sport_type = ?")
         params.append(request.sport_filter)
     row = conn.execute(
@@ -277,18 +221,6 @@ def _effective_range_for_metric(
     if isinstance(start, date):
         return start, end_day
     return date.fromisoformat(str(start)), end_day
-
-
-def _view_has_sport(source: str) -> bool:
-    return source in {
-        "activity_summary_fact",
-        "activity_metric_fact",
-        "daily_load_fact",
-        "training_model_fact",
-        "rolling_period_fact",
-        "social_fact",
-        "historical_fact",
-    }
 
 
 def _query_metric(
@@ -316,8 +248,8 @@ def _build_numeric_query(
     metric_version: int,
 ) -> tuple[str, list[object]]:
     source = str(metric.aggregate_source)
-    view = _SOURCE_VIEWS[source]
-    day_column = _SOURCE_DAY_COLUMNS[source]
+    view = SOURCE_VIEWS[source]
+    day_column = SOURCE_DAY_COLUMNS[source]
     bucket_expr = _bucket_expression(request, day_column, effective_start)
     sport_expr = _sport_output_expression(request)
     value_expr = _value_expression(metric)
@@ -409,8 +341,8 @@ def _query_distribution(
     if metric.metric_id == "time_in_hr_zones_min":
         return _query_hr_zone_distribution(conn, request, metric, effective_start, effective_end, metric_version)
     source = str(metric.aggregate_source)
-    view = _SOURCE_VIEWS[source]
-    day_column = _SOURCE_DAY_COLUMNS[source]
+    view = SOURCE_VIEWS[source]
+    day_column = SOURCE_DAY_COLUMNS[source]
     bucket_expr = _bucket_expression(request, day_column, effective_start)
     sport_expr = _sport_output_expression(request)
     value_expr = _value_expression(metric)
@@ -487,8 +419,8 @@ def _query_hr_zone_distribution(
     metric_version: int,
 ) -> list[AggregateRow]:
     source = str(metric.aggregate_source)
-    view = _SOURCE_VIEWS[source]
-    day_column = _SOURCE_DAY_COLUMNS[source]
+    view = SOURCE_VIEWS[source]
+    day_column = SOURCE_DAY_COLUMNS[source]
     bucket_expr = _bucket_expression(request, day_column, effective_start)
     sport_expr = _sport_output_expression(request)
     where, params = _where_clause(metric, request, effective_start, effective_end, metric_version)
@@ -537,132 +469,3 @@ def _query_hr_zone_distribution(
         row["distribution"] = {f"z{idx}": as_float(row[f"z{idx}"]) for idx in range(1, 6)}
         rows.append(aggregate_row_from_group(metric, request, effective_start, effective_end, row))
     return rows
-
-
-def _rows(result: DuckDBConn) -> list[dict[str, object]]:
-    # The fetched cell tuple is ``tuple[Any, ...]``; cast it to ``tuple[object,
-    # ...]`` so the assembled row maps column -> opaque ``object`` rather than
-    # leaking ``Any`` into every downstream ``row[...]`` access. Callers coerce
-    # each cell explicitly (``to_iso``/``int``/``float``) at the point of use.
-    columns: list[str] = [item[0] for item in result.description]
-    return [dict(zip(columns, cast("tuple[object, ...]", row), strict=False)) for row in result.fetchall()]
-
-
-def _scalar_cell(row: tuple[Any, ...] | None, index: int = 0) -> object:
-    """Return one cell from a raw ``fetchone()`` tuple as opaque ``object``.
-
-    Centralizes the ``Any -> object`` narrowing for the status-fact queries, which
-    read positional aggregate columns off a single fetched row. The bare DB-API
-    tuple is ``tuple[Any, ...]``; this hands back an ``object`` the caller coerces
-    (``int``/``float``/``str``/``to_iso``) explicitly.
-    """
-    if row is None:
-        return None
-    return cast("tuple[object, ...]", row)[index]
-
-
-def _obj_dict(value: dict[str, Any]) -> dict[str, object]:
-    """View an ``Any``-valued registry dict (``StatusFactDefinition.threshold`` /
-    ``.window``) as ``dict[str, object]`` so element reads are opaque ``object``
-    instead of leaking ``Any``. The registry dicts are shared contracts in
-    ``types.py`` (out of this wave's scope); narrowing them at the read site
-    keeps the typing local."""
-    return cast("dict[str, object]", value)
-
-
-def _bucket_expression(request: AggregateRequest, day_column: str, effective_start: date) -> str:
-    if request.window_days is not None:
-        return f"DATE '{effective_start.isoformat()}'"
-    if request.bucket == "all_time":
-        return f"DATE '{effective_start.isoformat()}'"
-    return f"time_bucket(INTERVAL '{AGGREGATE_BUCKET_INTERVALS[request.bucket]}', CAST({day_column} AS DATE))"
-
-
-def _sport_output_expression(request: AggregateRequest) -> str:
-    if request.scope == "per_sport":
-        return "sport_type"
-    return "NULL"
-
-
-def _where_clause(
-    metric: MetricDefinition,
-    request: AggregateRequest,
-    effective_start: date,
-    effective_end: date,
-    metric_version: int,
-) -> tuple[str, list[object]]:
-    source = str(metric.aggregate_source)
-    day_column = _SOURCE_DAY_COLUMNS[source]
-    # R11 version pin: every aggregate fact view exposes metric_version, so this
-    # parameterized predicate keeps a mixed-version DB from blending old + new
-    # rows into one aggregate. Bound as `?`, never string-formatted (T-15-05).
-    where: list[str] = ["metric_version = ?"]
-    params: list[object] = [metric_version]
-    if request.window_days is not None and request.as_of_day is not None:
-        where.extend([f"{day_column} = CAST(? AS DATE)", "window_days = ?"])
-        params.extend([request.as_of_day, request.window_days])
-    else:
-        where.extend([f"{day_column} >= CAST(? AS DATE)", f"{day_column} < CAST(? AS DATE)"])
-        params.extend([effective_start.isoformat(), effective_end.isoformat()])
-        rolling_window_days = _effective_rolling_window_days(metric, request)
-        if rolling_window_days is not None:
-            where.append("window_days = ?")
-            params.append(rolling_window_days)
-    if source == "rolling_period_fact" and request.scope == "per_sport":
-        where.append("scope = 'sport'")
-        if request.sport_filter is not None:
-            where.append("sport_type = ?")
-            params.append(request.sport_filter)
-    elif source in {"daily_load_fact", "training_model_fact", "rolling_period_fact", "historical_fact"}:
-        where.append("scope = 'all'")
-        if request.scope == "global":
-            where.append("sport_type = 'all'")
-    if request.sport_filter is not None and source in {"activity_summary_fact", "activity_metric_fact", "social_fact"}:
-        where.append("sport_type = ?")
-        params.append(request.sport_filter)
-    return " AND ".join(where), params
-
-
-def _value_expression(metric: MetricDefinition) -> str:
-    if metric.metric_id == "time_in_hr_zones_min":
-        return "zone1_seconds"
-    if metric.aggregate_mode == "ratio_of_sums" and metric.numerator_column is not None:
-        return _column_expression(metric.numerator_column, metric.metric_id)
-    if metric.metric_id in _METRIC_VALUE_EXPRESSIONS:
-        return _METRIC_VALUE_EXPRESSIONS[metric.metric_id]
-    column = metric.value_column
-    if column is None:
-        raise ValueError(f"Metric {metric.metric_id} has no aggregate value column")
-    return _column_expression(column, metric.metric_id)
-
-
-def _sample_expression(metric: MetricDefinition) -> str:
-    column = metric.sample_size_column or "activity_count"
-    return _column_expression(column, metric.metric_id)
-
-
-def _denominator_expression(metric: MetricDefinition) -> str:
-    if metric.aggregate_mode == "ratio_of_sums":
-        column = metric.denominator_column
-    elif metric.aggregate_mode == "weighted_average":
-        column = metric.weight_column or metric.denominator_column
-    else:
-        column = metric.denominator_column or metric.weight_column or metric.sample_size_column or "activity_count"
-    if column is None:
-        return "activity_count"
-    if column == "calendar_days":
-        return "calendar_days"
-    return _column_expression(column, metric.metric_id)
-
-
-def _exclusion_expression(metric: MetricDefinition) -> str:
-    if metric.aggregate_mode in {"weighted_average", "ratio_of_sums"}:
-        denominator = _denominator_expression(metric)
-        return f"({denominator} IS NULL OR {denominator} <= 0)"
-    return "FALSE"
-
-
-def _column_expression(column: str, metric_id: str) -> str:
-    if column not in _ALLOWED_COLUMNS:
-        raise ValueError(f"Metric {metric_id} references unsupported aggregate column")
-    return column
