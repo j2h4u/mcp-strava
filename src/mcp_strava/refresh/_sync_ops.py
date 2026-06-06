@@ -94,7 +94,9 @@ def _channel_value(channels: dict[str, StravaStreamChannel], channel_key: str, i
     return channel.data[idx]
 
 
-def _stream_payload(data: dict, fetched_at: str | None = None) -> tuple[list[dict], list[dict]]:
+def _stream_payload(
+    data: dict, fetched_at: str | None = None, activity_id: int | None = None
+) -> tuple[list[dict], list[dict]]:
     channels = parse_strava_stream_channels(data)
     time_channel = channels.get("time")
     if time_channel is None:
@@ -149,11 +151,18 @@ def _stream_payload(data: dict, fetched_at: str | None = None) -> tuple[list[dic
             }
         )
 
-    seen_offsets: set[object] = set()
+    seen_offsets: dict[object, int] = {}
     for idx, time_offset in enumerate(time_channel.data):
         if time_offset in seen_offsets:
+            _emit(
+                "strava_stream_duplicate_time_offset",
+                activity_id=activity_id,
+                time_offset=time_offset,
+                kept_index=seen_offsets[time_offset],
+                dropped_index=idx,
+            )
             continue
-        seen_offsets.add(time_offset)
+        seen_offsets[time_offset] = idx
         extra_values: dict[str, Any] = {}
         row = {
             "time_offset": time_offset,
@@ -189,14 +198,14 @@ def _stream_payload(data: dict, fetched_at: str | None = None) -> tuple[list[dic
 
 
 def _insert_streams(repo, act_id: int, data: dict, fetched_at: str | None = None) -> int:
-    rows, metadata = _stream_payload(data, fetched_at=fetched_at)
+    rows, metadata = _stream_payload(data, fetched_at=fetched_at, activity_id=act_id)
     if not rows:
         return 0
     return repo.replace_stream_rows_and_channel_metadata(act_id, rows=rows, metadata=metadata, chunk_size=5000)
 
 
 def _replace_streams(repo, act_id: int, data: dict, fetched_at: str | None = None) -> int:
-    rows, metadata = _stream_payload(data, fetched_at=fetched_at)
+    rows, metadata = _stream_payload(data, fetched_at=fetched_at, activity_id=act_id)
     if not rows:
         return 0
     return repo.replace_stream_rows_and_channel_metadata(act_id, rows=rows, metadata=metadata, chunk_size=5000)
@@ -433,7 +442,11 @@ def sync_stream_channels_backfill(
         response = transport.fetch(f"/activities/{activity_id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
         if not isinstance(response.data, dict):
             continue
-        rows, metadata = _stream_payload(response.data, fetched_at=datetime.now(UTC).replace(tzinfo=None).isoformat())
+        rows, metadata = _stream_payload(
+            response.data,
+            fetched_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
+            activity_id=activity_id,
+        )
         if not rows:
             continue
         missing = set(item.get("missing_channels", []))
