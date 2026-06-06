@@ -917,6 +917,29 @@ def test_emit_mirror_storage_reports_free_block_delta(tmp_path, monkeypatch):
     assert "reclaimable_pct" in events[0][1] and "message" in events[0][1]
 
 
+def test_stream_payload_deduplicates_duplicate_time_offsets_from_strava_response():
+    from mcp_strava.refresh._sync_ops import _stream_payload
+
+    rows, metadata = _stream_payload(
+        {
+            "time": {"data": [0, 0, 1], "original_size": 3, "resolution": "high", "series_type": "time"},
+            "heartrate": {"data": [140, 999, 141], "original_size": 3, "resolution": "high", "series_type": "time"},
+            "velocity_smooth": {
+                "data": [3.0, 9.9, 3.1],
+                "original_size": 3,
+                "resolution": "high",
+                "series_type": "time",
+            },
+        },
+        fetched_at="2026-06-06T08:00:00",
+    )
+
+    assert [row["time_offset"] for row in rows] == [0, 1]
+    assert rows[0]["heartrate"] == 140
+    assert rows[0]["velocity"] == 3.0
+    assert {item["channel_key"] for item in metadata} >= {"time", "heartrate", "velocity_smooth"}
+
+
 def test_sync_streams_requests_all_configured_channels_and_writes_projection_metadata(tmp_path):
     from mcp_strava.refresh._sync_ops import sync_streams
 

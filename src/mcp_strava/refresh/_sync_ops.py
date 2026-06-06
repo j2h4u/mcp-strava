@@ -149,7 +149,11 @@ def _stream_payload(data: dict, fetched_at: str | None = None) -> tuple[list[dic
             }
         )
 
+    seen_offsets: set[object] = set()
     for idx, time_offset in enumerate(time_channel.data):
+        if time_offset in seen_offsets:
+            continue
+        seen_offsets.add(time_offset)
         extra_values: dict[str, Any] = {}
         row = {
             "time_offset": time_offset,
