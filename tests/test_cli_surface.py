@@ -418,6 +418,32 @@ def test_admin_catchup_dry_run_json_fields(
         assert key in stream
 
 
+def test_admin_sql_query_errors_exit_nonzero(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import mcp_strava.cli_admin as cli_admin
+
+    class _FakeConn:
+        def execute(self, _query):
+            raise duckdb.CatalogException("missing table")
+
+    class _FakeMirrorConn:
+        def __enter__(self):
+            return _FakeConn()
+
+        def __exit__(self, _exc_type, _exc_val, _exc_tb):
+            return None
+
+    monkeypatch.setattr(cli_admin, "MirrorConn", _FakeMirrorConn)
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli_admin.cmd_sql(["SELECT", "*", "FROM", "missing_table"])
+
+    assert excinfo.value.code == 1
+    assert "Error: missing table" in capsys.readouterr().err
+
+
 def test_product_cli_handlers_do_not_call_legacy_or_admin_runtime_directly() -> None:
     source = Path("src/mcp_strava/cli.py").read_text(encoding="utf-8")
     module = ast.parse(source)

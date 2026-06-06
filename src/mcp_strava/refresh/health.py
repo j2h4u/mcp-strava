@@ -74,7 +74,7 @@ def record_cycle(outcome: str, *, error_type: str | None = None, error: str | No
         tmp = path.with_name(f".{path.name}.tmp")
         tmp.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
         tmp.replace(path)
-    except Exception as exc:  # health recording must never break the worker loop
+    except (OSError, ValueError, TypeError) as exc:  # health recording must never break the worker loop
         print(
             f"refresh health recording failed: {type(exc).__name__}: {str(exc)[:200]}",
             file=sys.stderr,

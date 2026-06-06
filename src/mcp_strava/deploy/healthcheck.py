@@ -65,7 +65,7 @@ def main() -> int:
         _validate_owner_and_children()
         _validate_http()
         check_refresh_health()
-    except Exception as exc:
+    except (OSError, ValueError, HTTPException, RuntimeError) as exc:
         print(f"healthcheck failed: {exc}", file=sys.stderr)
         return 1
     return 0

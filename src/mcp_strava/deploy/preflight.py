@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+import duckdb
+
 from mcp_strava.adapters.duckdb.connection import open_expected_mirror_db as open_expected_duckdb
 from mcp_strava.adapters.duckdb.schema import DUCKDB_TABLES
 
@@ -178,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         validate_runtime_db(Path(db), quick=quick)
-    except Exception as exc:
+    except (OSError, RuntimeError, duckdb.Error) as exc:
         if not quiet:
             print(f"preflight failed: {exc}", file=sys.stderr)
         return 1

@@ -8,6 +8,8 @@ from dataclasses import is_dataclass
 from pathlib import Path
 from typing import cast
 
+import duckdb
+
 import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.duckdb.connection import MirrorConn, MirrorDbLocked
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
@@ -48,8 +50,9 @@ def cmd_sql(args):
             sep = "| " + " | ".join(["---"] * len(cols)) + " |"
             body = ["| " + " | ".join(_as_str(cast(object, r[i])) for i in range(len(cols))) + " |" for r in rows]
             print("\n".join([header, sep, *body]))
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
+        except duckdb.Error as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(1) from None
 
 
 def cmd_refresh(args):
