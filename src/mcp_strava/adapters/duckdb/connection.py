@@ -97,7 +97,7 @@ def _thread_read_connections() -> dict[str, DuckDBConn]:
 def _close_safely(conn: DuckDBConn, *, context: str) -> None:
     try:
         conn.close()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - connection cleanup must not mask caller shutdown paths.
         print(
             f"duckdb connection close failed during {context}: {type(exc).__name__}: {str(exc)[:200]}",
             file=sys.stderr,

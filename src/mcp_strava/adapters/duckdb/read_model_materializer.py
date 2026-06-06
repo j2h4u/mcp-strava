@@ -58,7 +58,7 @@ def _record_failed_run(repo: DuckDBRepository, started_at: str, metric_version: 
         # repository honors, so the failed-run bookkeeping cannot interleave with
         # another writer's transaction.
         repo._commit_if_standalone()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort failure bookkeeping must not mask materialization failure.
         logger.warning("read-model failed-run recording failed: %s", exc)
         repo.rollback()
 

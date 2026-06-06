@@ -24,6 +24,10 @@ _fmt-check:
 _import-contracts:
     uv run lint-imports
 
+# Check GitHub Actions workflow syntax and expressions.
+_actionlint:
+    uv run actionlint
+
 # Run the canonical static type checker.
 _typecheck:
     uv run basedpyright src
@@ -37,8 +41,12 @@ fix:
     uv run ruff check --fix .
     uv run ruff format .
 
-# Static quality gate: format, lint, types, imports, compile, dead code.
-check: _fmt-check _lint _typecheck _import-contracts _compile _dead-code
+# Static quality gate: format, lint, types, imports, workflows, compile, dead code.
+check: _fmt-check _lint _typecheck _import-contracts _actionlint _compile _dead-code
+
+# Opt-in test typecheck debt gate; not part of verify until it is green.
+typecheck-tests:
+    uv run basedpyright tests --warnings
 
 # Unit tests only.
 unit:

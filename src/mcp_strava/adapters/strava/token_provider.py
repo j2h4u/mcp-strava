@@ -81,7 +81,7 @@ class FileTokenProvider:
                 os.fsync(handle.fileno())
             temp_path.replace(self.path)
             self.path.chmod(0o600)
-        except Exception:
+        except Exception:  # noqa: BLE001 - cleanup preserves the original atomic-write failure.
             try:
                 temp_path.unlink(missing_ok=True)
             finally:

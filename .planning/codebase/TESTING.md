@@ -23,7 +23,8 @@ scope: full-repo
 uv run pytest -q                              # Run all 357 tests as of Phase 14 UAT
 uv run pytest -q tests/test_mcp_surface.py   # Single file
 just unit                                     # Pytest only
-just check                                    # Static quality gate
+just check                                    # Static quality gate incl. actionlint
+just typecheck-tests                          # Opt-in test typing debt gate
 just runtime                                  # Docker build/start + MCP smoke only
 just verify                                   # Static quality gate + pytest + runtime smoke
 ```

@@ -218,7 +218,7 @@ def register_strava_gateway(
         if restart_gateway(restart_cmd, run_cmd) != 0:
             raise RuntimeError("gateway restart failed")
         return EXIT_OK
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - mutation boundary must rollback on any write/validation/restart failure.
         print(f"gateway mutation failed: {exc}", file=sys.stderr)
         restart_rc = rollback(
             catalog_path,

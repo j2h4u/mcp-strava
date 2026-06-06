@@ -23,6 +23,7 @@ dev = [
     "import-linter>=2.3",
     "vulture>=2.14",
     "pytest-xdist>=3.8.0",
+    "actionlint-py>=1.7.12.24",
 ]
 
 [tool.setuptools]
@@ -53,9 +54,10 @@ target-version = "py314"
 #   DTZ: every datetime.now()/strptime must declare tz intent. Instants are explicit UTC-naive
 #     (datetime.now(UTC).replace(tzinfo=None), matching the WR-02 freshness basis); the few
 #     deliberate local-wall-clock sites (display/calendar) carry an explicit `# noqa: DTZ005`.
+#   BLE: broad exception catches require a local justification.
 # Deliberately NOT selected: D/ANN (basedpyright owns typing; docstrings not mandated),
 #   COM/ISC001 (conflict with the formatter), S101/PLR/TRY003 (test asserts + opinionated noise).
-select = ["E4", "E7", "E9", "F", "I", "B", "UP", "C4", "PIE", "ISC", "RSE", "FLY", "RUF", "PERF", "SIM", "PTH", "DTZ"]
+select = ["E4", "E7", "E9", "F", "I", "B", "BLE", "UP", "C4", "PIE", "ISC", "RSE", "FLY", "RUF", "PERF", "SIM", "PTH", "DTZ"]
 # RUF001-003: ambiguous-unicode false positives on intentional Cyrillic in comments/docstrings.
 # ISC001: single-line implicit string concat — conflicts with `ruff format`.
 ignore = ["RUF001", "RUF002", "RUF003", "ISC001"]
@@ -76,8 +78,8 @@ quote-style = "double"
 # `row['id']` on a raw DB-API tuple ship past type checking (fetchall() ->
 # list[Any]). We deliberately do NOT adopt basedpyright's whole strict family
 # (reportUnknown*/reportMissing*) — that is a separate typing-hardening effort
-# that would bury the signal — so those are silenced. Existing `Any` sites are
-# captured in basedpyright-baseline.json; CI fails only on NEW ones. (pyright
+# that would bury the signal — so those are silenced. There is no baseline file:
+# CI fails on every `reportAny` diagnostic currently visible in `src`. (pyright
 # ignores the basedpyright-only rule names it does not recognize.)
 [tool.pyright]
 include = ["src"]

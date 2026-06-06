@@ -153,11 +153,14 @@ uv run python -m mcp_strava workouts recent --limit 10
 # Analyze the latest workout
 uv run python -m mcp_strava workout analyze latest
 
-# Static quality gate: format, lint, types, imports, compile, dead code
+# Static quality gate: format, lint, types, imports, workflows, compile, dead code
 just check
 
 # Unit tests only
 just unit
+
+# Opt-in debt gate: type-check tests without making verify depend on it yet
+just typecheck-tests
 
 # Runtime validation: Docker build/start, MCP smoke
 just runtime

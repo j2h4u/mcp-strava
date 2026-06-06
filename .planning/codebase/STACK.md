@@ -39,8 +39,9 @@ scope: full-repo
 - `pytest>=9` - test runner; config in `pyproject.toml` (`testpaths = ["tests"]`, `pythonpath = ["src"]`)
 
 **Build/Dev:**
-- `ruff>=0.15` - linter + formatter (`line-length = 120`, selects `E4/E7/E9,F,I,B,UP`)
-- `pyright>=1.1.390` - static type checker (`typeCheckingMode = "standard"`, `pythonVersion = "3.14"`)
+- `ruff>=0.15` - linter + formatter (`line-length = 120`, broad-exception catches require local justification via `BLE`)
+- `basedpyright>=1.31` - static type checker (`typeCheckingMode = "standard"`, `reportAny = "error"`, `pythonVersion = "3.14"`)
+- `actionlint-py` - GitHub Actions workflow linting through `just check`
 - `just` (Justfile) - task runner for lint, test, smoke, deploy recipes
 - `setuptools>=69` - build backend (`package-dir = {"" = "src"}`)
 
@@ -77,7 +78,7 @@ scope: full-repo
 
 **Development:**
 - Python 3.14+
-- `uv` for running static checks and pytest (`just check`, `just unit`)
+- `uv` for running static checks, workflow lint, and pytest (`just check`, `just unit`)
 - Docker + `docker compose` for integration smoke tests (`just runtime` builds and runs the container)
 
 **Production:**

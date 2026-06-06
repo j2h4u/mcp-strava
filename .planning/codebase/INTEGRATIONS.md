@@ -88,8 +88,8 @@ scope: full-repo
 - Docker network: `mcp-backends` (external, pre-existing)
 
 **CI Pipeline:**
-- GitHub Actions runs non-overlapping CI gates: `just check`, `just unit`, and a Docker image build.
-- Local validation uses the same non-overlapping Just gates plus runtime smoke: `just check` (static quality), `just unit` (pytest), `just runtime` (Docker build/start + MCP smoke), and `just verify` (full local gate)
+- GitHub Actions runs non-overlapping CI gates: `just check`, `just unit`, and a Docker image build. Workflow syntax/expression checks are covered by `actionlint` inside `just check`.
+- Local validation uses the same non-overlapping Just gates plus runtime smoke: `just check` (static quality), `just unit` (pytest), `just runtime` (Docker build/start + MCP smoke), and `just verify` (full local gate). `just typecheck-tests` is an opt-in typing debt gate, not a completion requirement.
 
 ## Environment Configuration
 

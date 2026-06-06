@@ -44,16 +44,19 @@ scope: full-repo
 - `line-length = 120` — hard limit enforced by ruff format
 - No trailing commas in single-value tuples unless intentional
 
-**Linter:** ruff check with `select = ["E4", "E7", "E9", "F", "I", "B", "UP"]`
+**Linter:** ruff check with a bug-catching ratchet (`E4/E7/E9`, `F`, `I`, `B`, `BLE`, `UP`, `C4`, `PIE`, `RSE`, `FLY`, `RUF`, `PERF`, `SIM`, `PTH`, `DTZ`)
 - E4/E7/E9: syntax/logic pycodestyle errors
 - F: pyflakes (unused imports, undefined names)
 - I: isort import ordering
 - B: flake8-bugbear likely-bug patterns
+- BLE: broad exception catches require a local justification
 - UP: pyupgrade → modern Python 3.14 idioms
+- DTZ: timezone intent must be explicit
 
-**Static typing:** pyright `typeCheckingMode = "standard"`, `pythonVersion = "3.14"`
+**Static typing:** basedpyright `typeCheckingMode = "standard"`, `reportAny = "error"`, `pythonVersion = "3.14"`
 - `include = ["src"]` — only source tree is checked, not tests
-- New functions in `src/` must satisfy standard-mode pyright
+- New functions in `src/` must satisfy standard-mode basedpyright with no `Any` leaks
+- `just typecheck-tests` is an opt-in debt gate for gradually typing tests; it is not part of `verify`
 
 **Runtime:** Python 3.14 required (`requires-python = ">=3.14"`)
 
