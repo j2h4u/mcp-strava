@@ -179,10 +179,10 @@ def _install_product_service_spies(monkeypatch: pytest.MonkeyPatch) -> dict[str,
     monkeypatch.setattr(cli, "get_workout_analytics_service", forbidden, raising=False)
     monkeypatch.setattr(cli, "daily_report", forbidden, raising=False)
     monkeypatch.setattr(cli, "weekly_digest", forbidden, raising=False)
-    monkeypatch.setattr(cli, "StravaClient", forbidden)
+    monkeypatch.setattr(cli, "StravaClient", forbidden, raising=False)
     monkeypatch.setattr(cli, "sync_activities", forbidden, raising=False)
     monkeypatch.setattr(cli, "backfill_activities", forbidden, raising=False)
-    monkeypatch.setattr(cli, "MirrorConn", forbidden)
+    monkeypatch.setattr(cli, "MirrorConn", forbidden, raising=False)
     return calls
 
 
@@ -369,6 +369,7 @@ def test_admin_catchup_dry_run_json_fields(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     import mcp_strava.cli as cli
+    import mcp_strava.cli_admin as cli_admin
 
     def fake_backfill(*_args, **kwargs):
         assert kwargs["dry_run"] is True
@@ -389,9 +390,9 @@ def test_admin_catchup_dry_run_json_fields(
     def fail_build_refresh_collaborators():
         raise AssertionError("dry-run must not require Strava credentials")
 
-    monkeypatch.setattr(cli, "backfill_stream_channels", fake_backfill, raising=False)
-    monkeypatch.setattr(cli, "backfill_activities", fail_backfill_activities, raising=False)
-    monkeypatch.setattr(cli, "build_refresh_collaborators", fail_build_refresh_collaborators, raising=False)
+    monkeypatch.setattr(cli_admin, "backfill_stream_channels", fake_backfill)
+    monkeypatch.setattr(cli_admin, "backfill_activities", fail_backfill_activities)
+    monkeypatch.setattr(cli_admin, "build_refresh_collaborators", fail_build_refresh_collaborators)
     fixture = tmp_path / "coverage.duckdb"
     create_fixture_db(fixture)
     monkeypatch.setattr(

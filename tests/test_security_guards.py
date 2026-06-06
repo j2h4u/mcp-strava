@@ -176,7 +176,7 @@ def test_cmd_sql_is_not_reused_as_service_or_mcp_surface() -> None:
     root = Path(__file__).resolve().parents[1]
     for py_file in (root / "src" / "mcp_strava").rglob("*.py"):
         rel = py_file.relative_to(root).as_posix()
-        if rel == "src/mcp_strava/cli.py":
+        if rel in {"src/mcp_strava/cli.py", "src/mcp_strava/cli_admin.py"}:
             continue
         source = py_file.read_text(encoding="utf-8")
         if "cmd_sql(" in source or "COMMANDS['sql']" in source or 'COMMANDS["sql"]' in source:

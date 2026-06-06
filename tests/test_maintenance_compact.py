@@ -157,6 +157,7 @@ def test_admin_compact_cli_invokes_compact_database(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     import mcp_strava.cli as cli
+    import mcp_strava.cli_admin as cli_admin
 
     db = tmp_path / "strava.duckdb"
     calls: list[dict] = []
@@ -172,8 +173,8 @@ def test_admin_compact_cli_invokes_compact_database(
             "backup_path": None,
         }
 
-    monkeypatch.setattr(cli, "compact_database", fake_compact, raising=False)
-    monkeypatch.setattr(cli, "get_settings", lambda: SimpleNamespace(database_path=db))
+    monkeypatch.setattr(cli_admin, "compact_database", fake_compact)
+    monkeypatch.setattr(cli_admin, "get_settings", lambda: SimpleNamespace(database_path=db))
     monkeypatch.setattr(sys, "argv", ["mcp_strava", "admin", "compact", "--no-backup", "--json"])
 
     cli.main()
