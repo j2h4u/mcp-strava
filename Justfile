@@ -9,27 +9,27 @@ default:
     @just --list
 
 # Compile Python sources for syntax errors.
-compile:
+_compile:
     uv run python -m compileall -q src deploy tests
 
 # Lint with ruff across the whole repo.
-lint:
+_lint:
     uv run ruff check .
 
 # Check formatting without writing.
-fmt-check:
+_fmt-check:
     uv run ruff format --check .
 
 # Check import-layer architecture contracts.
-import-contracts:
+_import-contracts:
     uv run lint-imports
 
 # Run the canonical static type checker.
-typecheck:
+_typecheck:
     uv run basedpyright src
 
 # Scan for dead code with vulture.
-dead-code:
+_dead-code:
     uv run vulture src tests --min-confidence 80
 
 # Auto-fix ruff findings and formatting.
@@ -38,22 +38,22 @@ fix:
     uv run ruff format .
 
 # Static quality gate: format, lint, types, imports, compile, dead code.
-check: fmt-check lint typecheck import-contracts compile dead-code
+check: _fmt-check _lint _typecheck _import-contracts _compile _dead-code
 
 # Unit tests only.
 unit:
     uv run pytest -q -n auto
 
 # Build the Docker image.
-docker-build:
+_docker-build:
     {{compose}} build
 
 # Recreate and wait for the local Docker service.
-docker-up:
+_docker-up:
     {{compose}} up -d --force-recreate --remove-orphans --wait --wait-timeout 90
 
 # Basic MCP smoke against a running Docker service.
-mcp-smoke-basic:
+_mcp-smoke-basic:
     {{compose}} exec -T mcp-strava {{smoke_basic}}
 
 # Full MCP smoke against a running Docker service.
@@ -64,14 +64,14 @@ mcp-smoke-full timeout="5":
 mcp-read-model-perf samples="20" warmup="2" p95_ms="100":
     {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli perf-read-model --samples {{samples}} --warmup {{warmup}} --p95-ms {{p95_ms}} --compact --url {{mcp_url}}
 
-# Docker runtime gate: unit tests, Docker build/recreate, basic MCP smoke.
-runtime-verify: unit docker-build docker-up mcp-smoke-basic
+# Docker runtime gate only: build/recreate container and run basic MCP smoke.
+runtime: _docker-build _docker-up _mcp-smoke-basic
 
 # Full local gate for agents before claiming completion.
-verify: check runtime-verify
+verify: check unit runtime
 
 # Surface smoke with targeted MCP tests plus live full MCP smoke.
-mcp-surface-smoke timeout="5": docker-build docker-up
+mcp-surface-smoke timeout="5": _docker-build _docker-up
     uv run pytest -q tests/test_mcp_surface.py tests/test_mcp_test_client.py
     {{compose}} exec -T mcp-strava python -m mcp_strava.devtools.mcp_client.cli smoke-live --timeout {{timeout}} --compact --url {{mcp_url}}
 

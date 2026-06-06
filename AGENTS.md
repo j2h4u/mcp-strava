@@ -17,7 +17,7 @@ The current runtime shape is a Docker-packaged local MCP server connected to the
 - **Sync policy**: The local mirror refreshes through internal runtime policy; request-time freshness checks belong in core/application logic, not in MCP tool design.
 - **Deployment target**: Runtime should fit Docker and the local MCP gateway/network while keeping default serving local/container-network safe.
 - **Local-first security**: Default HTTP serving must be local/container-network safe and avoid public unauthenticated exposure.
-- **Testing**: Existing behavior must remain verifiable with `just runtime-verify`; final local validation uses `just verify`; new boundaries need targeted tests for repositories, migrations, freshness, and MCP tools.
+- **Testing**: Existing behavior must remain verifiable with non-overlapping Just gates: `just check` for static quality, `just unit` for pytest, `just runtime` for Docker/runtime smoke, and `just verify` for the full local gate.
 <!-- GSD:project-end -->
 
 <!-- GSD:stack-start source:codebase/STACK.md -->
@@ -47,7 +47,7 @@ The current runtime shape is a Docker-packaged local MCP server connected to the
 - Typed settings resolve in `src/mcp_strava/settings.py`; treat that module, `.planning/codebase/INTEGRATIONS.md`, and `deploy/docker-compose.yml` as the env-var reference, not `AGENTS.md`.
 - The DuckDB mirror lives at `data/strava.duckdb` locally and `/runtime/data/strava.duckdb` in the container.
 - Strava OAuth credentials are local secret/config file state; token refresh persists updated values back to that file. Never print token-file contents in summaries or logs.
-- `Justfile` defines the local command surface; `just unit` runs pytest only, `just runtime-verify` runs pytest plus Docker build/start and MCP smoke, and `just verify` runs the full local gate.
+- `Justfile` defines the local command surface; `just check` runs static quality only, `just unit` runs pytest only, `just runtime` runs Docker build/start plus MCP smoke only, and `just verify` runs the full local gate.
 - `.gitignore` excludes `.env` and `data/` database files.
 ## Platform Requirements
 - Python 3.14+ with `uv` available.
@@ -210,7 +210,7 @@ Strava API ──► refresh/ + sync.py ──► DuckDB mirror (data/strava.duc
 - Triggers: the service process
 - Responsibilities: expose the six read-only product tools over MCP HTTP
 - Location: `Justfile` / `tests/`
-- Triggers: `just runtime-verify` / `just verify`
+- Triggers: `just runtime` / `just verify`
 - Responsibilities: run pytest, build/start the Docker service, execute MCP smoke against the container, and optionally include the static quality gate
 ## Architectural Constraints
 - **Single-owner DuckDB:** exactly one process owns the DuckDB file; the runtime is DuckDB-only with a per-thread-connection policy. No separate child processes.

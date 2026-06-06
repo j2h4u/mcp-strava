@@ -24,9 +24,8 @@ uv run pytest -q                              # Run all 357 tests as of Phase 14
 uv run pytest -q tests/test_mcp_surface.py   # Single file
 just unit                                     # Pytest only
 just check                                    # Static quality gate
-just runtime-verify                          # Unit tests + Docker build/start + MCP smoke
-just verify                                  # Static quality gate + runtime verification
-just compile                                 # compileall src + deploy + tests (syntax only)
+just runtime                                  # Docker build/start + MCP smoke only
+just verify                                   # Static quality gate + pytest + runtime smoke
 ```
 
 ## Test File Organization

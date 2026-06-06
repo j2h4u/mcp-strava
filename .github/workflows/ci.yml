@@ -28,26 +28,15 @@ jobs:
         with:
           enable-cache: true
 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
       - name: Install dependencies
         run: uv sync --locked
 
-      - name: Format check
-        run: uv run ruff format --check .
-
-      - name: Lint
-        run: uv run ruff check .
-
-      - name: Type check
-        run: uv run basedpyright src
-
-      - name: Import contracts
-        run: uv run lint-imports
-
-      - name: Build syntax check
-        run: uv run python -m compileall -q src deploy tests
-
-      - name: Dead-code scan
-        run: uv run vulture src tests --min-confidence 80
+      - name: Static quality gate
+        run: just check
 
   test:
     runs-on: ubuntu-latest
@@ -63,11 +52,15 @@ jobs:
         with:
           enable-cache: true
 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
       - name: Install dependencies
         run: uv sync --locked
 
       - name: Unit tests
-        run: uv run pytest -q -n auto
+        run: just unit
 
   docker-build:
     runs-on: ubuntu-latest

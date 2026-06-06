@@ -77,8 +77,8 @@ scope: full-repo
 
 **Development:**
 - Python 3.14+
-- `uv` for running lint/test/typecheck (`just check`, `just test`)
-- Docker + `docker compose` for integration smoke tests (`just test` builds and runs the container)
+- `uv` for running static checks and pytest (`just check`, `just unit`)
+- Docker + `docker compose` for integration smoke tests (`just runtime` builds and runs the container)
 
 **Production:**
 - Docker container on `mcp-backends` external network

@@ -129,10 +129,10 @@ After the token file exists, routine token refresh and Strava rate-limit handlin
 ## Local Docker Usage
 
 ```bash
-just runtime-verify
+just runtime
 ```
 
-This runs unit tests, builds the image, starts the `mcp-strava` container, waits for health, and runs a direct MCP smoke test against the product server at `http://127.0.0.1:8080/mcp`.
+This builds the image, starts the `mcp-strava` container, waits for health, and runs a direct MCP smoke test against the product server at `http://127.0.0.1:8080/mcp`.
 
 ## Configuration
 
@@ -159,8 +159,8 @@ just check
 # Unit tests only
 just unit
 
-# Runtime validation: unit tests, Docker build/start, MCP smoke
-just runtime-verify
+# Runtime validation: Docker build/start, MCP smoke
+just runtime
 
 # Full local validation before claiming completion
 just verify

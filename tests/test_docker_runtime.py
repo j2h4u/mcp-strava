@@ -25,7 +25,7 @@ def _compose_service_running(service: str = "mcp-strava") -> bool:
     """True only if the packaged container is up, so the smoke can shell into it.
 
     Skips cleanly when docker/compose is unavailable or the service is not running
-    (keeping `just unit` green locally); `just runtime-verify` brings the container up
+    (keeping `just unit` green locally); `just runtime` brings the container up
     first via `compose up -d --wait`, so the phase gate exercises this path.
     """
     if shutil.which("docker") is None:
@@ -295,7 +295,7 @@ def test_lease_active_uses_utc_and_tolerates_aware_timestamps() -> None:
 
 @pytest.mark.skipif(
     not _compose_service_running(),
-    reason="mcp-strava container not running (skips locally; `just runtime-verify` brings it up first)",
+    reason="mcp-strava container not running (skips locally; `just runtime` brings it up first)",
 )
 def test_compute_logic_fingerprint_succeeds_under_packaged_install() -> None:
     """compute_logic_fingerprint() works under the pip-install /app (non-editable) layout.
