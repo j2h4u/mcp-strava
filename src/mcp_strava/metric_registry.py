@@ -251,6 +251,13 @@ COMPUTE_SOURCE_MODULES: tuple[str, ...] = (
     "mcp_strava.sports",
     "mcp_strava.training",
     "mcp_strava.types",
+    "mcp_strava.types_activity_metrics",
+    "mcp_strava.types_registry",
+    "mcp_strava.types_repository",
+    "mcp_strava.types_serialization",
+    "mcp_strava.types_service",
+    "mcp_strava.types_strava",
+    "mcp_strava.types_training",
 )
 
 
