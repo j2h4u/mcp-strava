@@ -18,8 +18,8 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9",
-    "ruff>=0.15",
-    "basedpyright>=1.31",
+    "ruff>=0.15.16",
+    "basedpyright>=1.39.7",
     "import-linter>=2.3",
     "vulture>=2.14",
     "pytest-xdist>=3.8.0",
