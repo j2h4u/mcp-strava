@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: complete
-stopped_at: Phase 15 complete and re-verified (passed, 21/21, 389 tests); WR-01..04 hardened; learnings extracted. Milestone v1.1 at 100% — next /gsd-complete-milestone
-last_updated: "2026-06-03T20:14:40.736Z"
-last_activity: 2026-06-04
+stopped_at: "Milestone v1.1 complete (Phases 1-15). Post-v1.1 perf sweep done — DuckDB statement-count anti-pattern killed across write batching, daily-read batching (daily_fact_sums_between), and Phase 3 activity-fact batch-fetch (quick 260605-mna; expert-panel design kept metric math in Python, Phase 10 domain purity preserved). Large module-split refactor landed. 2026-06-10: DuckDB mirror relocated to /srv/mcp-strava/data (server convention; path configurable via MCP_STRAVA_DATA_DIR). v1.1 complete-but-unarchived — owner not closing the milestone."
+last_updated: "2026-06-10"
+last_activity: 2026-06-10
 progress:
   total_phases: 15
   completed_phases: 15
@@ -244,9 +244,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-05
-Stopped at: Quick task 260605-mna complete: Phase 3 _activity_fact batch-read slice implemented and validated. Targeted materializer tests 17 passed; just check passed; canonical `time -p just test` passed with pytest 395 passed in 64.44s and full wall-clock real 120.56s. v1.1 still complete-but-unarchived.
-Resume file: .planning/quick/260605-mna-implement-phase-3-activity-fact-duckdb-b/260605-mna-SUMMARY.md
+Last session: 2026-06-10
+Stopped at: DuckDB mirror relocated /opt/docker/mcp-strava/data -> /srv/mcp-strava/data (server convention: app data under /srv, separated from the deploy dir). Mount path parameterized via MCP_STRAVA_DATA_DIR (default /srv/mcp-strava/data; override in untracked deploy/.env). Secret .env + .env.lock stay at /opt/docker/mcp-strava. Verified: sha256 parity, just verify green, container healthy, real reads intact (~40 workouts, live fitness state). Dependabot PR #4 (ruff 0.15.16 / basedpyright 1.39.7 dev bumps) merged. Phase 3 (activity-fact batch-fetch) confirmed already complete (quick 260605-mna). Milestone v1.1 complete-but-unarchived — owner not closing the milestone now.
+Resume file: None
 
 ### Post-milestone admin-CLI cleanup (tasks 10-13) — CLOSED 2026-05-28
 
