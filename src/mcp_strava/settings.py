@@ -39,6 +39,7 @@ class RefreshSettings:
     interval_seconds: int
     stream_backfill_batch_size: int
     read_model_batch_size: int
+    full_resync_interval_seconds: int
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,7 @@ _KEYS = {
     "MCP_STRAVA_ALLOWED_HOSTS",
     "MCP_STRAVA_ALLOWED_ORIGINS",
     "MCP_STRAVA_REFRESH_INTERVAL_SECONDS",
+    "MCP_STRAVA_REFRESH_FULL_RESYNC_INTERVAL_SECONDS",
     "MCP_STRAVA_PROJECT_ROOT",
     "MCP_STRAVA_HR_REST",
     "MCP_STRAVA_HR_ZONE_MODEL",
@@ -194,6 +196,10 @@ def load_settings(
         resolve("MCP_STRAVA_REFRESH_INTERVAL_SECONDS", "3600"),
         "MCP_STRAVA_REFRESH_INTERVAL_SECONDS",
     )
+    full_resync_interval_seconds = _parse_int(
+        resolve("MCP_STRAVA_REFRESH_FULL_RESYNC_INTERVAL_SECONDS", "604800"),
+        "MCP_STRAVA_REFRESH_FULL_RESYNC_INTERVAL_SECONDS",
+    )
 
     hr_rest_raw = resolve("MCP_STRAVA_HR_REST", "").strip()
     hr_rest = _parse_int(hr_rest_raw, "MCP_STRAVA_HR_REST") if hr_rest_raw else None
@@ -235,6 +241,7 @@ def load_settings(
             interval_seconds=refresh_interval_seconds,
             stream_backfill_batch_size=STREAM_BACKFILL_BATCH_SIZE,
             read_model_batch_size=READ_MODEL_BATCH_SIZE,
+            full_resync_interval_seconds=full_resync_interval_seconds,
         ),
     )
 

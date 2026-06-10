@@ -87,7 +87,8 @@ CREATE TABLE refresh_state (
     lease_expires_at VARCHAR,
     backoff_until VARCHAR,
     checkpoint_stage VARCHAR,
-    checkpoint_cursor VARCHAR
+    checkpoint_cursor VARCHAR,
+    last_full_summary_sync_at VARCHAR
 );
 
 CREATE TABLE refresh_requests (

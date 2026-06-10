@@ -19,6 +19,7 @@ class RefreshPolicy:
     max_age_hours: int = 24
     regular_refresh_interval_seconds: int = 3600
     stream_backfill_batch_size: int = 50
+    full_resync_interval_seconds: int = 604800
 
     @classmethod
     def from_settings(cls, settings: Settings) -> RefreshPolicy:
@@ -27,6 +28,7 @@ class RefreshPolicy:
             max_age_hours=settings.freshness.max_age_hours,
             regular_refresh_interval_seconds=settings.refresh.interval_seconds,
             stream_backfill_batch_size=settings.refresh.stream_backfill_batch_size,
+            full_resync_interval_seconds=settings.refresh.full_resync_interval_seconds,
         )
 
 
