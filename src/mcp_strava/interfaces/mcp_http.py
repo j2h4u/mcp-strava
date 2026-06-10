@@ -38,7 +38,7 @@ from mcp_strava.metric_registry_shared import (
 )
 from mcp_strava.settings import Settings, get_settings, load_settings
 from mcp_strava.sports import SPORT_ALL
-from mcp_strava.types import ServiceEnvelope, dc_to_dict
+from mcp_strava.types import ServiceEnvelope, ServiceWarning, dc_to_dict
 
 MCP_TOOL_NAMES = (
     "get_fitness_state",
@@ -85,7 +85,7 @@ _UNSAFE_TRANSPORT_VALUES = {"*", "0.0.0.0", "::"}
 _CACHEABLE_TOOL_NAMES = {"compare_periods", "get_training_aggregates"}
 _TOOL_CACHE_TTL_SECONDS = 30.0
 _TOOL_CACHE_MAX_ENTRIES = 32
-_TOOL_RESPONSE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_TOOL_RESPONSE_CACHE: dict[str, tuple[float, ServiceEnvelope]] = {}
 
 
 def _tool_annotations() -> ToolAnnotations:
@@ -97,14 +97,20 @@ def _tool_annotations() -> ToolAnnotations:
     )
 
 
-def _envelope_payload(envelope: ServiceEnvelope) -> dict[str, Any]:
-    return {
-        "data": dc_to_dict(envelope.data, round_floats=True),
-        "freshness": dc_to_dict(envelope.freshness, round_floats=True),
-        "completeness": dc_to_dict(envelope.completeness, round_floats=True),
-        "warnings": [dc_to_dict(item, round_floats=True) for item in envelope.warnings],
-        "rationale": [dc_to_dict(item, round_floats=True) for item in envelope.rationale],
-    }
+def _envelope_payload(envelope: ServiceEnvelope) -> ServiceEnvelope:
+    """Round the float-bearing ``data`` for output; the metadata carries no floats.
+
+    Returning the typed envelope (instead of a hand-built dict) lets FastMCP publish
+    a real output schema from the shared ServiceEnvelope contract, while keeping the
+    rounded, agent-friendly numbers in ``data``.
+    """
+    return ServiceEnvelope(
+        data=dc_to_dict(envelope.data, round_floats=True),
+        freshness=envelope.freshness,
+        completeness=envelope.completeness,
+        warnings=envelope.warnings,
+        rationale=envelope.rationale,
+    )
 
 
 def _data_shape(value: object) -> dict[str, object]:
@@ -117,23 +123,21 @@ def _data_shape(value: object) -> dict[str, object]:
     return {"type": type(value).__name__}
 
 
-def _warning_codes(warnings: object) -> list[str]:
+def _warning_codes(warnings: list[ServiceWarning]) -> list[str]:
     """Extract warning ``code`` strings for log lines.
 
     Logging only ``warnings_count`` tells an operator a warning fired but not
     which one — forcing a source dive. Emitting the codes alongside the count
     keeps the log self-explanatory without bloating it with full messages.
     """
-    if not isinstance(warnings, list):
-        return []
-    return [str(item.get("code", "unknown")) if isinstance(item, dict) else str(item) for item in warnings]
+    return [warning.code for warning in warnings]
 
 
 def _emit_log(event: str, **fields: object) -> None:
     print(json.dumps({"event": event, **fields}, ensure_ascii=False, sort_keys=True), file=sys.stderr, flush=True)
 
 
-def _run_logged_tool(name: str, operation) -> dict[str, Any]:
+def _run_logged_tool(name: str, operation) -> ServiceEnvelope:
     started = time.perf_counter()
     _emit_log("mcp_tool_call_started", tool=name)
     try:
@@ -151,9 +155,9 @@ def _run_logged_tool(name: str, operation) -> dict[str, Any]:
         "mcp_tool_call_finished",
         tool=name,
         duration_ms=round((time.perf_counter() - started) * 1000, 3),
-        warnings_count=len(payload.get("warnings") or []),
-        warning_codes=_warning_codes(payload.get("warnings")),
-        data_shape=_data_shape(payload.get("data")),
+        warnings_count=len(payload.warnings),
+        warning_codes=_warning_codes(payload.warnings),
+        data_shape=_data_shape(payload.data),
     )
     return payload
 
@@ -171,7 +175,7 @@ def _prune_tool_response_cache(now: float) -> None:
         _TOOL_RESPONSE_CACHE.pop(oldest_key, None)
 
 
-def _run_cached_logged_tool(name: str, arguments: dict[str, Any], operation) -> dict[str, Any]:
+def _run_cached_logged_tool(name: str, arguments: dict[str, Any], operation) -> ServiceEnvelope:
     if name not in _CACHEABLE_TOOL_NAMES:
         return _run_logged_tool(name, operation)
 
@@ -187,9 +191,9 @@ def _run_cached_logged_tool(name: str, arguments: dict[str, Any], operation) -> 
             tool=name,
             cached=True,
             duration_ms=round((time.perf_counter() - started) * 1000, 3),
-            warnings_count=len(payload.get("warnings") or []),
-            warning_codes=_warning_codes(payload.get("warnings")),
-            data_shape=_data_shape(payload.get("data")),
+            warnings_count=len(payload.warnings),
+            warning_codes=_warning_codes(payload.warnings),
+            data_shape=_data_shape(payload.data),
         )
         return payload
 
@@ -287,7 +291,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         annotations=_tool_annotations(),
         structured_output=True,
     )
-    def get_fitness_state() -> dict[str, Any]:
+    def get_fitness_state() -> ServiceEnvelope:
         return _run_logged_tool("get_fitness_state", lambda: get_fitness_state_service(signal_first_use=False))
 
     @server.tool(
@@ -307,7 +311,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
             Field(description="Latest workout date, inclusive, ISO YYYY-MM-DD.", examples=["2026-06-01"]),
         ] = None,
         sport: Annotated[SportType | None, Field(description="Filter to one Strava sport type.")] = None,
-    ) -> dict[str, Any]:
+    ) -> ServiceEnvelope:
         return _run_logged_tool(
             "list_workouts",
             lambda: list_workouts_service(
@@ -327,7 +331,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
     )
     def get_workout_detail(
         workout_id: Annotated[int, Field(description="Strava activity id.", examples=[1234567890])],
-    ) -> dict[str, Any]:
+    ) -> ServiceEnvelope:
         return _run_logged_tool(
             "get_workout_detail",
             lambda: get_workout_detail_service(workout_id, signal_first_use=False),
@@ -353,7 +357,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
             str, Field(description="Period B end, inclusive, ISO YYYY-MM-DD.", examples=["2026-04-30"])
         ],
         sport: Annotated[SportType | None, Field(description="Filter to one Strava sport type.")] = None,
-    ) -> dict[str, Any]:
+    ) -> ServiceEnvelope:
         cache_args = {
             "period_a_start": period_a_start,
             "period_a_end": period_a_end,
@@ -401,7 +405,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
                 ),
             ),
         ] = None,
-    ) -> dict[str, Any]:
+    ) -> ServiceEnvelope:
         return _run_logged_tool(
             "project_fitness_state",
             lambda: project_fitness_state_service(
@@ -475,7 +479,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
                 description="Rolling-window length in days; only materialized windows (7, 14, 28, 42, 90) are valid."
             ),
         ] = None,
-    ) -> dict[str, Any]:
+    ) -> ServiceEnvelope:
         sport_filter = _single_sport_filter(sports)
         request = AggregateServiceRequest(
             metric_ids=tuple(metric_ids or ()),
