@@ -1,40 +1,37 @@
 {
   "version": "1.0",
-  "timestamp": "2026-06-10T15:52:08.044Z",
+  "timestamp": "2026-06-11T00:00:00.000Z",
   "phase": null,
-  "phase_name": "post-milestone (v1.1 complete, unarchived)",
+  "phase_name": "post-milestone (v1.1 complete, unarchived) — MCP design thread",
   "phase_dir": null,
   "plan": null,
-  "task": null,
-  "total_tasks": null,
-  "status": "paused",
+  "task": 9,
+  "total_tasks": 11,
+  "status": "in_progress",
   "context": "default",
   "completed_tasks": [
-    {"id": 1, "name": "Dockerfile optimization (uv + deps-first layering + cache mounts + --frozen)", "status": "done", "commit": "2fcaac5"},
-    {"id": 2, "name": "ruff gate-hardening (+PGH/PLE/LOG/G/FURB/RET/N818, exception renames to *Error)", "status": "done", "commit": "695f89d"},
+    {"id": 1, "name": "Dockerfile optimization (uv + deps-first + cache mounts + --frozen)", "status": "done", "commit": "2fcaac5"},
+    {"id": 2, "name": "ruff gate-hardening (+PGH/PLE/LOG/G/FURB/RET/N818, *Error renames)", "status": "done", "commit": "695f89d"},
     {"id": 3, "name": "Incremental Strava summary sync + weekly full resync (quick 260610-nk9)", "status": "done", "commit": "92e86ee"},
-    {"id": 4, "name": "Close beads-2zt (deploy realign — was done-but-open since 2026-05-29)", "status": "done"},
+    {"id": 4, "name": "Close beads-2zt (deploy realign)", "status": "done"},
     {"id": 5, "name": "Verify mcp-strava registered + reachable in docker mcp-gateway", "status": "done"},
-    {"id": 6, "name": "Diagnose red CI (CodeQL)", "status": "done", "progress": "Root cause = GitHub API major outage (auth failures), NOT our code; main CI green"}
+    {"id": 6, "name": "Diagnose red CI (CodeQL)", "status": "done", "progress": "Root cause confirmed = GitHub API auth outage on 2026-06-10 15:37. CodeQL analysis ran clean (0 findings); only SARIF upload was auth-rejected ('Requires authentication'). Cleared 2026-06-11 by pushing 5c06dd5+3e5a1ef -> all checks green (ci/test/quality/docker-build/Analyze Python all success)."},
+    {"id": 7, "name": "Verify gateway forwards prompts & resources (LINCHPIN)", "status": "done", "progress": "YES. Gateway (docker/mcp-gateway:v0.42.1) declares prompts{listChanged} + resources{listChanged,subscribe}; live probe returned a forwarded resource (beads://quickstart) and strava's 3 prompts. So tasks 10/11 are worth doing. Side-finding + FIX: gateway snapshots its server list at connect time and silently drops a backend that is down during that cycle (e.g. after `docker compose up -d` recreate) until restarted. Built mcp-gateway-watchdog (Docker container, Python 3.14, /opt/docker/mcp-gateway-watchdog/) that watches docker health events and restarts the gateway after a 10-min debounce. Tested end-to-end, running. Documented in ~/docs/MCP.md + SERVICES.md + ~/AGENTS.md (server-side docs, not this repo)."},
+    {"id": 8, "name": "Type tool params with single-source enums + Field docs", "status": "done", "commit": "a8e4091", "progress": "All closed-set params are enums DERIVED from canonical constants (single source, drift impossible); dates documented with ISO examples; calendar bucket semantics (Monday weeks) encoded in descriptions. Parked product question: bucket calendar-vs-rolling + configurable week-start (see MCP-DESIGN-REVIEW.md section 8). 416 tests pass; gate green."}
   ],
   "remaining_tasks": [
-    {"id": 7, "name": "Verify whether docker mcp-gateway forwards prompts & resources (or only tools)", "status": "not_started", "note": "LINCHPIN — determines value of prompts+resources work"},
-    {"id": 8, "name": "Enrich tool params: Literal enums + Annotated Field(description/examples) in interfaces/mcp_http.py", "status": "not_started", "note": "highest-ROI code change"},
-    {"id": 9, "name": "Typed output schema (replace -> dict[str, Any] with typed model) — optional", "status": "not_started"},
-    {"id": 10, "name": "Glossary/metric-catalog as MCP resource — gated on task 7", "status": "not_started"},
-    {"id": 11, "name": "Parametrize prompts (date/sport args) — optional, low value", "status": "not_started"},
-    {"id": 12, "name": "Re-run CodeQL once githubstatus.com shows API Requests operational (or let next push retrigger)", "status": "not_started", "note": "self-heals; no action strictly required"}
+    {"id": 9, "name": "Typed output schema (replace -> dict[str, Any] so structured_output publishes a real schema)", "status": "not_started", "note": "ROI #3, medium. Envelope already dataclasses."},
+    {"id": 10, "name": "Glossary / metric-catalog as an MCP resource (TRIMP, CTL/ATL/TSB)", "status": "not_started", "note": "ROI #4. UN-GATED — task 7 proved the gateway forwards resources."},
+    {"id": 11, "name": "Parametrize prompts (date/sport args)", "status": "not_started", "note": "ROI #5, low/optional."}
   ],
-  "blockers": [
-    {"description": "GitHub API major outage (auth failures ~15% of traffic) makes CodeQL check red", "type": "external", "workaround": "transient; main CI is green; self-heals on next push or rerun after recovery"}
-  ],
+  "blockers": [],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "Dockerfile uses uv + deps-first layering + BuildKit cache mounts + uv sync --frozen", "rationale": "code edits no longer bust dep cache; --frozen pulls from files.pythonhosted.org CDN by pinned URL/hash, bypasses pypi.org index (resilient to index outages, byte-reproducible)"},
-    {"decision": "Do NOT change CodeQL workflow", "rationale": "codeql.yml already declares correct permissions: security-events: write; failure is a GitHub platform outage, not config"},
-    {"decision": "MCP design: start with param enums + verifying gateway forwarding before building resources", "rationale": "thin param docs / non-enum types are the biggest correctness lever; resources/prompts value depends on whether the gateway forwards them"}
+    {"decision": "mcp-gateway-watchdog is a Docker container (not host systemd)", "rationale": "'Containers first' server convention + precedent (gateway mounts docker.sock RW, docker-stats-exporter RO). Python over bash for maintainable event loop + debounce."},
+    {"decision": "CI red was GitHub's outage, not our code/config; cleared by re-pushing", "rationale": "Failed-run log: analysis clean, only SARIF upload auth-rejected; same code/config green 3h earlier and again today."},
+    {"decision": "Server docs follow Progressive Disclosure", "rationale": "~/AGENTS.md = brief pointer rows; per-service description in SERVICES.md; MCP subsystem deep-dive in MCP.md."}
   ],
   "uncommitted_files": [],
-  "next_action": "Read .planning/MCP-DESIGN-REVIEW.md first (full review with per-tool findings + ROI table). Then verify whether docker mcp-gateway (docker/mcp-gateway:v0.42.1) forwards prompts and resources or only tools — hit the gateway through mcp-auth-proxy with proper MCP Accept headers, or inspect gateway capability. This decides priorities for the MCP design work. Then discuss tool-parameter enum design (Literal types + Field descriptions in interfaces/mcp_http.py).",
-  "context_notes": "Milestone v1.1 is 100% complete (15/15 phases) but unarchived — owner not closing it; optional /gsd-complete-milestone available. This session was post-milestone maintenance + an MCP design DISCUSSION (not implementation). The MCP surface: 6 tools, 3 prompts (daily brief / weekly digest / shoe watchdog, en+ru), 0 resources. Tool annotations are correct and uniform (readOnly/idempotent/non-destructive/closed-world). Real weakness: tool params lack descriptions and enums are plain str not Literal, so the calling agent guesses date formats and valid values for bucket/scope/scenarios/sport/metric_bundle. Also -> dict[str, Any] makes structured_output schema opaque. No background processes running."
+  "next_action": "Task 8 done (commit a8e4091). Next ROI item is task 9: replace the tools' -> dict[str, Any] return with a typed model (TypedDict/Pydantic) so structured_output publishes a real output schema; the envelope is already dataclasses (_envelope_payload), so this is mechanical. Then task 10 (glossary/metric-catalog as an MCP resource — un-gated) and task 11 (parametrize prompts). Also parked: bucket calendar-vs-rolling semantics + configurable week-start (product question, MCP-DESIGN-REVIEW.md section 8).",
+  "context_notes": "Milestone v1.1 100% complete but unarchived (owner not closing; optional /gsd-complete-milestone). This thread = the MCP-surface design review (see .planning/MCP-DESIGN-REVIEW.md). Surface: 6 tools, 3 prompts, 0 resources; annotations correct+uniform. Real weakness (task 8) = undocumented/non-enum tool params + opaque -> dict[str, Any] output. Gateway forwarding confirmed (task 7). CI green. No background processes running."
 }

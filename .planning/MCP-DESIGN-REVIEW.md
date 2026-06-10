@@ -127,3 +127,29 @@ as the cheapest high-value code change.
 ## 7. Open question to the user (where the thread paused)
 "Сначала проверю, что gateway реально отдаёт наружу (tools/prompts/resources), а потом обсудим
 конкретику по енумам? Или сразу нырнуть в дизайн параметров тулов?" — awaiting the owner's pick.
+
+---
+
+## 8. Implementation log
+
+**2026-06-11 — gateway forwarding verified (was ROI #2).** Docker MCP Gateway forwards
+prompts AND resources (not tools-only). Built `mcp-gateway-watchdog` (container) to auto-restart
+the gateway when a backend returns healthy, fixing the recreate-drops-from-discovery quirk. So
+the resource/prompt work (tasks 10/11) is worthwhile.
+
+**2026-06-11 — tool-param typing landed (was ROI #1, "task 8").** Every closed-set param is now a
+typed enum DERIVED from its canonical domain constant (single source of truth, drift impossible):
+`bucket`→`SUPPORTED_AGGREGATE_BUCKETS`, `scope`→`SUPPORTED_AGGREGATE_SCOPES`,
+`scenarios`→`SUPPORTED_PROJECTION_SCENARIOS` (newly extracted), `metric_bundle`→`AGGREGATE_METRIC_BUNDLES`,
+`window_days`→`SUPPORTED_ROLLING_WINDOW_DAYS`, `sport(s)`→`sports.SPORT_ALL` (all 50). Dates carry
+`Field(description=… ISO YYYY-MM-DD …, examples=…)`. The review's guessed bucket set was wrong —
+the real set includes `year` and `all_time`.
+
+### Open product question (parked) — bucket semantics
+Buckets are **calendar-aligned**, verified against the live SQL (`time_bucket(INTERVAL …)`):
+`day`=calendar day, `week`=calendar week **starting Monday**, `month`=calendar month, `year`=calendar
+year, `all_time`=whole range. Rolling "last-N-days" is the separate `window_days` axis (7/14/28/42/90).
+**To revisit (product call, not yet decided):** whether day/week/month should instead mean rolling
+24h/7d/30d, and whether the week-start should be configurable (locale-driven / env-overridable).
+Decision deferred — current behavior is documented as-is in the tool descriptions; changing it is a
+read-model/SQL behavior change, out of scope for the param-typing slice.
