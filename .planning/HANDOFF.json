@@ -5,7 +5,7 @@
   "phase_name": "post-milestone (v1.1 complete, unarchived) — MCP design thread",
   "phase_dir": null,
   "plan": null,
-  "task": 9,
+  "task": 10,
   "total_tasks": 11,
   "status": "in_progress",
   "context": "default",
@@ -17,10 +17,10 @@
     {"id": 5, "name": "Verify mcp-strava registered + reachable in docker mcp-gateway", "status": "done"},
     {"id": 6, "name": "Diagnose red CI (CodeQL)", "status": "done", "progress": "Root cause confirmed = GitHub API auth outage on 2026-06-10 15:37. CodeQL analysis ran clean (0 findings); only SARIF upload was auth-rejected ('Requires authentication'). Cleared 2026-06-11 by pushing 5c06dd5+3e5a1ef -> all checks green (ci/test/quality/docker-build/Analyze Python all success)."},
     {"id": 7, "name": "Verify gateway forwards prompts & resources (LINCHPIN)", "status": "done", "progress": "YES. Gateway (docker/mcp-gateway:v0.42.1) declares prompts{listChanged} + resources{listChanged,subscribe}; live probe returned a forwarded resource (beads://quickstart) and strava's 3 prompts. So tasks 10/11 are worth doing. Side-finding + FIX: gateway snapshots its server list at connect time and silently drops a backend that is down during that cycle (e.g. after `docker compose up -d` recreate) until restarted. Built mcp-gateway-watchdog (Docker container, Python 3.14, /opt/docker/mcp-gateway-watchdog/) that watches docker health events and restarts the gateway after a 10-min debounce. Tested end-to-end, running. Documented in ~/docs/MCP.md + SERVICES.md + ~/AGENTS.md (server-side docs, not this repo)."},
-    {"id": 8, "name": "Type tool params with single-source enums + Field docs", "status": "done", "commit": "a8e4091", "progress": "All closed-set params are enums DERIVED from canonical constants (single source, drift impossible); dates documented with ISO examples; calendar bucket semantics (Monday weeks) encoded in descriptions. Parked product question: bucket calendar-vs-rolling + configurable week-start (see MCP-DESIGN-REVIEW.md section 8). 416 tests pass; gate green."}
+    {"id": 8, "name": "Type tool params with single-source enums + Field docs", "status": "done", "commit": "a8e4091", "progress": "All closed-set params are enums DERIVED from canonical constants (single source, drift impossible); dates documented with ISO examples; calendar bucket semantics (Monday weeks) encoded in descriptions. Parked product question: bucket calendar-vs-rolling + configurable week-start (see MCP-DESIGN-REVIEW.md section 8). 416 tests pass; gate green."},
+    {"id": 9, "name": "Typed output schema (ServiceEnvelope) for all tools", "status": "done", "commit": "f1c8879", "progress": "Tools return the shared ServiceEnvelope dataclass instead of dict[str, Any]; FastMCP now publishes a real outputSchema (data/freshness/completeness/warnings/rationale + metadata $defs), reusing the existing contract (single source). _envelope_payload rounds only data (metadata float-free). data stays open (dict-or-list per tool); per-tool data models deferred. 416 tests pass; gate green."}
   ],
   "remaining_tasks": [
-    {"id": 9, "name": "Typed output schema (replace -> dict[str, Any] so structured_output publishes a real schema)", "status": "not_started", "note": "ROI #3, medium. Envelope already dataclasses."},
     {"id": 10, "name": "Glossary / metric-catalog as an MCP resource (TRIMP, CTL/ATL/TSB)", "status": "not_started", "note": "ROI #4. UN-GATED — task 7 proved the gateway forwards resources."},
     {"id": 11, "name": "Parametrize prompts (date/sport args)", "status": "not_started", "note": "ROI #5, low/optional."}
   ],
@@ -32,6 +32,6 @@
     {"decision": "Server docs follow Progressive Disclosure", "rationale": "~/AGENTS.md = brief pointer rows; per-service description in SERVICES.md; MCP subsystem deep-dive in MCP.md."}
   ],
   "uncommitted_files": [],
-  "next_action": "Task 8 done (commit a8e4091). Next ROI item is task 9: replace the tools' -> dict[str, Any] return with a typed model (TypedDict/Pydantic) so structured_output publishes a real output schema; the envelope is already dataclasses (_envelope_payload), so this is mechanical. Then task 10 (glossary/metric-catalog as an MCP resource — un-gated) and task 11 (parametrize prompts). Also parked: bucket calendar-vs-rolling semantics + configurable week-start (product question, MCP-DESIGN-REVIEW.md section 8).",
+  "next_action": "Tasks 8 (a8e4091) and 9 (f1c8879) done. Next is task 10: expose a glossary / metric-catalog as an MCP resource (TRIMP, CTL/ATL/TSB definitions + the supported metric ids/bundles) — un-gated since the gateway forwards resources (task 7). Serves the server.instructions 'expand abbreviations' mandate and doubles as enum documentation. Then task 11 (parametrize prompts, low value). Parked product question: bucket calendar-vs-rolling semantics + configurable week-start (MCP-DESIGN-REVIEW.md section 8). Also still open from the review: per-tool typed `data` models (the envelope wrapper is typed but `data` is open).",
   "context_notes": "Milestone v1.1 100% complete but unarchived (owner not closing; optional /gsd-complete-milestone). This thread = the MCP-surface design review (see .planning/MCP-DESIGN-REVIEW.md). Surface: 6 tools, 3 prompts, 0 resources; annotations correct+uniform. Real weakness (task 8) = undocumented/non-enum tool params + opaque -> dict[str, Any] output. Gateway forwarding confirmed (task 7). CI green. No background processes running."
 }

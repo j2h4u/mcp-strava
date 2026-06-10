@@ -145,6 +145,14 @@ typed enum DERIVED from its canonical domain constant (single source of truth, d
 `Field(description=… ISO YYYY-MM-DD …, examples=…)`. The review's guessed bucket set was wrong —
 the real set includes `year` and `all_time`.
 
+**2026-06-11 — typed output schema landed (was ROI #3, "task 9").** Tools returned
+`-> dict[str, Any]` (opaque `additionalProperties:true` output schema). They now return the
+shared `ServiceEnvelope` dataclass, so FastMCP publishes a real `outputSchema`
+(`data`/`freshness`/`completeness`/`warnings`/`rationale` + `$defs` for the metadata
+dataclasses), reusing the existing contract — no duplicated output model. `_envelope_payload`
+rounds only `data` (metadata is float-free). **Still open:** `data` itself stays an open object
+(it is a dict or a list per tool); per-tool typed `data` models are a larger separate item.
+
 ### Open product question (parked) — bucket semantics
 Buckets are **calendar-aligned**, verified against the live SQL (`time_bucket(INTERVAL …)`):
 `day`=calendar day, `week`=calendar week **starting Monday**, `month`=calendar month, `year`=calendar
