@@ -198,16 +198,13 @@ def test_run_once_skips_until_refresh_interval_then_re_runs_per_D06_D15(tmp_path
         calls_before_force = dict(transport.calls_by_path)
         forced = run_once(repo, transport, policy, clock, FakeSleeper(clock), force=True, mode="quick")
 
+    def _activities_calls(calls_dict: dict) -> int:
+        return sum(v for k, v in calls_dict.items() if k.startswith("/athlete/activities"))
+
     assert periodic.status == "ok"
-    assert (
-        transport.calls_by_path["/athlete/activities?per_page=100&page=1"]
-        > calls_before_periodic["/athlete/activities?per_page=100&page=1"]
-    )
+    assert _activities_calls(transport.calls_by_path) > _activities_calls(calls_before_periodic)
     assert forced.status == "ok"
-    assert (
-        transport.calls_by_path["/athlete/activities?per_page=100&page=1"]
-        > calls_before_force["/athlete/activities?per_page=100&page=1"]
-    )
+    assert _activities_calls(transport.calls_by_path) > _activities_calls(calls_before_force)
 
 
 def test_run_once_force_still_honors_lease_and_backoff_per_D15(tmp_path):
@@ -681,7 +678,7 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
     settings = SimpleNamespace(
         database_path=tmp_path / "refresh.db",
         freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
-        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=50, read_model_batch_size=25),
+        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=50, read_model_batch_size=25, full_resync_interval_seconds=604800),
     )
     state = SimpleNamespace(
         lease_owner=None,
@@ -766,7 +763,7 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
     settings = SimpleNamespace(
         database_path=tmp_path / "refresh.db",
         freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
-        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=25, read_model_batch_size=25),
+        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=25, read_model_batch_size=25, full_resync_interval_seconds=604800),
     )
     state = SimpleNamespace(
         lease_owner=None,
@@ -836,7 +833,7 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
     settings = SimpleNamespace(
         database_path=tmp_path / "refresh.db",
         freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
-        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=50, read_model_batch_size=25),
+        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=50, read_model_batch_size=25, full_resync_interval_seconds=604800),
     )
     state = SimpleNamespace(
         lease_owner=None,

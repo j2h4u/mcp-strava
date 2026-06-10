@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 
+from mcp_strava.adapters.duckdb.activity_lookup_queries import latest_activity_at
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.sync_log_store import append_sync_log
 from mcp_strava.adapters.strava import StravaUnavailable
@@ -95,7 +96,24 @@ def run_once(
 
         if start_index <= _stage_index(Stage.SUMMARIES):
             refresh_store.set_checkpoint(Stage.SUMMARIES.value, None)
-            activities_seen, activities_new = _sync_ops.sync_summaries(repo, transport, now_iso)
+            _last_full = refresh_store.get_last_full_summary_sync_at()
+            do_full = (_last_full is None) or refresh_interval_elapsed(
+                _last_full, now_iso, policy.full_resync_interval_seconds
+            )
+            if do_full:
+                after_epoch = None
+            else:
+                _latest_date_str = latest_activity_at(repo)
+                if _latest_date_str is not None:
+                    _d = date.fromisoformat(_latest_date_str[:10])
+                    after_epoch = int(datetime(_d.year, _d.month, _d.day, tzinfo=timezone.utc).timestamp())
+                else:
+                    after_epoch = None  # empty DB but marker set — treat as full
+            activities_seen, activities_new = _sync_ops.sync_summaries(
+                repo, transport, now_iso, after_epoch=after_epoch
+            )
+            if do_full:
+                refresh_store.set_last_full_summary_sync_at(now_iso)
         if start_index <= _stage_index(Stage.STREAMS):
             refresh_store.set_checkpoint(Stage.STREAMS.value, None)
             streams_fetched = _sync_ops.sync_streams(repo, transport)

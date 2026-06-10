@@ -211,12 +211,14 @@ def _replace_streams(repo, act_id: int, data: dict, fetched_at: str | None = Non
     return repo.replace_stream_rows_and_channel_metadata(act_id, rows=rows, metadata=metadata, chunk_size=5000)
 
 
-def sync_summaries(repo, transport, now_iso: str) -> tuple[int, int]:
+def sync_summaries(repo, transport, now_iso: str, *, after_epoch: int | None = None) -> tuple[int, int]:
     page = 1
     seen = 0
     new = 0
     while True:
-        response = transport.fetch(f"/athlete/activities?per_page=100&page={page}")
+        response = transport.fetch(
+            f"/athlete/activities?per_page=100&page={page}" + (f"&after={after_epoch}" if after_epoch is not None else "")
+        )
         data = response.data
         if not data:
             break
