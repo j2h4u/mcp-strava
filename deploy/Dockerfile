@@ -1,7 +1,14 @@
 FROM python:3.14-slim
 
+# uv provides fast, lockfile-faithful installs (pinned to the host's uv 0.11.x for parity).
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    PATH="/app/.venv/bin:$PATH" \
     MCP_STRAVA_RUNTIME_PROFILE=container \
     MCP_STRAVA_HTTP_HOST=0.0.0.0 \
     MCP_STRAVA_HTTP_PORT=8080 \
@@ -12,10 +19,20 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml /app/pyproject.toml
-COPY src /app/src
-COPY mcp-content /app/mcp-content
-RUN pip install --disable-pip-version-check --root-user-action=ignore --no-cache-dir /app
+# 1) Dependency layer — rebuilds only when pyproject.toml / uv.lock change, NOT on src
+#    edits (--no-install-project). `--frozen` resolves from uv.lock's pinned URLs+hashes,
+#    pulling wheels from files.pythonhosted.org and never touching the pypi.org index — so
+#    it is byte-reproducible and survives index outages. The cache mount keeps the uv
+#    download cache across builds, so re-installs stay fast.
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --no-dev
+
+# 2) Project layer — rebuilds only when application source changes.
+COPY src ./src
+COPY mcp-content ./mcp-content
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
 
 RUN groupadd --gid 1000 mcp \
     && useradd --uid 1000 --gid 1000 --create-home mcp
