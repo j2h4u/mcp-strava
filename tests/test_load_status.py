@@ -144,4 +144,4 @@ def test_load_status_fixture_uses_temp_db_only(tmp_path: Path) -> None:
     create_empty_fixture_db(fixture)
     resolved = fixture.resolve()
     assert "/data/strava.db" not in str(resolved)
-    assert "/opt/docker/mcp-strava" not in str(resolved)
+    assert "/srv/mcp-strava" not in str(resolved)

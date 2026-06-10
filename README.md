@@ -180,12 +180,14 @@ just mcp-list-tools
 
 ## Runtime State
 
-Live Docker state is expected under `/opt/docker/mcp-strava`:
+Live Docker state is split — the DuckDB mirror lives under `/srv` (data separated from the deploy dir), the secret env stays beside the compose under `/opt/docker`:
 
 | Path | Purpose |
 |---|---|
-| `/opt/docker/mcp-strava/data/strava.duckdb` | DuckDB mirror and read-model facts |
-| `/opt/docker/mcp-strava/.env` | Strava OAuth credentials |
+| `/srv/mcp-strava/data/strava.duckdb` | DuckDB mirror and read-model facts |
+| `/opt/docker/mcp-strava/.env` | Strava OAuth credentials + resting-HR (mounted with `.env.lock`) |
+
+The mirror path is instance config, not source: override it with `MCP_STRAVA_DATA_DIR` in an untracked `deploy/.env` (default `/srv/mcp-strava/data`).
 
 ## MCP Boundary
 

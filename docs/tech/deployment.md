@@ -69,7 +69,7 @@ warrants and never recovers on its own.
 
 **Run compaction occasionally** — there is no schedule and no automation. Do it
 when the file is noticeably larger than the data justifies (check
-`ls -lh /opt/docker/mcp-strava/data/strava.duckdb`), or after a large one-off
+`ls -lh /srv/mcp-strava/data/strava.duckdb`), or after a large one-off
 rewrite. For reference, the one-time Phase-8 SQLite→DuckDB migration left the
 file at ~764 MB; a single compaction brought it to ~84 MB.
 

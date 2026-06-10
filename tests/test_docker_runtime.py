@@ -109,11 +109,13 @@ def test_preflight_quick_mode_passes_valid_duckdb(tmp_path: Path) -> None:
 def test_runtime_path_references_stay_in_deploy_surface() -> None:
     root = _repo_root()
     offenders: list[str] = []
+    host_runtime_paths = ("/opt/docker/mcp-strava", "/srv/mcp-strava")
     for py_file in (root / "src" / "mcp_strava").rglob("*.py"):
         rel = py_file.relative_to(root).as_posix()
         if rel.startswith("src/mcp_strava/deploy/"):
             continue
-        if "/opt/docker/mcp-strava" in _read_text(py_file):
+        text = _read_text(py_file)
+        if any(host_path in text for host_path in host_runtime_paths):
             offenders.append(rel)
     assert offenders == []
 

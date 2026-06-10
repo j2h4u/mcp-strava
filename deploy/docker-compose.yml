@@ -21,7 +21,14 @@ services:
       MCP_STRAVA_REFRESH_POLL_SECONDS: "60"
       MCP_STRAVA_REFRESH_INTERVAL_SECONDS: "3600"
     volumes:
+      # Runtime root holds the secret .env + .env.lock (token flock) beside the
+      # compose; PROJECT_ROOT=/runtime resolves config from here.
       - /opt/docker/mcp-strava:/runtime
+      # DuckDB mirror lives under /srv (data is separated from the app deploy dir);
+      # this nested mount overlays /runtime/data on top of the runtime-root mount.
+      # The host path is instance config, not source: override it with MCP_STRAVA_DATA_DIR
+      # in an untracked deploy/.env; the default keeps the canonical /srv location.
+      - ${MCP_STRAVA_DATA_DIR:-/srv/mcp-strava/data}:/runtime/data
     expose: ["8080"]
     networks:
       - mcp-backends
