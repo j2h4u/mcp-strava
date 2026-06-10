@@ -1,0 +1,40 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-10T15:52:08.044Z",
+  "phase": null,
+  "phase_name": "post-milestone (v1.1 complete, unarchived)",
+  "phase_dir": null,
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "paused",
+  "context": "default",
+  "completed_tasks": [
+    {"id": 1, "name": "Dockerfile optimization (uv + deps-first layering + cache mounts + --frozen)", "status": "done", "commit": "2fcaac5"},
+    {"id": 2, "name": "ruff gate-hardening (+PGH/PLE/LOG/G/FURB/RET/N818, exception renames to *Error)", "status": "done", "commit": "695f89d"},
+    {"id": 3, "name": "Incremental Strava summary sync + weekly full resync (quick 260610-nk9)", "status": "done", "commit": "92e86ee"},
+    {"id": 4, "name": "Close beads-2zt (deploy realign — was done-but-open since 2026-05-29)", "status": "done"},
+    {"id": 5, "name": "Verify mcp-strava registered + reachable in docker mcp-gateway", "status": "done"},
+    {"id": 6, "name": "Diagnose red CI (CodeQL)", "status": "done", "progress": "Root cause = GitHub API major outage (auth failures), NOT our code; main CI green"}
+  ],
+  "remaining_tasks": [
+    {"id": 7, "name": "Verify whether docker mcp-gateway forwards prompts & resources (or only tools)", "status": "not_started", "note": "LINCHPIN — determines value of prompts+resources work"},
+    {"id": 8, "name": "Enrich tool params: Literal enums + Annotated Field(description/examples) in interfaces/mcp_http.py", "status": "not_started", "note": "highest-ROI code change"},
+    {"id": 9, "name": "Typed output schema (replace -> dict[str, Any] with typed model) — optional", "status": "not_started"},
+    {"id": 10, "name": "Glossary/metric-catalog as MCP resource — gated on task 7", "status": "not_started"},
+    {"id": 11, "name": "Parametrize prompts (date/sport args) — optional, low value", "status": "not_started"},
+    {"id": 12, "name": "Re-run CodeQL once githubstatus.com shows API Requests operational (or let next push retrigger)", "status": "not_started", "note": "self-heals; no action strictly required"}
+  ],
+  "blockers": [
+    {"description": "GitHub API major outage (auth failures ~15% of traffic) makes CodeQL check red", "type": "external", "workaround": "transient; main CI is green; self-heals on next push or rerun after recovery"}
+  ],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "Dockerfile uses uv + deps-first layering + BuildKit cache mounts + uv sync --frozen", "rationale": "code edits no longer bust dep cache; --frozen pulls from files.pythonhosted.org CDN by pinned URL/hash, bypasses pypi.org index (resilient to index outages, byte-reproducible)"},
+    {"decision": "Do NOT change CodeQL workflow", "rationale": "codeql.yml already declares correct permissions: security-events: write; failure is a GitHub platform outage, not config"},
+    {"decision": "MCP design: start with param enums + verifying gateway forwarding before building resources", "rationale": "thin param docs / non-enum types are the biggest correctness lever; resources/prompts value depends on whether the gateway forwards them"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Verify whether docker mcp-gateway (docker/mcp-gateway:v0.42.1) forwards prompts and resources or only tools — hit the gateway through mcp-auth-proxy with proper MCP Accept headers, or inspect gateway capability. This decides priorities for the MCP design work. Then discuss tool-parameter enum design (Literal types + Field descriptions in interfaces/mcp_http.py).",
+  "context_notes": "Milestone v1.1 is 100% complete (15/15 phases) but unarchived — owner not closing it; optional /gsd-complete-milestone available. This session was post-milestone maintenance + an MCP design DISCUSSION (not implementation). The MCP surface: 6 tools, 3 prompts (daily brief / weekly digest / shoe watchdog, en+ru), 0 resources. Tool annotations are correct and uniform (readOnly/idempotent/non-destructive/closed-world). Real weakness: tool params lack descriptions and enums are plain str not Literal, so the calling agent guesses date formats and valid values for bucket/scope/scenarios/sport/metric_bundle. Also -> dict[str, Any] makes structured_output schema opaque. No background processes running."
+}
