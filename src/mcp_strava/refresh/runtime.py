@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from mcp_strava.adapters.duckdb.activity_lookup_queries import latest_activity_at
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
@@ -106,7 +106,7 @@ def run_once(
                 _latest_date_str = latest_activity_at(repo)
                 if _latest_date_str is not None:
                     _d = date.fromisoformat(_latest_date_str[:10])
-                    after_epoch = int(datetime(_d.year, _d.month, _d.day, tzinfo=timezone.utc).timestamp())
+                    after_epoch = int(datetime(_d.year, _d.month, _d.day, tzinfo=UTC).timestamp())
                 else:
                     after_epoch = None  # empty DB but marker set — treat as full
             activities_seen, activities_new = _sync_ops.sync_summaries(

@@ -33,9 +33,7 @@ class RefreshStateStore:
 
     def _ensure_column_last_full_summary_sync_at(self) -> None:
         with duckdb_process_lock():
-            self.conn.execute(
-                "ALTER TABLE refresh_state ADD COLUMN IF NOT EXISTS last_full_summary_sync_at VARCHAR"
-            )
+            self.conn.execute("ALTER TABLE refresh_state ADD COLUMN IF NOT EXISTS last_full_summary_sync_at VARCHAR")
 
     def _execute(self, sql: str, params: Iterable[object] | None = None):
         with duckdb_process_lock():
@@ -249,9 +247,7 @@ class RefreshStateStore:
 
     def get_last_full_summary_sync_at(self) -> str | None:
         self.get_refresh_state()  # ensure row exists
-        row = self._fetchone(
-            "SELECT last_full_summary_sync_at FROM refresh_state WHERE id = 1"
-        )
+        row = self._fetchone("SELECT last_full_summary_sync_at FROM refresh_state WHERE id = 1")
         if row is None:
             return None
         return _as_str_opt(row["last_full_summary_sync_at"])

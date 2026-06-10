@@ -217,7 +217,8 @@ def sync_summaries(repo, transport, now_iso: str, *, after_epoch: int | None = N
     new = 0
     while True:
         response = transport.fetch(
-            f"/athlete/activities?per_page=100&page={page}" + (f"&after={after_epoch}" if after_epoch is not None else "")
+            f"/athlete/activities?per_page=100&page={page}"
+            + (f"&after={after_epoch}" if after_epoch is not None else "")
         )
         data = response.data
         if not data:

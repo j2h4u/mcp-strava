@@ -678,7 +678,12 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
     settings = SimpleNamespace(
         database_path=tmp_path / "refresh.db",
         freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
-        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=50, read_model_batch_size=25, full_resync_interval_seconds=604800),
+        refresh=SimpleNamespace(
+            interval_seconds=3600,
+            stream_backfill_batch_size=50,
+            read_model_batch_size=25,
+            full_resync_interval_seconds=604800,
+        ),
     )
     state = SimpleNamespace(
         lease_owner=None,
@@ -763,7 +768,12 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
     settings = SimpleNamespace(
         database_path=tmp_path / "refresh.db",
         freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
-        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=25, read_model_batch_size=25, full_resync_interval_seconds=604800),
+        refresh=SimpleNamespace(
+            interval_seconds=3600,
+            stream_backfill_batch_size=25,
+            read_model_batch_size=25,
+            full_resync_interval_seconds=604800,
+        ),
     )
     state = SimpleNamespace(
         lease_owner=None,
@@ -833,7 +843,12 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
     settings = SimpleNamespace(
         database_path=tmp_path / "refresh.db",
         freshness=SimpleNamespace(warn_age_hours=12, max_age_hours=24),
-        refresh=SimpleNamespace(interval_seconds=3600, stream_backfill_batch_size=50, read_model_batch_size=25, full_resync_interval_seconds=604800),
+        refresh=SimpleNamespace(
+            interval_seconds=3600,
+            stream_backfill_batch_size=50,
+            read_model_batch_size=25,
+            full_resync_interval_seconds=604800,
+        ),
     )
     state = SimpleNamespace(
         lease_owner=None,

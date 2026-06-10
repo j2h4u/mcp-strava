@@ -10,6 +10,7 @@ Coverage:
   (c)       - cold-start (empty DB, NULL marker) -> full walk (after_epoch=None)
   (d)       - fixture DB without the column opens and run_once completes without error
 """
+
 from __future__ import annotations
 
 import urllib.request
@@ -37,6 +38,7 @@ def forbid_live_network(monkeypatch):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _repo(tmp_path: Path) -> DuckDBRepository:
     path = tmp_path / "test.duckdb"
     create_fixture_db(path)
@@ -46,6 +48,7 @@ def _repo(tmp_path: Path) -> DuckDBRepository:
 def _empty_repo(tmp_path: Path) -> DuckDBRepository:
     """Repo with schema but no activities (cold-start)."""
     from tests._fixtures_duckdb import create_empty_fixture_db
+
     path = tmp_path / "empty.duckdb"
     create_empty_fixture_db(path)
     return DuckDBRepository.from_path(path)
@@ -149,6 +152,7 @@ class _FullRunTransport:
 # Schema tests
 # ---------------------------------------------------------------------------
 
+
 def test_schema_existing_db_without_column_opens_cleanly(tmp_path):
     """RefreshStateStore on a DB without last_full_summary_sync_at opens without error."""
     path = tmp_path / "legacy.duckdb"
@@ -189,6 +193,7 @@ def test_schema_set_and_get_last_full_summary_sync_at_round_trip(tmp_path):
 # Settings tests
 # ---------------------------------------------------------------------------
 
+
 def test_settings_full_resync_interval_seconds_env_override(monkeypatch):
     """MCP_STRAVA_REFRESH_FULL_RESYNC_INTERVAL_SECONDS=86400 parses to 86400."""
     from mcp_strava.settings import load_settings, reset_settings_cache
@@ -211,6 +216,7 @@ def test_settings_full_resync_interval_seconds_default(monkeypatch):
 # ---------------------------------------------------------------------------
 # Test (a): sync_summaries URL construction
 # ---------------------------------------------------------------------------
+
 
 def test_sync_summaries_with_after_epoch_appends_after_param(tmp_path):
     """sync_summaries(after_epoch=N) appends &after=N to the first request URL."""
@@ -241,6 +247,7 @@ def test_sync_summaries_without_after_epoch_has_no_after_param(tmp_path):
 # ---------------------------------------------------------------------------
 # Test (b-full): NULL marker -> full walk + marker written
 # ---------------------------------------------------------------------------
+
 
 def test_run_once_null_marker_triggers_full_walk_and_writes_marker(tmp_path, monkeypatch):
     """run_once with NULL last_full_summary_sync_at calls sync_summaries with after_epoch=None."""
@@ -278,6 +285,7 @@ def test_run_once_null_marker_triggers_full_walk_and_writes_marker(tmp_path, mon
 # Test (b-full-stale): stale marker -> full walk + marker updated
 # ---------------------------------------------------------------------------
 
+
 def test_run_once_stale_marker_triggers_full_walk_and_updates_marker(tmp_path, monkeypatch):
     """run_once with stale last_full_summary_sync_at triggers full walk and updates marker."""
     from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_once
@@ -314,6 +322,7 @@ def test_run_once_stale_marker_triggers_full_walk_and_updates_marker(tmp_path, m
 # ---------------------------------------------------------------------------
 # Test (b-incremental): fresh marker -> incremental with non-None after_epoch
 # ---------------------------------------------------------------------------
+
 
 def test_run_once_fresh_marker_triggers_incremental(tmp_path, monkeypatch):
     """run_once with fresh last_full_summary_sync_at calls sync_summaries with non-None after_epoch."""
@@ -354,6 +363,7 @@ def test_run_once_fresh_marker_triggers_incremental(tmp_path, monkeypatch):
 # Test (c): cold-start — empty DB, NULL marker -> full walk
 # ---------------------------------------------------------------------------
 
+
 def test_run_once_cold_start_triggers_full_walk(tmp_path, monkeypatch):
     """Empty DB (no activities, NULL marker) triggers full walk (after_epoch=None)."""
     from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_once
@@ -386,19 +396,20 @@ def test_run_once_cold_start_triggers_full_walk(tmp_path, monkeypatch):
 # Test (d): additive-column compatibility — pre-existing DB without column
 # ---------------------------------------------------------------------------
 
+
 def test_run_once_db_without_column_completes_without_error(tmp_path, monkeypatch):
     """Fixture DB created without last_full_summary_sync_at -> run_once completes without error."""
     from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_once
 
-    monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *a, **kw: (0, 0))
-    monkeypatch.setattr(_sync_ops, "sync_streams", lambda *a, **kw: 0)
-    monkeypatch.setattr(_sync_ops, "sync_details", lambda *a, **kw: 0)
-    monkeypatch.setattr(_sync_ops, "schema_validate", lambda *a, **kw: None)
-    monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *a, **kw: 0)
+    monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *_a, **_kw: (0, 0))
+    monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_a, **_kw: 0)
+    monkeypatch.setattr(_sync_ops, "sync_details", lambda *_a, **_kw: 0)
+    monkeypatch.setattr(_sync_ops, "schema_validate", lambda *_a, **_kw: None)
+    monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_a, **_kw: 0)
     monkeypatch.setattr(
         _sync_ops,
         "materialize_read_model_stage",
-        lambda *a, **kw: {"status": "ok"},
+        lambda *_a, **_kw: {"status": "ok"},
         raising=False,
     )
 
