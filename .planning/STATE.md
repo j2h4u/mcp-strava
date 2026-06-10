@@ -245,7 +245,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-06-10
-Stopped at: DuckDB mirror relocated /opt/docker/mcp-strava/data -> /srv/mcp-strava/data (server convention: app data under /srv, separated from the deploy dir). Mount path parameterized via MCP_STRAVA_DATA_DIR (default /srv/mcp-strava/data; override in untracked deploy/.env). Secret .env + .env.lock stay at /opt/docker/mcp-strava. Verified: sha256 parity, just verify green, container healthy, real reads intact (~40 workouts, live fitness state). Dependabot PR #4 (ruff 0.15.16 / basedpyright 1.39.7 dev bumps) merged. Phase 3 (activity-fact batch-fetch) confirmed already complete (quick 260605-mna). Milestone v1.1 complete-but-unarchived — owner not closing the milestone now.
+Stopped at: Quick task 260610-nk9 complete — incremental Strava summary sync. Hourly SUMMARIES stage now passes &after=<epoch of newest local activity> (catches new activities in ~1 API call instead of re-listing the whole history; the per-activity activity_by_id N+1 dissolves); a weekly FULL resync (after=None, default 604800s via MCP_STRAVA_REFRESH_FULL_RESYNC_INTERVAL_SECONDS) catches edits/anomalies, gated by a new nullable refresh_state.last_full_summary_sync_at column (additive ADD COLUMN IF NOT EXISTS — live /srv DB confirmed migrated, container healthy). Cold-start = NULL marker -> full walk. just verify green; 12 new tests. Earlier same session: DuckDB mirror relocated to /srv/mcp-strava/data (path configurable via MCP_STRAVA_DATA_DIR); Dependabot PR #4 merged. Milestone v1.1 complete-but-unarchived — owner not closing the milestone now.
 Resume file: None
 
 ### Post-milestone admin-CLI cleanup (tasks 10-13) — CLOSED 2026-05-28
@@ -271,3 +271,4 @@ Resume file: None
 | 260527-nbq compute HR zones on the fly and drop hardcoded athlete HR constants | 2026-05-27 | `.planning/quick/260527-nbq-wire-hr-zone-computation-on-the-fly-into/260527-nbq-SUMMARY.md` |
 | 260531-nv0 format pre-existing unrelated ruff drift | 2026-05-31 | `.planning/quick/260531-nv0-format-pre-existing-unrelated-ruff-forma/260531-nv0-SUMMARY.md` |
 | 260605-mna implement Phase 3 _activity_fact DuckDB batch reads | 2026-06-05 | `.planning/quick/260605-mna-implement-phase-3-activity-fact-duckdb-b/260605-mna-SUMMARY.md` |
+| 260610-nk9 incremental Strava summary sync with weekly full resync | 2026-06-10 | `.planning/quick/260610-nk9-incremental-strava-summary-sync-with-wee/260610-nk9-SUMMARY.md` |
