@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from contextlib import nullcontext
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -18,6 +19,10 @@ from mcp_strava.types import CompletenessMetadata, ServiceEnvelope, ServiceRatio
 PROJECTION_MAX_HORIZON_DAYS = 90
 MAINTAIN_LOOKBACK_DAYS = 28
 WEEKEND_DAYS = {4, 5, 6}
+
+# Canonical set of projection scenarios. Single source of truth: the MCP tool's
+# `scenarios` enum is derived from this, so the schema and the validator cannot drift.
+SUPPORTED_PROJECTION_SCENARIOS = ("rest", "easy", "maintain", "custom")
 
 
 def _connection_context(connection):
@@ -131,15 +136,15 @@ def _daily_trimp_history(repo: DuckDBRepository, start_day: str, end_day: str) -
 def project_fitness_state_service(
     *,
     target_date: str,
-    scenarios: list[str],
+    scenarios: Sequence[str],
     custom_daily_trimp=None,
     now: datetime | None = None,
     signal_first_use: bool = True,
     connection=None,
 ) -> ServiceEnvelope:
-    allowed = {"rest", "easy", "maintain", "custom"}
+    allowed = set(SUPPORTED_PROJECTION_SCENARIOS)
     if any(name not in allowed for name in scenarios):
-        raise ValueError("Supported scenarios are: rest, easy, maintain, custom")
+        raise ValueError(f"Supported scenarios are: {', '.join(SUPPORTED_PROJECTION_SCENARIOS)}")
 
     checked_at = now or datetime.now()  # noqa: DTZ005 — local wall-clock for as_of_day/relative_time display (freshness uses _freshness_clock)
     today_day = checked_at.date()

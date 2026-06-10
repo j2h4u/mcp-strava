@@ -6,11 +6,13 @@ import json
 import sys
 import time
 from copy import deepcopy
-from typing import Any
+from enum import IntEnum, StrEnum
+from typing import TYPE_CHECKING, Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
@@ -22,10 +24,20 @@ from mcp_strava.application.metric_services import (
     get_workout_detail_service,
     list_workouts_service,
 )
-from mcp_strava.application.projection_services import project_fitness_state_service
+from mcp_strava.application.projection_services import (
+    SUPPORTED_PROJECTION_SCENARIOS,
+    project_fitness_state_service,
+)
 from mcp_strava.mcp_content import MCP_PROMPT_NAMES as MCP_PROMPT_NAMES  # re-exported as part of the MCP surface
 from mcp_strava.mcp_content import load_prompt
+from mcp_strava.metric_registry import AGGREGATE_METRIC_BUNDLES
+from mcp_strava.metric_registry_shared import (
+    SUPPORTED_AGGREGATE_BUCKETS,
+    SUPPORTED_AGGREGATE_SCOPES,
+    SUPPORTED_ROLLING_WINDOW_DAYS,
+)
 from mcp_strava.settings import Settings, get_settings, load_settings
+from mcp_strava.sports import SPORT_ALL
 from mcp_strava.types import ServiceEnvelope, dc_to_dict
 
 MCP_TOOL_NAMES = (
@@ -36,6 +48,30 @@ MCP_TOOL_NAMES = (
     "project_fitness_state",
     "get_training_aggregates",
 )
+
+# --- Tool parameter enums -------------------------------------------------
+# Each enum is DERIVED from its canonical domain constant, so the JSON schema the
+# calling agent sees and the values the backend accepts share a single source of
+# truth and cannot drift. FastMCP renders these as JSON-schema enums on the params.
+# Static checkers cannot infer members of a functionally-built enum, so they see the
+# underlying scalar; at runtime these are the real enums that FastMCP/Pydantic render
+# as JSON-schema enums. Either way the values come from one canonical source.
+if TYPE_CHECKING:
+    SportType = str
+    BucketName = str
+    AggregateScope = str
+    ProjectionScenario = str
+    MetricBundle = str
+    RollingWindowDays = int
+else:
+    SportType = StrEnum("SportType", {name: name for name in SPORT_ALL})
+    BucketName = StrEnum("BucketName", {name: name for name in SUPPORTED_AGGREGATE_BUCKETS})
+    AggregateScope = StrEnum("AggregateScope", {name: name for name in SUPPORTED_AGGREGATE_SCOPES})
+    ProjectionScenario = StrEnum("ProjectionScenario", {name: name for name in SUPPORTED_PROJECTION_SCENARIOS})
+    MetricBundle = StrEnum("MetricBundle", {name: name for name in AGGREGATE_METRIC_BUNDLES})
+    RollingWindowDays = IntEnum("RollingWindowDays", {f"days_{days}": days for days in SUPPORTED_ROLLING_WINDOW_DAYS})
+
+_DEFAULT_SCOPE = AggregateScope("global")  # module-level default (avoids a call in arg defaults)
 
 MCP_INSTRUCTIONS = """Read-only factual training metrics from the local Strava mirror.
 Do not invent or request sync, admin, debug, raw SQL, token, or raw Strava capabilities.
@@ -261,10 +297,16 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         structured_output=True,
     )
     def list_workouts(
-        limit: int = 20,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        sport: str | None = None,
+        limit: Annotated[int, Field(description="Maximum number of workouts to return.", examples=[20])] = 20,
+        start_date: Annotated[
+            str | None,
+            Field(description="Earliest workout date, inclusive, ISO YYYY-MM-DD.", examples=["2026-01-01"]),
+        ] = None,
+        end_date: Annotated[
+            str | None,
+            Field(description="Latest workout date, inclusive, ISO YYYY-MM-DD.", examples=["2026-06-01"]),
+        ] = None,
+        sport: Annotated[SportType | None, Field(description="Filter to one Strava sport type.")] = None,
     ) -> dict[str, Any]:
         return _run_logged_tool(
             "list_workouts",
@@ -283,7 +325,9 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         annotations=_tool_annotations(),
         structured_output=True,
     )
-    def get_workout_detail(workout_id: int) -> dict[str, Any]:
+    def get_workout_detail(
+        workout_id: Annotated[int, Field(description="Strava activity id.", examples=[1234567890])],
+    ) -> dict[str, Any]:
         return _run_logged_tool(
             "get_workout_detail",
             lambda: get_workout_detail_service(workout_id, signal_first_use=False),
@@ -296,11 +340,19 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         structured_output=True,
     )
     def compare_periods(
-        period_a_start: str,
-        period_a_end: str,
-        period_b_start: str,
-        period_b_end: str,
-        sport: str | None = None,
+        period_a_start: Annotated[
+            str, Field(description="Period A start, inclusive, ISO YYYY-MM-DD.", examples=["2026-05-01"])
+        ],
+        period_a_end: Annotated[
+            str, Field(description="Period A end, inclusive, ISO YYYY-MM-DD.", examples=["2026-05-31"])
+        ],
+        period_b_start: Annotated[
+            str, Field(description="Period B start, inclusive, ISO YYYY-MM-DD.", examples=["2026-04-01"])
+        ],
+        period_b_end: Annotated[
+            str, Field(description="Period B end, inclusive, ISO YYYY-MM-DD.", examples=["2026-04-30"])
+        ],
+        sport: Annotated[SportType | None, Field(description="Filter to one Strava sport type.")] = None,
     ) -> dict[str, Any]:
         cache_args = {
             "period_a_start": period_a_start,
@@ -329,9 +381,26 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         structured_output=True,
     )
     def project_fitness_state(
-        target_date: str,
-        scenarios: list[str],
-        custom_daily_trimp: list[dict[str, Any]] | None = None,
+        target_date: Annotated[
+            str,
+            Field(
+                description="Projection horizon end, inclusive, ISO YYYY-MM-DD. Must be today or later.",
+                examples=["2026-07-01"],
+            ),
+        ],
+        scenarios: Annotated[
+            list[ProjectionScenario],
+            Field(description="Training scenarios to project forward."),
+        ],
+        custom_daily_trimp: Annotated[
+            list[dict[str, Any]] | None,
+            Field(
+                description=(
+                    "Per-day TRIMP overrides, used only with the 'custom' scenario. Each item is "
+                    "{date: YYYY-MM-DD, trimp: number >= 0}; dates unique and within today..target_date."
+                ),
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         return _run_logged_tool(
             "project_fitness_state",
@@ -350,16 +419,62 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         structured_output=True,
     )
     def get_training_aggregates(
-        end_date: str,
-        bucket: str,
-        start_date: str | None = None,
-        metric_ids: list[str] | None = None,
-        metric_bundle: str | None = None,
-        scope: str = "global",
-        sports: list[str] | None = None,
-        include_empty_buckets: bool = False,
-        as_of_day: str | None = None,
-        window_days: int | None = None,
+        end_date: Annotated[
+            str,
+            Field(description="Exclusive end of the date range, ISO YYYY-MM-DD.", examples=["2026-06-01"]),
+        ],
+        bucket: Annotated[
+            BucketName,
+            Field(
+                description=(
+                    "Aggregation bucket. day/week/month/year are CALENDAR-aligned (weeks start "
+                    "Monday); all_time collapses the whole range into one bucket. For rolling "
+                    "'last-N-days', use window_days instead."
+                ),
+            ),
+        ],
+        start_date: Annotated[
+            str | None,
+            Field(
+                description="Inclusive start of the date range, ISO YYYY-MM-DD. Omit to start at the earliest local activity.",
+                examples=["2026-01-01"],
+            ),
+        ] = None,
+        metric_ids: Annotated[
+            list[str] | None,
+            Field(
+                description="Registry metric ids to include (e.g. trimp, distance_km, avg_hr). Omit to use the bundle's default set."
+            ),
+        ] = None,
+        metric_bundle: Annotated[
+            MetricBundle | None,
+            Field(description="Prepared metric bundle selecting a predefined metric set."),
+        ] = None,
+        scope: Annotated[
+            AggregateScope,
+            Field(description="Aggregate globally, per sport, or both."),
+        ] = _DEFAULT_SCOPE,
+        sports: Annotated[
+            list[SportType] | None,
+            Field(description="Filter to a single Strava sport type (only one is supported)."),
+        ] = None,
+        include_empty_buckets: Annotated[
+            bool,
+            Field(description="Include buckets with no activity as empty rows."),
+        ] = False,
+        as_of_day: Annotated[
+            str | None,
+            Field(
+                description="Rolling-window anchor day, ISO YYYY-MM-DD. Use together with window_days.",
+                examples=["2026-06-01"],
+            ),
+        ] = None,
+        window_days: Annotated[
+            RollingWindowDays | None,
+            Field(
+                description="Rolling-window length in days; only materialized windows (7, 14, 28, 42, 90) are valid."
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         sport_filter = _single_sport_filter(sports)
         request = AggregateServiceRequest(
@@ -398,7 +513,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
     return server
 
 
-def _single_sport_filter(sports: list[str] | None) -> str | None:
+def _single_sport_filter(sports: list[SportType] | None) -> str | None:
     selected = [sport for sport in (sports or []) if sport]
     if len(selected) > 1:
         raise ValueError("Only one sport filter is supported for aggregate requests")
