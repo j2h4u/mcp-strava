@@ -15,7 +15,7 @@ class RefreshReason(StrEnum):
     REFRESH_INCOMPLETE = "refresh_incomplete"
 
 
-class StravaUnavailable(Exception):
+class StravaUnavailableError(Exception):
     """Typed adapter failure with a product-safe reason code.
 
     ``detail`` carries optional diagnostic context for operator logs (e.g. the

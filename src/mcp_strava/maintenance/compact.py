@@ -8,7 +8,7 @@ https://duckdb.org/docs/current/operations_manual/footprint_of_duckdb/reclaiming
 
 This is a local admin operation that requires exclusive access to the mirror
 file, so it must run against a stopped owner — the ``just admin`` wrapper
-provides that. If the owner still holds the lock, ``MirrorDbLocked`` is raised.
+provides that. If the owner still holds the lock, ``MirrorDbLockedError`` is raised.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import duckdb
 
-from mcp_strava.adapters.duckdb.connection import MirrorDbLocked
+from mcp_strava.adapters.duckdb.connection import MirrorDbLockedError
 
 _SIZE_UNITS = ("B", "KB", "MB", "GB", "TB", "PB")
 
@@ -102,7 +102,7 @@ def compact_database(db_path: str | Path, *, backup: bool = True) -> dict:
     When ``backup`` is true, a timestamped pre-compact copy is kept alongside.
 
     Returns a dict with byte sizes, reclaimed bytes, and the backup path.
-    Raises ``MirrorDbLocked`` if another process holds the writer lock.
+    Raises ``MirrorDbLockedError`` if another process holds the writer lock.
     """
     source = Path(db_path)
     if not source.exists():
@@ -124,7 +124,7 @@ def compact_database(db_path: str | Path, *, backup: bool = True) -> dict:
             target.unlink(missing_ok=True)
             _wal_sidecar(target).unlink(missing_ok=True)
             if "Conflicting lock" in str(exc):
-                raise MirrorDbLocked(f"DuckDB mirror is locked by another process: {source}") from exc
+                raise MirrorDbLockedError(f"DuckDB mirror is locked by another process: {source}") from exc
             raise
     finally:
         coordinator.close()

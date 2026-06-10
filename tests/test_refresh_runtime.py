@@ -13,7 +13,7 @@ from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.duckdb.stream_read_queries import activity_stream_rows
 from mcp_strava.adapters.duckdb.sync_log_store import read_sync_log
-from mcp_strava.adapters.strava import StravaResponse, StravaUnavailable
+from mcp_strava.adapters.strava import StravaResponse, StravaUnavailableError
 from mcp_strava.adapters.strava.types import StravaRateInfo
 from tests._fixtures_duckdb import create_fixture_db
 
@@ -230,7 +230,7 @@ def test_run_once_failure_persists_backoff_and_resumes_per_D09_D13(tmp_path):
     with _repo(tmp_path) as repo:
         result = run_once(
             repo,
-            FakeStravaTransport({"/streams": StravaUnavailable("rate_limited")}),
+            FakeStravaTransport({"/streams": StravaUnavailableError("rate_limited")}),
             RefreshPolicy(),
             clock,
             FakeSleeper(clock),
@@ -254,7 +254,7 @@ def test_run_once_after_stream_failure_resumes_without_summary_page_walk_per_D09
     with _repo(tmp_path) as repo:
         failed = run_once(
             repo,
-            FakeStravaTransport({"/streams": StravaUnavailable("rate_limited")}),
+            FakeStravaTransport({"/streams": StravaUnavailableError("rate_limited")}),
             policy,
             clock,
             FakeSleeper(clock),
@@ -429,7 +429,7 @@ def test_run_backfill_failure_preserves_backfill_checkpoint_per_D16(tmp_path):
         )
         result = run_catchup(
             repo,
-            FakeStravaTransport({"/streams": StravaUnavailable("rate_limited")}),
+            FakeStravaTransport({"/streams": StravaUnavailableError("rate_limited")}),
             RefreshPolicy(),
             clock,
             FakeSleeper(clock),
@@ -1444,7 +1444,7 @@ def test_stream_channel_backfill_rate_limit_keeps_checkpoint_and_rows(tmp_path):
         )
         result = run_stream_channel_catchup(
             repo,
-            FakeStravaTransport({"/streams": StravaUnavailable("rate_limited")}),
+            FakeStravaTransport({"/streams": StravaUnavailableError("rate_limited")}),
             RefreshPolicy(),
             FakeClock(),
             FakeSleeper(),

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import duckdb
 import pytest
 
-from mcp_strava.adapters.duckdb.connection import MirrorDbLocked
+from mcp_strava.adapters.duckdb.connection import MirrorDbLockedError
 from mcp_strava.maintenance.compact import compact_database, humanize_bytes, storage_stats
 from tests._fixtures_duckdb import ACTIVITY_COUNT, create_fixture_db
 
@@ -130,7 +130,7 @@ def test_compact_translates_conflicting_lock_to_mirror_locked(tmp_path: Path, mo
     # A real running owner holds a cross-process writer lock; DuckDB surfaces
     # that as an IOException "Conflicting lock ... in PID N" (verified in task
     # 11). That condition can't be reproduced in-process, so inject the exact
-    # exception shape and assert compact translates it to MirrorDbLocked.
+    # exception shape and assert compact translates it to MirrorDbLockedError.
     db = tmp_path / "strava.duckdb"
     create_fixture_db(db)
 
@@ -147,7 +147,7 @@ def test_compact_translates_conflicting_lock_to_mirror_locked(tmp_path: Path, mo
 
     monkeypatch.setattr(compact_mod.duckdb, "connect", lambda *_a, **_k: _LockedConn())
 
-    with pytest.raises(MirrorDbLocked, match="locked by another process"):
+    with pytest.raises(MirrorDbLockedError, match="locked by another process"):
         compact_database(db)
     # The failed attempt must not leave a half-written scratch file behind.
     assert not list(tmp_path.glob("*.compact-*.duckdb"))

@@ -13,7 +13,7 @@ from mcp_strava.adapters.strava.types import (
     Sleeper,
     StravaRateInfo,
     StravaResponse,
-    StravaUnavailable,
+    StravaUnavailableError,
 )
 
 __all__ = [
@@ -28,7 +28,7 @@ __all__ = [
     "StravaRateInfo",
     "StravaResponse",
     "StravaTransport",
-    "StravaUnavailable",
+    "StravaUnavailableError",
     "SystemClock",
     "SystemSleeper",
     "TokenRefreshTransport",

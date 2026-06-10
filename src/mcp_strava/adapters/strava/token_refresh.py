@@ -9,7 +9,7 @@ import urllib.request
 from collections.abc import Callable
 from typing import cast
 
-from mcp_strava.adapters.strava.types import Clock, RefreshedTokens, Sleeper, StravaUnavailable
+from mcp_strava.adapters.strava.types import Clock, RefreshedTokens, Sleeper, StravaUnavailableError
 
 
 class TokenRefreshTransport:
@@ -39,7 +39,7 @@ class TokenRefreshTransport:
                 response = self._http(request)
                 status = int(getattr(response, "status", getattr(response, "code", 200)))
                 if status >= 400:
-                    raise StravaUnavailable("token_unavailable")
+                    raise StravaUnavailableError("token_unavailable")
                 data = self._read_json(response)
                 return RefreshedTokens(
                     access_token=str(data["access_token"]),
@@ -48,17 +48,17 @@ class TokenRefreshTransport:
                 )
             except urllib.error.HTTPError as exc:
                 if 400 <= int(exc.code) < 500:
-                    raise StravaUnavailable("token_unavailable") from exc
+                    raise StravaUnavailableError("token_unavailable") from exc
                 if attempt == 2:
-                    raise StravaUnavailable("token_unavailable") from exc
+                    raise StravaUnavailableError("token_unavailable") from exc
                 self.sleeper.sleep(delays[attempt])
             except (TimeoutError, urllib.error.URLError, OSError) as exc:
                 if attempt == 2:
-                    raise StravaUnavailable("token_unavailable") from exc
+                    raise StravaUnavailableError("token_unavailable") from exc
                 self.sleeper.sleep(delays[attempt])
             except (KeyError, TypeError, ValueError) as exc:
-                raise StravaUnavailable("token_unavailable") from exc
-        raise StravaUnavailable("token_unavailable")
+                raise StravaUnavailableError("token_unavailable") from exc
+        raise StravaUnavailableError("token_unavailable")
 
     def _build_request(self, refresh_token: str) -> urllib.request.Request:
         payload = urllib.parse.urlencode(

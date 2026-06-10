@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import cast
 
 from mcp_strava.adapters.strava.rate_limit import RateLimitPolicy
-from mcp_strava.adapters.strava.types import Clock, Sleeper, StravaResponse, StravaUnavailable
+from mcp_strava.adapters.strava.types import Clock, Sleeper, StravaResponse, StravaUnavailableError
 
 
 class StravaTransport:
@@ -37,7 +37,7 @@ class StravaTransport:
         while attempts < 3:
             decision = self.policy.decide_next_call(self.clock.now())
             if decision.status == "exhausted":
-                raise StravaUnavailable(decision.reason or "rate_limited", detail=self.policy.rate_info.as_dict())
+                raise StravaUnavailableError(decision.reason or "rate_limited", detail=self.policy.rate_info.as_dict())
             if decision.status == "wait" and decision.wait_until is not None:
                 self.sleeper.sleep(max(0, decision.wait_until - self.clock.now()))
 
@@ -51,10 +51,10 @@ class StravaTransport:
             except urllib.error.HTTPError as exc:
                 if exc.code == 401:
                     if refreshed:
-                        raise StravaUnavailable("token_unavailable") from exc
+                        raise StravaUnavailableError("token_unavailable") from exc
                     try:
                         self.token_provider.refresh()
-                    except StravaUnavailable as token_exc:
+                    except StravaUnavailableError as token_exc:
                         if token_exc.reason == "token_unavailable":
                             raise
                         raise
@@ -87,7 +87,7 @@ class StravaTransport:
         # Attach the rate snapshot when we give up because of rate limiting, so
         # the operator log shows the usage/limit at the moment of exhaustion.
         detail = self.policy.rate_info.as_dict() if last_reason == "rate_limited" else None
-        raise StravaUnavailable(last_reason, detail=detail)
+        raise StravaUnavailableError(last_reason, detail=detail)
 
     def _build_request(self, path: str, token: str) -> urllib.request.Request:
         url = f"{self.base_url}/{path.lstrip('/')}"

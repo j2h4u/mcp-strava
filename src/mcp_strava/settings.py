@@ -122,8 +122,7 @@ def _parse_bool(raw: str) -> bool:
 
 
 def _parse_csv(raw: str) -> tuple[str, ...]:
-    values = tuple(part.strip() for part in raw.split(",") if part.strip())
-    return values
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
 
 
 def _default_database_path(root: Path, runtime_profile: str) -> Path:

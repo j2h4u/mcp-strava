@@ -270,18 +270,18 @@ def test_fetch_401_consumes_one_data_attempt_for_refresh_retry_per_D18():
 
 
 def test_data_transport_does_not_retry_on_token_unavailable_per_D18():
-    from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport, StravaUnavailable
+    from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport, StravaUnavailableError
 
     class TokenProvider:
         def access_token(self):
             return "access-secret"
 
         def refresh(self):
-            raise StravaUnavailable("token_unavailable")
+            raise StravaUnavailableError("token_unavailable")
 
     http = FakeStravaHttp([urllib.error.HTTPError("url", 401, "unauthorized", {}, None)])
 
-    with pytest.raises(StravaUnavailable) as exc_info:
+    with pytest.raises(StravaUnavailableError) as exc_info:
         StravaTransport(
             TokenProvider(),
             RateLimitPolicy(),
@@ -317,9 +317,9 @@ def test_token_refresh_transport_owns_its_own_retry_budget_per_D18():
 
 
 def test_token_refresh_transport_4xx_is_token_unavailable_per_D18():
-    from mcp_strava.adapters.strava import StravaUnavailable, TokenRefreshTransport
+    from mcp_strava.adapters.strava import StravaUnavailableError, TokenRefreshTransport
 
-    with pytest.raises(StravaUnavailable) as exc_info:
+    with pytest.raises(StravaUnavailableError) as exc_info:
         TokenRefreshTransport(
             "client",
             "secret",
@@ -332,7 +332,7 @@ def test_token_refresh_transport_4xx_is_token_unavailable_per_D18():
 
 
 def test_tokens_never_appear_in_errors_or_output_per_D10_D18(capsys):
-    from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport, StravaUnavailable
+    from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport, StravaUnavailableError
 
     access_token = "access-secret-literal"
     refresh_token = "refresh-secret-literal"
@@ -342,9 +342,9 @@ def test_tokens_never_appear_in_errors_or_output_per_D10_D18(capsys):
             return access_token
 
         def refresh(self):
-            raise StravaUnavailable("token_unavailable")
+            raise StravaUnavailableError("token_unavailable")
 
-    with pytest.raises(StravaUnavailable):
+    with pytest.raises(StravaUnavailableError):
         StravaTransport(
             TokenProvider(),
             RateLimitPolicy(),
@@ -360,14 +360,14 @@ def test_tokens_never_appear_in_errors_or_output_per_D10_D18(capsys):
 
 
 def test_fetch_rate_limit_exhaustion_carries_rate_snapshot_detail():
-    """A rate-limited StravaUnavailable carries the usage/limit snapshot in .detail.
+    """A rate-limited StravaUnavailableError carries the usage/limit snapshot in .detail.
 
     Panel SRE finding: refresh_failed logged reason=rate_limited with no quota
     values, leaving "why did I hit the limit?" unanswerable. The transport now
     attaches the rate snapshot so the operator log shows usage/limit at the
     moment of exhaustion.
     """
-    from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport, StravaUnavailable
+    from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport, StravaUnavailableError
 
     class TokenProvider:
         def access_token(self):
@@ -390,7 +390,7 @@ def test_fetch_rate_limit_exhaustion_carries_rate_snapshot_detail():
         TokenProvider(), policy, clock=FakeClock(), sleeper=FakeSleeper(), http=FakeStravaHttp([])
     )
 
-    with pytest.raises(StravaUnavailable) as exc_info:
+    with pytest.raises(StravaUnavailableError) as exc_info:
         transport.fetch("/athlete")
 
     exc = exc_info.value

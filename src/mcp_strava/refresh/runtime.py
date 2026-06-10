@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 from mcp_strava.adapters.duckdb.activity_lookup_queries import latest_activity_at
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.sync_log_store import append_sync_log
-from mcp_strava.adapters.strava import StravaUnavailable
+from mcp_strava.adapters.strava import StravaUnavailableError
 from mcp_strava.refresh import _sync_ops
 from mcp_strava.refresh.checkpoints import Stage, is_active_backfill_stage, is_stream_channel_backfill_stage
 from mcp_strava.refresh.policy import RefreshPolicy, refresh_interval_elapsed
@@ -157,7 +157,7 @@ def run_once(
             details_fetched=details_fetched,
             kudos_fetched=kudos_fetched,
         )
-    except StravaUnavailable as exc:
+    except StravaUnavailableError as exc:
         return _handle_failure(refresh_store, clock, policy, exc.reason, mode, detail=exc.detail or None)
     finally:
         refresh_store.release_refresh_lease(owner)
@@ -222,7 +222,7 @@ def run_catchup(
             streams_fetched=streams_fetched,
             details_fetched=details_fetched,
         )
-    except StravaUnavailable as exc:
+    except StravaUnavailableError as exc:
         return _handle_failure(refresh_store, clock, policy, exc.reason, "backfill", detail=exc.detail or None)
     finally:
         refresh_store.release_refresh_lease(owner)
@@ -309,7 +309,7 @@ def run_stream_channel_catchup(
             "estimated_api_calls": result["estimated_api_calls"],
             "completed": result["completed"],
         }
-    except StravaUnavailable as exc:
+    except StravaUnavailableError as exc:
         _handle_failure(refresh_store, clock, policy, exc.reason, "backfill_stream_channels", detail=exc.detail or None)
         refresh_store.set_checkpoint(
             Stage.STREAM_CHANNELS_BACKFILL.value, refresh_store.get_refresh_state().checkpoint_cursor

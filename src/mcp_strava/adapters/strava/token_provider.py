@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from mcp_strava.adapters.strava.token_refresh import TokenRefreshTransport
-from mcp_strava.adapters.strava.types import Clock, StravaUnavailable
+from mcp_strava.adapters.strava.types import Clock, StravaUnavailableError
 
 
 class FileTokenProvider:
@@ -34,7 +34,7 @@ class FileTokenProvider:
     def _refresh_locked(self, values: dict[str, str]) -> str:
         refresh_token = values.get("STRAVA_REFRESH_TOKEN", "")
         if not refresh_token:
-            raise StravaUnavailable("token_unavailable")
+            raise StravaUnavailableError("token_unavailable")
         refreshed = self._refresh_transport.refresh_tokens(refresh_token)
         values["STRAVA_ACCESS_TOKEN"] = refreshed.access_token
         values["STRAVA_REFRESH_TOKEN"] = refreshed.refresh_token

@@ -380,11 +380,11 @@ def test_calc_hrr_pct_accepts_decimal_inputs():
     from decimal import Decimal
 
     # Canonical case (150, 50, 200) -> 66.7, now via Decimal
-    assert calc_hrr_pct(Decimal("150"), Decimal("50"), Decimal("200")) == 66.7
+    assert calc_hrr_pct(Decimal(150), Decimal(50), Decimal(200)) == 66.7
     # Mixed Decimal/int/str must not raise and must match the float path
-    assert calc_hrr_pct(Decimal("120"), 53, "150") == calc_hrr_pct(120.0, 53.0, 150.0)
+    assert calc_hrr_pct(Decimal(120), 53, "150") == calc_hrr_pct(120.0, 53.0, 150.0)
     # Guard path still holds with Decimal: hr_max <= hr_rest -> None
-    assert calc_hrr_pct(Decimal("150"), Decimal("200"), Decimal("200")) is None
+    assert calc_hrr_pct(Decimal(150), Decimal(200), Decimal(200)) is None
     print("  OK: calc_hrr_pct WR-04 — Decimal/str inputs coerced consistently")
 
 

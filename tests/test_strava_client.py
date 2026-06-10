@@ -12,20 +12,20 @@ from typing import Any
 import pytest
 
 from mcp_strava.adapters.strava.client import StravaClient
-from mcp_strava.adapters.strava.types import StravaRateInfo, StravaResponse, StravaUnavailable
+from mcp_strava.adapters.strava.types import StravaRateInfo, StravaResponse, StravaUnavailableError
 
 
 class _FakeTransport:
     """Minimal transport stub: pre-configured with a single response or error."""
 
-    def __init__(self, response=None, raises: StravaUnavailable | None = None) -> None:
+    def __init__(self, response=None, raises: StravaUnavailableError | None = None) -> None:
         self._response = response
         self._raises = raises
         self.fetched_paths: list[str] = []
         # Stub token_provider for refresh_token tests.
         self.token_provider = SimpleNamespace(refresh=self._refresh_token)
         self._refresh_result: str | None = None
-        self._refresh_raises: StravaUnavailable | None = None
+        self._refresh_raises: StravaUnavailableError | None = None
 
     def fetch(self, path: str) -> StravaResponse:
         self.fetched_paths.append(path)
@@ -38,7 +38,7 @@ class _FakeTransport:
             raise self._refresh_raises
         return self._refresh_result or "new_access_token"
 
-    def configure_refresh(self, result: str | None = None, raises: StravaUnavailable | None = None) -> None:
+    def configure_refresh(self, result: str | None = None, raises: StravaUnavailableError | None = None) -> None:
         self._refresh_result = result
         self._refresh_raises = raises
 
@@ -76,7 +76,7 @@ def test_api_request_returns_data_and_rate_headers() -> None:
 
 
 def test_api_request_returns_sentinel_on_rate_limited() -> None:
-    transport = _FakeTransport(raises=StravaUnavailable("rate_limited"))
+    transport = _FakeTransport(raises=StravaUnavailableError("rate_limited"))
     client = StravaClient(transport=transport)
 
     data, rate_headers = client.api_request("/athlete/activities")
@@ -91,7 +91,7 @@ def test_api_request_returns_sentinel_on_rate_limited() -> None:
 
 
 def test_api_request_raises_runtime_error_on_network_unstable() -> None:
-    transport = _FakeTransport(raises=StravaUnavailable("network_unstable"))
+    transport = _FakeTransport(raises=StravaUnavailableError("network_unstable"))
     client = StravaClient(transport=transport)
 
     with pytest.raises(RuntimeError, match="network_unstable"):
@@ -120,7 +120,7 @@ def test_refresh_token_returns_new_access_token() -> None:
 
 def test_refresh_token_raises_runtime_error_on_failure() -> None:
     transport = _FakeTransport()
-    transport.configure_refresh(raises=StravaUnavailable("token_unavailable"))
+    transport.configure_refresh(raises=StravaUnavailableError("token_unavailable"))
     client = StravaClient(transport=transport)
 
     with pytest.raises(RuntimeError, match="token_unavailable"):
@@ -130,7 +130,7 @@ def test_refresh_token_raises_runtime_error_on_failure() -> None:
 def test_refresh_token_error_does_not_contain_secret() -> None:
     """Error message must not leak client credentials."""
     transport = _FakeTransport()
-    transport.configure_refresh(raises=StravaUnavailable("token_unavailable"))
+    transport.configure_refresh(raises=StravaUnavailableError("token_unavailable"))
     client = StravaClient(transport=transport)
 
     try:

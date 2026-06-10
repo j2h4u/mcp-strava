@@ -11,7 +11,7 @@ from typing import cast
 import duckdb
 
 import mcp_strava.refresh.runtime as refresh_runtime
-from mcp_strava.adapters.duckdb.connection import MirrorConn, MirrorDbLocked
+from mcp_strava.adapters.duckdb.connection import MirrorConn, MirrorDbLockedError
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.strava.client import StravaClient
 from mcp_strava.adapters.strava.clock import SystemClock, SystemSleeper
@@ -352,7 +352,7 @@ def cmd_admin(args):
         raise SystemExit(1)
     try:
         handler(args[1:])
-    except MirrorDbLocked as exc:
+    except MirrorDbLockedError as exc:
         print(f"error: {exc}", file=sys.stderr)
         print(
             "hint: the running MCP container holds an exclusive DuckDB lock.\n"

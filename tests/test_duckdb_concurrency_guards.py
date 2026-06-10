@@ -128,7 +128,7 @@ def test_open_mirror_translates_duckdb_lock_to_mirror_db_locked(tmp_path, monkey
 
     monkeypatch.setattr(conn_module.duckdb, "connect", _raise_lock)
 
-    with pytest.raises(conn_module.MirrorDbLocked) as excinfo:
+    with pytest.raises(conn_module.MirrorDbLockedError) as excinfo:
         conn_module.open_expected_mirror_db(db_path)
 
     message = str(excinfo.value)
@@ -155,10 +155,10 @@ def test_reset_thread_connections_reports_close_failures(capsys: pytest.CaptureF
 
 def test_admin_dispatch_prints_lock_hint_and_exits_2(monkeypatch, capsys):
     from mcp_strava import cli
-    from mcp_strava.adapters.duckdb.connection import MirrorDbLocked
+    from mcp_strava.adapters.duckdb.connection import MirrorDbLockedError
 
     def _raise_locked(_args):
-        raise MirrorDbLocked("DuckDB mirror is locked by another process: /runtime/data/strava.duckdb")
+        raise MirrorDbLockedError("DuckDB mirror is locked by another process: /runtime/data/strava.duckdb")
 
     monkeypatch.setitem(cli.ADMIN_COMMANDS, "mirror-coverage", _raise_locked)
 

@@ -21,7 +21,7 @@ from mcp_strava.adapters.strava.rate_limit import RateLimitPolicy
 from mcp_strava.adapters.strava.token_provider import FileTokenProvider
 from mcp_strava.adapters.strava.token_refresh import TokenRefreshTransport
 from mcp_strava.adapters.strava.transport import StravaTransport
-from mcp_strava.adapters.strava.types import Clock, Sleeper, StravaUnavailable
+from mcp_strava.adapters.strava.types import Clock, Sleeper, StravaUnavailableError
 from mcp_strava.settings import Settings, required_strava_client_creds
 
 
@@ -63,7 +63,7 @@ class StravaClient:
     --------------
     ``api_request`` returns a rate-limited sentinel dict when Strava signals
     rate exhaustion, and raises RuntimeError for all other failures.
-    ``refresh_token`` raises RuntimeError on any StravaUnavailable.
+    ``refresh_token`` raises RuntimeError on any StravaUnavailableError.
     Error messages surface only ``exc.reason`` — never the client_secret.
     """
 
@@ -95,7 +95,7 @@ class StravaClient:
         """
         try:
             response = self._transport.fetch(path)
-        except StravaUnavailable as exc:
+        except StravaUnavailableError as exc:
             if exc.reason == "rate_limited":
                 return {"_rate_limited": True, "_retry_after": None}, {}
             raise RuntimeError(f"Strava API request failed: {exc.reason}") from exc
@@ -104,10 +104,10 @@ class StravaClient:
     def refresh_token(self) -> str:
         """Force an OAuth token refresh and return the new access token.
 
-        Raises RuntimeError with the StravaUnavailable reason on failure.
+        Raises RuntimeError with the StravaUnavailableError reason on failure.
         The client_secret is never included in the error message.
         """
         try:
             return self._transport.token_provider.refresh()
-        except StravaUnavailable as exc:
+        except StravaUnavailableError as exc:
             raise RuntimeError(f"Strava OAuth token refresh failed: {exc.reason}") from exc
