@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-_SUPPORTED_FACT_SQL_TYPES = frozenset({"BIGINT", "DOUBLE", "VARCHAR", "DATE", "BOOLEAN"})
+_SUPPORTED_FACT_SQL_TYPES = frozenset({"BIGINT", "DOUBLE", "VARCHAR", "DATE", "BOOLEAN", "VARCHAR[]"})
 
 
-_SUPPORTED_FACT_DEFAULT_SQL = frozenset({"0", "0.0", "'[]'"})
+_SUPPORTED_FACT_DEFAULT_SQL = frozenset({"0", "0.0", "'[]'", "[]"})
 
 
 def _sql(sql_type: str, *, nullable: bool = True, default_sql: str | None = None) -> tuple[str, bool, str | None]:
@@ -22,7 +22,7 @@ _MATERIALIZED_FACT_COLUMN_SQL_METADATA: dict[str, dict[str, tuple[str, bool, str
         "metric_version": _sql("BIGINT", nullable=False),
         "computed_at": _sql("VARCHAR", nullable=False),
         "completeness_status": _sql("VARCHAR", nullable=False),
-        "missing_reasons_json": _sql("VARCHAR", nullable=False, default_sql="'[]'"),
+        "missing_reasons_json": _sql("VARCHAR[]", nullable=False, default_sql="[]"),
         "trimp": _sql("DOUBLE"),
         "zone1_seconds": _sql("BIGINT", nullable=False, default_sql="0"),
         "zone2_seconds": _sql("BIGINT", nullable=False, default_sql="0"),
@@ -67,7 +67,7 @@ _MATERIALIZED_FACT_COLUMN_SQL_METADATA: dict[str, dict[str, tuple[str, bool, str
         "metric_version": _sql("BIGINT", nullable=False),
         "computed_at": _sql("VARCHAR", nullable=False),
         "completeness_status": _sql("VARCHAR", nullable=False),
-        "missing_reasons_json": _sql("VARCHAR", nullable=False, default_sql="'[]'"),
+        "missing_reasons_json": _sql("VARCHAR[]", nullable=False, default_sql="[]"),
         "activity_count": _sql("BIGINT", nullable=False, default_sql="0"),
         "stream_point_count": _sql("BIGINT", nullable=False, default_sql="0"),
         "heartrate_point_count": _sql("BIGINT", nullable=False, default_sql="0"),
@@ -88,7 +88,7 @@ _MATERIALIZED_FACT_COLUMN_SQL_METADATA: dict[str, dict[str, tuple[str, bool, str
         "metric_version": _sql("BIGINT", nullable=False),
         "computed_at": _sql("VARCHAR", nullable=False),
         "completeness_status": _sql("VARCHAR", nullable=False),
-        "missing_reasons_json": _sql("VARCHAR", nullable=False, default_sql="'[]'"),
+        "missing_reasons_json": _sql("VARCHAR[]", nullable=False, default_sql="[]"),
         "effective_trimp": _sql("DOUBLE", nullable=False, default_sql="0.0"),
         "observed_trimp": _sql("DOUBLE"),
         "fitness": _sql("DOUBLE"),
@@ -111,7 +111,7 @@ _MATERIALIZED_FACT_COLUMN_SQL_METADATA: dict[str, dict[str, tuple[str, bool, str
         "metric_version": _sql("BIGINT", nullable=False),
         "computed_at": _sql("VARCHAR", nullable=False),
         "completeness_status": _sql("VARCHAR", nullable=False),
-        "missing_reasons_json": _sql("VARCHAR", nullable=False, default_sql="'[]'"),
+        "missing_reasons_json": _sql("VARCHAR[]", nullable=False, default_sql="[]"),
         "activity_count": _sql("BIGINT", nullable=False, default_sql="0"),
         "active_days": _sql("BIGINT", nullable=False, default_sql="0"),
         "rest_days": _sql("BIGINT", nullable=False, default_sql="0"),
