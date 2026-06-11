@@ -93,7 +93,7 @@ CREATE TABLE refresh_state (
 CREATE TABLE refresh_requests (
     id BIGINT PRIMARY KEY,
     reason VARCHAR NOT NULL,
-    requested_for_day VARCHAR NOT NULL,
+    requested_for_day DATE NOT NULL,
     requested_at VARCHAR NOT NULL,
     consumed_at VARCHAR
 );
