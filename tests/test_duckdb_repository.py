@@ -641,6 +641,38 @@ def test_walk_discount_recomputes_end_to_end_on_fingerprint_mismatch(tmp_path: P
     assert walk_day_fact["effective_trimp"] < walk_day_fact["observed_trimp"]
 
 
+def test_recompute_drains_full_queue_ignoring_limit(tmp_path: Path) -> None:
+    """Drain-on-recompute: a logic-fingerprint mismatch enqueues every activity, and
+    the stage must materialize ALL of them in one call even when the caller passes a
+    small steady-state per-cycle limit. Without draining, a logic edit would recompute
+    at limit/cycle and need ~N/limit refresh cycles to converge (the 25/hour pathology).
+    """
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.refresh._sync_ops import materialize_read_model_stage
+    from tests._fixtures_duckdb import create_empty_fixture_db
+
+    fixture = tmp_path / "drain.duckdb"
+    create_empty_fixture_db(fixture)
+    with DuckDBRepository.from_path(fixture) as repo:
+        for activity_id, day in ((901, "2026-05-19"), (902, "2026-05-20"), (903, "2026-05-21")):
+            _seed_hr_activity_with_streams(repo, activity_id=activity_id, day=day, sport_type="Run")
+
+        # First cycle: stored == live -> normal materialize at N=1, dirty queue cleared.
+        materialize_read_model_stage(repo, "2026-05-24T12:00:00", None)
+        assert repo.current_metric_version() == 1
+
+        # Force a logic-edit signal (stored fingerprint goes stale).
+        repo.bump_logic_version(1, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
+
+        # Recompute with a SMALL steady-state limit. Drain-on-recompute must override it
+        # and materialize all 3 enqueued activities in this single call.
+        result = materialize_read_model_stage(repo, "2026-05-24T13:00:00", None, limit=1)
+
+        assert repo.current_metric_version() == 2
+        assert result.get("activities_materialized", 0) == 3, "recompute must drain all activities, not `limit`"
+        assert int(repo.read_model_status(metric_version=2).get("dirty_count") or 0) == 0
+
+
 def test_activities_missing_kudos_filters_and_returns_typed_ids(tmp_path: Path) -> None:
     """activities_missing_kudos returns plain int ids, only for activities that
     have kudos upstream (kudos_count > 0) and none mirrored locally yet."""

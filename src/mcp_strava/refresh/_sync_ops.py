@@ -373,13 +373,21 @@ def materialize_read_model_stage(
     # Re-resolve POST-bump: bump_logic_version() invalidated the memo, so this
     # returns N+1 on a recompute cycle and the stored version otherwise.
     current_version = repo.current_metric_version()
+    # Drain-on-recompute: a logic-fingerprint change enqueues EVERY activity, and a
+    # logic edit must recompute promptly. Drain the whole backlog in THIS call instead
+    # of bleeding it out at the caller's per-cycle `limit` (the steady-state batch of
+    # READ_MODEL_BATCH_SIZE would otherwise need ~N/batch refresh cycles to materialize
+    # N activities — e.g. 625 activities at 25/hour ≈ 25 hours). Steady-state
+    # incremental materialization (no fingerprint change) stays bounded by `limit` so a
+    # normal refresh cycle never runs unbounded.
+    materialize_limit = None if trigger_reason == "logic_fingerprint_changed" else limit
     started = datetime.now(UTC)
     result = materialize_duckdb_read_model(
         repo,
         metric_version=current_version,
         now=now_iso,
         renew_lease=renew_lease,
-        limit=limit,
+        limit=materialize_limit,
         trigger_reason=trigger_reason,
     )
     duration_ms = int((datetime.now(UTC) - started).total_seconds() * 1000)

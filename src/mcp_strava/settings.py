@@ -80,9 +80,27 @@ CANONICAL_DUCKDB_RUNTIME_PATH = Path("/runtime/data/strava.duckdb")
 # they are not user-facing configuration: no operator tunes them, and they are
 # exercised only through injected settings/fakes in tests. They stay as typed
 # settings fields populated from these fixed defaults.
+# Freshness thresholds are user-perceived-staleness bands for a once-or-twice-a-day
+# usage pattern (the mirror refreshes on an hourly worker cadence): under 12h the data
+# is "fresh", 12-24h is "aging" (older than this morning), and beyond 24h ("a full day")
+# it is "stale". They are display/signal bands, not tied to the worker interval.
 FRESHNESS_WARN_AGE_HOURS = 12
 FRESHNESS_MAX_AGE_HOURS = 24
+
+# Stream-channel backfill is Strava-API bound: each unit is one streams-endpoint call,
+# so the batch is a per-cycle call budget kept well under the API rate window (Strava
+# allows ~100 reads / 15 min), leaving headroom for the summary/detail/kudos calls in
+# the same refresh cycle. Not CPU/IO bound — sized by the rate limit, not throughput.
 STREAM_BACKFILL_BATCH_SIZE = 50
+
+# Steady-state read-model materialization batch (per refresh cycle). Materialize cost is
+# ~0.7 s/activity measured over 525 real activities on the live mirror (full streams), so
+# this bounds a normal cycle's compute to ~18 s. A single athlete logs at most a few
+# activities/day, so 25 covers any realistic single-cycle burst with wide headroom. This
+# bound applies ONLY to steady-state incremental work: a logic-fingerprint change
+# (mass-recompute of EVERY activity) drains the whole backlog in one call regardless of
+# this value — see refresh/_sync_ops.py::materialize_read_model_stage (drain-on-recompute),
+# so this number can never throttle a logic-edit recompute.
 READ_MODEL_BATCH_SIZE = 25
 
 
