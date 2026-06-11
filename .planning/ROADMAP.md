@@ -370,7 +370,7 @@ Cross-cutting constraints:
 **Goal:** Remove SQLite-era legacy from the DuckDB storage layer so it uses native DuckDB types (DATE/BOOLEAN/arrays) where it matters, contains no SQLite-only SQL functions, and has no string-typed columns that are range-scanned or duplicate a native column — while preserving identical external behavior (MCP/CLI payloads, freshness semantics, read-model values). Scope from a full codebase audit; no open design questions. Out of scope (intentional): `summary_json`/`detail_json`/`zones_json` VARCHAR payloads and operational `*_at` ISO-string instants.
 **Requirements**: Storage-layer modernization to DuckDB-native types (post-v1.1 maintenance)
 **Depends on:** Phase 15
-**Plans:** 3/6 plans executed
+**Plans:** 4/6 plans executed
 
 Plans:
 
