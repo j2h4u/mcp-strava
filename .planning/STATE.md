@@ -4,13 +4,13 @@ milestone: v1.1
 milestone_name: milestone
 status: executing
 stopped_at: "Quick task 260610-nk9 complete — incremental Strava summary sync. Hourly SUMMARIES stage now passes &after=<epoch of newest local activity> (catches new activities in ~1 API call instead of re-listing the whole history; the per-activity activity_by_id N+1 dissolves); a weekly FULL resync (after=None, default 604800s via MCP_STRAVA_REFRESH_FULL_RESYNC_INTERVAL_SECONDS) catches edits/anomalies, gated by a new nullable refresh_state.last_full_summary_sync_at column (additive ADD COLUMN IF NOT EXISTS — live /srv DB confirmed migrated, container healthy). Cold-start = NULL marker -> full walk. just verify green; 12 new tests. Earlier same session: DuckDB mirror relocated to /srv/mcp-strava/data (path configurable via MCP_STRAVA_DATA_DIR); Dependabot PR #4 merged. Milestone v1.1 complete-but-unarchived — owner not closing the milestone now."
-last_updated: "2026-06-11T09:11:22.142Z"
+last_updated: "2026-06-11T09:16:11.768Z"
 last_activity: 2026-06-11 -- Phase 16 execution started
 progress:
   total_phases: 16
   completed_phases: 15
   total_plans: 71
-  completed_plans: 68
+  completed_plans: 69
   percent: 94
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 ## Current Position
 
 Phase: 16 (duckdb-native-storage-cleanup) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-06-11 -- Phase 16 execution started
 
@@ -116,6 +116,7 @@ Last activity: 2026-06-11 -- Phase 16 execution started
 | Phase 15 P06 | 45min | 4 fixes | 10 files |
 | Phase 16 P01 | 5min | 1 tasks | 1 files |
 | Phase 16 P02 | 12 | 3 tasks | 19 files |
+| Phase 16 P03 | 2 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -214,6 +215,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 15]: 15-05 added finer workout time fields — start_time_local (HH:MM) materialized as an additive fact column parsed via fromisoformat+strftime (shared metrics.parse_local_hhmm, not a [11:16] slice); plus a read-time relative_time ('Hh Mm' <24h / 'Nd Hh' from 1d, '1d 0h' at the boundary) computed against now and never stored. The new column auto-backfills via the fingerprint recompute (no manual version bump). Two getsource smokes (unconditional local + real docker compose exec) prove the fingerprint computes under both editable and packaged pip-install layouts.
 - [Phase 15]: 15-06 gap-closure hardened the 4 advisory review/verification WARNINGs via TDD (RED then GREEN per fix). WR-01: bump_logic_version + enqueue_metric_version_recompute now wrapped in one repo.begin()/commit() — a failed enqueue can no longer durably advance the stored fingerprint and silently strand reads at N+1. WR-02: freshness staleness clock is UTC end-to-end (_freshness_now, UTC-naive matching last_success_at's basis) at every producer; instants compared in UTC, display/calendar (start_time_local, as_of_day) left local; health.py's local-vs-local datetime.now() pair deliberately untouched. WR-03: _record_failed_run commits via _commit_if_standalone()/rollback() under duckdb_process_lock(). WR-04: dirty_activity_rows_for_materialization extends a limited batch to whole-day boundaries so daily/rolling rollups never read a half-materialized day. 389 passed (+4), ruff/format/pyright clean.
 - [Phase ?]: [Phase 15]: Live dev DB migration gap surfaced at 15-05 — preflight enforces read_model_logic_version (15-02) but runs before the repository self-heal seed, so a pre-Phase-15 DB crash-loops. Worked around for the dev instance via the in-code seed (DuckDBRepository.from_path runs ensure_provenance_columns + _seed_logic_version) after backup; durable preflight-vs-seed ordering fix deferred to the deploy layer.
+- [Phase ?]: refresh_requests.requested_for_day converted to native DATE; callers pass datetime.date; RefreshRequestRow str contract preserved via str(datetime.date)
 
 ### Roadmap Evolution
 
@@ -246,7 +248,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T09:11:22.128Z
+Last session: 2026-06-11T09:16:07.379Z
 Stopped at: Quick task 260610-nk9 complete — incremental Strava summary sync. Hourly SUMMARIES stage now passes &after=<epoch of newest local activity> (catches new activities in ~1 API call instead of re-listing the whole history; the per-activity activity_by_id N+1 dissolves); a weekly FULL resync (after=None, default 604800s via MCP_STRAVA_REFRESH_FULL_RESYNC_INTERVAL_SECONDS) catches edits/anomalies, gated by a new nullable refresh_state.last_full_summary_sync_at column (additive ADD COLUMN IF NOT EXISTS — live /srv DB confirmed migrated, container healthy). Cold-start = NULL marker -> full walk. just verify green; 12 new tests. Earlier same session: DuckDB mirror relocated to /srv/mcp-strava/data (path configurable via MCP_STRAVA_DATA_DIR); Dependabot PR #4 merged. Milestone v1.1 complete-but-unarchived — owner not closing the milestone now.
 Resume file: None
 
