@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: milestone
 status: verifying
 stopped_at: Phase 16 complete — all 6 plans done; 16-06 CAST cleanup + json_extract_string stream predicate + full gate 429 passed
-last_updated: "2026-06-11T09:36:45.194Z"
-last_activity: 2026-06-11 -- Phase 16 execution started
+last_updated: "2026-06-11T12:11:37.287Z"
+last_activity: 2026-06-11
 progress:
   total_phases: 16
   completed_phases: 16
@@ -25,16 +25,16 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 ## Current Position
 
-Phase: 16 (duckdb-native-storage-cleanup) — EXECUTING
-Plan: 6 of 6
+Phase: 16
+Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-06-11 -- Phase 16 execution started
+Last activity: 2026-06-11
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 58
+- Total plans completed: 64
 - Average duration: 0 min
 - Total execution time: 0.0 hours
 
@@ -56,6 +56,7 @@ Last activity: 2026-06-11 -- Phase 16 execution started
 | 13 | 4 | - | - |
 | 14 | 3 | - | - |
 | 15 | 6 | - | - |
+| 16 | 6 | - | - |
 
 **Recent Trend:**
 
