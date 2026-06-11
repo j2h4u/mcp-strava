@@ -19,16 +19,16 @@ def activities_missing_streams(
 ) -> list[RepositoryActivityRow]:
     rows = repo._fetchall(
         """
-        SELECT a.id, a.date, a.name, a.sport_type, a.distance, a.moving_time,
+        SELECT a.id, a.activity_day, a.name, a.sport_type, a.distance, a.moving_time,
                a.elapsed_time, a.total_elevation_gain, a.summary_json,
                a.detail_json, a.synced_at
         FROM activities a
         LEFT JOIN streams s ON s.activity_id = a.id
         WHERE s.activity_id IS NULL
           AND (? IS NULL OR a.activity_day >= CAST(? AS DATE))
-        GROUP BY a.id, a.date, a.name, a.sport_type, a.distance, a.moving_time,
+        GROUP BY a.id, a.activity_day, a.name, a.sport_type, a.distance, a.moving_time,
                  a.elapsed_time, a.total_elevation_gain, a.summary_json,
-                 a.detail_json, a.synced_at, a.activity_day
+                 a.detail_json, a.synced_at
         ORDER BY a.activity_day DESC, a.id DESC
         """,
         [since, since],
@@ -41,7 +41,7 @@ def activities_missing_details(
 ) -> list[RepositoryActivityRow]:
     rows = repo._fetchall(
         """
-        SELECT id, date, name, sport_type, distance, moving_time,
+        SELECT id, activity_day, name, sport_type, distance, moving_time,
                elapsed_time, total_elevation_gain, summary_json,
                detail_json, synced_at
         FROM activities

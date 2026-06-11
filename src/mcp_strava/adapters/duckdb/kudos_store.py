@@ -49,9 +49,9 @@ def activities_missing_kudos(repo: KudosRepository, window_days: int | None = No
     """
     params: list[object] = []
     if window_days is not None:
-        query += " AND a.date >= date('now', ?)"
-        params.append(f"-{window_days} days")
-    query += " ORDER BY a.date DESC"
+        query += " AND a.activity_day >= (CURRENT_DATE - (? * INTERVAL '1 day'))"
+        params.append(window_days)
+    query += " ORDER BY a.activity_day DESC"
     return [as_int(row["id"]) for row in repo._fetchall(query, params)]
 
 

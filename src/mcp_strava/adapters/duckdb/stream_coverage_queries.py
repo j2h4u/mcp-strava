@@ -37,7 +37,7 @@ def activities_missing_stream_channels(
     channel_list = list(requested_channels)
     rows = repo._fetchall(
         """
-        SELECT a.id, a.date
+        SELECT a.id
         FROM activities a
         WHERE EXISTS (SELECT 1 FROM streams s WHERE s.activity_id = a.id)
           AND (? IS NULL OR a.activity_day >= CAST(? AS DATE))

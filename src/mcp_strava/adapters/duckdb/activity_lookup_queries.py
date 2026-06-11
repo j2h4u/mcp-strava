@@ -21,7 +21,7 @@ class ActivityLookupRepository(Protocol):
 def recent_activities(repo: ActivityLookupRepository, limit: int = 15) -> list[RepositoryActivityRow]:
     rows = repo._fetchall(
         """
-        SELECT id, date, name, sport_type, distance, moving_time, elapsed_time,
+        SELECT id, activity_day, name, sport_type, distance, moving_time, elapsed_time,
                total_elevation_gain, summary_json, detail_json, synced_at
         FROM activities
         ORDER BY activity_day DESC, id DESC
@@ -35,7 +35,7 @@ def recent_activities(repo: ActivityLookupRepository, limit: int = 15) -> list[R
 def activity_by_id(repo: ActivityLookupRepository, activity_id: int) -> RepositoryActivityRow | None:
     row = repo._fetchone(
         """
-        SELECT id, date, name, sport_type, distance, moving_time, elapsed_time,
+        SELECT id, activity_day, name, sport_type, distance, moving_time, elapsed_time,
                total_elevation_gain, summary_json, detail_json, synced_at
         FROM activities
         WHERE id = ?
@@ -54,7 +54,7 @@ def activity_materialization_sources(
     placeholders = make_placeholders(len(ids))
     rows = repo._fetchall(
         f"""
-        SELECT a.id, a.date, a.name, a.sport_type, a.distance, a.moving_time,
+        SELECT a.id, a.activity_day, a.name, a.sport_type, a.distance, a.moving_time,
                a.elapsed_time, a.total_elevation_gain, a.summary_json, a.detail_json,
                a.synced_at, s.source_hash, s.source_revision
         FROM activities a
@@ -75,7 +75,7 @@ def activity_materialization_sources(
 
 
 def latest_activity_at(repo: ActivityLookupRepository) -> str | None:
-    row = repo._fetchone("SELECT MAX(date) AS latest FROM activities")
+    row = repo._fetchone("SELECT MAX(activity_day) AS latest FROM activities")
     return str(row["latest"]) if row and row["latest"] else None
 
 
