@@ -171,7 +171,7 @@ def _activity_fact(
         "adjusted_cardiac_cost": adjusted_cardiac_cost,
         "cardiac_drift_pct": 2.5 if cardiac_cost is not None else None,
         "cardiac_drift_severity": "stable" if cardiac_cost is not None else None,
-        "cardiac_drift_significant": 0,
+        "cardiac_drift_significant": False,
         "cardiac_drift_quality": "good" if cardiac_cost is not None else None,
         "hrr_pct": 68.0 if cardiac_cost is not None else None,
         "anomaly_count": 1 if completeness_status == "partial" else 0,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-_SUPPORTED_FACT_SQL_TYPES = frozenset({"BIGINT", "DOUBLE", "VARCHAR", "DATE"})
+_SUPPORTED_FACT_SQL_TYPES = frozenset({"BIGINT", "DOUBLE", "VARCHAR", "DATE", "BOOLEAN"})
 
 
 _SUPPORTED_FACT_DEFAULT_SQL = frozenset({"0", "0.0", "'[]'"})
@@ -42,7 +42,7 @@ _MATERIALIZED_FACT_COLUMN_SQL_METADATA: dict[str, dict[str, tuple[str, bool, str
         "adjusted_cardiac_cost": _sql("DOUBLE"),
         "cardiac_drift_pct": _sql("DOUBLE"),
         "cardiac_drift_severity": _sql("VARCHAR"),
-        "cardiac_drift_significant": _sql("BIGINT", nullable=False, default_sql="0"),
+        "cardiac_drift_significant": _sql("BOOLEAN", nullable=False, default_sql="0"),
         "cardiac_drift_quality": _sql("VARCHAR"),
         "hrr_pct": _sql("DOUBLE"),
         "anomaly_count": _sql("BIGINT", nullable=False, default_sql="0"),

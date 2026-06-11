@@ -244,7 +244,7 @@ def _query_cardiac_drift_status(
         WHERE activity_day >= CAST(? AS DATE)
           AND activity_day <= CAST(? AS DATE)
           AND metric_version = ?
-          AND cardiac_drift_significant >= ?
+          AND cardiac_drift_significant = TRUE
           AND cardiac_drift_quality IN ({placeholders})
         ORDER BY activity_day DESC, activity_id DESC
         LIMIT 1
@@ -253,7 +253,6 @@ def _query_cardiac_drift_status(
             start.isoformat(),
             as_of.isoformat(),
             metric_version,
-            _as_int(_obj_dict(definition.threshold)["cardiac_drift_significant"]),
             *qualities,
         ],
     ).fetchone()
