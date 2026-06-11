@@ -6,7 +6,7 @@ DUCKDB_AGGREGATE_VIEW_SQL = """
 CREATE OR REPLACE VIEW v_activity_aggregate_facts AS
 SELECT
     f.activity_id,
-    CAST(f.activity_day AS DATE) AS activity_day,
+    f.activity_day,
     f.sport_type,
     f.metric_version,
     f.computed_at,
@@ -52,7 +52,7 @@ LEFT JOIN activities a ON a.id = f.activity_id;
 
 CREATE OR REPLACE VIEW v_daily_aggregate_facts AS
 SELECT
-    CAST(day AS DATE) AS day,
+    day,
     scope,
     sport_type,
     metric_version,
@@ -79,7 +79,7 @@ FROM daily_load_facts;
 
 CREATE OR REPLACE VIEW v_training_model_state_facts AS
 SELECT
-    CAST(day AS DATE) AS day,
+    day,
     scope,
     sport_type,
     metric_version,
@@ -106,7 +106,7 @@ FROM training_model_daily;
 CREATE OR REPLACE VIEW v_historical_context_facts AS
 WITH days AS (
     SELECT
-        CAST(day AS DATE) AS day,
+        day,
         metric_version,
         computed_at,
         completeness_status,
@@ -118,11 +118,11 @@ WITH days AS (
 last_hikes AS (
     SELECT
         d.day,
-        MAX(CAST(a.activity_day AS DATE)) AS last_hike_day
+        MAX(a.activity_day) AS last_hike_day
     FROM days d
     LEFT JOIN activity_metric_facts a
         ON a.sport_type = 'Hike'
-       AND CAST(a.activity_day AS DATE) <= d.day
+       AND a.activity_day <= d.day
     GROUP BY d.day
 )
 SELECT
@@ -179,7 +179,7 @@ LEFT JOIN last_hikes h ON h.day = d.day;
 
 CREATE OR REPLACE VIEW v_rolling_aggregate_facts AS
 SELECT
-    CAST(as_of_day AS DATE) AS as_of_day,
+    as_of_day,
     window_days,
     scope,
     sport_type,
