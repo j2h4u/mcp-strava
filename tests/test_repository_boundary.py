@@ -262,12 +262,12 @@ def test_enqueue_refresh_request_is_idempotent_per_D19(tmp_path: Path) -> None:
 
     with DuckDBRepository.from_path(fixture) as repo:
         store = RefreshStateStore.from_connection(repo.conn)
-        assert store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
-        assert not store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
-        assert not store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        assert store.enqueue_refresh_request("first_use_of_day", "2026-05-21", "2026-05-21T08:00:00")
+        assert not store.enqueue_refresh_request("first_use_of_day", "2026-05-21", "2026-05-21T08:00:00")
+        assert not store.enqueue_refresh_request("first_use_of_day", "2026-05-21", "2026-05-21T08:00:00")
         assert len(store.pending_refresh_requests()) == 1
         assert store.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 1
-        assert store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        assert store.enqueue_refresh_request("first_use_of_day", "2026-05-21", "2026-05-21T08:00:00")
         assert len(store.pending_refresh_requests()) == 1
 
 
@@ -280,9 +280,9 @@ def test_mark_refresh_requests_consumed_marks_all_pending_per_D19(tmp_path: Path
     assert list(signature(RefreshStateStore.mark_refresh_requests_consumed).parameters) == ["self", "consumed_at"]
     with DuckDBRepository.from_path(fixture) as repo:
         store = RefreshStateStore.from_connection(repo.conn)
-        store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
-        store.enqueue_refresh_request("manual", "2026-05-21")
-        store.enqueue_refresh_request("timer", "2026-05-21")
+        store.enqueue_refresh_request("first_use_of_day", "2026-05-21", "2026-05-21T08:00:00")
+        store.enqueue_refresh_request("manual", "2026-05-21", "2026-05-21T08:00:00")
+        store.enqueue_refresh_request("timer", "2026-05-21", "2026-05-21T08:00:00")
         assert store.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 3
         assert store.pending_refresh_requests() == []
         assert store.mark_refresh_requests_consumed("2026-05-21T12:01:00Z") == 0
@@ -305,7 +305,7 @@ def test_pending_refresh_requests_and_mark_consumed_roundtrip(tmp_path: Path) ->
 
     with DuckDBRepository.from_path(fixture) as repo:
         store = RefreshStateStore.from_connection(repo.conn)
-        assert store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        assert store.enqueue_refresh_request("first_use_of_day", "2026-05-21", "2026-05-21T08:00:00")
         pending = store.pending_refresh_requests()
         assert len(pending) == 1
         assert pending[0].reason == "first_use_of_day"

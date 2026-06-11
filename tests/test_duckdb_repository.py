@@ -58,7 +58,7 @@ def _activity_fact_values(activity_id: int = 100) -> dict[str, object]:
         "adjusted_cardiac_cost": 47.8,
         "cardiac_drift_pct": None,
         "cardiac_drift_severity": None,
-        "cardiac_drift_significant": 0,
+        "cardiac_drift_significant": False,
         "cardiac_drift_quality": None,
         "hrr_pct": None,
         "anomaly_count": 0,
@@ -148,8 +148,8 @@ def test_duckdb_repository_refresh_source_dirty_and_status_roundtrip(tmp_path: P
         assert store.acquire_refresh_lease("owner-b", "2026-05-21T12:10:00Z", "2026-05-21T12:00:00Z")
         store.release_refresh_lease("owner-b")
 
-        assert store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
-        assert not store.enqueue_refresh_request("first_use_of_day", "2026-05-21")
+        assert store.enqueue_refresh_request("first_use_of_day", "2026-05-21", "2026-05-21T08:00:00")
+        assert not store.enqueue_refresh_request("first_use_of_day", "2026-05-21", "2026-05-21T08:00:00")
         assert len(store.pending_refresh_requests()) == 1
         assert store.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 1
 

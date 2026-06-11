@@ -1,14 +1,13 @@
 """Tests for incremental SUMMARIES sync (260610-nk9).
 
 Coverage:
-  (schema)  - last_full_summary_sync_at column: additive migration, get/set round-trip
+  (schema)  - last_full_summary_sync_at column: get/set round-trip
   (settings)- full_resync_interval_seconds env-var parse + default
   (a)       - sync_summaries URL includes &after=N when after_epoch set; absent when None
   (b-full)  - run_once with NULL marker triggers full walk and writes the marker
   (b-full-stale) - run_once with stale marker triggers full walk and updates the marker
   (b-incremental) - run_once with fresh marker triggers incremental with non-None after_epoch
   (c)       - cold-start (empty DB, NULL marker) -> full walk (after_epoch=None)
-  (d)       - fixture DB without the column opens and run_once completes without error
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ from __future__ import annotations
 import urllib.request
 from pathlib import Path
 
-import duckdb
 import pytest
 
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
@@ -151,26 +149,6 @@ class _FullRunTransport:
 # ---------------------------------------------------------------------------
 # Schema tests
 # ---------------------------------------------------------------------------
-
-
-def test_schema_existing_db_without_column_opens_cleanly(tmp_path):
-    """RefreshStateStore on a DB without last_full_summary_sync_at opens without error."""
-    path = tmp_path / "legacy.duckdb"
-    create_fixture_db(path)
-
-    # Drop the column to simulate a pre-existing DB without it.
-    conn = duckdb.connect(str(path))
-    try:
-        conn.execute("ALTER TABLE refresh_state DROP COLUMN IF EXISTS last_full_summary_sync_at")
-        conn.commit()
-    finally:
-        conn.close()
-
-    with DuckDBRepository.from_path(path) as repo:
-        store = RefreshStateStore.from_connection(repo.conn)
-        state = store.get_refresh_state()
-
-    assert state is not None
 
 
 def test_schema_get_last_full_summary_sync_at_returns_none_when_null(tmp_path):
@@ -390,43 +368,3 @@ def test_run_once_cold_start_triggers_full_walk(tmp_path, monkeypatch):
     assert result.status == "ok"
     assert len(captured) == 1
     assert captured[0] is None, "cold-start must trigger full walk (after_epoch=None)"
-
-
-# ---------------------------------------------------------------------------
-# Test (d): additive-column compatibility — pre-existing DB without column
-# ---------------------------------------------------------------------------
-
-
-def test_run_once_db_without_column_completes_without_error(tmp_path, monkeypatch):
-    """Fixture DB created without last_full_summary_sync_at -> run_once completes without error."""
-    from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_once
-
-    monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *_a, **_kw: (0, 0))
-    monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_a, **_kw: 0)
-    monkeypatch.setattr(_sync_ops, "sync_details", lambda *_a, **_kw: 0)
-    monkeypatch.setattr(_sync_ops, "schema_validate", lambda *_a, **_kw: None)
-    monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_a, **_kw: 0)
-    monkeypatch.setattr(
-        _sync_ops,
-        "materialize_read_model_stage",
-        lambda *_a, **_kw: {"status": "ok"},
-        raising=False,
-    )
-
-    # Create DB without the column
-    path = tmp_path / "legacy.duckdb"
-    create_fixture_db(path)
-    conn = duckdb.connect(str(path))
-    try:
-        conn.execute("ALTER TABLE refresh_state DROP COLUMN IF EXISTS last_full_summary_sync_at")
-        conn.commit()
-    finally:
-        conn.close()
-
-    clock = FakeClock()
-    policy = RefreshPolicy(full_resync_interval_seconds=604800)
-
-    with DuckDBRepository.from_path(path) as repo:
-        result = run_once(repo, _FullRunTransport(), policy, clock, FakeSleeper(), force=True)
-
-    assert result.status == "ok"

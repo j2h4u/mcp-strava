@@ -28,13 +28,7 @@ class RefreshStateStore:
 
     @classmethod
     def from_connection(cls, conn: DuckDBConn) -> RefreshStateStore:
-        store = cls(conn)
-        store._ensure_column_last_full_summary_sync_at()
-        return store
-
-    def _ensure_column_last_full_summary_sync_at(self) -> None:
-        with duckdb_process_lock():
-            self.conn.execute("ALTER TABLE refresh_state ADD COLUMN IF NOT EXISTS last_full_summary_sync_at VARCHAR")
+        return cls(conn)
 
     def _execute(self, sql: str, params: Iterable[object] | None = None):
         with duckdb_process_lock():
@@ -194,10 +188,7 @@ class RefreshStateStore:
         )
         self._commit_if_standalone()
 
-    def enqueue_refresh_request(
-        self, reason: str, requested_for_day: datetime.date, requested_at: str | None = None
-    ) -> bool:
-        timestamp = requested_at or requested_for_day
+    def enqueue_refresh_request(self, reason: str, requested_for_day: datetime.date, requested_at: str) -> bool:
         existing = self._fetchone(
             """
             SELECT id
@@ -214,7 +205,7 @@ class RefreshStateStore:
             INSERT INTO refresh_requests (id, reason, requested_for_day, requested_at)
             VALUES (?, ?, ?, ?)
             """,
-            [self._next_id("refresh_requests"), reason, requested_for_day, timestamp],
+            [self._next_id("refresh_requests"), reason, requested_for_day, requested_at],
         )
         self._commit_if_standalone()
         return True

@@ -428,12 +428,8 @@ def _day_from_timestamp(value: object) -> date | None:
 
 
 def _coerce_day(value: object) -> date | None:
-    if isinstance(value, date):
-        return value
-    try:
-        return date.fromisoformat(str(value)[:10])
-    except ValueError:
-        return None
+    # activity_day/day cells come from native DATE columns → already date | None.
+    return value if isinstance(value, date) else None
 
 
 def _to_iso(value: object) -> str:

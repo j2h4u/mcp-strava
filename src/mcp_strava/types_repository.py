@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 
@@ -45,7 +45,7 @@ class ActivityMetricFact:
     metric_version: int
     computed_at: str
     completeness_status: str
-    missing_reasons_json: str = "[]"
+    missing_reasons_json: list[str] = field(default_factory=list)
     trimp: float | None = None
     zone1_seconds: int = 0
     zone2_seconds: int = 0
@@ -63,7 +63,7 @@ class ActivityMetricFact:
     adjusted_cardiac_cost: float | None = None
     cardiac_drift_pct: float | None = None
     cardiac_drift_severity: str | None = None
-    cardiac_drift_significant: int = 0
+    cardiac_drift_significant: bool = False
     cardiac_drift_quality: str | None = None
     hrr_pct: float | None = None
     hr_recovery_pause_count: int = 0
@@ -87,7 +87,7 @@ class DailyLoadFact:
     metric_version: int
     computed_at: str
     completeness_status: str
-    missing_reasons_json: str = "[]"
+    missing_reasons_json: list[str] = field(default_factory=list)
     activity_count: int = 0
     stream_point_count: int = 0
     heartrate_point_count: int = 0
@@ -112,7 +112,7 @@ class TrainingModelDailyFact:
     metric_version: int
     computed_at: str
     completeness_status: str
-    missing_reasons_json: str = "[]"
+    missing_reasons_json: list[str] = field(default_factory=list)
     effective_trimp: float = 0.0
     observed_trimp: float | None = None
     fitness: float | None = None
@@ -139,7 +139,7 @@ class RollingPeriodFact:
     metric_version: int
     computed_at: str
     completeness_status: str
-    missing_reasons_json: str = "[]"
+    missing_reasons_json: list[str] = field(default_factory=list)
     activity_count: int = 0
     active_days: int = 0
     rest_days: int = 0
