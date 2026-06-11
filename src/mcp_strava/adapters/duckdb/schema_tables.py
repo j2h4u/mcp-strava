@@ -31,7 +31,7 @@ CREATE TABLE streams (
     grade DOUBLE,
     gap_speed DOUBLE,
     gap_distance DOUBLE,
-    is_moving BIGINT,
+    is_moving BOOLEAN,
     values_json VARCHAR,
     PRIMARY KEY (activity_id, time_offset)
 );

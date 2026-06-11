@@ -134,7 +134,7 @@ class StreamWriteRepositoryMixin(_StreamWriteRepositoryHost):
                         row.get("grade"),
                         row.get("gap_speed"),
                         row.get("gap_distance"),
-                        row.get("is_moving"),
+                        bool(row["is_moving"]) if row.get("is_moving") is not None else None,
                         row.get("values_json"),
                     )
                 )

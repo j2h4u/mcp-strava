@@ -470,7 +470,7 @@ def _seed_hr_activity_with_streams(
             "grade": 1.0,
             "gap_speed": 3.1,
             "gap_distance": idx * 30.0,
-            "is_moving": 1,
+            "is_moving": True,
             "values_json": "{}",
         }
         for idx in range(180)
