@@ -4,6 +4,10 @@
 !.env.example
 .planning/config.json
 
+# Graphify knowledge graph — regenerated artifact, not tracked
+.planning/graphs/
+graphify-out/
+
 # Python bytecode and caches
 __pycache__/
 *.py[cod]
