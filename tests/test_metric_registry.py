@@ -315,7 +315,6 @@ def test_activity_metric_fact_schema_matches_registry_metadata():
         for column_name in (
             "activity_id",
             "activity_day",
-            "missing_reasons_json",
             "zone1_seconds",
             "cardiac_drift_significant",
             "anomaly_count",
@@ -327,6 +326,13 @@ def test_activity_metric_fact_schema_matches_registry_metadata():
             assert schema_column["data_type"] == registry_column.sql_type
             assert schema_column["nullable"] is registry_column.nullable
             assert schema_column["default_sql"] == registry_column.default_sql
+
+        # VARCHAR[] DEFAULT [] — DuckDB normalises the array literal to main.list_value()
+        # in information_schema; verify type and nullability only (not the repr).
+        mrj_registry = registry_columns["missing_reasons_json"]
+        mrj_schema = schema_columns["missing_reasons_json"]
+        assert mrj_schema["data_type"] == mrj_registry.sql_type  # VARCHAR[]
+        assert mrj_schema["nullable"] is mrj_registry.nullable  # NOT NULL
 
         primary_key_columns = [
             str(row[0])
@@ -408,7 +414,7 @@ def test_fact_column_sql_metadata_rejects_unsafe_fragments_before_rendering():
     cases = (
         (definition(table_name="activity_metric_facts; DROP TABLE activities"), "Unsafe SQL identifier"),
         (definition(column_name="calories-kcal"), "Unsafe SQL identifier"),
-        (definition(sql_type="BOOLEAN"), "unsupported sql_type"),
+        (definition(sql_type="INTEGER"), "unsupported sql_type"),
         (definition(default_sql="CURRENT_TIMESTAMP"), "unsafe default_sql"),
     )
     for column, match in cases:
@@ -430,7 +436,7 @@ def test_activity_metric_facts_generated_sql_matches_current_contract():
     )
     assert (
         materialized_fact_column_definition_sql("activity_metric_facts", "missing_reasons_json")
-        == "missing_reasons_json VARCHAR NOT NULL DEFAULT '[]'"
+        == "missing_reasons_json VARCHAR[] NOT NULL DEFAULT []"
     )
     assert (
         materialized_fact_column_definition_sql("activity_metric_facts", "zone1_seconds")
