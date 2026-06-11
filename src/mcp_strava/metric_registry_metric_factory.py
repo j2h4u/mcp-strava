@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mcp_strava.metric_glossary import CONCEPT_BY_METRIC_ID
 from mcp_strava.types import MetricDefinition
 
 _DEFAULT_REQUIREMENTS = ["metric_available_from_local_mirror"]
@@ -126,4 +127,5 @@ def _metric(
         exposed_in=exposed_in,
         calculation=calculation_text,
         description=description,
+        concept=CONCEPT_BY_METRIC_ID.get(metric_id, ""),
     )

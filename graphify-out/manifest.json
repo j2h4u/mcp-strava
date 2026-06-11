@@ -1,0 +1,802 @@
+{
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/training.py": {
+    "mtime": 1780608717.9835153,
+    "hash": "d203e83c663c3cca419618942682d1cd"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/types_serialization.py": {
+    "mtime": 1780734357.2935543,
+    "hash": "e8b7b1070b34f1a0499c10357f3128a6"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/__main__.py": {
+    "mtime": 1780092431.0060706,
+    "hash": "cf8ab15545e79bc8137b6e964ea58a94"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/types_activity_metrics.py": {
+    "mtime": 1780734390.4660885,
+    "hash": "54598fa0ec4e2320a016053d184d911c"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_fact_column_projection.py": {
+    "mtime": 1780732045.4273148,
+    "hash": "3001eb0b0290a8b52d6ff9047ec8fe56"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_metrics_stream.py": {
+    "mtime": 1780731901.569305,
+    "hash": "50cb45ab93a915846d9cc95ff9094f52"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metrics.py": {
+    "mtime": 1780520876.004216,
+    "hash": "ae0fe587de77adfde95e46d779f9d326"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/strava_api_reference.py": {
+    "mtime": 1780219061.9402447,
+    "hash": "37e47d62d1ade315934263b9482c3a77"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/types_service.py": {
+    "mtime": 1780734390.4660885,
+    "hash": "98038d2bd5ffe0cc2baec65a01cb8165"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/cli.py": {
+    "mtime": 1780731429.0906906,
+    "hash": "65832ec8337affb6b9ae23faec778ef1"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_shared.py": {
+    "mtime": 1780729559.016078,
+    "hash": "9134cb9282a22b53256b1bfa61e50ba1"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_metrics_analytics.py": {
+    "mtime": 1780731901.569305,
+    "hash": "7070721ea3a19ab78c647ed8360502fb"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_status.py": {
+    "mtime": 1780729559.0640786,
+    "hash": "3a3141dffc33b1a01eb5c1bdde15c8c9"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/cardiac_drift.py": {
+    "mtime": 1780670342.219977,
+    "hash": "445b1d66e7c513c5e94e223a0287549e"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_fact_column_sql.py": {
+    "mtime": 1780732045.4273148,
+    "hash": "856dc8ea98ce5e64872a27976a6bd7bf"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/settings.py": {
+    "mtime": 1781100729.9175,
+    "hash": "d5861dcbd1d3c226dd76c4b23c5fdc50"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/constants.py": {
+    "mtime": 1780607305.8524258,
+    "hash": "230bf15f7635515279adf00c4513c135"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/types_repository.py": {
+    "mtime": 1780734390.4660885,
+    "hash": "98cbcfda21472ff7d451cb166ddf8dfc"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/api_schema.py": {
+    "mtime": 1780608717.2395053,
+    "hash": "e96279a553800a574b7e80ceb400054e"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/cli_render.py": {
+    "mtime": 1780731213.0996554,
+    "hash": "d57ba47c81cfa11b3909305707004a8d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry.py": {
+    "mtime": 1781159755.491596,
+    "hash": "64d275af67bfa5bc025f019b982d04c0"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/types.py": {
+    "mtime": 1780734390.498089,
+    "hash": "770974781f21ad6ca8fd260889207a9e"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/types_registry.py": {
+    "mtime": 1781159725.599181,
+    "hash": "76fb61c9580261d7930bfd3882cfc05d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/cli_admin.py": {
+    "mtime": 1781100863.367423,
+    "hash": "1d643aff706f830e9e0702dd5f3d24bd"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/types_strava.py": {
+    "mtime": 1780734390.4660885,
+    "hash": "0ef282b337cb80fe6ddee15e7d3bb053"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_metrics_activity.py": {
+    "mtime": 1780731901.569305,
+    "hash": "f0cbada316fdb825fbba1a1676e11eed"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_fact_column_model.py": {
+    "mtime": 1780732045.4273148,
+    "hash": "f433346e5706c6177ba5d097ef6dcd92"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/hr_zones.py": {
+    "mtime": 1780092430.9700701,
+    "hash": "f28b0f5f9622ce67f87e5b112a64703b"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_aggregates.py": {
+    "mtime": 1780732084.6398623,
+    "hash": "a01fa45cc127b88391f1a3099fed2914"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/types_training.py": {
+    "mtime": 1780734390.4700885,
+    "hash": "8dabd1276f8a5a088895ab3dd84eac03"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_metrics_report.py": {
+    "mtime": 1780731901.569305,
+    "hash": "346e0157c8963f5efd7b20fd42257d07"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/sync.py": {
+    "mtime": 1780137034.668302,
+    "hash": "13be98b6a7190db4a5d84b1b65d3cd54"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_aggregate_data.py": {
+    "mtime": 1780731971.2982793,
+    "hash": "938fc8c41b7bca8a4ce015695cf10b25"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_metric_factory.py": {
+    "mtime": 1781159734.387303,
+    "hash": "4b3f44bd2d2c21f997e179b9c1b52c6d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_fact_columns.py": {
+    "mtime": 1780732080.099799,
+    "hash": "dbadcb87b2840e58c84a24e19f40fa05"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_fact_column_tables.py": {
+    "mtime": 1780732045.4273148,
+    "hash": "46d54634c627f21650bfc21d12ba3c2c"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/sports.py": {
+    "mtime": 1780571707.5424435,
+    "hash": "b034f5adee6486442452d86e273c2fe1"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_aggregate_factory.py": {
+    "mtime": 1780731971.3342798,
+    "hash": "98da566cfd01e1d64df58297accada31"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/mcp_content.py": {
+    "mtime": 1780400837.9697967,
+    "hash": "18122d30a2ffa6edc8acce9bb9cde3ff"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_metrics_training.py": {
+    "mtime": 1780731901.569305,
+    "hash": "6c1ba8558ab5bd66171634226b0798f2"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/__init__.py": {
+    "mtime": 1780092430.95807,
+    "hash": "64163119002c94fe14e7b037e44efd5d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/cli_common.py": {
+    "mtime": 1780731213.0596547,
+    "hash": "d23eb998a6dd766eacf523c2451c71be"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/metric_registry_metrics.py": {
+    "mtime": 1780731887.561109,
+    "hash": "3ed88280a32493d5d12bd2e61367e6f6"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/interfaces/mcp_http.py": {
+    "mtime": 1781159784.3399963,
+    "hash": "586a179434b79f9833f17828e1de0f22"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/interfaces/__init__.py": {
+    "mtime": 1780092430.9700701,
+    "hash": "242f753a6fc561b73f78058e1ba593d0"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/maintenance/compact.py": {
+    "mtime": 1781100863.367423,
+    "hash": "c12247f82724a8edafba71d65cd0f43f"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/maintenance/__init__.py": {
+    "mtime": 1779993558.3374708,
+    "hash": "ba936ca5bca19cc6853f90ea6be08c2d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/__init__.py": {
+    "mtime": 1779360312.8664792,
+    "hash": "0d2793bb0eb4304784f8fd962d14d1c0"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/read_model_activity_facts.py": {
+    "mtime": 1780730583.6107092,
+    "hash": "ce8c32bd579641615feef94e92eb3389"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/activity_rows.py": {
+    "mtime": 1780680094.436355,
+    "hash": "a04eca9b74dc299f171e583de45a7a55"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/daily_load_queries.py": {
+    "mtime": 1780681497.8639195,
+    "hash": "3492b785f85d79db1acc174cf7ac4c1b"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/aggregate_rows.py": {
+    "mtime": 1780671408.8075395,
+    "hash": "a65e82cd7c8f4512a4de4002fef514b9"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/refresh_state_store.py": {
+    "mtime": 1781093576.0384455,
+    "hash": "253e180d874583d5ca3b44f788947f6c"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/schema_tables.py": {
+    "mtime": 1781093102.7280185,
+    "hash": "3ea078e77af8bd164c03e91ee03ab70d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/connection.py": {
+    "mtime": 1781100863.367423,
+    "hash": "c6a2c5317dec77bcc9cf8f0eac89ddff"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/aggregate_distribution.py": {
+    "mtime": 1780731003.5166981,
+    "hash": "c7f9a61ef5cae269ce36074178fdaef2"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/trimp_sql.py": {
+    "mtime": 1780664077.090831,
+    "hash": "a432e4552304cd6ebaeea910a8e80c79"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/aggregate_queries.py": {
+    "mtime": 1780731003.5166981,
+    "hash": "083df3a75763da486d37f4860f46b19d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/schema_inventory.py": {
+    "mtime": 1780734593.9573047,
+    "hash": "933667ee0b252d48f4cc00fd164303b6"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/activity_lookup_queries.py": {
+    "mtime": 1780681155.987316,
+    "hash": "0c6a8d8f9825e57a12ece557d657c0f1"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/source_hashing.py": {
+    "mtime": 1780663960.1171482,
+    "hash": "18aff55a52fc7c0580a1e1e42066ae98"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/status_fact_queries.py": {
+    "mtime": 1780682051.6076045,
+    "hash": "37a12270868b3492cb1da6d123cbbdb4"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/repository.py": {
+    "mtime": 1780682991.9289217,
+    "hash": "5ecacac65a977261fed04b610b9095a8"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/aggregate_query_sources.py": {
+    "mtime": 1780730893.3471367,
+    "hash": "9a53e4e2a4d0ce0d5110637751033041"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/repository_models.py": {
+    "mtime": 1780668925.599839,
+    "hash": "4017f38a0f03732173f5738d2e68a7e7"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/kudos_store.py": {
+    "mtime": 1780671744.6203966,
+    "hash": "7e713dba0dbbdce6f0fc774c472bfdde"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/read_model_source_repository.py": {
+    "mtime": 1780730273.334182,
+    "hash": "700e3e6b95fa5f4115fdd51beb543b59"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/activity_selectors.py": {
+    "mtime": 1780680094.436355,
+    "hash": "d8c3f877a022847ce2af086f7fcf605b"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/stream_coverage_queries.py": {
+    "mtime": 1780679965.362461,
+    "hash": "a3361754863280e230db5c16ab08aeea"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/read_model_fact_write_repository.py": {
+    "mtime": 1780730273.334182,
+    "hash": "b4b8653f434e0edc1a31e74faf75227f"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/read_model_period_facts.py": {
+    "mtime": 1780730665.2518828,
+    "hash": "c0c15bc83b8585f9b780043413d44ec0"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/read_model_repository.py": {
+    "mtime": 1780730273.3021817,
+    "hash": "906fec48b05a10299fc97a2dff5da5c2"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/aggregate_models.py": {
+    "mtime": 1780667750.8352177,
+    "hash": "c25ee910ee2798a0848191587f2bfab8"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/aggregate_sql_expressions.py": {
+    "mtime": 1780730927.3036184,
+    "hash": "53f84bc4730f578d2ae3209375310cb8"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/aggregate_query_fetch.py": {
+    "mtime": 1780730893.379137,
+    "hash": "5603032016cc3337bcddccf3b7a90f82"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/stream_write_repository.py": {
+    "mtime": 1780682991.9009213,
+    "hash": "43a2b38a12b8e57a38c023969525fc00"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/repository_utils.py": {
+    "mtime": 1780669141.9509127,
+    "hash": "1da27adea56901fe05643a299fa0914c"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/stream_read_queries.py": {
+    "mtime": 1780681311.1333845,
+    "hash": "3133746cfbfea26291f67e3cbe0f547c"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/stream_metric_queries.py": {
+    "mtime": 1780682024.87523,
+    "hash": "874ecf5a174f91964b10a6f5e59d951f"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/read_model_materializer_utils.py": {
+    "mtime": 1780730560.3463736,
+    "hash": "d8e978fad8c8299da3de0f5d91a181c7"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/read_model_materializer.py": {
+    "mtime": 1780737241.2013307,
+    "hash": "4de4c5c8e9d0f49d2535fc1794f73d39"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/schema_views.py": {
+    "mtime": 1780734593.9573047,
+    "hash": "735363300d0b680545f3110c94f23f68"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/read_model_repository_host.py": {
+    "mtime": 1780730273.3021817,
+    "hash": "ba5b640b98087c5765f05bb75a1604f7"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/sync_log_store.py": {
+    "mtime": 1780672936.0743961,
+    "hash": "6fd8609216f26352143800f06511b96a"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/schema.py": {
+    "mtime": 1780734593.9653049,
+    "hash": "08cb7478c75458497cff095576601734"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/athlete_zone_store.py": {
+    "mtime": 1780673993.2991097,
+    "hash": "4635480c3131e05bba1b30af323ff3ed"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/read_model_logic_repository.py": {
+    "mtime": 1780730273.334182,
+    "hash": "47d6e61bf1db66093fe8c18ba148b98e"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/duckdb/__init__.py": {
+    "mtime": 1780520875.9242148,
+    "hash": "ec9a48978bc1cf03d118866c73ba2516"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/strava/clock.py": {
+    "mtime": 1780135580.8804748,
+    "hash": "8ac8c073a3726b2ab589ed5c2cff5b77"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/strava/token_provider.py": {
+    "mtime": 1781100863.367423,
+    "hash": "f3d5c3721cff088bbf4c0d9fde0da14a"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/strava/types.py": {
+    "mtime": 1781100863.367423,
+    "hash": "25162063ee41e2afac65da1feb396064"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/strava/token_refresh.py": {
+    "mtime": 1781100863.367423,
+    "hash": "c8a043682edadfb8a795d15309a66f10"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/strava/transport.py": {
+    "mtime": 1781100863.367423,
+    "hash": "924f9c28e64b3885899c45d9f25cb2e5"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/strava/rate_limit.py": {
+    "mtime": 1780607079.657372,
+    "hash": "f1ba1cfdc61be84f86ae6d01ebc84af4"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/strava/client.py": {
+    "mtime": 1781100863.367423,
+    "hash": "af367d98711c53394ea1d15c41b99768"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/adapters/strava/__init__.py": {
+    "mtime": 1781100863.367423,
+    "hash": "b770fae921091582a72264d7b6020342"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/refresh/policy.py": {
+    "mtime": 1781093154.996718,
+    "hash": "14e2927b1ebbf4157b7b249779814812"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/refresh/runtime.py": {
+    "mtime": 1781100863.367423,
+    "hash": "5235b9ba47e5848ec295e615d7e8865d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/refresh/_sync_ops.py": {
+    "mtime": 1781093576.0384455,
+    "hash": "11ff0b289da458a262c0fcf0f747be6a"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/refresh/health.py": {
+    "mtime": 1780731648.493765,
+    "hash": "6feccb72fa74a19d644087da826c723d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/refresh/freshness.py": {
+    "mtime": 1781100729.7574978,
+    "hash": "35f88450949a916ae7d47d75402da0fa"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/refresh/worker.py": {
+    "mtime": 1780737252.2494962,
+    "hash": "64e3b33c1eea5206eed1ba57047ddfc9"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/refresh/schema_drift.py": {
+    "mtime": 1780567018.894513,
+    "hash": "109dd5068f1b6a8f6ebf82fa76364248"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/refresh/bootstrap.py": {
+    "mtime": 1780672958.386778,
+    "hash": "bdaf3b6f0c0706eb8acab161e67c2541"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/refresh/checkpoints.py": {
+    "mtime": 1779626946.9344783,
+    "hash": "759e157a5175e07ad42c66900a9368bd"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/refresh/__init__.py": {
+    "mtime": 1779990805.2030206,
+    "hash": "e1c0bb8fcce3be9db0b7fd723381d783"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/devtools/__init__.py": {
+    "mtime": 1779616216.7488997,
+    "hash": "6742a52456fe18a70ac7061704d7d495"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/devtools/mcp_client/cli.py": {
+    "mtime": 1780564989.7671337,
+    "hash": "fe1b3dda0ecb1662fafb34e90c0b98ed"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/devtools/mcp_client/latency.py": {
+    "mtime": 1780732690.6051345,
+    "hash": "dc36327eb164db1741dfbc515bf9cecb"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/devtools/mcp_client/scripts.py": {
+    "mtime": 1780732666.868783,
+    "hash": "9029aa936904c93d51bda844acdd1b8a"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/devtools/mcp_client/contracts.py": {
+    "mtime": 1780732666.8327825,
+    "hash": "a1f00583e006f4a45b4e96652a5ea61a"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/devtools/mcp_client/transport.py": {
+    "mtime": 1780732666.8327825,
+    "hash": "125e550c8a3db0ad2414790419389e18"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/devtools/mcp_client/smoke.py": {
+    "mtime": 1780732666.8327825,
+    "hash": "0856bbfdf531d88766819a43e2f22f35"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/devtools/mcp_client/client.py": {
+    "mtime": 1780732690.6051345,
+    "hash": "17898edbfe758be121c251c4a301902e"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/devtools/mcp_client/utils.py": {
+    "mtime": 1780732666.8327825,
+    "hash": "af6d0ce9ac7db4a868b1c0f078987d5d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/devtools/mcp_client/__init__.py": {
+    "mtime": 1779616216.7488997,
+    "hash": "1c2efb2296a4410464597561ee935514"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/application/projection_services.py": {
+    "mtime": 1781121057.0995052,
+    "hash": "1157aecb48ead93db573c3437401805b"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/application/product_bundle_format.py": {
+    "mtime": 1780672570.6882784,
+    "hash": "da061839103c0e01ba38f55b607a9dcb"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/application/mirror_coverage.py": {
+    "mtime": 1780679937.6500533,
+    "hash": "600b452be6de483bf2f78fbef1facfa1"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/application/freshness.py": {
+    "mtime": 1780680505.510343,
+    "hash": "c74285b10d654773ed79cdc59ae843f2"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/application/product_facts.py": {
+    "mtime": 1780672756.351228,
+    "hash": "c5603842f174f76377074d15ad32e7a5"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/application/comparison_services.py": {
+    "mtime": 1780667522.0880182,
+    "hash": "72203022b7644880cf3fb8fe0d1aa528"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/application/metric_services.py": {
+    "mtime": 1780680505.514343,
+    "hash": "2558110793a7eb756ff21d46a584fe1b"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/application/__init__.py": {
+    "mtime": 1779956000.2695627,
+    "hash": "01007fb6cf3a14d7e91c84f3a1e83397"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/application/aggregate_services.py": {
+    "mtime": 1780672775.5475752,
+    "hash": "95d26844dad566152a11cf20606b2946"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/application/activity_payloads.py": {
+    "mtime": 1780670959.5089753,
+    "hash": "ed5068253c771d1bb3898e89e1609013"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/deploy/service_events.py": {
+    "mtime": 1780335877.1565251,
+    "hash": "5c625c91bbefea78c40693797fd18ca6"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/deploy/preflight.py": {
+    "mtime": 1780731648.493765,
+    "hash": "4bc4bfceff83c491c8416351e17e810d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/deploy/refresh_scheduler.py": {
+    "mtime": 1780335877.1565251,
+    "hash": "dfcab002953fed0032911c68dcb2043c"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/deploy/healthcheck.py": {
+    "mtime": 1780731648.493765,
+    "hash": "71ee027cd43e8cdddbd167e4a966d0a6"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/deploy/entrypoint.py": {
+    "mtime": 1780731648.493765,
+    "hash": "1cc0678b0e4066e833109e4fe4010fa2"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/deploy/supervisor_state.py": {
+    "mtime": 1780335877.1565251,
+    "hash": "68b854df94e2b1354eac1caed9e6c87a"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/deploy/service.py": {
+    "mtime": 1780335877.160525,
+    "hash": "94389c23480a96422d9604579e9e919f"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/deploy/runtime_options.py": {
+    "mtime": 1780335877.1565251,
+    "hash": "07b975d42c00c51e23e2ce513082419f"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/src/mcp_strava/deploy/__init__.py": {
+    "mtime": 1780092430.9700701,
+    "hash": "11b423e106e2bfddbac28ec36a0c64b4"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/conftest.py": {
+    "mtime": 1780217183.748239,
+    "hash": "d8dd62fda2f0b7e52d19b4d4a004fc2b"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_phase4_e2e.py": {
+    "mtime": 1780666452.2536447,
+    "hash": "7d47ce563a831098363d6fd5eea8a48d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_repo_hygiene.py": {
+    "mtime": 1780662265.24045,
+    "hash": "50615b02fb656f77feb5d7bd92c5f9d9"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_mcp_latency_gate.py": {
+    "mtime": 1780402714.8677466,
+    "hash": "9b7397b9ef17b72751e59776057d5233"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_repository_boundary.py": {
+    "mtime": 1780681311.1373847,
+    "hash": "a271be372d4f5a7b78d983bfda3c43e3"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_settings.py": {
+    "mtime": 1780660733.4782515,
+    "hash": "ebec357a95cf015a562f889a76912ffd"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_mcp_surface.py": {
+    "mtime": 1781122286.8494425,
+    "hash": "235d83afa21887304af3fb8548895faf"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_hr_zones.py": {
+    "mtime": 1780682191.6975713,
+    "hash": "6543333f3eed0c0b9c15602c3a0c8478"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_strava_client.py": {
+    "mtime": 1781100863.367423,
+    "hash": "5711c4e5d0fc53864cfa3324ef37a675"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/_fixtures_duckdb.py": {
+    "mtime": 1780092430.9700701,
+    "hash": "63ac14b8e83a531971473c0cfa56b4ce"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_refresh_health.py": {
+    "mtime": 1780662354.4377196,
+    "hash": "8fa9571406464ad21b52794ec72ea2f7"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_full_fidelity_mirror.py": {
+    "mtime": 1780092430.9740703,
+    "hash": "2fec09533058cec9c8f18e77194f1a7c"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_application_workouts.py": {
+    "mtime": 1779956000.2815628,
+    "hash": "41b857cbf647004a33a8f0e36e9c4fb2"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_training_aggregates.py": {
+    "mtime": 1780667750.8392177,
+    "hash": "b9e3c2e3c03772af2d869084d9745ad7"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_security_guards.py": {
+    "mtime": 1780731399.694278,
+    "hash": "09d7ff41aa666119183438bd7587af3a"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_cli_surface.py": {
+    "mtime": 1780731648.493765,
+    "hash": "3b2e1dcd5d7f7df4c73b20fed809dbb1"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_application_services.py": {
+    "mtime": 1780680524.2866154,
+    "hash": "e14f44d574899f19a5b77d0a74ee0872"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_incremental_summary_sync.py": {
+    "mtime": 1781093608.066886,
+    "hash": "e35069c40e026e4c5a9c9b871546635e"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_mcp_sdk_contract.py": {
+    "mtime": 1780092430.9700701,
+    "hash": "7a957add86de78cf20bbe1054c26b76c"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_metrics_pure.py": {
+    "mtime": 1781100224.8423183,
+    "hash": "29fd04e038a0d9f6bd57c032cbc2e5f3"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_logic_fingerprint.py": {
+    "mtime": 1780607397.5616646,
+    "hash": "4e6431944218f527b3011540d52237d2"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_schema_drift.py": {
+    "mtime": 1780218727.41928,
+    "hash": "ce075853f25d074508ac12469ef0d78b"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_read_model_materialization.py": {
+    "mtime": 1780730601.3269644,
+    "hash": "fe435bb74a404282f38499c7b80aa0de"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_application_reports.py": {
+    "mtime": 1779956000.2815628,
+    "hash": "1bafb9f70ff7ca2a80fc796d31a2a61c"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_metric_services.py": {
+    "mtime": 1780670959.5089753,
+    "hash": "53c61f2362c989bc7d797f827a55ad72"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_read_model_queries.py": {
+    "mtime": 1780611290.217729,
+    "hash": "a9db4121e6cf3e583b5a49996e18d9b2"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_load_status.py": {
+    "mtime": 1781089757.2326095,
+    "hash": "6c9656aee85cb0ad340d7cead349d20d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_strava_adapter.py": {
+    "mtime": 1781100863.367423,
+    "hash": "b8616d55b41d02b1b960224fa48b081b"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_refresh_runtime.py": {
+    "mtime": 1781100863.367423,
+    "hash": "c7593d26a616f6a1b4f3cd9be254b02b"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_product_fact_bundles.py": {
+    "mtime": 1780606988.8401468,
+    "hash": "294ec43f162852523e4e9b83641081ab"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_duckdb_concurrency_guards.py": {
+    "mtime": 1781100863.367423,
+    "hash": "23ddac71485b314f561e1cd30747c28d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_source_hashing.py": {
+    "mtime": 1780664007.8418348,
+    "hash": "2c63c0f87a0012b78f1a1b0238cfd4ae"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_docker_runtime.py": {
+    "mtime": 1781089757.2326095,
+    "hash": "b4f47422a6519033fd137966abb30a24"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_duckdb_repository.py": {
+    "mtime": 1780682191.6975713,
+    "hash": "fedbda625ae637a221170edc17268103"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_maintenance_compact.py": {
+    "mtime": 1781100863.367423,
+    "hash": "398005ba1c8fe9aadbe055f48098ea1f"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_phase01_validation.py": {
+    "mtime": 1780607426.674058,
+    "hash": "230e2b4eca6f0621ecb64af4a6bffc52"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_mcp_test_client.py": {
+    "mtime": 1780150116.9889967,
+    "hash": "5592f1823f0136e696caa7081b854b15"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_metric_registry.py": {
+    "mtime": 1780730961.5921044,
+    "hash": "26addb3166e2505a3c0527bdace0526b"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/__init__.py": {
+    "mtime": 1779612447.0513954,
+    "hash": "68b329da9893e34099c7d8ad5cb9c940"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/test_smoke.py": {
+    "mtime": 1780571755.2151394,
+    "hash": "b3af945bb5b22dad9f3826afb2bb4cd3"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/tests/fixtures/fake_mcp_server.py": {
+    "mtime": 1779616216.7488997,
+    "hash": "3024cf3b0cf7c5ce9b4565788d7dffb1"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/deploy/gateway_register.py": {
+    "mtime": 1780737360.8751228,
+    "hash": "bd6e17a37ce596cdf42176089da2399d"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/CONTRIBUTING.md": {
+    "mtime": 1780330030.2660327,
+    "hash": "90f8ed129200e68f783879c5332d2ca9"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/README.md": {
+    "mtime": 1781089757.2326095,
+    "hash": "53d1c4327dd93b75ab12da0cc0810320"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/LICENSE.md": {
+    "mtime": 1780330030.2660327,
+    "hash": "6278bd5a85c714a197bd8ea42c3795cb"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/AGENTS.md": {
+    "mtime": 1780737310.830374,
+    "hash": "fa6d50f2cd955276c03be363f60daa64"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/COMMERCIAL.md": {
+    "mtime": 1780330030.2660327,
+    "hash": "bc6a252879ac865e8b915d78385578e1"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/skills/SKILL.md": {
+    "mtime": 1780405703.7716513,
+    "hash": "69cb8e7de8f93c30ec8add96ea85965a"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/skills/expert-panel-pattern.md": {
+    "mtime": 1780406019.0530255,
+    "hash": "1eb900dad5934eef1d26e9334c56f7a4"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/docs/private/sports-medicine-review.md": {
+    "mtime": 1779956000.2655625,
+    "hash": "c827624c43e239d414e95f039f8ca458"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/docs/private/coach-review.md": {
+    "mtime": 1779956000.2655625,
+    "hash": "64344d05e584ad25d4e777e11885746b"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/docs/private/linkedin-post-notes.md": {
+    "mtime": 1779788114.890426,
+    "hash": "77643716a187a26bcbf4e6d84241a238"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/docs/private/cardiac-drift-steady-state-requirement.md": {
+    "mtime": 1779956000.2615626,
+    "hash": "afdda2941adabacc8a0e412a727ca900"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/docs/sport/cardiac-cost-normalization-research.md": {
+    "mtime": 1780405091.4964216,
+    "hash": "3ad6f46a668c8ab3141146c3cebed704"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/docs/sport/cardiac-drift-steady-state.md": {
+    "mtime": 1780405091.8084278,
+    "hash": "40e2fe572144fda73fb25dc639665f1b"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/docs/tech/kudos-api.md": {
+    "mtime": 1779956000.2655625,
+    "hash": "7611da2a1c8f21e2a8a8254f578cc223"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/docs/tech/configuration.md": {
+    "mtime": 1780403704.4414215,
+    "hash": "12c49d165714f1375519a36da0482fa2"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/docs/tech/deployment.md": {
+    "mtime": 1781089757.2326095,
+    "hash": "f980aa57633d2bb339b49652ce8445db"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/mcp-content/prompts/strava_shoe_mileage_watchdog_ru.md": {
+    "mtime": 1780399861.0082626,
+    "hash": "2158c106b3867a236d59f5ee8b49dfec"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/mcp-content/prompts/strava_daily_training_brief.md": {
+    "mtime": 1780400311.2744935,
+    "hash": "e18694ec4f896c165c5a59500bdd104c"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/mcp-content/prompts/strava_daily_training_brief_ru.md": {
+    "mtime": 1780399860.7002585,
+    "hash": "6e02498ccb0e274a21274bb09b197297"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/mcp-content/prompts/strava_weekly_training_digest_ru.md": {
+    "mtime": 1780399860.8562605,
+    "hash": "f7e8be42ed13bb21f892be571f4cbbee"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/mcp-content/prompts/strava_weekly_training_digest.md": {
+    "mtime": 1780400311.4184954,
+    "hash": "7caffc5a2d4b52a92830229b630d316e"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/mcp-content/prompts/strava_shoe_mileage_watchdog.md": {
+    "mtime": 1780400311.590498,
+    "hash": "1f8e8f99be7555cccdcc05e852455b27"
+  },
+  "/home/j2h4u/repos/j2h4u/mcp-strava/deploy/docker-compose.yml": {
+    "mtime": 1781089757.2326095,
+    "hash": "d59ccce6c30146ae71b40b34d5993b65"
+  }
+}

@@ -19,6 +19,7 @@ class MetricDefinition:
     exposed_in: list[str]
     calculation: str
     description: str = ""
+    concept: str = ""  # FK into metric_glossary.CONCEPT_GLOSSARY; "" when the metric needs no expansion
     aggregate_mode: str | None = None
     aggregate_source: str | None = None
     denominator: str | None = None

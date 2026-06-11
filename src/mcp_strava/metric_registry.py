@@ -11,6 +11,7 @@ import inspect
 from importlib import import_module
 from typing import Any
 
+from mcp_strava.metric_glossary import validate_concept_links
 from mcp_strava.metric_registry_aggregates import AGGREGATE_METRIC_BUNDLES
 from mcp_strava.metric_registry_fact_columns import (
     AGGREGATE_QUERY_PROJECTION_COLUMNS,
@@ -39,6 +40,9 @@ from mcp_strava.metric_registry_shared import (
 )
 from mcp_strava.metric_registry_status import EXCLUDED_INTERPRETATIONS, STATUS_FACT_REGISTRY
 from mcp_strava.types import MetricDefinition
+
+# Fail fast at import if the glossary points at a metric_id that no longer exists.
+validate_concept_links(frozenset(METRIC_REGISTRY))
 
 __all__ = [
     "AGGREGATE_BUCKET_INTERVALS",
@@ -122,6 +126,7 @@ def metric_catalog_payload() -> dict[str, Any]:
                 "exposed_in": metric.exposed_in,
                 "calculation": metric.calculation,
                 "description": metric.description,
+                "concept": metric.concept,
                 "aggregate_mode": metric.aggregate_mode,
                 "aggregate_source": metric.aggregate_source,
                 "denominator": metric.denominator,
@@ -228,6 +233,7 @@ COMPUTE_SOURCE_MODULES: tuple[str, ...] = (
     "mcp_strava.constants",
     "mcp_strava.hr_zones",
     "mcp_strava.mcp_content",
+    "mcp_strava.metric_glossary",
     "mcp_strava.metric_registry",
     "mcp_strava.metric_registry_aggregate_data",
     "mcp_strava.metric_registry_aggregate_factory",

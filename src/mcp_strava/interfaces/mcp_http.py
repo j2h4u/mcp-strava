@@ -30,7 +30,8 @@ from mcp_strava.application.projection_services import (
 )
 from mcp_strava.mcp_content import MCP_PROMPT_NAMES as MCP_PROMPT_NAMES  # re-exported as part of the MCP surface
 from mcp_strava.mcp_content import load_prompt
-from mcp_strava.metric_registry import AGGREGATE_METRIC_BUNDLES
+from mcp_strava.metric_glossary import render_glossary_markdown
+from mcp_strava.metric_registry import AGGREGATE_METRIC_BUNDLES, metric_catalog_payload
 from mcp_strava.metric_registry_shared import (
     SUPPORTED_AGGREGATE_BUCKETS,
     SUPPORTED_AGGREGATE_SCOPES,
@@ -76,8 +77,12 @@ _DEFAULT_SCOPE = AggregateScope("global")  # module-level default (avoids a call
 MCP_INSTRUCTIONS = """Read-only factual training metrics from the local Strava mirror.
 Do not invent or request sync, admin, debug, raw SQL, token, or raw Strava capabilities.
 For user-facing narrative, expand abbreviations on first use, avoid raw floating-point dumps,
-and explain what each important number means in context. Do not make medical diagnoses or
-pretend this MCP server interprets training; interpretation belongs to the calling agent."""
+and explain what each important number means in context. A metric glossary that expands the
+jargon (TRIMP, CTL/ATL/TSB, ACWR, cardiac cost/drift, HRR, ...) is available as the resource
+strava://glossary; consult it before expanding terms. A machine-readable metric catalog with
+units, calculations, and the per-metric concept link is at strava://metric-catalog. Do not make
+medical diagnoses or pretend this MCP server interprets training; interpretation belongs to the
+calling agent."""
 
 _SAFE_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _WILDCARD_HOSTS = {"0.0.0.0", "::"}
@@ -260,6 +265,33 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:
         stateless_http=True,
         transport_security=build_transport_security(resolved_settings),
     )
+
+    @server.resource(
+        "strava://glossary",
+        name="strava_metric_glossary",
+        title="Strava Metric Glossary",
+        description=(
+            "Plain-language expansions of the metric jargon (TRIMP, CTL/ATL/TSB, ACWR, cardiac "
+            "cost/drift, HRR, HR zones, ...). Consult before expanding abbreviations."
+        ),
+        mime_type="text/markdown",
+    )
+    def strava_metric_glossary() -> str:
+        return render_glossary_markdown()
+
+    @server.resource(
+        "strava://metric-catalog",
+        name="strava_metric_catalog",
+        title="Strava Metric Catalog",
+        description=(
+            "Machine-readable catalog of every metric (id, unit, calculation, concept link, "
+            "bundles) plus the supported aggregate buckets/scopes/rolling windows. Doubles as "
+            "enum documentation for tool parameters."
+        ),
+        mime_type="application/json",
+    )
+    def strava_metric_catalog() -> str:
+        return json.dumps(metric_catalog_payload(), indent=2)
 
     @server.prompt(
         name="strava_daily_training_brief",
