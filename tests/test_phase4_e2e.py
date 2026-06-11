@@ -81,6 +81,6 @@ def test_phase4_cli_freshness_json_uses_fixture_duckdb_without_strava(tmp_path: 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert set(payload) == {"data", "freshness", "completeness", "warnings", "rationale"}
-    assert payload["freshness"]["last_successful_refresh_at"] == "2026-05-21T06:00:00"
+    assert payload["freshness"]["last_successful_refresh_at"] == "2026-05-21T06:00:00Z"
     assert payload["freshness"]["last_activity_at"] == "2026-05-21T07:00:00"
     assert payload["completeness"]["status"] == "complete"

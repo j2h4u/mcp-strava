@@ -282,6 +282,24 @@ def render_glossary_markdown() -> str:
         "metrics. Each entry lists the metric ids it explains; use the metric catalog resource "
         "(`strava://metric-catalog`) for units, calculations, and the per-metric `concept` link.",
         "",
+        "## Times & timezones",
+        "",
+        "Three distinct time references appear in this surface — do not conflate them:",
+        "",
+        "- **Activity dates and time-of-day are LOCAL to where the activity happened** "
+        "(the athlete's timezone, from Strava `start_date_local`). `activity_date` is that local "
+        "calendar day; `start_time_local` (e.g. `07:16`) is the local wall-clock start, read "
+        'as-written with no conversion. So "morning run" is morning *where the workout was*, '
+        "regardless of where you or the user are now.",
+        "- **Operational timestamps are UTC**, suffixed with `Z`: `checked_at`, "
+        "`last_successful_refresh_at`, `backoff_until`. These are mirror-freshness instants, not "
+        "training times.",
+        "- **`last_activity_at` is a LOCAL calendar date** (athlete tz), not a UTC instant — it has no `Z`.",
+        "",
+        "The MCP user's / calling agent's own timezone is deliberately **not** applied: it would "
+        "distort time-of-day (a 07:00 run in one zone is not a 02:00 run just because the reader "
+        "sits elsewhere). `relative_time` (e.g. `2h 5m`) is a duration, so it is timezone-agnostic.",
+        "",
     ]
     for concept in CONCEPT_GLOSSARY.values():
         lines.append(f"## {concept.term}")

@@ -109,3 +109,13 @@ def test_mcp_resources_are_registered_and_readable() -> None:
 def test_instructions_point_at_both_resources() -> None:
     assert "strava://glossary" in mcp_http.MCP_INSTRUCTIONS
     assert "strava://metric-catalog" in mcp_http.MCP_INSTRUCTIONS
+
+
+def test_glossary_documents_times_and_timezones() -> None:
+    body = render_glossary_markdown()
+    assert "## Times & timezones" in body
+    # the three distinct references must be spelled out
+    assert "LOCAL to where the activity happened" in body
+    assert "Operational timestamps are UTC" in body
+    assert "last_activity_at` is a LOCAL calendar date" in body
+    assert "user's / calling agent's own timezone is deliberately **not** applied" in body

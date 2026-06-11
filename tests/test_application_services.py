@@ -76,7 +76,7 @@ def test_APP_04_D_08_D_12_freshness_metadata_distinguishes_refresh_and_activity(
     )
 
     assert metadata.freshness_state == "fresh"
-    assert metadata.last_successful_refresh_at == "2026-05-21T06:00:00"
+    assert metadata.last_successful_refresh_at == "2026-05-21T06:00:00Z"
     assert metadata.refresh_age_seconds == 10_800
     assert metadata.last_activity_at == "2026-05-18T07:00:00"
     assert metadata.last_activity_age_seconds == 266_400
@@ -143,7 +143,7 @@ def test_APP_04_refresh_failed_and_delayed_are_factual_metadata(repo: DuckDBRepo
 
     assert metadata.freshness_state == "refresh_delayed"
     assert metadata.last_error_code == "rate_limited"
-    assert metadata.backoff_until == "2026-05-21T11:00:00"
+    assert metadata.backoff_until == "2026-05-21T11:00:00Z"
     assert metadata.refresh_requested is False
     assert _refresh_store(repo).pending_refresh_requests() == []
 
@@ -163,8 +163,8 @@ def test_APP_04_get_freshness_service_returns_shared_envelope(repo: DuckDBReposi
 
     assert isinstance(envelope, ServiceEnvelope)
     assert set(payload) == {"data", "freshness", "completeness", "warnings", "rationale"}
-    assert payload["freshness"]["last_successful_refresh_at"] == "2026-05-21T06:00:00"
-    assert payload["data"]["last_successful_refresh_at"] == "2026-05-21T06:00:00"
+    assert payload["freshness"]["last_successful_refresh_at"] == "2026-05-21T06:00:00Z"
+    assert payload["data"]["last_successful_refresh_at"] == "2026-05-21T06:00:00Z"
     assert payload["completeness"]["status"] == "complete"
 
 
@@ -223,7 +223,7 @@ def test_get_freshness_service_uses_primary_repository_factory_for_connections(
     payload = dc_to_dict(envelope)
 
     assert seen_connections == [connection]
-    assert payload["freshness"]["last_successful_refresh_at"] == "2026-05-21T06:00:00"
+    assert payload["freshness"]["last_successful_refresh_at"] == "2026-05-21T06:00:00Z"
     assert payload["freshness"]["last_activity_at"] == "2026-05-21T07:00:00"
 
 

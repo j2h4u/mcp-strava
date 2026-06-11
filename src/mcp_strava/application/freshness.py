@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from datetime import UTC, datetime
+from typing import overload
 
 from mcp_strava.adapters.duckdb.activity_lookup_queries import latest_activity_at
 from mcp_strava.adapters.duckdb.connection import MirrorConn
@@ -43,6 +44,28 @@ def _age_seconds(now: datetime, value: str | None) -> int | None:
     return max(0, int((now - parsed).total_seconds()))
 
 
+@overload
+def _utc_marked(value: str) -> str: ...
+@overload
+def _utc_marked(value: None) -> None: ...
+def _utc_marked(value: str | None) -> str | None:
+    """Mark a stored UTC-naive ISO timestamp with an explicit 'Z' for consumers.
+
+    checked_at / last_successful_refresh_at / backoff_until are all written
+    UTC-naive (see _freshness_now and the refresh worker), so the stored form
+    carries no zone designator — an agent reading "2026-06-11T06:12:35" cannot
+    tell it is UTC. We append an explicit Z on the way out so the instant is
+    unambiguous. Deliberately NOT applied to last_activity_at, which is a LOCAL
+    calendar date (the activity's start_date_local day), not a UTC instant.
+    """
+    if value is None:
+        return None
+    parsed = _parse_dt(value)
+    if parsed is None:
+        return value
+    return parsed.isoformat() + "Z"
+
+
 def _refreshed_today(last_success_at: str | None, today: str) -> bool:
     parsed = _parse_dt(last_success_at)
     if parsed is None:
@@ -79,15 +102,17 @@ def build_freshness_metadata(
 
     return FreshnessMetadata(
         freshness_state=freshness_state,
-        checked_at=now.isoformat(),
-        last_successful_refresh_at=state.last_success_at,
+        # UTC instants carry an explicit Z; ages are computed from the raw stored
+        # values above, so marking the display strings here is purely cosmetic.
+        checked_at=_utc_marked(now.isoformat()),
+        last_successful_refresh_at=_utc_marked(state.last_success_at),
         refresh_age_seconds=_age_seconds(now, state.last_success_at),
-        last_activity_at=last_activity_at,
+        last_activity_at=last_activity_at,  # LOCAL calendar date (athlete tz) — no Z
         last_activity_age_seconds=_age_seconds(now, last_activity_at),
         refresh_requested=refresh_requested,
         refresh_request_reason="first_use_of_day" if refresh_requested else None,
         last_error_code=state.last_error_code,
-        backoff_until=state.backoff_until,
+        backoff_until=_utc_marked(state.backoff_until),
     )
 
 

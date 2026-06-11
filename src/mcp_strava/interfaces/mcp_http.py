@@ -80,9 +80,12 @@ For user-facing narrative, expand abbreviations on first use, avoid raw floating
 and explain what each important number means in context. A metric glossary that expands the
 jargon (TRIMP, CTL/ATL/TSB, ACWR, cardiac cost/drift, HRR, ...) is available as the resource
 strava://glossary; consult it before expanding terms. A machine-readable metric catalog with
-units, calculations, and the per-metric concept link is at strava://metric-catalog. Do not make
-medical diagnoses or pretend this MCP server interprets training; interpretation belongs to the
-calling agent."""
+units, calculations, and the per-metric concept link is at strava://metric-catalog. Time fields:
+activity dates and time-of-day are LOCAL to where the activity happened (athlete timezone);
+operational timestamps (checked_at, last_successful_refresh_at, backoff_until) are UTC (Z-suffixed);
+the calling user's own timezone is not applied — see strava://glossary. Do not make
+medical diagnoses or pretend this MCP server interprets training; interpretation belongs to
+the calling agent."""
 
 _SAFE_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _WILDCARD_HOSTS = {"0.0.0.0", "::"}
