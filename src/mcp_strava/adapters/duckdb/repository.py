@@ -294,12 +294,11 @@ class DuckDBRepository(ReadModelRepositoryMixin, StreamWriteRepositoryMixin):
             self._execute(
                 """
                 INSERT INTO activities (
-                    id, activity_day, date, name, sport_type, distance, moving_time,
+                    id, activity_day, name, sport_type, distance, moving_time,
                     elapsed_time, total_elevation_gain, summary_json, synced_at
-                ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     activity_day=excluded.activity_day,
-                    date=excluded.date,
                     name=excluded.name,
                     sport_type=excluded.sport_type,
                     distance=excluded.distance,
@@ -312,7 +311,6 @@ class DuckDBRepository(ReadModelRepositoryMixin, StreamWriteRepositoryMixin):
                 [
                     activity_id,
                     date[:10],
-                    date,
                     name,
                     sport_type,
                     distance,

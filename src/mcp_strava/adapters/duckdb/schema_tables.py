@@ -8,7 +8,6 @@ DUCKDB_SCHEMA_SQL = f"""
 CREATE TABLE activities (
     id BIGINT PRIMARY KEY,
     activity_day DATE NOT NULL,
-    date VARCHAR,
     name VARCHAR,
     sport_type VARCHAR,
     distance DOUBLE,
