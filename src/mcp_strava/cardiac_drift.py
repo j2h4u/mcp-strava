@@ -1,102 +1,115 @@
 """
-Intra-Activity Cardiac Drift Detection — Pure Python
-======================================================
+Intra-Activity Cardiac Drift Detection
+======================================
 Jenks Natural Breaks clustering of pace, then early-vs-late HR comparison
-within each pace cluster. No numpy required.
-
-Uses numpy as optional accelerator if available; pure-Python fallback
-for system python3 environments without numpy.
+within each pace cluster. The Jenks DP is numpy-vectorized.
 """
 
 import math
+from typing import cast
+
+import numpy as np
 
 _JENKS_FALLBACK_ERRORS = (ArithmeticError, IndexError, ValueError)
 
 # ═══════════════════════════════════════════════════════════════════════
-# JENKS NATURAL BREAKS — pure Python DP
+# JENKS NATURAL BREAKS — numpy-vectorized DP
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def _ss_matrix_py(x):
-    """Precompute sum-of-squared-deviations matrix SS[i][j] for sorted x.
-    O(n²) time, O(n²) memory. For n=4000 ~16M entries."""
-    n = len(x)
-    cumsum = [0.0] * (n + 1)
-    cumsum2 = [0.0] * (n + 1)
-    for i in range(n):
-        cumsum[i + 1] = cumsum[i] + x[i]
-        cumsum2[i + 1] = cumsum2[i] + x[i] * x[i]
+def _prefix_sums(x):
+    """Prefix sums of x and x² with a leading 0.
 
-    ss = [[0.0] * (n + 1) for _ in range(n)]
-    for i in range(n):
-        row = ss[i]
-        for j in range(i + 2, n + 1):
-            nij = j - i
-            s1 = cumsum[j] - cumsum[i]
-            s2 = cumsum2[j] - cumsum2[i]
-            row[j] = s2 - (s1 * s1) / nij
-    return ss
+    np.cumsum is a sequential scan (not a pairwise reduction), so these match a
+    plain Python running sum bit-for-bit — the vectorized DP below therefore
+    yields breaks identical to the former pure-Python O(n²) version, just faster.
+    """
+    a = np.asarray(x, dtype=np.float64)
+    cs = np.empty(a.size + 1, dtype=np.float64)
+    cs2 = np.empty(a.size + 1, dtype=np.float64)
+    cs[0] = 0.0
+    cs2[0] = 0.0
+    np.cumsum(a, out=cs[1:])
+    np.cumsum(a * a, out=cs2[1:])
+    return cs, cs2
+
+
+def _ss_matrix(x):
+    """Full sum-of-squared-deviations matrix SS[j, m] = SS of x[j:m], built once
+    per series via broadcasting over cumulative sums. Entries with m <= j are NOT
+    valid (the DP masks them); their nan/inf from the m==j division is never read.
+    O(n²) memory (~2.9 MB at the n=600 cap) — built once and reused across all k.
+    """
+    cs, cs2 = _prefix_sums(x)
+    n = len(x)
+    rows = np.arange(n + 1)
+    cols = rows
+    nij = cols[None, :] - rows[:, None]
+    s1 = cs[None, :] - cs[:, None]
+    s2 = cs2[None, :] - cs2[:, None]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ss = s2 - (s1 * s1) / nij
+    return ss, n
+
+
+def _jenks_dp(ss, n, k):
+    """Vectorized Jenks DP over a precomputed SS matrix. For each class count the
+    whole row of D[t] is computed as one column-wise argmin over the candidate
+    matrix D[t-1][j] + SS[j, m] — O(k) Python iterations, each O(n²) numpy. argmin
+    keeps the first minimum on ties, matching the former `if cost < best`.
+    """
+    inf = float("inf")
+    cost_d = np.full((k + 1, n + 1), inf)
+    back = np.zeros((k + 1, n + 1), dtype=np.int64)
+    # Valid split point j must satisfy j < m; mask the rest to +inf once.
+    j_ge_m = np.arange(n + 1)[:, None] >= np.arange(n + 1)[None, :]
+
+    cost_d[1, 1:] = ss[0, 1:]  # one class over x[0:m]
+    for t in range(2, k + 1):
+        cand = cost_d[t - 1][:, None] + ss  # cand[j, m] = D[t-1][j] + SS[j, m]
+        cand[: t - 1, :] = inf  # j must be >= t-1 (earlier classes need >=1 point each)
+        cand[j_ge_m] = inf
+        cost_d[t] = cand.min(axis=0)
+        back[t] = cand.argmin(axis=0)
+
+    boundaries = [0] * (k + 1)
+    boundaries[k] = n
+    m = n
+    for t in range(k, 0, -1):
+        m = int(cast("int", back[t, m]))
+        boundaries[t - 1] = m
+
+    sdcm = float(cost_d[k, n])
+    sdam = float(ss[0, n])
+    gvf = (sdam - sdcm) / sdam if sdam > 0 else 1.0
+    return boundaries, sdcm, sdam, gvf
 
 
 def jenks_breaks(x, k):
     """Jenks Natural Breaks for 1D sorted list x into k classes.
 
-    Returns (boundaries, sdcm, sdam, gvf).
-    Pure Python DP: O(k·n²) time.
+    Returns (boundaries, sdcm, sdam, gvf). Fully vectorized; results are identical
+    to the prior pure-Python O(k·n²) DP.
     """
-    n = len(x)
     if k < 2:
         raise ValueError("k must be >= 2")
-    if k > n:
-        k = n
-
-    ss = _ss_matrix_py(x)
-    INF = float("inf")
-    D = [[INF] * (n + 1) for _ in range(k + 1)]
-    B = [[0] * (n + 1) for _ in range(k + 1)]
-
-    # Base: 1 class
-    for m in range(1, n + 1):
-        D[1][m] = ss[0][m]
-
-    # Recursion
-    for t in range(2, k + 1):
-        for m in range(t, n + 1):
-            best = INF
-            best_j = 0
-            for j in range(t - 1, m):
-                cost = D[t - 1][j] + ss[j][m]
-                if cost < best:
-                    best = cost
-                    best_j = j
-            D[t][m] = best
-            B[t][m] = best_j
-
-    # Backtrack
-    boundaries = [0] * (k + 1)
-    boundaries[k] = n
-    m = n
-    for t in range(k, 0, -1):
-        m = B[t][m]
-        boundaries[t - 1] = m
-
-    sdcm = D[k][n]
-    sdam = ss[0][n]
-    gvf = (sdam - sdcm) / sdam if sdam > 0 else 1.0
-    return boundaries, sdcm, sdam, gvf
+    ss, n = _ss_matrix(x)
+    return _jenks_dp(ss, n, min(k, n))
 
 
 def auto_jenks(x, max_k=6, gvf_threshold=0.85, gvf_gain_min=0.03, min_cluster_size=30):
-    """Auto-determine optimal k using GVF. Pure Python."""
+    """Auto-determine optimal k using GVF. The O(n²) SS matrix is built once here
+    and reused across every candidate k (the DP is numpy-vectorized)."""
     n = len(x)
     k_results = []
     prev_gvf = 0.0
     best_k = 1
     best_boundaries = [0, n]
+    ss, _ = _ss_matrix(x)
 
     for k in range(2, min(max_k, n // min_cluster_size, n) + 1):
         try:
-            boundaries, _sdcm, _sdam, gvf = jenks_breaks(x, k)
+            boundaries, _sdcm, _sdam, gvf = _jenks_dp(ss, n, min(k, n))
             sizes = [boundaries[i + 1] - boundaries[i] for i in range(k)]
             min_sz = min(sizes)
             k_results.append((k, gvf, min_sz))
@@ -115,7 +128,7 @@ def auto_jenks(x, max_k=6, gvf_threshold=0.85, gvf_gain_min=0.03, min_cluster_si
 
     if best_k == 1:
         try:
-            best_boundaries, _, _, gvf = jenks_breaks(x, 2)
+            best_boundaries, _, _, gvf = _jenks_dp(ss, n, min(2, n))
             best_k = 2
         except _JENKS_FALLBACK_ERRORS:
             gvf = 1.0

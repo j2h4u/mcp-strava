@@ -12,6 +12,7 @@ requires-python = ">=3.14"
 dependencies = [
     "duckdb>=1.5.3,<1.6",
     "mcp>=1.27.2,<1.28",
+    "numpy>=2.4.6",
     "PyYAML>=6.0.2,<7",
 ]
 
