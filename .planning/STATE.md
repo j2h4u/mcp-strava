@@ -4,13 +4,13 @@ milestone: v1.1
 milestone_name: milestone
 status: executing
 stopped_at: "Quick task 260610-nk9 complete — incremental Strava summary sync. Hourly SUMMARIES stage now passes &after=<epoch of newest local activity> (catches new activities in ~1 API call instead of re-listing the whole history; the per-activity activity_by_id N+1 dissolves); a weekly FULL resync (after=None, default 604800s via MCP_STRAVA_REFRESH_FULL_RESYNC_INTERVAL_SECONDS) catches edits/anomalies, gated by a new nullable refresh_state.last_full_summary_sync_at column (additive ADD COLUMN IF NOT EXISTS — live /srv DB confirmed migrated, container healthy). Cold-start = NULL marker -> full walk. just verify green; 12 new tests. Earlier same session: DuckDB mirror relocated to /srv/mcp-strava/data (path configurable via MCP_STRAVA_DATA_DIR); Dependabot PR #4 merged. Milestone v1.1 complete-but-unarchived — owner not closing the milestone now."
-last_updated: "2026-06-11T09:21:34.650Z"
+last_updated: "2026-06-11T09:27:55.660Z"
 last_activity: 2026-06-11 -- Phase 16 execution started
 progress:
   total_phases: 16
   completed_phases: 15
   total_plans: 71
-  completed_plans: 70
+  completed_plans: 71
   percent: 94
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 ## Current Position
 
 Phase: 16 (duckdb-native-storage-cleanup) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-06-11 -- Phase 16 execution started
 
@@ -118,6 +118,7 @@ Last activity: 2026-06-11 -- Phase 16 execution started
 | Phase 16 P02 | 12 | 3 tasks | 19 files |
 | Phase 16 P03 | 2 | 2 tasks | 4 files |
 | Phase 16 P04 | 2 | 2 tasks | 7 files |
+| Phase 16 P05 | 192 | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -249,7 +250,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T09:21:34.639Z
+Last session: 2026-06-11T09:27:55.651Z
 Stopped at: Quick task 260610-nk9 complete — incremental Strava summary sync. Hourly SUMMARIES stage now passes &after=<epoch of newest local activity> (catches new activities in ~1 API call instead of re-listing the whole history; the per-activity activity_by_id N+1 dissolves); a weekly FULL resync (after=None, default 604800s via MCP_STRAVA_REFRESH_FULL_RESYNC_INTERVAL_SECONDS) catches edits/anomalies, gated by a new nullable refresh_state.last_full_summary_sync_at column (additive ADD COLUMN IF NOT EXISTS — live /srv DB confirmed migrated, container healthy). Cold-start = NULL marker -> full walk. just verify green; 12 new tests. Earlier same session: DuckDB mirror relocated to /srv/mcp-strava/data (path configurable via MCP_STRAVA_DATA_DIR); Dependabot PR #4 merged. Milestone v1.1 complete-but-unarchived — owner not closing the milestone now.
 Resume file: None
 
