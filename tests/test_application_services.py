@@ -21,14 +21,13 @@ def repo(tmp_path: Path):
         opened.conn.execute(
             """
             INSERT INTO activities (
-                id, activity_day, date, name, sport_type, distance, moving_time,
+                id, activity_day, name, sport_type, distance, moving_time,
                 elapsed_time, total_elevation_gain, summary_json, detail_json, synced_at
-            ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 101,
                 "2026-05-18",
-                "2026-05-18T07:00:00",
                 "Old Run",
                 "Run",
                 5000.0,
@@ -78,8 +77,8 @@ def test_APP_04_D_08_D_12_freshness_metadata_distinguishes_refresh_and_activity(
     assert metadata.freshness_state == "fresh"
     assert metadata.last_successful_refresh_at == "2026-05-21T06:00:00Z"
     assert metadata.refresh_age_seconds == 10_800
-    assert metadata.last_activity_at == "2026-05-18T07:00:00"
-    assert metadata.last_activity_age_seconds == 266_400
+    assert metadata.last_activity_at == "2026-05-18"
+    assert metadata.last_activity_age_seconds == 291_600
     assert metadata.refresh_requested is False
 
 
@@ -198,9 +197,9 @@ def test_get_freshness_service_uses_primary_repository_factory_for_connections(
         conn = connection
 
         def _fetchone(self, sql: str, params=None) -> dict[str, str]:
-            assert "MAX(date)" in sql
+            assert "MAX(activity_day)" in sql
             assert params is None
-            return {"latest": "2026-05-21T07:00:00"}
+            return {"latest": "2026-05-21"}
 
     seen_connections: list[object] = []
 
@@ -224,7 +223,7 @@ def test_get_freshness_service_uses_primary_repository_factory_for_connections(
 
     assert seen_connections == [connection]
     assert payload["freshness"]["last_successful_refresh_at"] == "2026-05-21T06:00:00Z"
-    assert payload["freshness"]["last_activity_at"] == "2026-05-21T07:00:00"
+    assert payload["freshness"]["last_activity_at"] == "2026-05-21"
 
 
 def test_WR_02_freshness_now_default_is_utc_not_local(repo: DuckDBRepository, monkeypatch) -> None:

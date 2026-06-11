@@ -107,9 +107,9 @@ def test_trimp_regression() -> None:
 
     # Insert one activity
     conn.execute(
-        "INSERT INTO activities (id, activity_day, date, name, sport_type, distance, "
+        "INSERT INTO activities (id, activity_day, name, sport_type, distance, "
         "moving_time, elapsed_time, total_elevation_gain, summary_json, synced_at) "
-        "VALUES (1, '2026-01-01', '2026-01-01T08:00:00', 'Test', 'Run', 5000, 1800, 1800, 0, '{}', '2026-01-01T09:00:00')"
+        "VALUES (1, '2026-01-01', 'Test', 'Run', 5000, 1800, 1800, 0, '{}', '2026-01-01T09:00:00')"
     )
     # 10 stream rows all at heartrate=160 (falls in zone 150..163, coeff=3)
     for i in range(10):

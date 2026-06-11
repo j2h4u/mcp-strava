@@ -98,14 +98,13 @@ def _insert_activity(
     conn.execute(
         """
         INSERT INTO activities (
-            id, activity_day, date, name, sport_type, distance, moving_time,
+            id, activity_day, name, sport_type, distance, moving_time,
             elapsed_time, total_elevation_gain, summary_json, detail_json, synced_at
-        ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+        ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, NULL, ?)
         """,
         [
             activity_id,
             day,
-            f"{day}T07:00:00",
             f"Workout {activity_id}",
             sport_type,
             distance_m,

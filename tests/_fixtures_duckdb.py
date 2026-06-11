@@ -57,7 +57,6 @@ def create_fixture_db(db_path: str | Path) -> None:
                 [
                     idx + 1,
                     day,
-                    f"{day}T06:00:00Z",
                     f"Run {idx + 1}",
                     "Run",
                     10000.0,
@@ -72,9 +71,9 @@ def create_fixture_db(db_path: str | Path) -> None:
         conn.executemany(
             """
             INSERT INTO activities (
-                id, activity_day, date, name, sport_type, distance, moving_time,
+                id, activity_day, name, sport_type, distance, moving_time,
                 elapsed_time, total_elevation_gain, summary_json, detail_json, synced_at
-            ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             activities,
         )

@@ -30,14 +30,13 @@ def _create_fixture_db(path: Path) -> None:
         repo.conn.execute(
             """
             INSERT INTO activities (
-                id, activity_day, date, name, sport_type, distance, moving_time,
+                id, activity_day, name, sport_type, distance, moving_time,
                 elapsed_time, total_elevation_gain, summary_json, detail_json, synced_at
-            ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 901,
                 "2026-05-21",
-                "2026-05-21T07:00:00",
                 "Fixture Run",
                 "Run",
                 5000.0,
@@ -82,5 +81,5 @@ def test_phase4_cli_freshness_json_uses_fixture_duckdb_without_strava(tmp_path: 
     payload = json.loads(result.stdout)
     assert set(payload) == {"data", "freshness", "completeness", "warnings", "rationale"}
     assert payload["freshness"]["last_successful_refresh_at"] == "2026-05-21T06:00:00Z"
-    assert payload["freshness"]["last_activity_at"] == "2026-05-21T07:00:00"
+    assert payload["freshness"]["last_activity_at"] == "2026-05-21"
     assert payload["completeness"]["status"] == "complete"
