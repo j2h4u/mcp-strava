@@ -35,7 +35,9 @@ findings:
   warning: 5
   info: 2
   total: 10
-status: issues_found
+status: resolved
+remediated: 2026-06-11T10:30:00Z
+remediation_commit: 85dab88
 ---
 
 # Phase 16: Code Review Report
@@ -43,7 +45,26 @@ status: issues_found
 **Reviewed:** 2026-06-11T09:15:00Z
 **Depth:** standard
 **Files Reviewed:** 26
-**Status:** issues_found
+**Status:** resolved (see Remediation below)
+
+## Remediation (2026-06-11, commit 85dab88)
+
+Each finding was re-verified against the codebase before acting (reviewer findings
+treated as leads, not facts). The "3 criticals" did not hold as runtime blockers —
+the suite was green throughout (`just check` clean, 429→427 tests after deleting
+two backward-compat tests). Disposition:
+
+| ID | Verdict | Action |
+|----|---------|--------|
+| CR-01 | Overstated → fixed | Stale dataclass annotations on **never-instantiated** `*Fact` types; not a runtime bug. Aligned `missing_reasons_json` → `list[str]`, `cardiac_drift_significant` → `bool`. |
+| CR-02 | Out of scope | Pre-existing SELECT-then-DELETE on a single-writer DB; not a phase-16 regression. Left as backlog. |
+| CR-03 | Real → fixed | Removed the `requested_at` `or`-fallback shim; param now required (fail-fast). |
+| WR-01 | Rejected | `str(row["activity_day"])` is the **deliberate** repo-boundary ISO-string contract (column is native DATE), not a dead shim. |
+| WR-02 | Real → fixed | Removed dead `ALTER TABLE ADD COLUMN IF NOT EXISTS` migration + its two backward-compat tests. |
+| WR-03 | Real → fixed | Removed dead `str(value)[:10]` parse in `_coerce_day`. |
+| WR-04 | Rejected | Assembler inlines internal `date.isoformat()` fragments by design; zero injection surface; isolated param-threading would be fragile. |
+| WR-05 | Out of scope | Pre-existing `MAX(id)+1` on a single-writer DB; backlog. |
+| IN-01/02 | Fixed | Folded into CR-01 + fixture `0` → `False`. |
 
 ## Summary
 
