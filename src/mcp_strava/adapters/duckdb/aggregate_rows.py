@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 from datetime import date, timedelta
-from typing import cast
 
 from mcp_strava.adapters.duckdb.aggregate_models import AggregateRequest, AggregateRow
 from mcp_strava.metric_registry import DEFAULT_AGGREGATE_QUANTILES
@@ -167,18 +165,10 @@ def _quantiles_from_group(row: dict[str, object]) -> dict[str, float] | None:
 
 
 def _missing_reasons(row: dict[str, object]) -> list[str]:
-    reasons: list[str] = []
     payloads = row.get("missing_reason_payloads")
-    for payload in payloads if isinstance(payloads, list) else []:
-        if payload is None:
-            continue
-        try:
-            parsed = cast("object", json.loads(str(payload)))
-        except json.JSONDecodeError:
-            parsed = [str(payload)]
-        if isinstance(parsed, list):
-            reasons.extend(str(item) for item in parsed if item)
-    return reasons
+    if not isinstance(payloads, list):
+        return []
+    return [str(item) for item in payloads if item is not None]
 
 
 def _completeness_status(

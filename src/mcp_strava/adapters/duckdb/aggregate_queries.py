@@ -291,7 +291,7 @@ def _build_numeric_query(
             COUNT(DISTINCT metric_version) AS metric_version_count,
             MAX(computed_at) AS materialized_at,
             list(DISTINCT completeness_status) AS completeness_statuses,
-            list(missing_reasons_json) AS missing_reason_payloads
+            list_distinct(flatten(list(missing_reasons_json))) AS missing_reason_payloads
         FROM prepared
         GROUP BY bucket_start, output_sport_type
         ORDER BY bucket_start, output_sport_type
@@ -374,7 +374,7 @@ def _query_distribution(
             COUNT(DISTINCT metric_version) AS metric_version_count,
             MAX(computed_at) AS materialized_at,
             list(DISTINCT completeness_status) AS completeness_statuses,
-            list(missing_reasons_json) AS missing_reason_payloads
+            list_distinct(flatten(list(missing_reasons_json))) AS missing_reason_payloads
         FROM prepared
         GROUP BY bucket_start, output_sport_type, category
         ORDER BY bucket_start, output_sport_type, category
@@ -459,7 +459,7 @@ def _query_hr_zone_distribution(
             COUNT(DISTINCT metric_version) AS metric_version_count,
             MAX(computed_at) AS materialized_at,
             list(DISTINCT completeness_status) AS completeness_statuses,
-            list(missing_reasons_json) AS missing_reason_payloads
+            list_distinct(flatten(list(missing_reasons_json))) AS missing_reason_payloads
         FROM prepared
         GROUP BY bucket_start, output_sport_type
         ORDER BY bucket_start, output_sport_type
