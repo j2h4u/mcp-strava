@@ -1,7 +1,7 @@
 import json
 import urllib.request
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -547,13 +547,13 @@ def test_enqueue_refresh_request_if_stale_is_idempotent_per_D04_REFRESH_02(tmp_p
         store = _refresh_store(repo)
         store.record_refresh_success("2026-05-20T11:00:00")
         assert enqueue_refresh_request_if_stale(
-            store, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21"
+            store, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day=date(2026, 5, 21)
         )
         assert not enqueue_refresh_request_if_stale(
-            store, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21"
+            store, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day=date(2026, 5, 21)
         )
         assert not enqueue_refresh_request_if_stale(
-            store, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day="2026-05-21"
+            store, now, RefreshPolicy(), reason="first_use_of_day", requested_for_day=date(2026, 5, 21)
         )
         assert len(store.pending_refresh_requests()) == 1
 

@@ -43,16 +43,13 @@ def enqueue_refresh_request_if_stale(
     policy: RefreshPolicy,
     *,
     reason: str = "first_use_of_day",
-    requested_for_day: date | str | None = None,
+    requested_for_day: date | None = None,
 ) -> bool:
     state = refresh_store.get_refresh_state()
     freshness = evaluate_freshness(state, now, policy)
     if freshness not in {"aging", "stale"}:
         return False
-    if isinstance(requested_for_day, str):
-        day: date = date.fromisoformat(requested_for_day)
-    else:
-        day = requested_for_day or now.date()
+    day = requested_for_day or now.date()
     return refresh_store.enqueue_refresh_request(reason, day, now.isoformat())
 
 
