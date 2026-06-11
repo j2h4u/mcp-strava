@@ -28,7 +28,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 13: Lint and type-check cleanup** - Bring ruff and pyright gates to green. (completed 2026-05-31)
 - [x] **Phase 14: Metric Platform registry-owned fact schema** - Generate `activity_metric_facts` schema and late additive migrations from registry-owned SQL metadata. (completed 2026-05-31)
 - [x] **Phase 15: Self-invalidating read-model, walk TRIMP discount, and workout time fields** - Auto-recompute materialized facts when metric code/constants change (source-derived fingerprint, no manual version knob); apply a configurable walk TRIMP discount; surface workout start time and relative-time. (completed 2026-06-03)
-- [ ] **Phase 16: DuckDB-native storage cleanup** - Remove SQLite-era legacy from the storage layer: native DuckDB types (DATE/BOOLEAN/arrays) where it matters, no SQLite-only SQL functions, no string columns that are range-scanned or duplicate a native column — identical external behavior.
+- [x] **Phase 16: DuckDB-native storage cleanup** - Remove SQLite-era legacy from the storage layer: native DuckDB types (DATE/BOOLEAN/arrays) where it matters, no SQLite-only SQL functions, no string columns that are range-scanned or duplicate a native column — identical external behavior. (completed 2026-06-11)
 
 ## Phase Details
 
@@ -370,7 +370,7 @@ Cross-cutting constraints:
 **Goal:** Remove SQLite-era legacy from the DuckDB storage layer so it uses native DuckDB types (DATE/BOOLEAN/arrays) where it matters, contains no SQLite-only SQL functions, and has no string-typed columns that are range-scanned or duplicate a native column — while preserving identical external behavior (MCP/CLI payloads, freshness semantics, read-model values). Scope from a full codebase audit; no open design questions. Out of scope (intentional): `summary_json`/`detail_json`/`zones_json` VARCHAR payloads and operational `*_at` ISO-string instants.
 **Requirements**: Storage-layer modernization to DuckDB-native types (post-v1.1 maintenance)
 **Depends on:** Phase 15
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans complete
 
 Plans:
 
