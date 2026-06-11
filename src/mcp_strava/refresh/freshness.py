@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.types import RefreshStateRow
@@ -43,13 +43,16 @@ def enqueue_refresh_request_if_stale(
     policy: RefreshPolicy,
     *,
     reason: str = "first_use_of_day",
-    requested_for_day: str | None = None,
+    requested_for_day: date | str | None = None,
 ) -> bool:
     state = refresh_store.get_refresh_state()
     freshness = evaluate_freshness(state, now, policy)
     if freshness not in {"aging", "stale"}:
         return False
-    day = requested_for_day or now.date().isoformat()
+    if isinstance(requested_for_day, str):
+        day: date = date.fromisoformat(requested_for_day)
+    else:
+        day = requested_for_day or now.date()
     return refresh_store.enqueue_refresh_request(reason, day, now.isoformat())
 
 

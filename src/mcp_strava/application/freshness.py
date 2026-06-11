@@ -98,7 +98,8 @@ def build_freshness_metadata(
 
     refresh_requested = False
     if signal_first_use and not _refresh_blocked(state, now) and not _refreshed_today(state.last_success_at, today):
-        refresh_requested = refresh_store.enqueue_refresh_request("first_use_of_day", today, now.isoformat())
+        today_date = now.date()
+        refresh_requested = refresh_store.enqueue_refresh_request("first_use_of_day", today_date, now.isoformat())
 
     return FreshnessMetadata(
         freshness_state=freshness_state,

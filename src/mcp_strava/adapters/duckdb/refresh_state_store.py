@@ -194,7 +194,9 @@ class RefreshStateStore:
         )
         self._commit_if_standalone()
 
-    def enqueue_refresh_request(self, reason: str, requested_for_day: datetime.date, requested_at: str | None = None) -> bool:
+    def enqueue_refresh_request(
+        self, reason: str, requested_for_day: datetime.date, requested_at: str | None = None
+    ) -> bool:
         timestamp = requested_at or requested_for_day
         existing = self._fetchone(
             """
