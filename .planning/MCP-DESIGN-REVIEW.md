@@ -161,3 +161,46 @@ year, `all_time`=whole range. Rolling "last-N-days" is the separate `window_days
 24h/7d/30d, and whether the week-start should be configurable (locale-driven / env-overridable).
 Decision deferred — current behavior is documented as-is in the tool descriptions; changing it is a
 read-model/SQL behavior change, out of scope for the param-typing slice.
+
+**2026-06-11 — glossary + metric-catalog resources landed (was ROI #4, "task 10").** New
+`metric_glossary.py` is the single source for 15 concepts (TRIMP, Banister, CTL/ATL/TSB, ACWR,
+cardiac cost/drift, HR zones/recovery/anomaly, progressive load, load trend, volume) covering 50
+metrics. `MetricDefinition.concept` is a hard FK stamped by the factory from the inverted glossary
+map (no per-metric prose duplication); `validate_concept_links` fails the registry import if a
+glossary metric_id is absent or bound to two concepts. Two resources: `strava://glossary` (markdown)
+and `strava://metric-catalog` (json, now carrying the per-metric `concept`). `server.instructions`
+points agents at both. Added to `COMPUTE_SOURCE_MODULES` so the fingerprint closure stays complete.
+Config-constant names (TAU_FITNESS, VEL_STOP, ...) are kept in definitions deliberately — each user
+self-hosts and tunes, so a named constant is a "what to turn" pointer.
+
+### Decision — per-tool typed `data` models: NOT doing it (expert-panel verdict, 2026-06-11)
+The review's leftover item ("type each tool's `data` so the output schema describes the payload, not
+just the envelope metadata") was taken to an expert panel. **Verdict: do not type `data`; it is a
+deliberate, correct open object.** Rationale:
+- The real need — the calling agent *understanding* each payload key — is already met by task 10
+  (catalog + glossary document every key, machine- and human-readable, FK-linked). A formal
+  `data` schema would not change agent behavior: the sole consumer is an LLM via docker-mcp-gateway,
+  which reads values + the text preview and does not strictly validate `outputSchema.data`.
+- Measured cost is real: a generic `ServiceEnvelope[T]` *does* emit a concrete schema (prototype
+  confirmed), but the uniform runtime pipeline (`_envelope_payload` → `dc_to_dict(round_floats=True)`)
+  returns a dict in `data`, so a typed schema triggers a Pydantic `SerializationUnexpectedValue`
+  warning. Cleaning it requires typed tools to return instances and bypass the shared rounding path —
+  a **second serialization path** for only the 2 fully-flat tools (`list_workouts`, `get_workout_detail`)
+  out of 6; the other 4 are metric_id-/scenario-keyed maps that JSON-schema renders as
+  `additionalProperties` anyway. Simplicity (one pipeline) beats partial typing.
+- `data: object` honestly reflects genuinely heterogeneous payloads (flat rows / fixed-shell with
+  dynamic leaves / metric_id-keyed maps).
+
+**Reopen trigger:** if a non-LLM programmatic consumer appears that strictly parses `structuredContent`
+(e.g. an external script/dashboard over the MCP surface), revisit with generic `ServiceEnvelope[T]`
++ round-at-construction, starting with `list_workouts`. Until then: YAGNI.
+
+### Task 11 (parametrize prompts) — skipped
+Near-zero ROI for these 3 prompts: they are scenario *scripts*, the data fetching (date/sport) lives
+on the tools (typed in task 8), and the scenarios are inherently "current state". Parametrizing only
+threads args through the markdown loader for a tiny convenience. Not doing it.
+
+### MCP-surface design thread: CLOSED (2026-06-11)
+Tasks 7/8/9/10 shipped (every real lever); task 11 + per-tool `data` typing deliberately skipped;
+bucket-semantics + configurable week-start remain parked product questions. Milestone v1.1 left
+unarchived per owner preference.

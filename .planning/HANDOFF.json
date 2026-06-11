@@ -7,7 +7,7 @@
   "plan": null,
   "task": 11,
   "total_tasks": 11,
-  "status": "in_progress",
+  "status": "thread_closed",
   "context": "default",
   "completed_tasks": [
     {"id": 1, "name": "Dockerfile optimization (uv + deps-first + cache mounts + --frozen)", "status": "done", "commit": "2fcaac5"},
@@ -22,16 +22,18 @@
     {"id": 10, "name": "Glossary + metric-catalog MCP resources with hard concept FK", "status": "done", "commit": "202c8a0", "progress": "New metric_glossary.py = single source for 15 concepts covering 50 metrics. MetricDefinition.concept is a hard FK stamped by the factory from the inverted glossary map (no prose duplication). validate_concept_links runs at registry import (fail-fast: rejects glossary metric_id absent from registry or bound to two concepts). Two resources: strava://glossary (markdown) + strava://metric-catalog (json, carries per-metric concept). server.instructions points agents at both. metric_glossary added to COMPUTE_SOURCE_MODULES (fingerprint closure stays complete). 426 tests (10 new); gate green."}
   ],
   "remaining_tasks": [
-    {"id": 11, "name": "Parametrize prompts (date/sport args)", "status": "not_started", "note": "ROI #5, low/optional."}
+    {"id": 11, "name": "Parametrize prompts (date/sport args)", "status": "skipped", "note": "Near-zero ROI: prompts are scenario scripts, date/sport live on tools (task 8), scenarios are inherently current-state. Deliberately not doing."}
   ],
   "blockers": [],
   "human_actions_pending": [],
   "decisions": [
     {"decision": "mcp-gateway-watchdog is a Docker container (not host systemd)", "rationale": "'Containers first' server convention + precedent (gateway mounts docker.sock RW, docker-stats-exporter RO). Python over bash for maintainable event loop + debounce."},
     {"decision": "CI red was GitHub's outage, not our code/config; cleared by re-pushing", "rationale": "Failed-run log: analysis clean, only SARIF upload auth-rejected; same code/config green 3h earlier and again today."},
-    {"decision": "Server docs follow Progressive Disclosure", "rationale": "~/AGENTS.md = brief pointer rows; per-service description in SERVICES.md; MCP subsystem deep-dive in MCP.md."}
+    {"decision": "Server docs follow Progressive Disclosure", "rationale": "~/AGENTS.md = brief pointer rows; per-service description in SERVICES.md; MCP subsystem deep-dive in MCP.md."},
+    {"decision": "Per-tool typed `data` models: NOT doing it (expert-panel verdict)", "rationale": "Real need (agent understanding payload keys) already met by task 10 catalog+glossary; sole consumer is an LLM via gateway that does not strictly parse outputSchema.data; clean typing would force a 2nd serialization path (typed instances vs shared dc_to_dict rounding) for only 2 of 6 tools. Simplicity > partial typing. Reopen only if a non-LLM strict-schema consumer appears. See MCP-DESIGN-REVIEW.md."},
+    {"decision": "Config-constant names kept in glossary definitions", "rationale": "Self-hosted server: a named constant (TAU_FITNESS, VEL_STOP, ...) tells each user exactly which knob to tune. Deliberate refinement of plain-language, not a violation."}
   ],
   "uncommitted_files": [],
-  "next_action": "Tasks 8 (a8e4091), 9 (f1c8879), 10 (202c8a0) done. Only task 11 remains: parametrize prompts (date/sport args) — ROI #5, low/optional; confirm with owner whether it is worth doing or skipping. Glossary content is committed but awaiting owner wording review (config-constant names TAU_FITNESS/VEL_STOP/MIN_PAUSE_SEC/CC_ELEV_COEFF appear in a few definitions — consider softening to plain phrasing). Parked product question: bucket calendar-vs-rolling semantics + configurable week-start (MCP-DESIGN-REVIEW.md section 8). Still open from the review: per-tool typed `data` models (envelope is typed but `data` is open). Optional admin: /gsd-complete-milestone to archive v1.1.",
+  "next_action": "MCP-surface design thread is CLOSED. Tasks 7/8/9/10 shipped; task 11 (parametrize prompts) and per-tool typed `data` models both deliberately skipped (expert-panel verdict 2026-06-11, recorded in MCP-DESIGN-REVIEW.md). No active work item. Remaining parked product questions (revisit only on real need): bucket calendar-vs-rolling semantics + configurable week-start. Milestone v1.1 stays unarchived per owner preference (do NOT run /gsd-complete-milestone unless asked). Glossary wording reviewed & accepted (config-constant names kept on purpose).",
   "context_notes": "Milestone v1.1 100% complete but unarchived (owner not closing; optional /gsd-complete-milestone). This thread = the MCP-surface design review (see .planning/MCP-DESIGN-REVIEW.md). Surface: 6 tools, 3 prompts, 0 resources; annotations correct+uniform. Real weakness (task 8) = undocumented/non-enum tool params + opaque -> dict[str, Any] output. Gateway forwarding confirmed (task 7). CI green. No background processes running."
 }
