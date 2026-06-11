@@ -32,7 +32,7 @@ class ReadModelSourceRepositoryMixin(ReadModelRepositoryHost):
     def _read_activity_source_components(self, activity_id: int) -> SourceComponents | None:
         activity = self._fetchone(
             """
-            SELECT id, activity_day, date, name, sport_type, distance, moving_time,
+            SELECT id, activity_day, name, sport_type, distance, moving_time,
                    elapsed_time, total_elevation_gain, summary_json, detail_json
             FROM activities
             WHERE id = ?

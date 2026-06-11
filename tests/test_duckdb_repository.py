@@ -714,19 +714,11 @@ def test_activities_missing_kudos_with_window_days_none(tmp_path: Path) -> None:
         assert set(all_ids) == {301, 305, 320}
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="SQLite date('now') branch is dead/broken — rewritten in 16-02",
-)
 def test_activities_missing_kudos_with_window_days(tmp_path: Path) -> None:
-    """window_days=7 should return only activities within the last 7 days.
+    """window_days=7 returns only activities within the last 7 days.
 
-    Currently xfail: the kudos_store uses SQLite date('now', ?) syntax which
-    DuckDB does not support. This test is the regression guard for Plan 16-02
-    which rewrites the branch to native DuckDB interval arithmetic.
-
-    # A1-confirmed: RepositoryActivityRow.date exists at types_repository.py:193;
-    # the dead SQLite date('now', ?) branch is rewritten in 16-02.
+    Rewritten in 16-02: kudos_store now uses DuckDB-native
+    CURRENT_DATE - (? * INTERVAL '1 day') with a plain int param.
     """
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 

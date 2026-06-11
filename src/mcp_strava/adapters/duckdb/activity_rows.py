@@ -9,7 +9,7 @@ from mcp_strava.types import RepositoryActivityRow
 def to_activity_row(row: Row) -> RepositoryActivityRow:
     return RepositoryActivityRow(
         id=as_int(row["id"]),
-        date=str(row["date"]),
+        activity_day=str(row["activity_day"]),
         name=str(row["name"]),
         sport_type=str(row["sport_type"]),
         distance=as_float(row["distance"]),

@@ -190,7 +190,7 @@ class RepositoryActivityRow:
     """Activity row exposed by repository methods."""
 
     id: int
-    date: str
+    activity_day: str
     name: str
     sport_type: str
     distance: float
