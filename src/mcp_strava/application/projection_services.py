@@ -34,7 +34,13 @@ def _policy() -> RefreshPolicy:
 
 
 def _freshness_clock(now: datetime | None) -> datetime:
-    return now.astimezone(UTC) if now is not None and now.tzinfo is not None else now or datetime.now(UTC)
+    # Freshness compares `now` against last_success_at, stored UTC-naive (WR-02 basis;
+    # see application/freshness.py::_freshness_now). Always hand the freshness layer a
+    # UTC-naive instant — an aware datetime here raises "can't subtract offset-naive
+    # and offset-aware datetimes" inside _age_seconds.
+    if now is None:
+        return datetime.now(UTC).replace(tzinfo=None)
+    return (now.astimezone(UTC) if now.tzinfo is not None else now).replace(tzinfo=None)
 
 
 def _read_model_status(repo) -> dict[str, Any]:

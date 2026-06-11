@@ -759,6 +759,35 @@ def test_project_fitness_state_service_supports_standard_scenarios(tmp_path: Pat
         assert forbidden not in serialized
 
 
+def test_project_fitness_state_service_accepts_timezone_aware_now(tmp_path: Path) -> None:
+    """Regression: the MCP path resolves now to an aware UTC instant (now=None ->
+    datetime.now(UTC)); freshness compares against UTC-naive stored timestamps. An
+    aware now must not raise "can't subtract offset-naive and offset-aware datetimes".
+    """
+    from mcp_strava.application.projection_services import _freshness_clock, project_fitness_state_service
+
+    # _freshness_clock must always hand the freshness layer a UTC-naive instant.
+    assert _freshness_clock(None).tzinfo is None
+    assert _freshness_clock(datetime.fromisoformat("2026-05-22T09:00:00+00:00")).tzinfo is None
+    assert _freshness_clock(datetime.fromisoformat("2026-05-22T09:00:00")).tzinfo is None
+
+    repo = _repo_with_facts(tmp_path / "project-aware.db")
+    try:
+        envelope = project_fitness_state_service(
+            target_date="2026-05-25",
+            scenarios=["rest", "maintain"],
+            now=datetime.fromisoformat("2026-05-22T09:00:00+00:00"),  # aware -> reproduced the bug
+            signal_first_use=False,
+            connection=repo.conn,
+        )
+    finally:
+        repo.close()
+
+    payload = dc_to_dict(envelope)
+    assert set(payload) == ENVELOPE_KEYS
+    _assert_read_model_metadata(payload)
+
+
 def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path) -> None:
     from mcp_strava.application.comparison_services import compare_periods_service
     from mcp_strava.application.metric_services import (
