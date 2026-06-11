@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable
 from typing import Protocol, TypedDict
 
@@ -74,19 +73,16 @@ def activities_missing_stream_channels(
                 missing_channels.append(channel)
                 continue
             if channel in {"distance", "watts", "temp"}:
-                value_rows = repo._fetchall(
+                exists_row = repo._fetchone(
                     """
-                    SELECT values_json
-                    FROM streams
-                    WHERE activity_id=?
-                      AND values_json IS NOT NULL
+                    SELECT 1 FROM streams
+                    WHERE activity_id = ?
+                      AND json_extract_string(values_json, '$.' || ?) IS NOT NULL
+                    LIMIT 1
                     """,
-                    [activity_id],
+                    [activity_id, channel],
                 )
-                if not any(
-                    channel in (json.loads(str(item["values_json"])) if item["values_json"] else {})
-                    for item in value_rows
-                ):
+                if exists_row is None:
                     missing_channels.append(channel)
         if missing_channels or metadata_missing:
             results.append(
