@@ -228,8 +228,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 4. Application Services & CLI Refit | 4/4 | Complete    | 2026-05-21 |
 | 5. MCP HTTP Surface & Docker Hardening | 6/6 | Complete    | 2026-05-22 |
 | 6. Full-Fidelity Strava Mirror | 4/4 | Complete    | 2026-05-24 |
-| 7. Materialized Metrics Read Model | 6/6 | Complete    | 2026-05-24 |
-| 8. DuckDB Primary Storage & Aggregate Analytics Surface | 8/8 | Complete    | 2026-05-25 |
+| 7. Materialized Metrics Read Model | 6/6 | Complete    | 2026-06-11 |
+| 8. DuckDB Primary Storage & Aggregate Analytics Surface | 8/8 | Complete    | 2026-06-11 |
 | 9. Product factual bundles and CLI read-model consolidation | 4/4 | Complete    | 2026-05-26 |
 | 10. Materialize unwired training metrics and enforce core/domain storage boundary | 4/4 | Complete | 2026-05-29 |
 | 11. Tidy materializer repository access | 1/1 | Complete | 2026-05-29 |
