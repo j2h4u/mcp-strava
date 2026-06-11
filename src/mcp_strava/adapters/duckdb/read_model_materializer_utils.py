@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import date, timedelta
 from statistics import median
 
@@ -17,8 +16,8 @@ def _date_range(start_day: str, end_day: str) -> list[str]:
     return days
 
 
-def _json_list(values: list[str]) -> str:
-    return json.dumps(sorted(set(values)), ensure_ascii=True)
+def _json_list(values: list[str]) -> list[str]:
+    return sorted(set(values))
 
 
 def _median_or_none(values: list[float | None]) -> float | None:
