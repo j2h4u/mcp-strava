@@ -1,39 +1,35 @@
 {
   "version": "1.0",
-  "timestamp": "2026-06-11T00:00:00.000Z",
+  "timestamp": "2026-06-11T15:11:58.009Z",
   "phase": null,
-  "phase_name": "post-milestone (v1.1 complete, unarchived) — MCP design thread",
+  "phase_name": "post-milestone (v1.1 DuckDB Analytics shipped + deployed)",
   "phase_dir": null,
   "plan": null,
-  "task": 11,
-  "total_tasks": 11,
-  "status": "thread_closed",
-  "context": "default",
+  "task": null,
+  "total_tasks": null,
+  "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "Dockerfile optimization (uv + deps-first + cache mounts + --frozen)", "status": "done", "commit": "2fcaac5"},
-    {"id": 2, "name": "ruff gate-hardening (+PGH/PLE/LOG/G/FURB/RET/N818, *Error renames)", "status": "done", "commit": "695f89d"},
-    {"id": 3, "name": "Incremental Strava summary sync + weekly full resync (quick 260610-nk9)", "status": "done", "commit": "92e86ee"},
-    {"id": 4, "name": "Close beads-2zt (deploy realign)", "status": "done"},
-    {"id": 5, "name": "Verify mcp-strava registered + reachable in docker mcp-gateway", "status": "done"},
-    {"id": 6, "name": "Diagnose red CI (CodeQL)", "status": "done", "progress": "Root cause confirmed = GitHub API auth outage on 2026-06-10 15:37. CodeQL analysis ran clean (0 findings); only SARIF upload was auth-rejected ('Requires authentication'). Cleared 2026-06-11 by pushing 5c06dd5+3e5a1ef -> all checks green (ci/test/quality/docker-build/Analyze Python all success)."},
-    {"id": 7, "name": "Verify gateway forwards prompts & resources (LINCHPIN)", "status": "done", "progress": "YES. Gateway (docker/mcp-gateway:v0.42.1) declares prompts{listChanged} + resources{listChanged,subscribe}; live probe returned a forwarded resource (beads://quickstart) and strava's 3 prompts. So tasks 10/11 are worth doing. Side-finding + FIX: gateway snapshots its server list at connect time and silently drops a backend that is down during that cycle (e.g. after `docker compose up -d` recreate) until restarted. Built mcp-gateway-watchdog (Docker container, Python 3.14, /opt/docker/mcp-gateway-watchdog/) that watches docker health events and restarts the gateway after a 10-min debounce. Tested end-to-end, running. Documented in ~/docs/MCP.md + SERVICES.md + ~/AGENTS.md (server-side docs, not this repo)."},
-    {"id": 8, "name": "Type tool params with single-source enums + Field docs", "status": "done", "commit": "a8e4091", "progress": "All closed-set params are enums DERIVED from canonical constants (single source, drift impossible); dates documented with ISO examples; calendar bucket semantics (Monday weeks) encoded in descriptions. Parked product question: bucket calendar-vs-rolling + configurable week-start (see MCP-DESIGN-REVIEW.md section 8). 416 tests pass; gate green."},
-    {"id": 9, "name": "Typed output schema (ServiceEnvelope) for all tools", "status": "done", "commit": "f1c8879", "progress": "Tools return the shared ServiceEnvelope dataclass instead of dict[str, Any]; FastMCP now publishes a real outputSchema (data/freshness/completeness/warnings/rationale + metadata $defs), reusing the existing contract (single source). _envelope_payload rounds only data (metadata float-free). data stays open (dict-or-list per tool); per-tool data models deferred. 416 tests pass; gate green."},
-    {"id": 10, "name": "Glossary + metric-catalog MCP resources with hard concept FK", "status": "done", "commit": "202c8a0", "progress": "New metric_glossary.py = single source for 15 concepts covering 50 metrics. MetricDefinition.concept is a hard FK stamped by the factory from the inverted glossary map (no prose duplication). validate_concept_links runs at registry import (fail-fast: rejects glossary metric_id absent from registry or bound to two concepts). Two resources: strava://glossary (markdown) + strava://metric-catalog (json, carries per-metric concept). server.instructions points agents at both. metric_glossary added to COMPUTE_SOURCE_MODULES (fingerprint closure stays complete). 426 tests (10 new); gate green."}
+    {"id": 1, "name": "Execute phase 16 (DuckDB-native storage cleanup), 6 plans", "status": "done"},
+    {"id": 2, "name": "Code review remediation (dead post-migration shims)", "status": "done", "commit": "85dab88"},
+    {"id": 3, "name": "Backfill VERIFICATION.md for phases 07/08; mark Complete", "status": "done"},
+    {"id": 4, "name": "Close + archive milestone v1.1 'DuckDB Analytics', tag v1.1", "status": "done", "commit": "17d5270"},
+    {"id": 5, "name": "Migrate live DuckDB to phase-16 native schema (source preserved) + rebuild/redeploy", "status": "done"},
+    {"id": 6, "name": "Fix latent phase-15 tz bug in project_fitness_state", "status": "done", "commit": "1dbf72e"},
+    {"id": 7, "name": "drain-on-recompute + justify batch constants", "status": "done", "commit": "ed528ec"},
+    {"id": 8, "name": "numpy-vectorize cardiac_drift Jenks (9.6min->83s recompute)", "status": "done", "commit": "e2f6add"}
   ],
   "remaining_tasks": [
-    {"id": 11, "name": "Parametrize prompts (date/sport args)", "status": "skipped", "note": "Near-zero ROI: prompts are scenario scripts, date/sport live on tools (task 8), scenarios are inherently current-state. Deliberately not doing."}
+    {"id": 9, "name": "OPTIONAL perf: re-profile materialize post-cardiac-drift; next cost is _upsert_facts_batch (DuckDB fact writes, IO) — consider batching/fewer transactions. NOT numpy-able. Only if it shows hot.", "status": "not_started"},
+    {"id": 10, "name": "OPTIONAL: start next milestone v1.2 via /gsd-new-milestone when there is new scope", "status": "not_started"}
   ],
   "blockers": [],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "mcp-gateway-watchdog is a Docker container (not host systemd)", "rationale": "'Containers first' server convention + precedent (gateway mounts docker.sock RW, docker-stats-exporter RO). Python over bash for maintainable event loop + debounce."},
-    {"decision": "CI red was GitHub's outage, not our code/config; cleared by re-pushing", "rationale": "Failed-run log: analysis clean, only SARIF upload auth-rejected; same code/config green 3h earlier and again today."},
-    {"decision": "Server docs follow Progressive Disclosure", "rationale": "~/AGENTS.md = brief pointer rows; per-service description in SERVICES.md; MCP subsystem deep-dive in MCP.md."},
-    {"decision": "Per-tool typed `data` models: NOT doing it (expert-panel verdict)", "rationale": "Real need (agent understanding payload keys) already met by task 10 catalog+glossary; sole consumer is an LLM via gateway that does not strictly parse outputSchema.data; clean typing would force a 2nd serialization path (typed instances vs shared dc_to_dict rounding) for only 2 of 6 tools. Simplicity > partial typing. Reopen only if a non-LLM strict-schema consumer appears. See MCP-DESIGN-REVIEW.md."},
-    {"decision": "Config-constant names kept in glossary definitions", "rationale": "Self-hosted server: a named constant (TAU_FITNESS, VEL_STOP, ...) tells each user exactly which knob to tune. Deliberate refinement of plain-language, not a violation."}
+    {"decision": "numpy is now a real dependency", "rationale": "stdlib-only was dogma; cardiac_drift Jenks was 56% of materialize; numpy-vectorized DP gave identical values, 9.6min->83s recompute. Do NOT cargo-cult numpy elsewhere — rest of numeric surface is DuckDB-SQL-delegated or sequential recurrences.", "phase": "post-16"},
+    {"decision": "drain read-model backlog fully on fingerprint recompute", "rationale": "READ_MODEL_BATCH_SIZE=25 only bounds steady-state; a logic change enqueues all activities and must recompute promptly, not at 25/hour.", "phase": "post-16"},
+    {"decision": "live DuckDB migrated in-place (drop views+indexes -> ALTER source cols -> drop+recreate regenerable read-model fact tables -> recreate indexes+views)", "rationale": "phase-16 has no auto-migration by policy; source mirror is precious. Migration was validated on a backup copy before applying live; DuckDB blocks ALTER/DROP COLUMN while indexes/views depend on the table.", "phase": "16"}
   ],
   "uncommitted_files": [],
-  "next_action": "MCP-surface design thread is CLOSED. Tasks 7/8/9/10 shipped; task 11 (parametrize prompts) and per-tool typed `data` models both deliberately skipped (expert-panel verdict 2026-06-11, recorded in MCP-DESIGN-REVIEW.md). No active work item. Remaining parked product questions (revisit only on real need): bucket calendar-vs-rolling semantics + configurable week-start. Milestone v1.1 stays unarchived per owner preference (do NOT run /gsd-complete-milestone unless asked). Glossary wording reviewed & accepted (config-constant names kept on purpose).",
-  "context_notes": "Milestone v1.1 100% complete but unarchived (owner not closing; optional /gsd-complete-milestone). This thread = the MCP-surface design review (see .planning/MCP-DESIGN-REVIEW.md). Surface: 6 tools, 3 prompts, 0 resources; annotations correct+uniform. Real weakness (task 8) = undocumented/non-enum tool params + opaque -> dict[str, Any] output. Gateway forwarding confirmed (task 7). CI green. No background processes running."
+  "next_action": "Nothing pending. If continuing perf: re-profile materialize (cProfile tottime on a stopped-container DB copy, ~30 activities) to find the next real hot spot — expected _upsert_facts_batch (DuckDB writes). Otherwise /gsd-new-milestone for v1.2.",
+  "context_notes": "v1.1 milestone CLOSED + ARCHIVED (16/16 phases, tag v1.1 pushed). Phase 16 fully DEPLOYED to the live container (image e2f6add, healthy). Git clean, 0 unpushed. Live DB on native schema, read-model fully rematerialized (metric_version 21). All 6 MCP tools green. Pre-phase16 backup taken, verified, deleted. No active phase — phases archived to .planning/milestones/v1.1-phases/."
 }
