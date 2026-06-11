@@ -1,10 +1,11 @@
 ---
 phase: 16
 slug: duckdb-native-storage-cleanup
-status: draft
-nyquist_compliant: false
+status: planned
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-06-11
+planned: 2026-06-11
 ---
 
 # Phase 16 — Validation Strategy
@@ -41,8 +42,16 @@ created: 2026-06-11
 
 | Task ID | Plan | Wave | Requirement | Behavior preserved | Test Type | Automated Command | Status |
 |---------|------|------|-------------|--------------------|-----------|-------------------|--------|
-| 16-… | … | 0 | kudos window_days branch (currently UNtested) | native date filter returns same ids | unit | `pytest tests/test_duckdb_repository.py -q` | ⬜ pending |
-| 16-… | … | 1+ | per conversion | payload/value identical before/after | unit + e2e | `pytest <files> -q` | ⬜ pending |
+| W0-kudos-test | 16-01 | 0 | kudos window_days branch (UNtested dead branch) | xfail marks broken SQL; window_days=None path passes | unit | `pytest tests/test_duckdb_repository.py -q -k kudos` | ⬜ pending |
+| T1-date-drop | 16-02 | 1 | activities.date column removed; kudos native DuckDB | activity_date alias still YYYY-MM-DD; window_days filter correct | unit | `pytest tests/test_duckdb_repository.py tests/test_application_services.py -q -x` | ⬜ pending |
+| T1-row-rename | 16-02 | 1 | RepositoryActivityRow.date → activity_day | projection_services payload shape unchanged | unit + pyright | `just check` | ⬜ pending |
+| T2-requested-for-day | 16-03 | 2 | requested_for_day VARCHAR → DATE | str(datetime.date) == "YYYY-MM-DD"; RefreshRequestRow unchanged | unit | `pytest tests/test_application_services.py -q -x` | ⬜ pending |
+| T3a-is-moving | 16-04 | 2 | streams.is_moving BIGINT → BOOLEAN | stream insert/read unchanged; no arithmetic on bool | unit | `pytest tests/test_duckdb_repository.py -q -k stream` | ⬜ pending |
+| T3b-cardiac-drift | 16-04 | 2 | cardiac_drift_significant BIGINT → BOOLEAN; fingerprint flip | status query returns correct result; fingerprint test passes | unit | `pytest tests/test_read_model_queries.py tests/test_logic_fingerprint.py -q -x` | ⬜ pending |
+| T4-varchar-array | 16-05 | 3 | missing_reasons_json VARCHAR → VARCHAR[]; no json.loads | MCP missing_reasons payload is list[str]; aggregate produces flat list | unit | `pytest tests/test_read_model_materialization.py tests/test_read_model_queries.py -q -x` | ⬜ pending |
+| T5a-cast-removal | 16-06 | 4 | schema_views CAST(x AS DATE) no-ops removed | view output identical | unit | `pytest tests/test_read_model_queries.py -q -x` | ⬜ pending |
+| T5b-json-predicate | 16-06 | 4 | stream coverage uses SQL predicate not Python loop | activities_missing_stream_channels returns same results | unit | `pytest tests/test_duckdb_repository.py -q -k coverage` | ⬜ pending |
+| phase-gate | 16-06 | 4 | full suite + linter | all behaviors preserved end-to-end | integration | `just check && uv run pytest -n auto -q` | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

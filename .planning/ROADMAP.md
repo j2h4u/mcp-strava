@@ -370,8 +370,13 @@ Cross-cutting constraints:
 **Goal:** Remove SQLite-era legacy from the DuckDB storage layer so it uses native DuckDB types (DATE/BOOLEAN/arrays) where it matters, contains no SQLite-only SQL functions, and has no string-typed columns that are range-scanned or duplicate a native column — while preserving identical external behavior (MCP/CLI payloads, freshness semantics, read-model values). Scope from a full codebase audit; no open design questions. Out of scope (intentional): `summary_json`/`detail_json`/`zones_json` VARCHAR payloads and operational `*_at` ISO-string instants.
 **Requirements**: Storage-layer modernization to DuckDB-native types (post-v1.1 maintenance)
 **Depends on:** Phase 15
-**Plans:** 0 plans
+**Plans:** 6 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 16 to break down)
+- [ ] `16-01-PLAN.md` — Wave 0: add missing window_days kudos test (regression guard before Task 1)
+- [ ] `16-02-PLAN.md` — Task 1: drop activities.date VARCHAR, rewrite kudos native, update all readers + RepositoryActivityRow rename
+- [ ] `16-03-PLAN.md` — Task 2: refresh_requests.requested_for_day VARCHAR → DATE
+- [ ] `16-04-PLAN.md` — Task 3: streams.is_moving + cardiac_drift_significant BIGINT → BOOLEAN
+- [ ] `16-05-PLAN.md` — Task 4: missing_reasons_json VARCHAR → VARCHAR[] (registry, write, aggregate, decode)
+- [ ] `16-06-PLAN.md` — Task 5: schema_views CAST removal + stream_coverage SQL predicate; full phase gate
