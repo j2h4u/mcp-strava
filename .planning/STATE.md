@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: verifying
+status: Awaiting next milestone
 stopped_at: Phase 16 complete — all 6 plans done; 16-06 CAST cleanup + json_extract_string stream predicate + full gate 429 passed
-last_updated: "2026-06-11T12:50:45.823Z"
-last_activity: 2026-06-11
+last_updated: "2026-06-11T13:01:58.607Z"
+last_activity: 2026-06-11 — Milestone v1.1 completed and archived
 progress:
   total_phases: 16
   completed_phases: 16
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 ## Current Position
 
-Phase: 09
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-11
+Phase: Milestone v1.1 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-11 — Milestone v1.1 completed and archived
 
 ## Performance Metrics
 
@@ -252,7 +252,12 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| quick_task | 260525-jpo-clean-metric-registry-surface-and-remove | missing (file absent) | v1.1 close 2026-06-11 |
+| quick_task | 260525-minimal-migration-runner | missing (file absent) | v1.1 close 2026-06-11 |
+| quick_task | 260527-nbq-wire-hr-zone-computation-on-the-fly-into | unknown (superseded; HR zones computed on the fly) | v1.1 close 2026-06-11 |
+| quick_task | 260605-gsd-phase-3-duckdb-compute-pushdown-panel | missing (file absent) | v1.1 close 2026-06-11 |
+
+> Phase-10 `10-HUMAN-UAT.md` was flagged by the audit but is `status: passed` with 0 pending scenarios — not a real deferral.
 
 ## Session Continuity
 
@@ -284,3 +289,7 @@ Resume file: None
 | 260531-nv0 format pre-existing unrelated ruff drift | 2026-05-31 | `.planning/quick/260531-nv0-format-pre-existing-unrelated-ruff-forma/260531-nv0-SUMMARY.md` |
 | 260605-mna implement Phase 3 _activity_fact DuckDB batch reads | 2026-06-05 | `.planning/quick/260605-mna-implement-phase-3-activity-fact-duckdb-b/260605-mna-SUMMARY.md` |
 | 260610-nk9 incremental Strava summary sync with weekly full resync | 2026-06-10 | `.planning/quick/260610-nk9-incremental-strava-summary-sync-with-wee/260610-nk9-SUMMARY.md` |
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

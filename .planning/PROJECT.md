@@ -12,15 +12,19 @@ Preserve the local Strava mirror and keep trusted training analytics working whi
 
 ## Current State
 
-The v1.1 full-fidelity mirror milestone is complete. The current runtime is
-DuckDB-only for product and service paths: local Strava activity data, streams,
-kudos, refresh state, and prepared read-model facts live in the DuckDB mirror,
-and MCP/CLI product reads consume application services over that mirror.
+The **v1.1 "DuckDB Analytics" milestone is shipped** (16 phases, 2026-06-11). The
+current runtime is DuckDB-only for product and service paths: local Strava activity
+data, streams, kudos, refresh state, and prepared read-model facts live in the DuckDB
+mirror, and MCP/CLI product reads consume application services over that mirror.
 
-Phase 14 completed the first metric-platform source-of-truth slice: the
-`activity_metric_facts` SQL schema metadata is owned by the metric registry,
-DuckDB table DDL is generated from the registry, and late additive activity fact
-migrations use registry-rendered SQL behind explicit safety checks.
+Phase 14 made `activity_metric_facts` SQL schema metadata registry-owned (DDL generated
+from the registry). Phase 15 made the read model **self-invalidating**: a source-derived
+logic fingerprint over the metric compute closure auto-recomputes affected facts when any
+metric constant/formula changes — no manual version knob — and on that mechanism added the
+`WALK_TRIMP_DISCOUNT` and finer workout time fields (`start_time_local`, read-time
+`relative_time`). Phase 16 removed the remaining SQLite-era legacy from storage: native
+DuckDB types (DATE/BOOLEAN/`VARCHAR[]`) where range-scanned, no SQLite-only SQL functions,
+no no-op CASTs — with identical external behavior.
 
 **Current validated capabilities:**
 - DuckDB is the primary runtime mirror and analytical store.
@@ -41,7 +45,7 @@ migrations use registry-rendered SQL behind explicit safety checks.
 - [x] Daily report computes recent activity panorama, Banister form, ACWR, progressive signal, weekly plan, recommendations, and safety warnings — existing
 - [x] Weekly analytics and trend views compute rolling load, efficiency, sport summaries, and form trends — existing
 - [x] CLI commands provide current access to report, weekly digest, workouts, freshness, and namespaced local admin workflows including catchup, compact, SQL, raw Strava calls, logs, and DB checks — validated through Phases 4, 8, and 9
-- [x] Smoke tests run through `just test` and cover pytest, Docker build, container health, and MCP product smoke — current full run: 357 passed plus Docker/MCP smoke after Phase 14 UAT
+- [x] Smoke tests run through `just test` and cover pytest, Docker build, container health, and MCP product smoke — current full run: 427 passed plus Docker/MCP smoke after Phase 16
 - [x] Refactored runtime is installable as a Python package with `python -m mcp_strava`, `src/mcp_strava` package imports, typed settings for DB/token/runtime/HTTP/freshness, and pytest-backed `just test` — validated in Phase 1
 - [x] Historical SQLite migration safety was validated in Phase 2; current DuckDB runtime opens fail-closed through preflight/health checks and keeps all runtime persistence behind the DuckDB adapter
 - [x] Strava API adapter owns OAuth refresh, request execution, rate-limit handling, retries, and payload parsing, with refresh runtime checkpoints/backoff/leases — validated in Phase 3
@@ -62,6 +66,8 @@ migrations use registry-rendered SQL behind explicit safety checks.
 - [x] MCP and CLI product reads expose factual daily, weekly, historical, status, kudos, and supported gear facts from shared DuckDB/read-model application services, while MCP remains the exact six-tool product surface — validated in Phase 9
 - [x] Separate core/domain training logic from SQLite, Strava HTTP calls, CLI formatting, and MCP transport concerns — validated in Phase 10 (`metrics.py` is a pure domain module with an AST import-boundary guard; the previously-unwired metrics now materialize from real streams)
 - [x] Metric-platform fact schema metadata for `activity_metric_facts` is registry-owned, runtime DuckDB DDL is generated from the registry, and late additive activity fact migrations use registry-rendered SQL with safety guards — validated in Phase 14
+- [x] The materialized read model self-invalidates: a source-derived logic fingerprint over the metric compute closure auto-recomputes affected facts on metric code/constant change with no manual version knob; walks are discounted in the Banister load model via `WALK_TRIMP_DISCOUNT`; workout payloads carry `start_time_local` + read-time `relative_time` — validated in Phase 15
+- [x] Storage layer is DuckDB-native: range-scanned/duplicate columns use native DATE/BOOLEAN/`VARCHAR[]`, no SQLite-only SQL functions or no-op CASTs remain, with identical MCP/CLI payloads and read-model values — validated in Phase 16
 
 ### Active
 
@@ -123,6 +129,8 @@ Existing codebase concerns that should shape the next roadmap:
 | Product factual bundles stay inside existing MCP surface | Agents need richer prepared facts, but not additional admin/debug/sync tools or coaching interpretation from this service | Validated in Phase 9 through shared bundle services, six-tool MCP allowlist, direct bundle smoke, and CLI read-model consolidation |
 | Domain metric math is pure and storage-free | Keeping training-metric functions free of storage/HTTP imports completes core/domain separation and makes the metrics unit-testable without a DB | Validated in Phase 10 — `metrics.py` imports only constants/types/cardiac_drift, an AST guard forbids storage imports, and the four pure functions now feed the read-model materializer |
 | Activity fact schema metadata is registry-owned | Duplicated hand-written `activity_metric_facts` SQL would drift from metric registry semantics; registry SQL metadata now renders table DDL and late-column ADD COLUMN SQL while schema.py keeps explicit migration policy | Validated in Phase 14 with generated DDL, generated additive migration SQL, safety guards, temp-DuckDB parity tests, and full `just test` Docker smoke |
+| Read model self-invalidates via source fingerprint (no manual version knob) | A hand-maintained `metric_version` constant drifts from the actual compute logic and silently serves stale facts; a sha256 over the recursive compute-module source closure recomputes automatically on any metric code/constant change | Validated in Phase 15 — `CURRENT_METRIC_VERSION` deleted, fingerprint mismatch drives bump + mass-enqueue + re-materialize, proven end-to-end by editing `WALK_TRIMP_DISCOUNT` |
+| Storage is DuckDB-native, no SQLite-era legacy | String/BIGINT columns inherited from the SQLite era duplicate native columns and force dead decode paths; native DATE/BOOLEAN/`VARCHAR[]` where range-scanned removes them with identical external behavior | Validated in Phase 16 — 8/8 goal criteria, dead post-migration shims removed, 427 tests + `just check` green |
 
 ## Evolution
 
@@ -142,5 +150,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-01 after documentation audit — current state refreshed after Phase 14 UAT*
-*Completion updated: 2026-05-31 after Phase 14 UAT — registry-owned `activity_metric_facts` schema slice validated*
+*Last updated: 2026-06-11 after v1.1 "DuckDB Analytics" milestone close — full review; phases 15-16 folded into Validated and Key Decisions*
