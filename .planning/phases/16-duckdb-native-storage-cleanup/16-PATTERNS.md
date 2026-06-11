@@ -306,9 +306,9 @@ list(DISTINCT completeness_status) AS completeness_statuses,
 -- Current:
 list(missing_reasons_json) AS missing_reason_payloads
 -- After:
-list_distinct(list_flatten(list(missing_reasons_json))) AS missing_reason_payloads
+list_distinct(flatten(list(missing_reasons_json))) AS missing_reason_payloads
 ```
-`list_flatten` collapses `list[list[str]]` → `list[str]`; `list_distinct` deduplicates. Result is a flat `list[str]` — no Python json.loads needed.
+`flatten` collapses `list[list[str]]` → `list[str]`; `list_distinct` deduplicates. Result is a flat `list[str]` — no Python json.loads needed.
 
 #### Decode path `aggregate_rows._missing_reasons()` (lines 169-181)
 

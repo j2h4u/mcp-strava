@@ -243,14 +243,14 @@ The aggregate at lines 294, 377, 462 uses:
 ```sql
 list(missing_reasons_json) AS missing_reason_payloads
 ```
-When `missing_reasons_json` is `VARCHAR[]`, `list()` aggregates an array column into a list-of-lists. Use `list_flatten(list(missing_reasons_json))` to flatten into a single `VARCHAR[]`, then `list_distinct(...)` to deduplicate:
+When `missing_reasons_json` is `VARCHAR[]`, `list()` aggregates an array column into a list-of-lists. Use `flatten(list(missing_reasons_json))` to flatten into a single `VARCHAR[]`, then `list_distinct(...)` to deduplicate:
 ```sql
-list_distinct(list_flatten(list(missing_reasons_json))) AS missing_reason_payloads
+list_distinct(flatten(list(missing_reasons_json))) AS missing_reason_payloads
 ```
-This eliminates the need for per-element `json.loads` entirely. [VERIFIED: DuckDB docs — list_flatten / list_distinct on array aggregation]
+This eliminates the need for per-element `json.loads` entirely. [VERIFIED: DuckDB docs — flatten / list_distinct on array aggregation]
 
 **`aggregate_rows._missing_reasons()` — decode path** (`aggregate_rows.py:169-181`):
-Currently each `payload` is a JSON string; the function calls `json.loads(str(payload))`. After Task 4, each payload in `payloads` will be a `list[str]` (Python list) returned by `list_distinct(list_flatten(...))`. The decode must handle both cases during transition or be replaced cleanly:
+Currently each `payload` is a JSON string; the function calls `json.loads(str(payload))`. After Task 4, each payload in `payloads` will be a `list[str]` (Python list) returned by `list_distinct(flatten(...))`. The decode must handle both cases during transition or be replaced cleanly:
 
 ```python
 def _missing_reasons(row: dict[str, object]) -> list[str]:
@@ -273,7 +273,7 @@ def _missing_reasons(row: dict[str, object]) -> list[str]:
 ```
 Since the DB is recreated (no mixed old/new rows), the `json.loads` branch can be removed entirely. The planner should mark the `json` import in `aggregate_rows.py` for removal if it has no other uses. [VERIFIED: aggregate_rows.py:5 — `import json` is only used in `_missing_reasons`]
 
-**NULL handling:** `DEFAULT []` means newly inserted rows without an explicit value get an empty array. `list_flatten(list(missing_reasons_json))` on an array column: if any row has `NULL` for `missing_reasons_json`, `list_flatten` treats NULL elements as empty. Use `COALESCE(missing_reasons_json, [])` in the aggregate if needed — verify with test.
+**NULL handling:** `DEFAULT []` means newly inserted rows without an explicit value get an empty array. `flatten(list(missing_reasons_json))` on an array column: if any row has `NULL` for `missing_reasons_json`, `flatten` treats NULL elements as empty. Use `COALESCE(missing_reasons_json, [])` in the aggregate if needed — verify with test.
 
 **`repository_models.py` typed rows:** `missing_reasons_json: object` fields at lines 93, 140, 164, 190 remain typed as `object` — no change required. The read path consumes these via `_missing_reasons()`.
 
@@ -325,7 +325,7 @@ The `value_rows` fetch at lines 79-85 can be removed after this change (the `SEL
 | Problem | Don't Build | Use Instead | Why |
 |---------|-------------|-------------|-----|
 | Date arithmetic from today | Custom Python date subtraction passed as string | `CURRENT_DATE - (? * INTERVAL '1 day')` in SQL | Native DuckDB — the whole point of this phase |
-| Array flattening in Python | Loop over `payloads` calling json.loads | `list_distinct(list_flatten(list(col)))` in SQL | DuckDB array functions handle NULL, duplicates, flatten natively |
+| Array flattening in Python | Loop over `payloads` calling json.loads | `list_distinct(flatten(list(col)))` in SQL | DuckDB array functions handle NULL, duplicates, flatten natively |
 | Boolean conversion in Python | `int(bool_val)` or ternary `1 if x else 0` | Python `bool(x)` bound directly | DuckDB Python connector accepts Python bool for BOOLEAN columns |
 | JSON key existence check | Fetch all rows, json.loads each one | `json_extract_string(col, '$.' || ?) IS NOT NULL` in SQL | Single SQL predicate, no Python deserialization |
 
@@ -350,7 +350,7 @@ The `value_rows` fetch at lines 79-85 can be removed after this change (the `SEL
 
 ### Pitfall 4: `list()` aggregate on `VARCHAR[]` produces list-of-lists
 **What goes wrong:** After `missing_reasons_json` becomes `VARCHAR[]`, `list(missing_reasons_json)` in aggregate SQL produces `list[list[str]]` (a list of arrays). The `_missing_reasons()` decoder currently calls `json.loads(str(payload))` on each element — `str(["a","b"])` is not valid JSON, so `json.loads` raises and the fallback `[str(payload)]` produces garbage.
-**How to avoid:** Always use `list_distinct(list_flatten(list(missing_reasons_json)))` in the aggregate SQL so the result is already a flat `list[str]`. Then `_missing_reasons()` receives a flat list and only needs the `isinstance(payload, list)` branch.
+**How to avoid:** Always use `list_distinct(flatten(list(missing_reasons_json)))` in the aggregate SQL so the result is already a flat `list[str]`. Then `_missing_reasons()` receives a flat list and only needs the `isinstance(payload, list)` branch.
 **Warning signs:** `missing_reasons` appearing as `["['missing_hr']", ...]` in API responses.
 
 ### Pitfall 5: `is_moving` boolean read by metric computation code
@@ -476,12 +476,15 @@ Step 2.6: SKIPPED — this phase is purely code/DDL changes; no new external too
 - `tests/test_logic_fingerprint.py` — confirmed completeness test logic
 - `tests/test_duckdb_repository.py:638-669` — confirmed existing kudos test, window_days=None only
 
-### Secondary (MEDIUM confidence — DuckDB documented behavior)
-- DuckDB interval arithmetic: `? * INTERVAL '1 day'` with integer param — [ASSUMED: standard DuckDB behavior from training data]
-- DuckDB Python connector: Python `bool` binds to `BOOLEAN` column — [ASSUMED]
-- DuckDB array: Python `list` binds to `VARCHAR[]` column — [ASSUMED]
-- `list_flatten` / `list_distinct` on aggregated arrays — [ASSUMED]
-- `json_extract_string(VARCHAR_col, path)` works on VARCHAR — [ASSUMED]
+### Secondary — VERIFIED EMPIRICALLY (DuckDB 1.5.3, 2026-06-11)
+All binding mechanics were probed against the project's live DuckDB. Results:
+- `CURRENT_DATE - (? * INTERVAL '1 day')` with an integer param — ✅ works
+- Python `bool` binds to `BOOLEAN`, reads back as `bool`, `WHERE flag = TRUE` works; `DEFAULT 0` accepted for BOOLEAN — ✅
+- Python `list` binds to `VARCHAR[]`; `DEFAULT []` (bare, no quotes) accepted when the column is omitted — ✅
+- **⚠️ CORRECTION: the array-flatten function is `flatten`, NOT `list_flatten`.** `list_flatten` does NOT exist in DuckDB 1.5.3 (CatalogException). Correct aggregate is `list_distinct(flatten(list(col)))` → flat `list[str]`. All plan/research/pattern docs were corrected accordingly. (Equivalent fallback if ever needed: `list(DISTINCT u) FROM (SELECT unnest(col) AS u …)`.)
+- `json_extract_string(VARCHAR_col, '$.' || ?) IS NOT NULL` on a VARCHAR column — ✅ equivalent to the per-row Python key-existence check
+- `str(MAX(activity_day DATE))` → `"YYYY-MM-DD"` — ✅
+- `requested_for_day DATE` equality with a bound `datetime.date` — ✅
 
 ---
 
@@ -491,7 +494,7 @@ Step 2.6: SKIPPED — this phase is purely code/DDL changes; no new external too
 - Schema mechanics: HIGH — read directly from live source
 - Task-level HOW: HIGH for Tasks 1, 3b, 4, 5; MEDIUM for Task 2 (caller enumeration not verified)
 - Pitfalls: HIGH — derived from direct code reading
-- DuckDB type binding details: MEDIUM — training knowledge, not verified via DuckDB docs this session
+- DuckDB type binding details: HIGH — verified empirically against DuckDB 1.5.3 (2026-06-11); one correction found and propagated: `list_flatten`→`flatten`
 
 **Research date:** 2026-06-11
 **Valid until:** 2026-07-11 (DuckDB API is stable; project codebase changes would invalidate sooner)
