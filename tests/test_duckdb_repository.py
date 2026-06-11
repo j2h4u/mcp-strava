@@ -1,5 +1,11 @@
+from __future__ import annotations
+
+from datetime import date, timedelta
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
+
+if TYPE_CHECKING:
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 
 import pytest
 
@@ -667,6 +673,72 @@ def test_activities_missing_kudos_filters_and_returns_typed_ids(tmp_path: Path) 
 
         assert ids == [201]
         assert all(isinstance(i, int) for i in ids)
+
+
+def _seed_kudos_window_activities(repo: DuckDBRepository) -> None:
+    """Seed three activities at relative day offsets for window_days tests.
+
+    All have kudos_count=3 on Strava (> 0) and no local kudos rows, so they
+    appear as "missing kudos" candidates for activities_missing_kudos().
+    """
+    for activity_id, days_ago in [(301, 1), (305, 5), (320, 20)]:
+        start_date = (date.today() - timedelta(days=days_ago)).isoformat() + "T06:00:00"
+        repo.upsert_activity_summary(
+            activity_id=activity_id,
+            date=start_date,
+            name=f"Run {activity_id}",
+            sport_type="Run",
+            distance=6000.0,
+            moving_time=1800,
+            elapsed_time=1900,
+            total_elevation_gain=120.0,
+            summary_json=f'{{"id":{activity_id},"kudos_count":3}}',
+            synced_at="2026-05-21T07:00:00Z",
+        )
+
+
+def test_activities_missing_kudos_with_window_days_none(tmp_path: Path) -> None:
+    """window_days=None returns all activities regardless of age (None-path works today).
+
+    # A1-confirmed: RepositoryActivityRow.date exists at types_repository.py:193;
+    # cleaned in 16-02.
+    """
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "strava.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        _seed_kudos_window_activities(repo)
+        all_ids = activities_missing_kudos(repo, window_days=None)
+        assert set(all_ids) == {301, 305, 320}
+
+
+@pytest.mark.xfail(
+    strict=False,
+    reason="SQLite date('now') branch is dead/broken — rewritten in 16-02",
+)
+def test_activities_missing_kudos_with_window_days(tmp_path: Path) -> None:
+    """window_days=7 should return only activities within the last 7 days.
+
+    Currently xfail: the kudos_store uses SQLite date('now', ?) syntax which
+    DuckDB does not support. This test is the regression guard for Plan 16-02
+    which rewrites the branch to native DuckDB interval arithmetic.
+
+    # A1-confirmed: RepositoryActivityRow.date exists at types_repository.py:193;
+    # the dead SQLite date('now', ?) branch is rewritten in 16-02.
+    """
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "strava.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        _seed_kudos_window_activities(repo)
+        windowed_ids = activities_missing_kudos(repo, window_days=7)
+        # activity_id=301 (1 day ago) and 305 (5 days ago) are within window;
+        # activity_id=320 (20 days ago) is outside.
+        assert set(windowed_ids) == {301, 305}
 
 
 def test_mirror_coverage_count_methods_return_typed_values(tmp_path: Path) -> None:
