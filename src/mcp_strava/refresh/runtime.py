@@ -69,70 +69,15 @@ def run_once(
 
     try:
         state = refresh_store.get_refresh_state()
-        if state.backoff_until and state.backoff_until > now_iso:
-            return RefreshSkipped("refresh_delayed")
-        if is_active_backfill_stage(state.checkpoint_stage):
-            if state.checkpoint_stage == Stage.STREAM_CHANNELS_BACKFILL.value:
-                raise RuntimeError("incompatible checkpoint - stream-channel backfill in progress, run admin catchup")
-            raise RuntimeError("incompatible checkpoint - backfill in progress, run run_catchup")
-        if (
-            not force
-            and state.checkpoint_stage == Stage.COMPLETE.value
-            and not refresh_interval_elapsed(
-                state.last_success_at,
-                now_iso,
-                policy.regular_refresh_interval_seconds,
-            )
-        ):
-            return RefreshSkipped("already_complete")
+        skip = _check_daily_preconditions(state, now_iso, policy, force)
+        if skip is not None:
+            return skip
 
         start_index = _daily_start_index(state.checkpoint_stage)
         refresh_store.record_refresh_attempt(now_iso)
-        activities_seen = 0
-        activities_new = 0
-        streams_fetched = 0
-        details_fetched = 0
-        kudos_fetched = 0
-
-        if start_index <= _stage_index(Stage.SUMMARIES):
-            refresh_store.set_checkpoint(Stage.SUMMARIES.value, None)
-            _last_full = refresh_store.get_last_full_summary_sync_at()
-            do_full = (_last_full is None) or refresh_interval_elapsed(
-                _last_full, now_iso, policy.full_resync_interval_seconds
-            )
-            if do_full:
-                after_epoch = None
-            else:
-                _latest_date_str = latest_activity_at(repo)
-                if _latest_date_str is not None:
-                    _d = date.fromisoformat(_latest_date_str[:10])
-                    after_epoch = int(datetime(_d.year, _d.month, _d.day, tzinfo=UTC).timestamp())
-                else:
-                    after_epoch = None  # empty DB but marker set — treat as full
-            activities_seen, activities_new = _sync_ops.sync_summaries(
-                repo, transport, now_iso, after_epoch=after_epoch
-            )
-            if do_full:
-                refresh_store.set_last_full_summary_sync_at(now_iso)
-        if start_index <= _stage_index(Stage.STREAMS):
-            refresh_store.set_checkpoint(Stage.STREAMS.value, None)
-            streams_fetched = _sync_ops.sync_streams(repo, transport)
-        if start_index <= _stage_index(Stage.DETAILS):
-            refresh_store.set_checkpoint(Stage.DETAILS.value, None)
-            details_fetched = _sync_ops.sync_details(repo, transport)
-        if start_index <= _stage_index(Stage.SCHEMA_VALIDATE):
-            refresh_store.set_checkpoint(Stage.SCHEMA_VALIDATE.value, None)
-            _sync_ops.schema_validate(repo)
-        if start_index <= _stage_index(Stage.READ_MODEL_MATERIALIZE):
-            refresh_store.set_checkpoint(Stage.READ_MODEL_MATERIALIZE.value, None)
-            _sync_ops.materialize_read_model_stage(
-                repo,
-                now_iso,
-                _lease_renewer(refresh_store, clock, owner, policy.lease_duration_seconds),
-            )
-        if start_index <= _stage_index(Stage.KUDOS):
-            refresh_store.set_checkpoint(Stage.KUDOS.value, None)
-            kudos_fetched = _sync_ops._sync_kudos(repo, transport, now_iso)
+        activities_seen, activities_new, streams_fetched, details_fetched, kudos_fetched = _run_daily_stages(
+            repo, transport, refresh_store, policy, clock, owner, now_iso, start_index
+        )
         refresh_store.set_checkpoint(Stage.COMPLETE.value, None)
         refresh_store.record_refresh_success(now_iso)
         append_sync_log(
@@ -328,6 +273,86 @@ def run_stream_channel_catchup(
         }
     finally:
         refresh_store.release_refresh_lease(owner)
+
+
+def _check_daily_preconditions(state, now_iso: str, policy: RefreshPolicy, force: bool) -> RefreshSkipped | None:
+    """Return a RefreshSkipped (or raise) if run_once should not proceed; else None."""
+    if state.backoff_until and state.backoff_until > now_iso:
+        return RefreshSkipped("refresh_delayed")
+    if is_active_backfill_stage(state.checkpoint_stage):
+        if state.checkpoint_stage == Stage.STREAM_CHANNELS_BACKFILL.value:
+            raise RuntimeError("incompatible checkpoint - stream-channel backfill in progress, run admin catchup")
+        raise RuntimeError("incompatible checkpoint - backfill in progress, run run_catchup")
+    if (
+        not force
+        and state.checkpoint_stage == Stage.COMPLETE.value
+        and not refresh_interval_elapsed(
+            state.last_success_at,
+            now_iso,
+            policy.regular_refresh_interval_seconds,
+        )
+    ):
+        return RefreshSkipped("already_complete")
+    return None
+
+
+def _run_daily_stages(
+    repo, transport, refresh_store, policy: RefreshPolicy, clock, owner: str, now_iso: str, start_index: int
+) -> tuple[int, int, int, int, int]:
+    """Execute each daily stage in order, resuming from start_index. Returns counters."""
+    activities_seen = 0
+    activities_new = 0
+    streams_fetched = 0
+    details_fetched = 0
+    kudos_fetched = 0
+    if start_index <= _stage_index(Stage.SUMMARIES):
+        refresh_store.set_checkpoint(Stage.SUMMARIES.value, None)
+        activities_seen, activities_new = _run_summaries_stage(repo, transport, refresh_store, policy, now_iso)
+    if start_index <= _stage_index(Stage.STREAMS):
+        refresh_store.set_checkpoint(Stage.STREAMS.value, None)
+        streams_fetched = _sync_ops.sync_streams(repo, transport)
+    if start_index <= _stage_index(Stage.DETAILS):
+        refresh_store.set_checkpoint(Stage.DETAILS.value, None)
+        details_fetched = _sync_ops.sync_details(repo, transport)
+    if start_index <= _stage_index(Stage.SCHEMA_VALIDATE):
+        refresh_store.set_checkpoint(Stage.SCHEMA_VALIDATE.value, None)
+        _sync_ops.schema_validate(repo)
+    if start_index <= _stage_index(Stage.READ_MODEL_MATERIALIZE):
+        refresh_store.set_checkpoint(Stage.READ_MODEL_MATERIALIZE.value, None)
+        _sync_ops.materialize_read_model_stage(
+            repo,
+            now_iso,
+            _lease_renewer(refresh_store, clock, owner, policy.lease_duration_seconds),
+        )
+    if start_index <= _stage_index(Stage.KUDOS):
+        refresh_store.set_checkpoint(Stage.KUDOS.value, None)
+        kudos_fetched = _sync_ops._sync_kudos(repo, transport, now_iso)
+    return activities_seen, activities_new, streams_fetched, details_fetched, kudos_fetched
+
+
+def _run_summaries_stage(
+    repo,
+    transport,
+    refresh_store,
+    policy: RefreshPolicy,
+    now_iso: str,
+) -> tuple[int, int]:
+    """Determine full-vs-incremental sync window and delegate to sync_summaries."""
+    last_full = refresh_store.get_last_full_summary_sync_at()
+    do_full = (last_full is None) or refresh_interval_elapsed(last_full, now_iso, policy.full_resync_interval_seconds)
+    if do_full:
+        after_epoch = None
+    else:
+        latest_date_str = latest_activity_at(repo)
+        if latest_date_str is not None:
+            d = date.fromisoformat(latest_date_str[:10])
+            after_epoch = int(datetime(d.year, d.month, d.day, tzinfo=UTC).timestamp())
+        else:
+            after_epoch = None  # empty DB but marker set — treat as full
+    activities_seen, activities_new = _sync_ops.sync_summaries(repo, transport, now_iso, after_epoch=after_epoch)
+    if do_full:
+        refresh_store.set_last_full_summary_sync_at(now_iso)
+    return activities_seen, activities_new
 
 
 def _handle_failure(

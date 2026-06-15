@@ -132,6 +132,59 @@ def _emit_mirror_storage() -> None:
     _emit("mirror_storage", **stats)
 
 
+def _handle_run_once_result(result, refresh_store) -> int | None:
+    """Emit events for a run_once result; return exit code or None to continue."""
+    if isinstance(result, RefreshSkipped):
+        if result.reason == "already_complete":
+            consumed = refresh_store.mark_refresh_requests_consumed(_now_iso())
+            _emit("refresh_request_consumed", result="already_complete", consumed=consumed)
+            return None
+        _emit("refresh_skipped", reason=result.reason)
+        return 0
+    if result.status == "ok":
+        consumed = refresh_store.mark_refresh_requests_consumed(_now_iso())
+        _emit(
+            "refresh_ok",
+            consumed=consumed,
+            checkpoint_stage=result.checkpoint_stage,
+            activities_seen=result.activities_seen,
+            activities_new=result.activities_new,
+            streams_fetched=result.streams_fetched,
+            details_fetched=result.details_fetched,
+            kudos_fetched=result.kudos_fetched,
+        )
+        return None
+    _emit(
+        "refresh_failed",
+        reason=result.reason or "unknown",
+        checkpoint_stage=result.checkpoint_stage,
+        # Rate-limit usage/limit snapshot when reason == "rate_limited".
+        **(result.rate_info or {}),
+    )
+    return 1
+
+
+def _handle_backfill_result(backfill_result) -> int:
+    """Emit events for a stream-channel backfill result; return exit code."""
+    if isinstance(backfill_result, RefreshSkipped):
+        _emit("stream_backfill_skipped", reason=backfill_result.reason)
+        return 0
+    if backfill_result["status"] == "ok":
+        _emit(
+            "stream_backfill_ok",
+            completed=backfill_result.get("completed", 0),
+            activities_to_backfill=backfill_result["activities_to_backfill"],
+            checkpoint_stage=backfill_result["checkpoint_stage"],
+        )
+        return 0
+    _emit(
+        "stream_backfill_failed",
+        reason=backfill_result.get("reason", "unknown"),
+        checkpoint_stage=backfill_result.get("checkpoint_stage"),
+    )
+    return 1
+
+
 def run_pending_once(*, emit_idle: bool = True) -> int:
     """Run one refresh cycle, then always emit the storage indicator."""
     try:
@@ -195,54 +248,12 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> int:
                 force=False,
                 mode="periodic",
             )
-
-            if isinstance(result, RefreshSkipped):
-                if result.reason == "already_complete":
-                    consumed = refresh_store.mark_refresh_requests_consumed(_now_iso())
-                    _emit("refresh_request_consumed", result="already_complete", consumed=consumed)
-                else:
-                    _emit("refresh_skipped", reason=result.reason)
-                    return 0
-            elif result.status == "ok":
-                consumed = refresh_store.mark_refresh_requests_consumed(_now_iso())
-                _emit(
-                    "refresh_ok",
-                    consumed=consumed,
-                    checkpoint_stage=result.checkpoint_stage,
-                    activities_seen=result.activities_seen,
-                    activities_new=result.activities_new,
-                    streams_fetched=result.streams_fetched,
-                    details_fetched=result.details_fetched,
-                    kudos_fetched=result.kudos_fetched,
-                )
-            else:
-                _emit(
-                    "refresh_failed",
-                    reason=result.reason or "unknown",
-                    checkpoint_stage=result.checkpoint_stage,
-                    # Rate-limit usage/limit snapshot when reason == "rate_limited".
-                    **(result.rate_info or {}),
-                )
-                return 1
+            exit_code = _handle_run_once_result(result, refresh_store)
+            if exit_code is not None:
+                return exit_code
 
         backfill_result = _run_stream_channel_backfill(repo, transport, refresh_policy, clock, sleeper)
-        if isinstance(backfill_result, RefreshSkipped):
-            _emit("stream_backfill_skipped", reason=backfill_result.reason)
-            return 0
-        if backfill_result["status"] == "ok":
-            _emit(
-                "stream_backfill_ok",
-                completed=backfill_result.get("completed", 0),
-                activities_to_backfill=backfill_result["activities_to_backfill"],
-                checkpoint_stage=backfill_result["checkpoint_stage"],
-            )
-            return 0
-        _emit(
-            "stream_backfill_failed",
-            reason=backfill_result.get("reason", "unknown"),
-            checkpoint_stage=backfill_result.get("checkpoint_stage"),
-        )
-        return 1
+        return _handle_backfill_result(backfill_result)
 
 
 def _poll_seconds(raw: str | None) -> int:

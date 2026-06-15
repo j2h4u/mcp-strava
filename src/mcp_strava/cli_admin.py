@@ -165,36 +165,8 @@ _CATCHUP_USAGE = (
 )
 
 
-def _phase_payload(result) -> dict:
-    """Normalise a refresh-runtime result (dataclass or dict) to a plain dict."""
-    if isinstance(result, RefreshSkipped):
-        return {"status": "skipped", "reason": result.reason}
-    if is_dataclass(result):
-        converted = dc_to_dict(result)
-        return converted if isinstance(converted, dict) else {}
-    return result
-
-
-def _print_catchup(payload: dict, json_output: bool) -> None:
-    if json_output:
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
-        return
-    print("Catchup")
-    for section in ("activities", "stream_channels"):
-        print(f"- {section}:")
-        for key, value in payload[section].items():
-            print(f"    {key}: {value}")
-    print(f"- status: {payload['status']}")
-
-
-def cmd_catchup(args):
-    """Fetch missing activities, then missing stream channels, in one pass.
-
-    Replaces the former ``backfill`` + ``backfill-streams`` admin commands.
-    ``--dry-run`` previews the stream-channel phase only; activity backfill has
-    no preview mode and is skipped under ``--dry-run``. ``--db`` is a dry-run
-    fixture affordance and is rejected without ``--dry-run``.
-    """
+def _parse_catchup_args(args: list[str]) -> tuple[bool, bool, str | None, int | None, Path | None]:
+    """Parse catchup CLI flags; returns (json_output, dry_run, since, limit, db_path)."""
     json_output = _pop_json_flag(args)
     dry_run = False
     since = None
@@ -228,38 +200,38 @@ def cmd_catchup(args):
             continue
         _usage_error(_CATCHUP_USAGE)
 
-    if db_path is not None and not dry_run:
-        _usage_error("--db is only valid together with --dry-run")
+    return json_output, dry_run, since, limit, db_path
 
-    if dry_run:
-        clock = SystemClock()
-        sleeper = SystemSleeper()
-        transport = _DryRunStravaTransport()
-        refresh_policy = RefreshPolicy()
-        conn_context = MirrorConn() if db_path is None else DuckDBRepository.from_path(db_path)
-        with conn_context as conn:
-            # MirrorConn yields a raw DuckDBConn (wrap it in a repository);
-            # DuckDBRepository.from_path yields the repository itself.
-            repo = conn if isinstance(conn, DuckDBRepository) else DuckDBRepository.from_connection(conn)
-            stream_result = backfill_stream_channels(
-                repo,
-                transport,
-                refresh_policy,
-                clock,
-                sleeper,
-                since=since,
-                limit=limit,
-                dry_run=True,
-            )
-        payload = {
-            "status": "ok",
-            "dry_run": True,
-            "activities": {"status": "skipped", "reason": "activity_backfill_has_no_dry_run"},
-            "stream_channels": _phase_payload(stream_result),
-        }
-        _print_catchup(payload, json_output)
-        return
 
+def _run_dry_run_catchup(since: str | None, limit: int | None, db_path: Path | None) -> dict:
+    """Execute the dry-run branch of catchup (stream-channel phase only)."""
+    clock = SystemClock()
+    sleeper = SystemSleeper()
+    transport = _DryRunStravaTransport()
+    refresh_policy = RefreshPolicy()
+    conn_context = MirrorConn() if db_path is None else DuckDBRepository.from_path(db_path)
+    with conn_context as conn:
+        repo = conn if isinstance(conn, DuckDBRepository) else DuckDBRepository.from_connection(conn)
+        stream_result = backfill_stream_channels(
+            repo,
+            transport,
+            refresh_policy,
+            clock,
+            sleeper,
+            since=since,
+            limit=limit,
+            dry_run=True,
+        )
+    return {
+        "status": "ok",
+        "dry_run": True,
+        "activities": {"status": "skipped", "reason": "activity_backfill_has_no_dry_run"},
+        "stream_channels": _phase_payload(stream_result),
+    }
+
+
+def _run_live_catchup(since: str | None, limit: int | None) -> dict:
+    """Execute the live (non-dry-run) branch of catchup (activities + streams)."""
     activities_result = backfill_activities(since=since)
 
     _settings, clock, sleeper, transport, refresh_policy = build_refresh_collaborators()
@@ -286,13 +258,56 @@ def cmd_catchup(args):
     else:
         overall = "ok"
 
-    payload = {
+    return {
         "status": overall,
         "activities": activities_payload,
         "stream_channels": stream_payload,
     }
+
+
+def _phase_payload(result) -> dict:
+    """Normalise a refresh-runtime result (dataclass or dict) to a plain dict."""
+    if isinstance(result, RefreshSkipped):
+        return {"status": "skipped", "reason": result.reason}
+    if is_dataclass(result):
+        converted = dc_to_dict(result)
+        return converted if isinstance(converted, dict) else {}
+    return result
+
+
+def _print_catchup(payload: dict, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    print("Catchup")
+    for section in ("activities", "stream_channels"):
+        print(f"- {section}:")
+        for key, value in payload[section].items():
+            print(f"    {key}: {value}")
+    print(f"- status: {payload['status']}")
+
+
+def cmd_catchup(args):
+    """Fetch missing activities, then missing stream channels, in one pass.
+
+    Replaces the former ``backfill`` + ``backfill-streams`` admin commands.
+    ``--dry-run`` previews the stream-channel phase only; activity backfill has
+    no preview mode and is skipped under ``--dry-run``. ``--db`` is a dry-run
+    fixture affordance and is rejected without ``--dry-run``.
+    """
+    json_output, dry_run, since, limit, db_path = _parse_catchup_args(args)
+
+    if db_path is not None and not dry_run:
+        _usage_error("--db is only valid together with --dry-run")
+
+    if dry_run:
+        payload = _run_dry_run_catchup(since, limit, db_path)
+        _print_catchup(payload, json_output)
+        return
+
+    payload = _run_live_catchup(since, limit)
     _print_catchup(payload, json_output)
-    if overall == "failed":
+    if payload["status"] == "failed":
         raise SystemExit(1)
 
 

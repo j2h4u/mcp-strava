@@ -70,15 +70,20 @@ target-version = "py314"
 #     hierarchy (constants.py); local format/structural constants are module-level UPPER_SNAKE.
 #     Trivial structural literals (tuple/arg arity, calendar month, rounding-tier cascade) carry
 #     `# noqa: PLR2004`. Tests are exempt (fixtures build numbers for clarity, not config).
+# Size/complexity ratchets (hardening wave — all offending functions refactored to threshold):
+#   C901: McCabe complexity <= 10 (ruff/industry default). PLR0912: branches <= 12.
+#   PLR0915: statements <= 50. Functions that are irreducible flat dispatch/registration
+#   carry an annotated `# noqa: C901` / `# noqa: PLR0912` / `# noqa: PLR0915`.
+#   Thresholds are made explicit in [tool.ruff.lint.mccabe] / [tool.ruff.lint.pylint] below.
+#   PLR0913/PLR0917 (arg-count family) and the rest of PLR are a later wave — not yet selected.
 # Deliberately NOT selected: D/ANN (basedpyright owns typing; docstrings not mandated),
 #   COM/ISC001 (conflict with the formatter), S101/TRY003 (test asserts + opinionated noise),
-#   the rest of PLR beyond PLR2004 (opinionated noise; the size/complexity PLR09xx + C90 family
-#   is a separate hardening wave),
+#   PLR0913/PLR0917 arg-count family and remaining PLR (pending their own wave),
 #   S/EM/SLF/TC/ARG/PLC0415 (false positives / deliberate patterns here). Evaluated and rejected:
 #   TRY004 (the isinstance guards intentionally raise ValueError on malformed external data —
 #   a value problem, not a programmer type error) and ERA001 (only fires on the deliberate
 #   strava_api_reference.py endpoint-doc file and decorative test section banners — no dead code).
-select = ["E4", "E7", "E9", "F", "I", "B", "BLE", "UP", "C4", "PIE", "ISC", "RSE", "FLY", "RUF", "PERF", "SIM", "PTH", "DTZ", "PGH", "PLE", "LOG", "G", "FURB", "RET", "N818", "PLR2004"]
+select = ["E4", "E7", "E9", "F", "I", "B", "BLE", "UP", "C4", "PIE", "ISC", "RSE", "FLY", "RUF", "PERF", "SIM", "PTH", "DTZ", "PGH", "PLE", "LOG", "G", "FURB", "RET", "N818", "PLR2004", "C901", "PLR0912", "PLR0915"]
 # RUF001-003: ambiguous-unicode false positives on intentional Cyrillic in comments/docstrings.
 # ISC001: single-line implicit string concat — conflicts with `ruff format`.
 ignore = ["RUF001", "RUF002", "RUF003", "ISC001"]
@@ -87,7 +92,14 @@ ignore = ["RUF001", "RUF002", "RUF003", "ISC001"]
 # PERF401 (manual list-comprehension) is a runtime-perf lint; test fixtures build
 # data for clarity, not speed — the loop form is fine there.
 # DTZ: tests construct fixed naive datetimes deliberately to pin behavior.
-"tests/**" = ["PERF401", "DTZ", "PLR2004"]
+"tests/**" = ["PERF401", "DTZ", "PLR2004", "C901", "PLR0912", "PLR0915"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-branches = 12
+max-statements = 50
 
 [tool.ruff.format]
 quote-style = "double"

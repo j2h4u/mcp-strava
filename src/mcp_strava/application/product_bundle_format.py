@@ -119,6 +119,38 @@ def pick_metrics(values: dict[str, Any], metric_ids: tuple[str, ...]) -> dict[st
     }
 
 
+def _collect_section_fields(
+    *,
+    rows: list[dict[str, Any]] | None,
+    items: list[dict[str, Any]] | None,
+    metrics: dict[str, Any] | None,
+    facts: dict[str, object] | None,
+    periods: dict[str, Any] | None,
+    comparison: dict[str, object] | None,
+    season: str | None,
+    current_week: dict[str, Any] | None,
+    read_model: dict[str, Any] | None,
+    row_count: int | None,
+) -> dict[str, Any]:
+    """Collect all optional section fields into a dict, omitting None values."""
+    return {
+        key: value
+        for key, value in (
+            ("rows", rows),
+            ("items", items),
+            ("metrics", metrics),
+            ("facts", facts),
+            ("periods", periods),
+            ("comparison", comparison),
+            ("season", season),
+            ("current_week", current_week),
+            ("read_model", read_model),
+            ("row_count", row_count),
+        )
+        if value is not None
+    }
+
+
 def bundle_section(
     *,
     requested: tuple[str, ...],
@@ -133,31 +165,46 @@ def bundle_section(
     read_model: dict[str, Any] | None = None,
     row_count: int | None = None,
 ) -> dict[str, Any]:
-    section: dict[str, Any] = {}
-    if rows is not None:
-        section["rows"] = rows
-    if items is not None:
-        section["items"] = items
-    if metrics is not None:
-        section["metrics"] = metrics
-    if facts is not None:
-        section["facts"] = facts
-    if periods is not None:
-        section["periods"] = periods
-    if comparison is not None:
-        section["comparison"] = comparison
-    if season is not None:
-        section["season"] = season
-    if current_week is not None:
-        section["current_week"] = current_week
-    if read_model is not None:
-        section["read_model"] = read_model
-    if row_count is not None:
-        section["row_count"] = row_count
-
+    section = _collect_section_fields(
+        rows=rows,
+        items=items,
+        metrics=metrics,
+        facts=facts,
+        periods=periods,
+        comparison=comparison,
+        season=season,
+        current_week=current_week,
+        read_model=read_model,
+        row_count=row_count,
+    )
     included = included_metrics(requested, rows=rows, items=items, metrics=metrics, facts=facts)
     section["bundle_completeness"] = bundle_completeness(requested, included_metrics=tuple(included))
     return section
+
+
+def _included_from_rows(rows: list[dict[str, Any]], requested_set: set[str]) -> set[str]:
+    included: set[str] = set()
+    for row in rows:
+        metric_id: object = cast("object", row.get("metric_id"))
+        if metric_id in requested_set and cast("object", row.get("completeness_status")) != "unavailable":
+            included.add(str(metric_id))
+    return included
+
+
+def _included_from_metrics(metrics: dict[str, Any], requested_set: set[str]) -> set[str]:
+    metrics_typed: dict[str, object] = cast("dict[str, object]", metrics)
+    return {mid for mid, val in metrics_typed.items() if mid in requested_set and val is not None}
+
+
+def _included_from_facts(facts: dict[str, object], requested_set: set[str]) -> set[str]:
+    return {mid for mid, val in facts.items() if mid in requested_set and val is not None}
+
+
+def _included_from_items(items: list[dict[str, Any]], requested_set: set[str]) -> set[str]:
+    included: set[str] = set()
+    for item in items:
+        included.update(mid for mid in requested_set if cast("object", item.get(mid)) is not None)
+    return included
 
 
 def included_metrics(
@@ -171,22 +218,13 @@ def included_metrics(
     requested_set = set(requested)
     included: set[str] = set()
     if rows is not None:
-        for row in rows:
-            metric_id: object = cast("object", row.get("metric_id"))
-            if metric_id in requested_set and cast("object", row.get("completeness_status")) != "unavailable":
-                included.add(str(metric_id))
+        included |= _included_from_rows(rows, requested_set)
     if metrics is not None:
-        metrics_typed: dict[str, object] = cast("dict[str, object]", metrics)
-        for metric_id_m, value_obj_m in metrics_typed.items():
-            if metric_id_m in requested_set and value_obj_m is not None:
-                included.add(metric_id_m)
+        included |= _included_from_metrics(metrics, requested_set)
     if facts is not None:
-        for metric_id_f, value_f in facts.items():
-            if metric_id_f in requested_set and value_f is not None:
-                included.add(metric_id_f)
+        included |= _included_from_facts(facts, requested_set)
     if items:
-        for item in items:
-            included.update(metric_id for metric_id in requested_set if cast("object", item.get(metric_id)) is not None)
+        included |= _included_from_items(items, requested_set)
     return included
 
 

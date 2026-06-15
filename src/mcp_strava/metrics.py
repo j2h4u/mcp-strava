@@ -105,39 +105,23 @@ def calc_cardiac_drift(rows, sport_type=None):
 # ─── HR Recovery ───
 
 
-def calc_hr_recovery(rows):
-    """Pure: HR recovery over pre-fetched stream rows ({time_offset, heartrate, velocity}).
-
-    Finds ALL rest pauses in the activity and measures HR drop at each.
-
-    A "pause" = MIN_PAUSE_SEC+ consecutive seconds where velocity < VEL_STOP m/s (~0.5 km/h).
-    That's standing still, not slow walking (which is ~0.5+ m/s).
-    For each pause, measures HR drop over the pause duration.
-    Returns aggregate stats: best/worst/avg recovery, count of pauses, total rest time.
-    Returns None if no pauses found or insufficient data.
-
-    Precondition: `time_offset` values are expected to be unique. The repository
-    query returns one row per (activity_id, time_offset), but DuckDB does not
-    enforce that here, so duplicate offsets are de-duplicated below and the
-    sufficiency guard is re-checked against the de-duplicated point count to keep
-    the pause-detection math consistent (see WR-01).
-    """
-    if len(rows) < Config.Metrics.MIN_STREAM_POINTS:
-        return None
-
-    MIN_PAUSE_SEC = Config.Metrics.MIN_PAUSE_SEC
-    STOP_VEL = Config.Thresholds.VEL_STOP  # m/s (~0.5 km/h) — actual standing, not slow walking
-
-    # Build time-indexed lookup for fast access. Keying by time_offset collapses
-    # any duplicate-offset rows, so re-validate the sufficiency guard against the
-    # de-duplicated count — otherwise the pause math would run over fewer points
-    # than the len(rows) guard validated.
+def _dedup_stream_points(rows) -> tuple[dict, list] | None:
+    """De-duplicate rows by time_offset and return (by_time, sorted_times), or None if insufficient."""
     by_time = {r["time_offset"]: r for r in rows}
     all_times = sorted(by_time.keys())
     if len(all_times) < Config.Metrics.MIN_STREAM_POINTS:
         return None
+    return by_time, all_times
 
-    # Find all pause segments
+
+def _find_pause_segments(all_times: list, by_time: dict) -> list[dict]:
+    """Scan the sorted time series and return all rest pauses meeting MIN_PAUSE_SEC.
+
+    Each pause dict carries: time, duration, hr_start, hr_end, drop, rate (bpm/min).
+    """
+    MIN_PAUSE_SEC = Config.Metrics.MIN_PAUSE_SEC
+    STOP_VEL = Config.Thresholds.VEL_STOP  # m/s (~0.5 km/h) — actual standing, not slow walking
+
     pauses = []
     i = 0
     while i < len(all_times):
@@ -205,9 +189,11 @@ def calc_hr_recovery(rows):
         else:
             i += 1
 
-    if not pauses:
-        return None
+    return pauses
 
+
+def _aggregate_pauses(pauses: list[dict]):
+    """Compute HrRecovery aggregate stats from a non-empty pause list, or None if no rated pauses."""
     # Single contract: rates, best, and worst all operate on the same
     # rate-bearing subset. Today rate is always numeric, but keeping the filter
     # and the best/worst selection in sync prevents a future nullable rate from
@@ -219,10 +205,10 @@ def calc_hr_recovery(rows):
     best = max(rated, key=lambda p: p["rate"]) if rated else None
     worst = min(rated, key=lambda p: p["rate"]) if rated else None
 
-    # Median (robust to outliers from short/noisy pauses)
     n = len(rates)
     if n == 0:
         return None
+    # Median (robust to outliers from short/noisy pauses)
     median = rates[n // 2] if n % 2 else round((rates[n // 2 - 1] + rates[n // 2]) / 2, 1)
 
     return HrRecovery(
@@ -233,6 +219,40 @@ def calc_hr_recovery(rows):
         worst_rate=worst["rate"] if worst else None,
         avg_rate=round(sum(rates) / len(rates), 1) if rates else None,
     )
+
+
+def calc_hr_recovery(rows):
+    """Pure: HR recovery over pre-fetched stream rows ({time_offset, heartrate, velocity}).
+
+    Finds ALL rest pauses in the activity and measures HR drop at each.
+
+    A "pause" = MIN_PAUSE_SEC+ consecutive seconds where velocity < VEL_STOP m/s (~0.5 km/h).
+    That's standing still, not slow walking (which is ~0.5+ m/s).
+    For each pause, measures HR drop over the pause duration.
+    Returns aggregate stats: best/worst/avg recovery, count of pauses, total rest time.
+    Returns None if no pauses found or insufficient data.
+
+    Precondition: `time_offset` values are expected to be unique. The repository
+    query returns one row per (activity_id, time_offset), but DuckDB does not
+    enforce that here, so duplicate offsets are de-duplicated below and the
+    sufficiency guard is re-checked against the de-duplicated point count to keep
+    the pause-detection math consistent (see WR-01).
+    """
+    if len(rows) < Config.Metrics.MIN_STREAM_POINTS:
+        return None
+
+    # Build time-indexed lookup; keying by time_offset collapses duplicate-offset
+    # rows — re-validate sufficiency against the de-duplicated count (see WR-01).
+    deduped = _dedup_stream_points(rows)
+    if deduped is None:
+        return None
+    by_time, all_times = deduped
+
+    pauses = _find_pause_segments(all_times, by_time)
+    if not pauses:
+        return None
+
+    return _aggregate_pauses(pauses)
 
 
 # ─── Vertical Speed ───

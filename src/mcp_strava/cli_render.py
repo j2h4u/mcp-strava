@@ -111,6 +111,39 @@ def _render_freshness(data):
         print("- no additional freshness data")
 
 
+def _render_section_metrics(section: dict) -> None:
+    metrics = section.get("metrics") or section.get("facts")
+    if isinstance(metrics, dict) and metrics:
+        for key, value in list(metrics.items())[:8]:
+            print(f"- {key}: {value}")
+
+
+def _render_section_rows(section: dict) -> None:
+    rows = section.get("rows")
+    if isinstance(rows, list) and rows:
+        for row in rows[:5]:
+            if isinstance(row, dict):
+                print(f"- {row.get('metric_id')}: {row.get('value', row.get('completeness_status'))}")
+
+
+def _render_section_items(section: dict) -> None:
+    items = section.get("items")
+    if isinstance(items, list) and items:
+        for item in items[:5]:
+            if isinstance(item, dict):
+                label = item.get("activity_name") or item.get("activity_id") or item.get("gear_name") or item
+                print(f"- {label}")
+
+
+def _render_section_comparison(section: dict) -> None:
+    comparison = section.get("comparison")
+    if isinstance(comparison, dict):
+        global_metrics = (comparison.get("global") or {}).get("metrics") or {}
+        for metric_id, payload in list(global_metrics.items())[:5]:
+            if isinstance(payload, dict):
+                print(f"- {metric_id}: delta={payload.get('delta')} trend={payload.get('trend_direction')}")
+
+
 def _render_bundle_sections(data):
     print(f"Bundle: {data.get('bundle_id')}")
     if data.get("as_of_day"):
@@ -125,24 +158,7 @@ def _render_bundle_sections(data):
         if not isinstance(section, dict):
             print(f"- {section}")
             continue
-        metrics = section.get("metrics") or section.get("facts")
-        if isinstance(metrics, dict) and metrics:
-            for key, value in list(metrics.items())[:8]:
-                print(f"- {key}: {value}")
-        rows = section.get("rows")
-        if isinstance(rows, list) and rows:
-            for row in rows[:5]:
-                if isinstance(row, dict):
-                    print(f"- {row.get('metric_id')}: {row.get('value', row.get('completeness_status'))}")
-        items = section.get("items")
-        if isinstance(items, list) and items:
-            for item in items[:5]:
-                if isinstance(item, dict):
-                    label = item.get("activity_name") or item.get("activity_id") or item.get("gear_name") or item
-                    print(f"- {label}")
-        comparison = section.get("comparison")
-        if isinstance(comparison, dict):
-            global_metrics = (comparison.get("global") or {}).get("metrics") or {}
-            for metric_id, payload in list(global_metrics.items())[:5]:
-                if isinstance(payload, dict):
-                    print(f"- {metric_id}: delta={payload.get('delta')} trend={payload.get('trend_direction')}")
+        _render_section_metrics(section)
+        _render_section_rows(section)
+        _render_section_items(section)
+        _render_section_comparison(section)

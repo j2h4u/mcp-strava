@@ -54,7 +54,7 @@ def _validate_fact_column_sql_metadata(definition: FactColumnDefinition) -> None
         )
 
 
-def _validate_fact_column_registry() -> None:
+def _validate_registry_table_set() -> None:
     unknown_tables = set(MATERIALIZED_FACT_COLUMN_REGISTRY) - set(MATERIALIZED_FACT_TABLES)
     if unknown_tables:
         raise ValueError(f"Unknown materialized fact tables: {sorted(unknown_tables)}")
@@ -65,25 +65,35 @@ def _validate_fact_column_registry() -> None:
     if unknown_metadata_tables:
         raise ValueError(f"Unknown materialized fact SQL metadata tables: {sorted(unknown_metadata_tables)}")
 
-    for table_name, columns in MATERIALIZED_FACT_COLUMN_REGISTRY.items():
-        metadata_columns = set(_MATERIALIZED_FACT_COLUMN_SQL_METADATA.get(table_name, {}))
-        unknown_metadata_columns = metadata_columns - set(columns)
-        if unknown_metadata_columns:
-            raise ValueError(f"{table_name} has SQL metadata for unknown columns: {sorted(unknown_metadata_columns)}")
-        for column_name, definition in columns.items():
-            if definition.table_name != table_name or definition.column_name != column_name:
-                raise ValueError(f"Fact column key mismatch: {table_name}.{column_name}")
-            _validate_fact_column_sql_metadata(definition)
-            unknown_metric_ids = set(definition.metric_ids) - set(METRIC_REGISTRY)
-            if unknown_metric_ids:
-                raise ValueError(f"{table_name}.{column_name} references unknown metrics: {sorted(unknown_metric_ids)}")
 
+def _validate_table_columns(table_name: str, columns: dict) -> None:
+    metadata_columns = set(_MATERIALIZED_FACT_COLUMN_SQL_METADATA.get(table_name, {}))
+    unknown_metadata_columns = metadata_columns - set(columns)
+    if unknown_metadata_columns:
+        raise ValueError(f"{table_name} has SQL metadata for unknown columns: {sorted(unknown_metadata_columns)}")
+    for column_name, definition in columns.items():
+        if definition.table_name != table_name or definition.column_name != column_name:
+            raise ValueError(f"Fact column key mismatch: {table_name}.{column_name}")
+        _validate_fact_column_sql_metadata(definition)
+        unknown_metric_ids = set(definition.metric_ids) - set(METRIC_REGISTRY)
+        if unknown_metric_ids:
+            raise ValueError(f"{table_name}.{column_name} references unknown metrics: {sorted(unknown_metric_ids)}")
+
+
+def _validate_aggregate_projection_columns() -> None:
     for column_name, definition in AGGREGATE_QUERY_PROJECTION_COLUMNS.items():
         if definition.column_name != column_name:
             raise ValueError(f"Aggregate projection key mismatch: {column_name}")
         unknown_metric_ids = set(definition.metric_ids) - set(METRIC_REGISTRY)
         if unknown_metric_ids:
             raise ValueError(f"{column_name} references unknown metrics: {sorted(unknown_metric_ids)}")
+
+
+def _validate_fact_column_registry() -> None:
+    _validate_registry_table_set()
+    for table_name, columns in MATERIALIZED_FACT_COLUMN_REGISTRY.items():
+        _validate_table_columns(table_name, columns)
+    _validate_aggregate_projection_columns()
 
 
 _validate_fact_column_registry()

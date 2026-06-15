@@ -401,6 +401,51 @@ def test_fetch_rate_limit_exhaustion_carries_rate_snapshot_detail():
     assert exc.detail["limit_daily"] == 2000
 
 
+def test_fetch_429_then_401_exhaustion_preserves_rate_limited_reason():
+    """Regression: 429,429,401 sequence must raise reason='rate_limited', not 'network_unstable'.
+
+    The extracted _handle_http_error previously unconditionally returned 'network_unstable'
+    on the UNAUTHORIZED path, overwriting a prior 'rate_limited' set by the 429 branches.
+    The fix passes last_reason through and preserves it on UNAUTHORIZED.
+    """
+    from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport, StravaUnavailableError
+
+    class TokenProvider:
+        def __init__(self):
+            self._refreshed = False
+
+        def access_token(self):
+            return "access-secret"
+
+        def refresh(self):
+            # Allow one refresh so the 401 doesn't short-circuit via token_unavailable.
+            if self._refreshed:
+                raise StravaUnavailableError("token_unavailable")
+            self._refreshed = True
+
+    # 429, 429, 401 — exhausts MAX_RETRIES=3 attempts.
+    http = FakeStravaHttp(
+        [
+            urllib.error.HTTPError("url", 429, "Too Many Requests", {}, None),
+            urllib.error.HTTPError("url", 429, "Too Many Requests", {}, None),
+            urllib.error.HTTPError("url", 401, "Unauthorized", {}, None),
+        ]
+    )
+
+    with pytest.raises(StravaUnavailableError) as exc_info:
+        StravaTransport(
+            TokenProvider(),
+            RateLimitPolicy(),
+            clock=FakeClock(),
+            sleeper=FakeSleeper(),
+            http=http,
+        ).fetch("/athlete")
+
+    exc = exc_info.value
+    assert exc.reason == "rate_limited", f"expected 'rate_limited', got {exc.reason!r}"
+    assert exc.detail is not None, "detail must be non-None for rate_limited exhaustion"
+
+
 def test_file_lock_creates_sidecar_with_owner_only_permissions(tmp_path):
     """The advisory lock sidecar is created 0600, not umask-inherited 0644.
 

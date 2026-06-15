@@ -26,6 +26,40 @@ class StreamChannelBackfillCandidate(TypedDict):
     metadata_missing: bool
 
 
+def _channel_is_missing(repo: StreamCoverageRepository, activity_id: int, channel: str) -> tuple[bool, bool]:
+    """Return (is_missing, metadata_missing) for a single channel of an activity.
+
+    metadata_missing is True only when no stream_channels row exists at all.
+    """
+    meta = repo._fetchone(
+        "SELECT status FROM stream_channels WHERE activity_id=? AND channel_key=?",
+        [activity_id, channel],
+    )
+    if meta is None:
+        return True, True
+    status = meta["status"]
+    if status in {"missing", "error"}:
+        return True, False
+    if status == "unavailable":
+        return False, False
+    if status != "available":
+        return True, False
+    # "available" — verify the value actually landed in the stream for optional channels
+    if channel in {"distance", "watts", "temp"}:
+        exists_row = repo._fetchone(
+            """
+            SELECT 1 FROM streams
+            WHERE activity_id = ?
+              AND json_extract_string(values_json, '$.' || ?) IS NOT NULL
+            LIMIT 1
+            """,
+            [activity_id, channel],
+        )
+        if exists_row is None:
+            return True, False
+    return False, False
+
+
 def activities_missing_stream_channels(
     repo: StreamCoverageRepository,
     *,
@@ -52,38 +86,11 @@ def activities_missing_stream_channels(
         missing_channels: list[str] = []
         metadata_missing = False
         for channel in channel_list:
-            meta = repo._fetchone(
-                """
-                SELECT status FROM stream_channels
-                WHERE activity_id=? AND channel_key=?
-                """,
-                [activity_id, channel],
-            )
-            if meta is None:
+            ch_missing, ch_meta_missing = _channel_is_missing(repo, activity_id, channel)
+            if ch_meta_missing:
                 metadata_missing = True
+            if ch_missing:
                 missing_channels.append(channel)
-                continue
-            status = meta["status"]
-            if status in {"missing", "error"}:
-                missing_channels.append(channel)
-                continue
-            if status == "unavailable":
-                continue
-            if status != "available":
-                missing_channels.append(channel)
-                continue
-            if channel in {"distance", "watts", "temp"}:
-                exists_row = repo._fetchone(
-                    """
-                    SELECT 1 FROM streams
-                    WHERE activity_id = ?
-                      AND json_extract_string(values_json, '$.' || ?) IS NOT NULL
-                    LIMIT 1
-                    """,
-                    [activity_id, channel],
-                )
-                if exists_row is None:
-                    missing_channels.append(channel)
         if missing_channels or metadata_missing:
             results.append(
                 {

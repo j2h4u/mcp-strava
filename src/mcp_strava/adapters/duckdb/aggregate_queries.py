@@ -48,6 +48,16 @@ def validate_aggregate_request(request: AggregateRequest) -> tuple[MetricDefinit
         raise ValueError(f"Unsupported aggregate scope: {request.scope}")
     if request.sport_filter is not None and request.sport_filter not in ALL_SPORTS:
         raise ValueError(f"Unsupported sport filter: {request.sport_filter}")
+    _validate_rolling_window_params(request)
+    _validate_day_range(request)
+    metric_ids = _metric_ids_for_request(request)
+    definitions = tuple(_metric_definition(metric_id) for metric_id in metric_ids)
+    for metric in definitions:
+        _validate_metric_for_request(metric, request)
+    return definitions
+
+
+def _validate_rolling_window_params(request: AggregateRequest) -> None:
     if request.window_days is not None:
         if request.window_days not in SUPPORTED_ROLLING_WINDOW_DAYS:
             raise ValueError(f"Unsupported rolling window days: {request.window_days}")
@@ -57,25 +67,25 @@ def validate_aggregate_request(request: AggregateRequest) -> tuple[MetricDefinit
     elif request.as_of_day is not None:
         raise ValueError("window_days is required when as_of_day is supplied")
 
+
+def _validate_day_range(request: AggregateRequest) -> None:
     if request.start_day is not None:
         _parse_day(request.start_day, "start_day")
     end_day = _parse_day(request.end_day_exclusive, "end_day_exclusive")
     if request.start_day is not None and _parse_day(request.start_day, "start_day") >= end_day:
         raise ValueError("start_day must be before end_day_exclusive")
 
-    metric_ids = _metric_ids_for_request(request)
-    definitions = tuple(_metric_definition(metric_id) for metric_id in metric_ids)
-    for metric in definitions:
-        _validate_metric_scope(metric, request.scope)
-        _validate_metric_rolling_window(metric, request)
-        if request.bucket not in set(metric.supported_buckets):
-            raise ValueError(f"Metric {metric.metric_id} does not support bucket {request.bucket}")
-        if metric.aggregate_source not in SOURCE_VIEWS:
-            raise ValueError(f"Metric {metric.metric_id} has unsupported aggregate source")
-        _value_expression(metric)
-        _sample_expression(metric)
-        _denominator_expression(metric)
-    return definitions
+
+def _validate_metric_for_request(metric: MetricDefinition, request: AggregateRequest) -> None:
+    _validate_metric_scope(metric, request.scope)
+    _validate_metric_rolling_window(metric, request)
+    if request.bucket not in set(metric.supported_buckets):
+        raise ValueError(f"Metric {metric.metric_id} does not support bucket {request.bucket}")
+    if metric.aggregate_source not in SOURCE_VIEWS:
+        raise ValueError(f"Metric {metric.metric_id} has unsupported aggregate source")
+    _value_expression(metric)
+    _sample_expression(metric)
+    _denominator_expression(metric)
 
 
 def build_aggregate_query(

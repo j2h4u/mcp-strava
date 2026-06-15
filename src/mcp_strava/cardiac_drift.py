@@ -208,7 +208,168 @@ def _filter_hr_outliers(heartrate, cluster_labels, n_clusters, outlier_iqr_mult=
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# MAIN ALGORITHM
+# MAIN ALGORITHM — private stage helpers
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _subsample_streams(hr, vel, time_offset, max_points):
+    """Subsample hr/vel/time_offset evenly to at most max_points entries.
+
+    Returns (hr, vel, time_offset, n, subsample_step).
+    """
+    n = len(hr)
+    subsample_step = 1
+    if max_points and n > max_points:
+        subsample_step = max(n // max_points, 1)
+        idxs = list(range(0, n, subsample_step))[:max_points]
+        hr = [hr[i] for i in idxs]
+        vel = [vel[i] for i in idxs]
+        time_offset = [time_offset[i] for i in idxs]
+        n = len(hr)
+    return hr, vel, time_offset, n, subsample_step
+
+
+def _cluster_velocity(vel, n, max_k, gvf_threshold, min_cluster_pts):
+    """Run auto-Jenks on velocity and return per-point cluster labels.
+
+    Returns (cluster_labels, k_opt, gvf, k_results).
+    """
+    vel_with_idx = [(vel[i], i) for i in range(n)]
+    vel_with_idx.sort(key=lambda x: x[0])
+    sorted_idx = [item[1] for item in vel_with_idx]
+    vel_sorted = [item[0] for item in vel_with_idx]
+
+    boundaries, k_opt, gvf, k_results = auto_jenks(
+        vel_sorted,
+        max_k=max_k,
+        gvf_threshold=gvf_threshold,
+        gvf_gain_min=0.03,
+        min_cluster_size=min_cluster_pts,
+    )
+
+    cluster_labels = [0] * n
+    for c_idx in range(k_opt):
+        start = boundaries[c_idx]
+        end = boundaries[c_idx + 1]
+        for idx in sorted_idx[start:end]:
+            cluster_labels[idx] = c_idx
+
+    return cluster_labels, k_opt, gvf, k_results
+
+
+def _resolve_segments(segs):
+    """Ensure at least 2 usable segments: split a single run in half if needed.
+
+    Returns the (possibly modified) segment list, or None when < MIN_SEGMENTS.
+    """
+    if len(segs) == 0:
+        return None
+    if len(segs) == 1:
+        s, e, dur = segs[0]
+        mid = s + dur // 2
+        segs = [(s, mid, dur // 2), (mid, e, dur - dur // 2)]
+    if len(segs) < Config.Drift.MIN_SEGMENTS:
+        return None
+    return segs
+
+
+def _compute_cluster_drift(c, segs, hr_filtered, vel, cluster_labels, n, subsample_step):
+    """Compute drift for a single velocity cluster.
+
+    Returns (drift_pct, weight, detail_dict) or None if quality gates fail.
+    """
+    mid = max(1, len(segs) // 2)
+    early_segs = segs[:mid]
+    late_segs = segs[mid:]
+
+    early_indices = [i for s, e, _ in early_segs for i in range(s, e)]
+    late_indices = [i for s, e, _ in late_segs for i in range(s, e)]
+
+    early_hr_vals = sorted(hr_filtered[i] for i in early_indices)
+    late_hr_vals = sorted(hr_filtered[i] for i in late_indices)
+
+    if len(early_hr_vals) < Config.Drift.MIN_HALF_HR_POINTS or len(late_hr_vals) < Config.Drift.MIN_HALF_HR_POINTS:
+        return None
+
+    cluster_duration_s = sum(e - s for s, e, _ in segs) * subsample_step
+    if cluster_duration_s < Config.Drift.MIN_CLUSTER_DURATION_S:
+        return None
+
+    early_hr = _median(early_hr_vals)
+    late_hr = _median(late_hr_vals)
+
+    if early_hr <= 0:
+        return None
+
+    drift_pct = (late_hr - early_hr) / early_hr * 100.0
+    vel_mask = [cluster_labels[i] == c for i in range(n)]
+    cluster_vel = [vel[i] for i, m in enumerate(vel_mask) if m]
+    weight = sum(vel_mask)
+
+    detail = {
+        "cluster_id": c,
+        "velocity_min": round(min(cluster_vel), 3),
+        "velocity_max": round(max(cluster_vel), 3),
+        "velocity_median": round(_median(sorted(cluster_vel)), 3),
+        "n_segments": len(segs),
+        "total_duration_s": weight,
+        "early_hr": round(early_hr, 1),
+        "late_hr": round(late_hr, 1),
+        "drift_pct": round(drift_pct, 2),
+    }
+    return drift_pct, weight, detail
+
+
+def _aggregate_drift(cluster_drifts, drift_threshold_pct):
+    """Weighted-average drift and consistency from per-cluster (drift, weight) pairs.
+
+    Returns (drift_weighted_pct, drift_consistency, is_significant).
+    """
+    drifts = [d for d, _ in cluster_drifts]
+    weights = [w for _, w in cluster_drifts]
+    total_w = sum(weights)
+    drift_weighted_pct = sum(d * w for d, w in zip(drifts, weights, strict=False)) / total_w if total_w > 0 else 0
+    drift_consistency = sum(1 for d in drifts if d > 0) / len(drifts)
+    return drift_weighted_pct, drift_consistency
+
+
+def _quality_label(segments_by_cluster, subsample_step):
+    """Derive quality label from total clustered duration."""
+    total_dur_s = sum(sum(e - s for s, e, _ in segs) for segs in segments_by_cluster) * subsample_step
+    if total_dur_s >= Config.Drift.QUALITY_GOOD_S:
+        return "good"
+    if total_dur_s >= Config.Drift.QUALITY_FAIR_S:
+        return "fair"
+    return "low"
+
+
+def _severity_and_significance(drift_weighted_pct, drift_consistency, drift_threshold_pct):
+    """Classify severity and significance from weighted drift.
+
+    Negative drift = warmup/HR-settling (not fatigue) → always stable/not-significant.
+    Returns (severity, is_significant).
+    """
+    if drift_weighted_pct <= 0:
+        return "stable", False
+
+    ad = drift_weighted_pct
+    if ad < Config.Drift.SEVERITY_STABLE_MAX:
+        severity = "stable"
+    elif ad < Config.Drift.SEVERITY_BORDERLINE_MAX:
+        severity = "borderline"
+    elif ad < Config.Drift.SEVERITY_MODERATE_MAX:
+        severity = "moderate"
+    elif ad < Config.Drift.SEVERITY_SIGNIFICANT_MAX:
+        severity = "significant"
+    else:
+        severity = "severe"
+
+    is_significant = (ad >= drift_threshold_pct) and (drift_consistency >= Config.Drift.MIN_DRIFT_CONSISTENCY)
+    return severity, is_significant
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PUBLIC ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════
 
 
@@ -236,7 +397,6 @@ def cardiac_drift(
     Returns:
         dict with drift_weighted_pct, is_significant, severity, etc.
     """
-    # Convert to lists
     hr = list(heartrate)
     vel = list(velocity)
     n = len(hr)
@@ -258,113 +418,35 @@ def cardiac_drift(
     if time_offset is None:
         time_offset = list(range(n))
 
-    # Subsample evenly if too many points (keep Jenks O(n²) fast)
-    subsample_step = 1
-    if max_points and n > max_points:
-        subsample_step = max(n // max_points, 1)
-        idxs = list(range(0, n, subsample_step))[:max_points]
-        hr = [hr[i] for i in idxs]
-        vel = [vel[i] for i in idxs]
-        time_offset = [time_offset[i] for i in idxs]
-        n = len(hr)
+    hr, vel, time_offset, n, subsample_step = _subsample_streams(hr, vel, time_offset, max_points)
 
     # Scale duration thresholds to subsampled point spacing
     # (min_segment_duration is in seconds, but extract_contiguous_runs counts points)
     min_dur_pts = max(2, min_segment_duration // subsample_step)
     min_cluster_pts = max(10, min_cluster_size // subsample_step)
 
-    # ── Step 1: Cluster velocity with auto-Jenks ──
-    # Build sorted index
-    vel_with_idx = [(vel[i], i) for i in range(n)]
-    vel_with_idx.sort(key=lambda x: x[0])
-    sorted_idx = [item[1] for item in vel_with_idx]
-    vel_sorted = [item[0] for item in vel_with_idx]
+    cluster_labels, k_opt, gvf, k_results = _cluster_velocity(vel, n, max_k, gvf_threshold, min_cluster_pts)
 
-    boundaries, k_opt, gvf, k_results = auto_jenks(
-        vel_sorted, max_k=max_k, gvf_threshold=gvf_threshold, gvf_gain_min=0.03, min_cluster_size=min_cluster_pts
-    )
-
-    # Map sorted indices back to original timeline
-    cluster_labels = [0] * n
-    for c_idx in range(k_opt):
-        start = boundaries[c_idx]
-        end = boundaries[c_idx + 1]
-        for idx in sorted_idx[start:end]:
-            cluster_labels[idx] = c_idx
-
-    # ── Step 2: Filter HR outliers ──
     hr_filtered = _filter_hr_outliers(hr, cluster_labels, k_opt, outlier_iqr_mult)
 
-    # ── Step 3: Temporal segments per cluster ──
     segments_by_cluster = []
     for c in range(k_opt):
         mask = [lbl == c for lbl in cluster_labels]
         segs = extract_contiguous_runs(mask, min_duration=min_dur_pts)
         segments_by_cluster.append(segs)
 
-    # ── Step 4: Drift per cluster ──
     cluster_drifts = []
     cluster_details = []
-
     for c in range(k_opt):
-        segs = segments_by_cluster[c]
-        if len(segs) == 0:
+        segs = _resolve_segments(segments_by_cluster[c])
+        if segs is None:
             continue
-
-        # Fallback: if only 1 contiguous segment, split it in half
-        if len(segs) == 1:
-            s, e, dur = segs[0]
-            mid = s + dur // 2
-            segs = [(s, mid, dur // 2), (mid, e, dur - dur // 2)]
-
-        if len(segs) < Config.Drift.MIN_SEGMENTS:
+        result = _compute_cluster_drift(c, segs, hr_filtered, vel, cluster_labels, n, subsample_step)
+        if result is None:
             continue
-
-        mid = max(1, len(segs) // 2)
-        early_segs = segs[:mid]
-        late_segs = segs[mid:]
-
-        early_indices = [i for s, e, _ in early_segs for i in range(s, e)]
-        late_indices = [i for s, e, _ in late_segs for i in range(s, e)]
-
-        early_hr_vals = sorted(hr_filtered[i] for i in early_indices)
-        late_hr_vals = sorted(hr_filtered[i] for i in late_indices)
-
-        # Quality gate: need enough points in each half for reliable median
-        if len(early_hr_vals) < Config.Drift.MIN_HALF_HR_POINTS or len(late_hr_vals) < Config.Drift.MIN_HALF_HR_POINTS:
-            continue
-
-        # Quality gate: minimum effective duration per cluster
-        # (duration is in subsampled points, convert to original seconds)
-        cluster_duration_s = sum(e - s for s, e, _ in segs) * subsample_step
-        if cluster_duration_s < Config.Drift.MIN_CLUSTER_DURATION_S:  # at least 2 minutes of data
-            continue
-
-        early_hr = _median(early_hr_vals)
-        late_hr = _median(late_hr_vals)
-
-        if early_hr <= 0:
-            continue
-
-        drift_pct = (late_hr - early_hr) / early_hr * 100.0
-        vel_mask = [cluster_labels[i] == c for i in range(n)]
-        cluster_vel = [vel[i] for i, m in enumerate(vel_mask) if m]
-        weight = sum(vel_mask)
-
+        drift_pct, weight, detail = result
         cluster_drifts.append((drift_pct, weight))
-        cluster_details.append(
-            {
-                "cluster_id": c,
-                "velocity_min": round(min(cluster_vel), 3),
-                "velocity_max": round(max(cluster_vel), 3),
-                "velocity_median": round(_median(sorted(cluster_vel)), 3),
-                "n_segments": len(segs),
-                "total_duration_s": weight,
-                "early_hr": round(early_hr, 1),
-                "late_hr": round(late_hr, 1),
-                "drift_pct": round(drift_pct, 2),
-            }
-        )
+        cluster_details.append(detail)
 
     if len(cluster_drifts) == 0:
         return {
@@ -380,41 +462,9 @@ def cardiac_drift(
             "diagnostic": {"k_results": k_results},
         }
 
-    # ── Step 5: Aggregate ──
-    drifts = [d for d, _ in cluster_drifts]
-    weights = [w for _, w in cluster_drifts]
-    total_w = sum(weights)
-    drift_weighted_pct = sum(d * w for d, w in zip(drifts, weights, strict=False)) / total_w if total_w > 0 else 0
-    drift_consistency = sum(1 for d in drifts if d > 0) / len(drifts)
-
-    # ── Step 6: Build result ──
-    # Quality level: based on total effective duration across all valid clusters
-    total_dur_s = sum(sum(e - s for s, e, _ in segs) for segs in segments_by_cluster) * subsample_step
-    if total_dur_s >= Config.Drift.QUALITY_GOOD_S:
-        quality = "good"  # ≥10 min of clustered data
-    elif total_dur_s >= Config.Drift.QUALITY_FAIR_S:
-        quality = "fair"  # ≥5 min
-    else:
-        quality = "low"  # <5 min — too noisy
-
-    # Severity: only positive drift matters for fatigue detection.
-    # Negative drift = warmup effect (HR settles from cold start to steady state).
-    if drift_weighted_pct <= 0:
-        severity = "stable"
-        is_significant = False
-    else:
-        ad = drift_weighted_pct
-        if ad < Config.Drift.SEVERITY_STABLE_MAX:
-            severity = "stable"
-        elif ad < Config.Drift.SEVERITY_BORDERLINE_MAX:
-            severity = "borderline"
-        elif ad < Config.Drift.SEVERITY_MODERATE_MAX:
-            severity = "moderate"
-        elif ad < Config.Drift.SEVERITY_SIGNIFICANT_MAX:
-            severity = "significant"
-        else:
-            severity = "severe"
-        is_significant = (ad >= drift_threshold_pct) and (drift_consistency >= Config.Drift.MIN_DRIFT_CONSISTENCY)
+    drift_weighted_pct, drift_consistency = _aggregate_drift(cluster_drifts, drift_threshold_pct)
+    quality = _quality_label(segments_by_cluster, subsample_step)
+    severity, is_significant = _severity_and_significance(drift_weighted_pct, drift_consistency, drift_threshold_pct)
 
     return {
         "drift_weighted_pct": round(drift_weighted_pct, 2),

@@ -51,33 +51,9 @@ class StravaTransport:
                 rate_info = self.policy.update_from_headers(getattr(response, "headers", {}) or {})
                 return StravaResponse(data=data, rate_info=rate_info, status=status)
             except urllib.error.HTTPError as exc:
-                if exc.code == HTTPStatus.UNAUTHORIZED:
-                    if refreshed:
-                        raise StravaUnavailableError("token_unavailable") from exc
-                    try:
-                        self.token_provider.refresh()
-                    except StravaUnavailableError as token_exc:
-                        if token_exc.reason == "token_unavailable":
-                            raise
-                        raise
-                    refreshed = True
-                    attempts += 1
-                    continue
-                if exc.code == HTTPStatus.TOO_MANY_REQUESTS:
-                    last_reason = "rate_limited"
-                    self.policy.mark_rate_limited()
-                    attempts += 1
-                    if attempts >= Config.Transport.MAX_RETRIES:
-                        break
-                    self.sleeper.sleep(self._retry_after_seconds(exc))
-                    continue
-                if exc.code == HTTPStatus.NOT_FOUND:
-                    raise
-                last_reason = "network_unstable"
-                attempts += 1
+                attempts, last_reason, refreshed = self._handle_http_error(exc, attempts, last_reason, refreshed)
                 if attempts >= Config.Transport.MAX_RETRIES:
                     break
-                self.sleeper.sleep([1, 5, 30][attempts - 1])
             except TimeoutError, urllib.error.URLError, OSError:
                 last_reason = "network_unstable"
                 attempts += 1
@@ -90,6 +66,34 @@ class StravaTransport:
         # the operator log shows the usage/limit at the moment of exhaustion.
         detail = self.policy.rate_info.as_dict() if last_reason == "rate_limited" else None
         raise StravaUnavailableError(last_reason, detail=detail)
+
+    def _handle_http_error(
+        self, exc: urllib.error.HTTPError, attempts: int, last_reason: str, refreshed: bool
+    ) -> tuple[int, str, bool]:
+        """Handle one HTTPError; return updated (attempts, last_reason, refreshed).
+
+        Raises immediately for UNAUTHORIZED (after one token refresh attempt) and
+        NOT_FOUND. For TOO_MANY_REQUESTS and other HTTP errors, increments attempts
+        and sleeps before signalling the caller to retry.
+        """
+        if exc.code == HTTPStatus.UNAUTHORIZED:
+            if refreshed:
+                raise StravaUnavailableError("token_unavailable") from exc
+            self.token_provider.refresh()  # propagates StravaUnavailableError on failure
+            # Preserve prior last_reason — a 401 after e.g. 429s must not overwrite "rate_limited".
+            return attempts + 1, last_reason, True
+        if exc.code == HTTPStatus.TOO_MANY_REQUESTS:
+            self.policy.mark_rate_limited()
+            new_attempts = attempts + 1
+            if new_attempts < Config.Transport.MAX_RETRIES:
+                self.sleeper.sleep(self._retry_after_seconds(exc))
+            return new_attempts, "rate_limited", refreshed
+        if exc.code == HTTPStatus.NOT_FOUND:
+            raise exc
+        new_attempts = attempts + 1
+        if new_attempts < Config.Transport.MAX_RETRIES:
+            self.sleeper.sleep([1, 5, 30][new_attempts - 1])
+        return new_attempts, "network_unstable", refreshed
 
     def _build_request(self, path: str, token: str) -> urllib.request.Request:
         url = f"{self.base_url}/{path.lstrip('/')}"

@@ -256,7 +256,7 @@ def build_transport_security(settings: Settings) -> TransportSecuritySettings:
     )
 
 
-def build_mcp_server(settings: Settings | None = None) -> FastMCP:
+def build_mcp_server(settings: Settings | None = None) -> FastMCP:  # noqa: C901 — flat sequence of MCP resource/prompt/tool registrations; no reducible complexity
     resolved_settings = settings or get_settings()
     validate_http_settings(resolved_settings)
     server = FastMCP(

@@ -203,6 +203,59 @@ def _activity_fact(
     }
 
 
+def _build_zone_bounds_maps(
+    dirty_rows,
+    scalars,
+    hr_max_by_day,
+    athlete,
+) -> tuple[dict[int, list[int]], dict[int, int | None]]:
+    """Pre-compute HR zone bounds and hr_max_used for each activity in the batch."""
+    bounds_by_activity_id: dict[int, list[int]] = {}
+    hr_max_used_by_activity_id: dict[int, int | None] = {}
+    for dirty_row in dirty_rows:
+        activity_id = int(dirty_row["activity_id"])
+        activity_day = str(dirty_row["activity_day"])
+        scalar = scalars[activity_id]
+        hr_max_observed = hr_max_by_day.get(activity_day)
+        if hr_max_observed is None or scalar.hr_count == 0:
+            hr_max_used_by_activity_id[activity_id] = None
+            continue
+        bounds = get_zone_model(athlete.hr_zone_model).zone_bounds(hr_max=int(hr_max_observed), hr_rest=athlete.hr_rest)
+        bounds_by_activity_id[activity_id] = bounds
+        hr_max_used_by_activity_id[activity_id] = int(hr_max_observed)
+    return bounds_by_activity_id, hr_max_used_by_activity_id
+
+
+def _unpack_zone_trimp(zones) -> tuple[int, int, int, int, int, float]:
+    """Return (zone1..5 seconds, trimp) — zeros when no zone data available."""
+    if zones is None:
+        return 0, 0, 0, 0, 0, 0.0
+    return (
+        zones.zone1_seconds,
+        zones.zone2_seconds,
+        zones.zone3_seconds,
+        zones.zone4_seconds,
+        zones.zone5_seconds,
+        zones.trimp,
+    )
+
+
+def _completeness_status(activity, scalar) -> tuple[str, list[str]]:
+    """Derive completeness label and missing-reason list from activity + scalar."""
+    missing: list[str] = []
+    if activity.detail_json is None:
+        missing.append("missing_details")
+    if scalar.stream_count == 0:
+        missing.append("missing_streams")
+    if scalar.hr_count == 0:
+        missing.append("missing_hr")
+    if "missing_streams" in missing:
+        return "unknown", missing
+    if missing:
+        return "partial", missing
+    return "complete", missing
+
+
 def _activity_facts_batched(
     repo: DuckDBRepository,
     dirty_rows,
@@ -223,20 +276,9 @@ def _activity_facts_batched(
     scalars = activity_stream_scalars_for_materialization(repo, activity_ids, Config.Thresholds.VEL_MOVING)
     hr_max_by_day = max_heartrate_to_dates(repo, (str(row["activity_day"]) for row in dirty_rows))
 
-    bounds_by_activity_id: dict[int, list[int]] = {}
-    hr_max_used_by_activity_id: dict[int, int | None] = {}
-    for dirty_row in dirty_rows:
-        activity_id = int(dirty_row["activity_id"])
-        activity_day = str(dirty_row["activity_day"])
-        scalar = scalars[activity_id]
-        hr_max_observed = hr_max_by_day.get(activity_day)
-        if hr_max_observed is None or scalar.hr_count == 0:
-            hr_max_used_by_activity_id[activity_id] = None
-            continue
-        bounds = get_zone_model(athlete.hr_zone_model).zone_bounds(hr_max=int(hr_max_observed), hr_rest=athlete.hr_rest)
-        bounds_by_activity_id[activity_id] = bounds
-        hr_max_used_by_activity_id[activity_id] = int(hr_max_observed)
-
+    bounds_by_activity_id, hr_max_used_by_activity_id = _build_zone_bounds_maps(
+        dirty_rows, scalars, hr_max_by_day, athlete
+    )
     zone_trimp_by_activity_id = activity_zone_trimp_for_bounds(repo, bounds_by_activity_id)
     hr_rows_by_activity_id = stream_hr_velocity_time_rows_for_activities(repo, activity_ids)
     alt_rows_by_activity_id = stream_altitude_rows_for_activities(repo, activity_ids)
@@ -253,40 +295,15 @@ def _activity_facts_batched(
 
         activity = source.activity
         scalar = scalars[activity_id]
-        zones = zone_trimp_by_activity_id.get(activity_id)
-        if zones is None:
-            zone1 = zone2 = zone3 = zone4 = zone5 = 0
-            trimp_val = 0.0
-        else:
-            zone1 = zones.zone1_seconds
-            zone2 = zones.zone2_seconds
-            zone3 = zones.zone3_seconds
-            zone4 = zones.zone4_seconds
-            zone5 = zones.zone5_seconds
-            trimp_val = zones.trimp
+        zone1, zone2, zone3, zone4, zone5, trimp_val = _unpack_zone_trimp(zone_trimp_by_activity_id.get(activity_id))
 
-        hr_rows = hr_rows_by_activity_id.get(activity_id, [])
-        alt_rows = alt_rows_by_activity_id.get(activity_id, [])
-        drift_rows = drift_rows_by_activity_id.get(activity_id, [])
-        hr_rec = calc_hr_recovery(hr_rows)
-        vspeed = calc_vertical_speed(alt_rows)
-        drift = calc_cardiac_drift(drift_rows, activity.sport_type)
+        hr_rec = calc_hr_recovery(hr_rows_by_activity_id.get(activity_id, []))
+        vspeed = calc_vertical_speed(alt_rows_by_activity_id.get(activity_id, []))
+        drift = calc_cardiac_drift(drift_rows_by_activity_id.get(activity_id, []), activity.sport_type)
         hr_max_observed = hr_max_by_day.get(str(dirty_row["activity_day"]))
         hr_max_for_hrr = scalar.max_hr if scalar.max_hr is not None else hr_max_observed
         hrr = calc_hrr_pct(scalar.median_hr, athlete.hr_rest, hr_max_for_hrr)
-
-        missing: list[str] = []
-        if activity.detail_json is None:
-            missing.append("missing_details")
-        if scalar.stream_count == 0:
-            missing.append("missing_streams")
-        if scalar.hr_count == 0:
-            missing.append("missing_hr")
-        completeness = "complete"
-        if "missing_streams" in missing:
-            completeness = "unknown"
-        elif missing:
-            completeness = "partial"
+        completeness, missing = _completeness_status(activity, scalar)
 
         fact_rows.append(
             {

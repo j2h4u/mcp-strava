@@ -72,16 +72,19 @@ def _validate_iso_day(value: str) -> date:
         raise ValueError("custom_daily_trimp.date must be ISO YYYY-MM-DD") from exc
 
 
+def _validate_custom_row_shape(rows: list) -> None:
+    """Raise if any row is missing the required keys or is not a dict."""
+    for row in rows:
+        if not isinstance(row, dict) or "date" not in row or "trimp" not in row:
+            raise ValueError("custom_daily_trimp rows must include date and trimp")
+
+
 def _validated_custom_series(custom_daily_trimp, today_day: date, target_day: date) -> dict[str, float]:
     if not isinstance(custom_daily_trimp, list):
         raise ValueError("custom_daily_trimp must be a list")
+    _validate_custom_row_shape(custom_daily_trimp)
     by_day: dict[str, float] = {}
     prev = None
-    for row in custom_daily_trimp:
-        if not isinstance(row, dict):
-            raise ValueError("custom_daily_trimp rows must include date and trimp")
-        if "date" not in row or "trimp" not in row:
-            raise ValueError("custom_daily_trimp rows must include date and trimp")
     for row in sorted(custom_daily_trimp, key=lambda item: item["date"]):
         day = _validate_iso_day(row["date"])
         if day < today_day or day > target_day:
