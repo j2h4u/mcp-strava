@@ -66,13 +66,19 @@ target-version = "py314"
 #   PLE: pylint *error* rules — real bug patterns (0 hits). LOG/G: logging-call correctness (0 hits).
 #   FURB: refurb modern idioms (incl. FURB162 fromisoformat-Z). RET: return hygiene.
 #   N818: exception class names must end in `Error`.
+#   PLR2004: no unnamed magic values in comparisons. Domain thresholds live in the Config
+#     hierarchy (constants.py); local format/structural constants are module-level UPPER_SNAKE.
+#     Trivial structural literals (tuple/arg arity, calendar month, rounding-tier cascade) carry
+#     `# noqa: PLR2004`. Tests are exempt (fixtures build numbers for clarity, not config).
 # Deliberately NOT selected: D/ANN (basedpyright owns typing; docstrings not mandated),
-#   COM/ISC001 (conflict with the formatter), S101/PLR/TRY003 (test asserts + opinionated noise),
+#   COM/ISC001 (conflict with the formatter), S101/TRY003 (test asserts + opinionated noise),
+#   the rest of PLR beyond PLR2004 (opinionated noise; the size/complexity PLR09xx + C90 family
+#   is a separate hardening wave),
 #   S/EM/SLF/TC/ARG/PLC0415 (false positives / deliberate patterns here). Evaluated and rejected:
 #   TRY004 (the isinstance guards intentionally raise ValueError on malformed external data —
 #   a value problem, not a programmer type error) and ERA001 (only fires on the deliberate
 #   strava_api_reference.py endpoint-doc file and decorative test section banners — no dead code).
-select = ["E4", "E7", "E9", "F", "I", "B", "BLE", "UP", "C4", "PIE", "ISC", "RSE", "FLY", "RUF", "PERF", "SIM", "PTH", "DTZ", "PGH", "PLE", "LOG", "G", "FURB", "RET", "N818"]
+select = ["E4", "E7", "E9", "F", "I", "B", "BLE", "UP", "C4", "PIE", "ISC", "RSE", "FLY", "RUF", "PERF", "SIM", "PTH", "DTZ", "PGH", "PLE", "LOG", "G", "FURB", "RET", "N818", "PLR2004"]
 # RUF001-003: ambiguous-unicode false positives on intentional Cyrillic in comments/docstrings.
 # ISC001: single-line implicit string concat — conflicts with `ruff format`.
 ignore = ["RUF001", "RUF002", "RUF003", "ISC001"]
@@ -81,7 +87,7 @@ ignore = ["RUF001", "RUF002", "RUF003", "ISC001"]
 # PERF401 (manual list-comprehension) is a runtime-perf lint; test fixtures build
 # data for clarity, not speed — the loop form is fine there.
 # DTZ: tests construct fixed naive datetimes deliberately to pin behavior.
-"tests/**" = ["PERF401", "DTZ"]
+"tests/**" = ["PERF401", "DTZ", "PLR2004"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -14,6 +14,8 @@ from mcp_strava.application.aggregate_services import (
 )
 from mcp_strava.types import CompletenessMetadata, ServiceEnvelope, ServiceRationale, ServiceWarning
 
+_FLAT_EPSILON = 1e-9  # |delta| below this counts as no change (float "== 0")
+
 COMPARISON_MISSING_REASONS = {
     "insufficient_history",
     "missing_denominator",
@@ -193,7 +195,7 @@ def _compare_aggregate_pair(row_a: dict[str, Any] | None, row_b: dict[str, Any] 
     )
     trend = "unavailable"
     if delta is not None:
-        trend = "flat" if abs(delta) < 1e-9 else ("up" if delta > 0 else "down")
+        trend = "flat" if abs(delta) < _FLAT_EPSILON else ("up" if delta > 0 else "down")
     return {
         "period_a": period_a,
         "period_b": period_b,

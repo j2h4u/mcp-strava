@@ -5,8 +5,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from mcp_strava.constants import Config
 from mcp_strava.hr_zones import DEFAULT_MODEL_ID, known_model_ids
 from mcp_strava.mcp_content import DEFAULT_PROMPT_LANGUAGE, SUPPORTED_PROMPT_LANGUAGES
+
+_MAX_TCP_PORT = 65535
 
 
 @dataclass(frozen=True)
@@ -129,9 +132,9 @@ def _parse_int(raw: str, key: str) -> int:
 
 
 def _validate_ranges(http_port: int, refresh_interval_seconds: int) -> None:
-    if http_port < 1 or http_port > 65535:
+    if http_port < 1 or http_port > _MAX_TCP_PORT:
         raise ValueError("Invalid integer for MCP_STRAVA_HTTP_PORT: out of range")
-    if refresh_interval_seconds < 60:
+    if refresh_interval_seconds < Config.Worker.MIN_REFRESH_INTERVAL_S:
         raise ValueError("Invalid integer for MCP_STRAVA_REFRESH_INTERVAL_SECONDS: out of range")
 
 
@@ -220,7 +223,7 @@ def load_settings(
 
     hr_rest_raw = resolve("MCP_STRAVA_HR_REST", "").strip()
     hr_rest = _parse_int(hr_rest_raw, "MCP_STRAVA_HR_REST") if hr_rest_raw else None
-    if hr_rest is not None and not (20 <= hr_rest <= 120):
+    if hr_rest is not None and not (Config.Athlete.RESTING_HR_MIN <= hr_rest <= Config.Athlete.RESTING_HR_MAX):
         raise ValueError("Invalid integer for MCP_STRAVA_HR_REST: out of range")
     hr_zone_model = resolve("MCP_STRAVA_HR_ZONE_MODEL", DEFAULT_MODEL_ID)
     if hr_zone_model not in known_model_ids():

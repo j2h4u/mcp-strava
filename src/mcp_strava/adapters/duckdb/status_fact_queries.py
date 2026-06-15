@@ -13,6 +13,8 @@ from mcp_strava.settings import get_settings
 from mcp_strava.sports import SPORT_RUNNING as RUNNING_SPORTS
 from mcp_strava.types import StatusFact, StatusFactDefinition
 
+_ISO_DATE_LENGTH = 10  # "YYYY-MM-DD" prefix length
+
 _HR_REST_MISSING_MSG = (
     "MCP_STRAVA_HR_REST is not set — cannot compute HR zones. "
     "Set MCP_STRAVA_HR_REST to the athlete's resting heart rate."
@@ -284,7 +286,7 @@ def _query_high_load_hike_status(
         """,
         [start.isoformat(), as_of.isoformat(), metric_version],
     ).fetchall()
-    if len(rows) < 2:
+    if len(rows) < 2:  # noqa: PLR2004
         return _status_fact(definition, "unavailable", {"hike_day_count": len(rows)}, ["insufficient_hike_history"])
     threshold = _as_float(_obj_dict(definition.threshold)["combined_trimp"])
     best_pair: tuple[object, object, float] | None = None
@@ -419,7 +421,7 @@ def _day_from_timestamp(value: object) -> date | None:
     if value is None:
         return None
     text = str(value)
-    if len(text) < 10:
+    if len(text) < _ISO_DATE_LENGTH:
         return None
     try:
         return date.fromisoformat(text[:10])

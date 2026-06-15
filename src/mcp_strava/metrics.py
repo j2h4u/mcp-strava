@@ -153,8 +153,8 @@ def calc_hr_recovery(rows):
             while j < len(all_times):
                 t2 = all_times[j]
                 r2 = by_time[t2]
-                # Allow small gaps (up to 3s) between consecutive data points
-                if t2 - all_times[j - 1] > 3:
+                # Allow small gaps between consecutive data points
+                if t2 - all_times[j - 1] > Config.Metrics.MAX_PAUSE_GAP_S:
                     break
                 v2 = r2["velocity"] or 0
                 if v2 >= STOP_VEL:
@@ -262,7 +262,7 @@ def calc_vertical_speed(rows):
     # the right denominator.
     elapsed_sec = rows[-1]["time_offset"] - rows[0]["time_offset"]
     duration_hours = elapsed_sec / 3600
-    if duration_hours < 0.05:  # < 3 min
+    if duration_hours < Config.Metrics.MIN_VMH_HOURS:
         return None
 
     vmh = round(total_ascent / duration_hours, 0)

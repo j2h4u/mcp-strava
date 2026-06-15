@@ -81,7 +81,7 @@ class RateLimitPolicy:
         if value is None:
             return None
         parts = [part.strip() for part in value.split(",", 1)]
-        if len(parts) != 2:
+        if len(parts) != 2:  # noqa: PLR2004
             return None
         try:
             return int(parts[0]), int(parts[1])

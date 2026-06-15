@@ -16,6 +16,7 @@ from mcp_strava.adapters.duckdb.repository_models import (
 )
 from mcp_strava.application.activity_payloads import activity_payload, kudos_names, parse_json_list
 from mcp_strava.application.freshness import _freshness_now, build_freshness_metadata
+from mcp_strava.constants import Config
 from mcp_strava.metric_registry import METRIC_REGISTRY
 from mcp_strava.refresh.policy import RefreshPolicy
 from mcp_strava.settings import get_settings
@@ -208,8 +209,8 @@ def list_workouts_service(
 ) -> ServiceEnvelope:
     if not isinstance(limit, int):
         raise ValueError("limit must be an integer")
-    if limit < 1 or limit > 200:
-        raise ValueError("limit must be between 1 and 200")
+    if limit < 1 or limit > Config.Api.MAX_ACTIVITY_LIMIT:
+        raise ValueError(f"limit must be between 1 and {Config.Api.MAX_ACTIVITY_LIMIT}")
     instant = _freshness_clock(now)  # UTC instant for freshness + recency diffs
     start_day = start_date or "0001-01-01"
     end_day = _next_day(end_date) if end_date else "9999-12-31"

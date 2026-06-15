@@ -10,6 +10,8 @@ from typing import cast
 
 import numpy as np
 
+from mcp_strava.constants import Config
+
 _JENKS_FALLBACK_ERRORS = (ArithmeticError, IndexError, ValueError)
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -91,7 +93,7 @@ def jenks_breaks(x, k):
     Returns (boundaries, sdcm, sdam, gvf). Fully vectorized; results are identical
     to the prior pure-Python O(k·n²) DP.
     """
-    if k < 2:
+    if k < Config.Drift.MIN_JENKS_K:
         raise ValueError("k must be >= 2")
     ss, n = _ss_matrix(x)
     return _jenks_dp(ss, n, min(k, n))
@@ -120,7 +122,7 @@ def auto_jenks(x, max_k=6, gvf_threshold=0.85, gvf_gain_min=0.03, min_cluster_si
             best_boundaries = boundaries
             if gvf >= gvf_threshold:
                 break
-            if gvf_gain < gvf_gain_min and k >= 3:
+            if gvf_gain < gvf_gain_min and k >= Config.Drift.GVF_MIN_K:
                 break
             prev_gvf = gvf
         except _JENKS_FALLBACK_ERRORS:
@@ -190,7 +192,7 @@ def _filter_hr_outliers(heartrate, cluster_labels, n_clusters, outlier_iqr_mult=
     hr_filt = list(heartrate)
     for c in range(n_clusters):
         mask = [i for i, lbl in enumerate(cluster_labels) if lbl == c]
-        if len(mask) < 4:
+        if len(mask) < Config.Drift.MIN_CLUSTER_FOR_IQR:
             continue
         hr_c = sorted(heartrate[i] for i in mask)
         q25 = _percentile(hr_c, 25)
@@ -239,7 +241,7 @@ def cardiac_drift(
     vel = list(velocity)
     n = len(hr)
 
-    if n < 120:
+    if n < Config.Metrics.MIN_STREAM_POINTS:
         return {
             "drift_weighted_pct": None,
             "drift_consistency": None,
@@ -315,7 +317,7 @@ def cardiac_drift(
             mid = s + dur // 2
             segs = [(s, mid, dur // 2), (mid, e, dur - dur // 2)]
 
-        if len(segs) < 2:
+        if len(segs) < Config.Drift.MIN_SEGMENTS:
             continue
 
         mid = max(1, len(segs) // 2)
@@ -329,13 +331,13 @@ def cardiac_drift(
         late_hr_vals = sorted(hr_filtered[i] for i in late_indices)
 
         # Quality gate: need enough points in each half for reliable median
-        if len(early_hr_vals) < 5 or len(late_hr_vals) < 5:
+        if len(early_hr_vals) < Config.Drift.MIN_HALF_HR_POINTS or len(late_hr_vals) < Config.Drift.MIN_HALF_HR_POINTS:
             continue
 
         # Quality gate: minimum effective duration per cluster
         # (duration is in subsampled points, convert to original seconds)
         cluster_duration_s = sum(e - s for s, e, _ in segs) * subsample_step
-        if cluster_duration_s < 120:  # at least 2 minutes of data
+        if cluster_duration_s < Config.Drift.MIN_CLUSTER_DURATION_S:  # at least 2 minutes of data
             continue
 
         early_hr = _median(early_hr_vals)
@@ -388,9 +390,9 @@ def cardiac_drift(
     # ── Step 6: Build result ──
     # Quality level: based on total effective duration across all valid clusters
     total_dur_s = sum(sum(e - s for s, e, _ in segs) for segs in segments_by_cluster) * subsample_step
-    if total_dur_s >= 600:
+    if total_dur_s >= Config.Drift.QUALITY_GOOD_S:
         quality = "good"  # ≥10 min of clustered data
-    elif total_dur_s >= 300:
+    elif total_dur_s >= Config.Drift.QUALITY_FAIR_S:
         quality = "fair"  # ≥5 min
     else:
         quality = "low"  # <5 min — too noisy
@@ -402,17 +404,17 @@ def cardiac_drift(
         is_significant = False
     else:
         ad = drift_weighted_pct
-        if ad < 3:
+        if ad < Config.Drift.SEVERITY_STABLE_MAX:
             severity = "stable"
-        elif ad < 5:
+        elif ad < Config.Drift.SEVERITY_BORDERLINE_MAX:
             severity = "borderline"
-        elif ad < 8:
+        elif ad < Config.Drift.SEVERITY_MODERATE_MAX:
             severity = "moderate"
-        elif ad < 12:
+        elif ad < Config.Drift.SEVERITY_SIGNIFICANT_MAX:
             severity = "significant"
         else:
             severity = "severe"
-        is_significant = (ad >= drift_threshold_pct) and (drift_consistency >= 0.6)
+        is_significant = (ad >= drift_threshold_pct) and (drift_consistency >= Config.Drift.MIN_DRIFT_CONSISTENCY)
 
     return {
         "drift_weighted_pct": round(drift_weighted_pct, 2),

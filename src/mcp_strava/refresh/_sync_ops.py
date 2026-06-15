@@ -21,6 +21,7 @@ from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.duckdb.source_hashing import summary_payload_changed
 from mcp_strava.adapters.duckdb.stream_coverage_queries import activities_missing_stream_channels
+from mcp_strava.constants import Config
 from mcp_strava.metric_registry import cached_logic_fingerprint
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.refresh.schema_drift import journal_schema_drift
@@ -60,9 +61,11 @@ STREAM_CHANNEL_TO_COLUMN = {
     "moving": "is_moving",
 }
 
+_ISO_DATE_LENGTH = 10  # "YYYY-MM-DD" length
+
 
 def _is_iso_day(value: str) -> bool:
-    if len(value) != 10 or value[4] != "-" or value[7] != "-":
+    if len(value) != _ISO_DATE_LENGTH or value[4] != "-" or value[7] != "-":
         return False
     year_text = value[:4]
     month_text = value[5:7]
@@ -72,7 +75,7 @@ def _is_iso_day(value: str) -> bool:
     year = int(year_text)
     month = int(month_text)
     day = int(day_text)
-    if month < 1 or month > 12:
+    if month < 1 or month > 12:  # noqa: PLR2004
         return False
     max_day = monthrange(year, month)[1]
     return 1 <= day <= max_day
@@ -176,7 +179,7 @@ def _stream_payload(
             "is_moving": _channel_value(channels, "moving", idx),
         }
         latlng = _channel_value(channels, "latlng", idx)
-        if isinstance(latlng, list) and len(latlng) >= 2:
+        if isinstance(latlng, list) and len(latlng) >= 2:  # noqa: PLR2004
             row["lat"] = latlng[0]
             row["lng"] = latlng[1]
         else:
@@ -252,7 +255,7 @@ def sync_summaries(repo, transport, now_iso: str, *, after_epoch: int | None = N
                 summary_json=summary_json,
                 synced_at=now_iso,
             )
-        if len(data) < 100:
+        if len(data) < Config.Api.STRAVA_PAGE_SIZE:
             break
         page += 1
     return seen, new

@@ -11,6 +11,7 @@ from typing import cast
 
 from mcp_strava.adapters.strava.rate_limit import RateLimitPolicy
 from mcp_strava.adapters.strava.types import Clock, Sleeper, StravaResponse, StravaUnavailableError
+from mcp_strava.constants import Config
 
 
 class StravaTransport:
@@ -35,7 +36,7 @@ class StravaTransport:
         refreshed = False
         last_reason = "network_unstable"
 
-        while attempts < 3:
+        while attempts < Config.Transport.MAX_RETRIES:
             decision = self.policy.decide_next_call(self.clock.now())
             if decision.status == "exhausted":
                 raise StravaUnavailableError(decision.reason or "rate_limited", detail=self.policy.rate_info.as_dict())
@@ -66,7 +67,7 @@ class StravaTransport:
                     last_reason = "rate_limited"
                     self.policy.mark_rate_limited()
                     attempts += 1
-                    if attempts >= 3:
+                    if attempts >= Config.Transport.MAX_RETRIES:
                         break
                     self.sleeper.sleep(self._retry_after_seconds(exc))
                     continue
@@ -74,13 +75,13 @@ class StravaTransport:
                     raise
                 last_reason = "network_unstable"
                 attempts += 1
-                if attempts >= 3:
+                if attempts >= Config.Transport.MAX_RETRIES:
                     break
                 self.sleeper.sleep([1, 5, 30][attempts - 1])
             except TimeoutError, urllib.error.URLError, OSError:
                 last_reason = "network_unstable"
                 attempts += 1
-                if attempts >= 3:
+                if attempts >= Config.Transport.MAX_RETRIES:
                     break
                 self.sleeper.sleep([1, 5, 30][attempts - 1])
                 continue

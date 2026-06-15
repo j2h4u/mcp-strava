@@ -58,7 +58,7 @@ def cmd_workouts(args):
 def cmd_workout(args):
     """Single workout analytics product command."""
     json_output = _pop_json_flag(args)
-    if len(args) < 2 or args[0] != "analyze":
+    if len(args) < 2 or args[0] != "analyze":  # noqa: PLR2004
         _usage_error("Usage: python -m mcp_strava workout analyze <id|latest> [--json]")
     envelope = get_workout_detail_service(args[1])
     _print_product_envelope(
@@ -127,7 +127,7 @@ COMMANDS = {
 
 
 def main():
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 2:  # noqa: PLR2004
         print(f"Usage: python -m mcp_strava <command> [args]\nCommands: {', '.join(COMMANDS)}", file=sys.stderr)
         sys.exit(1)
     cmd = sys.argv[1]

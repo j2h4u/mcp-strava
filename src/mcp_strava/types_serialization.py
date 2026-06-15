@@ -6,13 +6,13 @@ def smart_round(value: float) -> int | float:
     if value == 0:
         return 0
     magnitude = abs(value)
-    if magnitude >= 10:
+    if magnitude >= 10:  # noqa: PLR2004
         return round(value)
     if magnitude >= 1:
         return round(value, 1)
-    if magnitude >= 0.1:
+    if magnitude >= 0.1:  # noqa: PLR2004
         return round(value, 2)
-    if magnitude >= 0.01:
+    if magnitude >= 0.01:  # noqa: PLR2004
         return round(value, 3)
     return round(value, 4)
 

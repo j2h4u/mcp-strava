@@ -22,6 +22,7 @@ import duckdb
 from mcp_strava.adapters.duckdb.connection import MirrorDbLockedError
 
 _SIZE_UNITS = ("B", "KB", "MB", "GB", "TB", "PB")
+_BYTES_PER_KIB = 1024  # IEC binary unit step for human-readable byte scaling
 
 
 def humanize_bytes(num: int) -> str:
@@ -33,11 +34,11 @@ def humanize_bytes(num: int) -> str:
     sign = "-" if num < 0 else ""
     value = float(abs(num))
     for unit in _SIZE_UNITS:
-        if value < 1024 or unit == _SIZE_UNITS[-1]:
+        if value < _BYTES_PER_KIB or unit == _SIZE_UNITS[-1]:
             if unit == "B":
                 return f"{sign}{int(value)} {unit}"
             return f"{sign}{value:.1f} {unit}"
-        value /= 1024
+        value /= _BYTES_PER_KIB
     raise AssertionError("unreachable")  # pragma: no cover
 
 

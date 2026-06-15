@@ -220,8 +220,8 @@ def _bucket_end(bucket_start: str, request: AggregateRequest, effective_end: dat
     if request.bucket == "week":
         return (start + timedelta(days=7)).isoformat()
     if request.bucket == "month":
-        year = start.year + (1 if start.month == 12 else 0)
-        month = 1 if start.month == 12 else start.month + 1
+        year = start.year + (1 if start.month == 12 else 0)  # noqa: PLR2004
+        month = 1 if start.month == 12 else start.month + 1  # noqa: PLR2004
         return date(year, month, 1).isoformat()
     if request.bucket == "year":
         return date(start.year + 1, 1, 1).isoformat()
@@ -280,8 +280,8 @@ def _next_bucket(start: date, bucket: str) -> date:
     if bucket == "week":
         return start + timedelta(days=7)
     if bucket == "month":
-        year = start.year + (1 if start.month == 12 else 0)
-        month = 1 if start.month == 12 else start.month + 1
+        year = start.year + (1 if start.month == 12 else 0)  # noqa: PLR2004
+        month = 1 if start.month == 12 else start.month + 1  # noqa: PLR2004
         return date(year, month, 1)
     if bucket == "year":
         return date(start.year + 1, 1, 1)

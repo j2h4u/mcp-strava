@@ -11,6 +11,7 @@ from http import HTTPStatus
 from typing import cast
 
 from mcp_strava.adapters.strava.types import Clock, RefreshedTokens, Sleeper, StravaUnavailableError
+from mcp_strava.constants import Config
 
 
 class TokenRefreshTransport:
@@ -34,7 +35,7 @@ class TokenRefreshTransport:
 
     def refresh_tokens(self, refresh_token: str) -> RefreshedTokens:
         delays = [2, 8, 30]
-        for attempt in range(3):
+        for attempt in range(Config.Transport.MAX_RETRIES):
             request = self._build_request(refresh_token)
             try:
                 response = self._http(request)
@@ -50,11 +51,11 @@ class TokenRefreshTransport:
             except urllib.error.HTTPError as exc:
                 if HTTPStatus.BAD_REQUEST <= int(exc.code) < HTTPStatus.INTERNAL_SERVER_ERROR:
                     raise StravaUnavailableError("token_unavailable") from exc
-                if attempt == 2:
+                if attempt == Config.Transport.MAX_RETRIES - 1:
                     raise StravaUnavailableError("token_unavailable") from exc
                 self.sleeper.sleep(delays[attempt])
             except (TimeoutError, urllib.error.URLError, OSError) as exc:
-                if attempt == 2:
+                if attempt == Config.Transport.MAX_RETRIES - 1:
                     raise StravaUnavailableError("token_unavailable") from exc
                 self.sleeper.sleep(delays[attempt])
             except (KeyError, TypeError, ValueError) as exc:

@@ -15,6 +15,7 @@ import mcp_strava.refresh.runtime as refresh_runtime
 from mcp_strava.adapters.duckdb.connection import MirrorConn
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.constants import Config
 from mcp_strava.maintenance.compact import storage_stats
 from mcp_strava.refresh import RefreshSkipped, Stage, _sync_ops, health
 from mcp_strava.refresh.bootstrap import (
@@ -248,7 +249,7 @@ def _poll_seconds(raw: str | None) -> int:
     if raw is None:
         return 60
     value = int(raw)
-    if value < 5:
+    if value < Config.Worker.MIN_POLL_INTERVAL_S:
         raise ValueError("poll seconds must be >= 5")
     return value
 

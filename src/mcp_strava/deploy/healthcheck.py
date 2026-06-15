@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from http import HTTPStatus
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
 from typing import cast
@@ -52,7 +53,7 @@ def _validate_http() -> None:
     try:
         connection.request("GET", "/mcp", headers={"Accept": "text/event-stream"})
         response = connection.getresponse()
-        if response.status >= 400:
+        if response.status >= HTTPStatus.BAD_REQUEST:
             raise RuntimeError(f"MCP HTTP health returned {response.status}")
     except (OSError, HTTPException) as exc:
         raise RuntimeError("MCP HTTP health request failed") from exc

@@ -8,6 +8,8 @@ from typing import Any, cast
 
 from mcp_strava.adapters.duckdb.repository_models import ActivityMetricFactRow
 
+_HOURS_PER_DAY = 24
+
 ACTIVITY_SCALAR_FACTS = {
     "trimp": ("trimp", 1.0),
     "distance_km": ("distance_m", 1 / 1000),
@@ -173,9 +175,9 @@ def relative_time(start_date: str | None, now: datetime) -> str | None:
     if total_minutes < 0:
         total_minutes = 0
     hours, minutes = divmod(total_minutes, 60)
-    if hours < 24:
+    if hours < _HOURS_PER_DAY:
         return f"{hours}h {minutes}m"
-    days, rem_hours = divmod(hours, 24)
+    days, rem_hours = divmod(hours, _HOURS_PER_DAY)
     return f"{days}d {rem_hours}h"
 
 

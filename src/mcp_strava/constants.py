@@ -41,6 +41,21 @@ class Config:
         OUTLIER_IQR_MULT = 2.5  # IQR multiplier for HR outlier filtering
         MAX_K = 6  # maximum pace clusters to evaluate
         GVF_THRESHOLD = 0.85  # GVF threshold for accepting classification
+        MIN_JENKS_K = 2  # Jenks is undefined below 2 clusters
+        GVF_MIN_K = 3  # min k before the GVF marginal-gain cutoff applies
+        MIN_CLUSTER_FOR_IQR = 4  # min points per cluster for IQR (needs Q1+Q3) to be meaningful
+        MIN_HALF_HR_POINTS = 5  # min HR points per half-segment for a reliable median
+        MIN_SEGMENTS = 2  # need at least an early and a late segment to measure drift
+        MIN_CLUSTER_DURATION_S = 120  # min effective per-cluster duration (2 min) to score drift
+        QUALITY_GOOD_S = 600  # >=10 min clustered data => "good" quality label
+        QUALITY_FAIR_S = 300  # >=5 min clustered data => "fair" quality label
+        # Drift severity label boundaries (percent). Distinct role from THRESHOLD_BY_SPORT,
+        # which is the per-sport is_significant trigger; these label the magnitude.
+        SEVERITY_STABLE_MAX = 3  # below => "stable"
+        SEVERITY_BORDERLINE_MAX = 5  # below => "borderline"
+        SEVERITY_MODERATE_MAX = 8  # below => "moderate"
+        SEVERITY_SIGNIFICANT_MAX = 12  # below => "significant"; at/above => "high"
+        MIN_DRIFT_CONSISTENCY = 0.6  # fraction of clusters that must drift positive to flag significant
 
     class Thresholds:
         """Velocity thresholds and validity gates."""
@@ -70,6 +85,8 @@ class Config:
         MIN_PAUSE_SEC = 30  # seconds — minimum pause duration for HRR detection
         MIN_HR_POINTS = 60  # minimum HR data points for EF calc
         MIN_ALT_POINTS = 60  # minimum altitude points for vertical speed
+        MAX_PAUSE_GAP_S = 3  # max gap between stream points still treated as a contiguous pause
+        MIN_VMH_HOURS = 0.05  # minimum activity duration (hours) for vertical-speed (vmh) calc
 
     class Plan:
         """Weekly plan parameters."""
@@ -115,6 +132,29 @@ class Config:
         class ACWR:
             TAU_ATL = 7  # acute load EWMA window
             TAU_CTL = 28  # chronic load EWMA window
+
+    class Transport:
+        """Strava HTTP transport retry budget."""
+
+        MAX_RETRIES = 3  # total attempts for data-fetch and token-refresh HTTP calls
+
+    class Api:
+        """Strava API request shape."""
+
+        MAX_ACTIVITY_LIMIT = 200  # upper bound on the list-activities limit parameter
+        STRAVA_PAGE_SIZE = 100  # activities per page; a full page implies more pages follow
+
+    class Athlete:
+        """Physiological validity bounds for athlete inputs."""
+
+        RESTING_HR_MIN = 20  # bpm — physiological lower bound for a valid resting HR
+        RESTING_HR_MAX = 120  # bpm — physiological upper bound for a valid resting HR
+
+    class Worker:
+        """Background refresh worker timing bounds."""
+
+        MIN_POLL_INTERVAL_S = 5  # minimum allowed worker poll interval
+        MIN_REFRESH_INTERVAL_S = 60  # minimum allowed refresh interval
 
 
 # Sport type groups (SPORT_ALL/SPORT_RUNNING/SPORT_TRAINING) and helpers

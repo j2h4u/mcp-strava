@@ -117,7 +117,7 @@ SPORT_REGISTRY: dict[str, SportMeta] = {
 }
 
 # Verify we have all 50
-assert len(SPORT_REGISTRY) == 50, f"Expected 50 sport types, got {len(SPORT_REGISTRY)}"
+assert len(SPORT_REGISTRY) == 50, f"Expected 50 sport types, got {len(SPORT_REGISTRY)}"  # noqa: PLR2004
 
 
 # ═══════════════════════════════════════════════════════════════════
