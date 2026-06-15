@@ -581,14 +581,14 @@ def test_sync_activities_quick_invokes_run_once_with_force_true_per_D15(monkeypa
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-    def fake_run_once(repo, transport, policy, clock, sleeper, **kwargs):
+    def fake_run_once(collaborators, **kwargs):
         calls.append(
             {
-                "repo": repo,
-                "transport": transport,
-                "policy": policy,
-                "clock": clock,
-                "sleeper": sleeper,
+                "repo": collaborators.repo,
+                "transport": collaborators.transport,
+                "policy": collaborators.policy,
+                "clock": collaborators.clock,
+                "sleeper": collaborators.sleeper,
                 **kwargs,
             }
         )
@@ -644,14 +644,14 @@ def test_backfill_activities_invokes_run_catchup_per_D16(monkeypatch, tmp_path: 
     def fake_run_once(*_args, **_kwargs):
         raise AssertionError("backfill_activities must not call run_once")
 
-    def fake_run_catchup(repo, transport, policy, clock, sleeper, **kwargs):
+    def fake_run_catchup(collaborators, **kwargs):
         calls.append(
             {
-                "repo": repo,
-                "transport": transport,
-                "policy": policy,
-                "clock": clock,
-                "sleeper": sleeper,
+                "repo": collaborators.repo,
+                "transport": collaborators.transport,
+                "policy": collaborators.policy,
+                "clock": collaborators.clock,
+                "sleeper": collaborators.sleeper,
                 **kwargs,
             }
         )

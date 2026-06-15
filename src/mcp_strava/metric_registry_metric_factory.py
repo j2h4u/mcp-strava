@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mcp_strava.metric_glossary import CONCEPT_BY_METRIC_ID
+from mcp_strava.metric_registry_specs import MetricSpec
 from mcp_strava.types import MetricDefinition
 
 _DEFAULT_REQUIREMENTS = ["metric_available_from_local_mirror"]
@@ -97,13 +98,7 @@ _CALCULATION_BY_METRIC_ID = {
 
 def _metric(
     metric_id: str,
-    label: str,
-    unit: str,
-    source: str,
-    scope: str,
-    sport_scope: str,
-    comparison_mode: str,
-    directionality: str,
+    spec: MetricSpec,
     exposed_in: list[str],
     description: str = "",
     calculation: str | None = None,
@@ -115,13 +110,13 @@ def _metric(
         raise ValueError(f"Missing calculation description for metric: {metric_id}")
     return MetricDefinition(
         metric_id=metric_id,
-        label=label,
-        unit=unit,
-        source=source,
-        scope=scope,
-        sport_scope=sport_scope,
-        comparison_mode=comparison_mode,
-        directionality=directionality,
+        label=spec.label,
+        unit=spec.unit,
+        source=spec.source,
+        scope=spec.scope,
+        sport_scope=spec.sport_scope,
+        comparison_mode=spec.comparison_mode,
+        directionality=spec.directionality,
         requirements=list(requirements or _DEFAULT_REQUIREMENTS),
         missing_reasons=list(missing_reasons or _DEFAULT_MISSING_REASONS),
         exposed_in=exposed_in,

@@ -6,11 +6,26 @@ within each pace cluster. The Jenks DP is numpy-vectorized.
 """
 
 import math
+from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
 
 from mcp_strava.constants import Config
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DriftParams:
+    """Algorithm tuning knobs for cardiac_drift — all have Config-backed defaults."""
+
+    min_cluster_size: int = Config.Drift.MIN_CLUSTER_SIZE
+    min_segment_duration: int = Config.Drift.MIN_SEGMENT_DURATION
+    drift_threshold_pct: float = Config.Drift.THRESHOLD_DEFAULT
+    outlier_iqr_mult: float = Config.Drift.OUTLIER_IQR_MULT
+    max_k: int = Config.Drift.MAX_K
+    gvf_threshold: float = Config.Drift.GVF_THRESHOLD
+    max_points: int = 600
+
 
 _JENKS_FALLBACK_ERRORS = (ArithmeticError, IndexError, ValueError)
 
@@ -377,26 +392,27 @@ def cardiac_drift(
     heartrate,
     velocity,
     time_offset=None,
-    min_cluster_size=30,
-    min_segment_duration=60,
-    drift_threshold_pct=5.0,
-    outlier_iqr_mult=2.5,
-    max_k=6,
-    gvf_threshold=0.85,
-    max_points=600,
+    params: DriftParams | None = None,
 ):
     """Intra-activity cardiac drift via Jenks pace clustering.
 
     Args:
         heartrate: iterable of HR values (bpm)
         velocity: iterable of velocity values (m/s)
-        max_points: subsample evenly if N exceeds this (keeps Jenks O(n²) fast).
-            Default 600 → ~250K SS entries, ~1.5M DP ops → sub-second pure Python.
-        All other params: see docstring in numpy version.
+        time_offset: optional iterable of time offsets (seconds); defaults to range(n)
+        params: DriftParams with algorithm tuning knobs; uses Config-backed defaults if None.
 
     Returns:
         dict with drift_weighted_pct, is_significant, severity, etc.
     """
+    p = params if params is not None else DriftParams()
+    min_cluster_size = p.min_cluster_size
+    min_segment_duration = p.min_segment_duration
+    drift_threshold_pct = p.drift_threshold_pct
+    outlier_iqr_mult = p.outlier_iqr_mult
+    max_k = p.max_k
+    gvf_threshold = p.gvf_threshold
+    max_points = p.max_points
     hr = list(heartrate)
     vel = list(velocity)
     n = len(hr)

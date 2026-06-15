@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from typing import Protocol, TypeVar
 
 from mcp_strava.adapters.duckdb.connection import DuckDBConn
+from mcp_strava.adapters.duckdb.repository_models import StreamChannelRecord
 from mcp_strava.adapters.duckdb.repository_utils import Row
 
 # Stream-row insert column order (must match the streams table) and the per-statement
@@ -141,19 +142,7 @@ class StreamWriteRepositoryMixin(_StreamWriteRepositoryHost):
             values_clause = ", ".join([placeholder] * len(chunk))
             self._execute(f"INSERT INTO streams ({columns}) VALUES {values_clause}", params)
 
-    def upsert_stream_channel_metadata(
-        self,
-        activity_id: int,
-        channel_key: str,
-        original_size: int | None,
-        resolution: str | None,
-        series_type: str | None,
-        fetched_at: str | None,
-        batch_id: str | None,
-        status: str,
-        error: str | None,
-        commit: bool = True,
-    ) -> None:
+    def upsert_stream_channel_metadata(self, record: StreamChannelRecord, *, commit: bool = True) -> None:
         if commit:
             self.begin()
         try:
@@ -173,20 +162,20 @@ class StreamWriteRepositoryMixin(_StreamWriteRepositoryHost):
                     error=excluded.error
                 """,
                 [
-                    activity_id,
-                    channel_key,
-                    original_size,
-                    resolution,
-                    series_type,
-                    fetched_at or self._now_iso(),
-                    batch_id,
-                    status,
-                    error,
+                    record.activity_id,
+                    record.channel_key,
+                    record.original_size,
+                    record.resolution,
+                    record.series_type,
+                    record.fetched_at or self._now_iso(),
+                    record.batch_id,
+                    record.status,
+                    record.error,
                 ],
             )
             if commit:
                 self.update_activity_source_state_and_enqueue_dirty(
-                    activity_id, metric_version=self.current_metric_version()
+                    record.activity_id, metric_version=self.current_metric_version()
                 )
         except Exception:
             if commit:
@@ -210,15 +199,17 @@ class StreamWriteRepositoryMixin(_StreamWriteRepositoryHost):
             self._insert_stream_rows(activity_id, payload, chunk_size)
             for item in metadata:
                 self.upsert_stream_channel_metadata(
-                    activity_id=activity_id,
-                    channel_key=item["channel_key"],
-                    original_size=item.get("original_size"),
-                    resolution=item.get("resolution"),
-                    series_type=item.get("series_type"),
-                    fetched_at=item.get("fetched_at"),
-                    batch_id=item.get("batch_id"),
-                    status=item.get("status", "available"),
-                    error=item.get("error"),
+                    StreamChannelRecord(
+                        activity_id=activity_id,
+                        channel_key=item["channel_key"],
+                        original_size=item.get("original_size"),
+                        resolution=item.get("resolution"),
+                        series_type=item.get("series_type"),
+                        fetched_at=item.get("fetched_at"),
+                        batch_id=item.get("batch_id"),
+                        status=item.get("status", "available"),
+                        error=item.get("error"),
+                    ),
                     commit=False,
                 )
             self.update_activity_source_state_and_enqueue_dirty(
@@ -266,15 +257,17 @@ class StreamWriteRepositoryMixin(_StreamWriteRepositoryHost):
                 )
             for item in metadata:
                 self.upsert_stream_channel_metadata(
-                    activity_id=activity_id,
-                    channel_key=item["channel_key"],
-                    original_size=item.get("original_size"),
-                    resolution=item.get("resolution"),
-                    series_type=item.get("series_type"),
-                    fetched_at=item.get("fetched_at"),
-                    batch_id=item.get("batch_id"),
-                    status=item.get("status", "available"),
-                    error=item.get("error"),
+                    StreamChannelRecord(
+                        activity_id=activity_id,
+                        channel_key=item["channel_key"],
+                        original_size=item.get("original_size"),
+                        resolution=item.get("resolution"),
+                        series_type=item.get("series_type"),
+                        fetched_at=item.get("fetched_at"),
+                        batch_id=item.get("batch_id"),
+                        status=item.get("status", "available"),
+                        error=item.get("error"),
+                    ),
                     commit=False,
                 )
             self.update_activity_source_state_and_enqueue_dirty(

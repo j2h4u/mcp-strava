@@ -6,10 +6,12 @@ import pytest
 from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id, activity_materialization_sources
 from mcp_strava.adapters.duckdb.read_model_activity_facts import _activity_fact, _activity_facts_batched
 from mcp_strava.adapters.duckdb.read_model_materializer import (
+    MaterializationOptions,
     _record_failed_run,
     materialize_read_model,
 )
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.repository_models import ActivitySummaryRecord
 from mcp_strava.adapters.duckdb.stream_metric_queries import (
     activity_cc,
     activity_hr_range,
@@ -43,20 +45,22 @@ def _seed_dirty_activity_with_streams(
     # This fixture has NO pauses (velocity never dips below VEL_STOP=0.15), so
     # hr_recovery_* will remain None/0 until the pause-inclusive fixture is used.
     repo.upsert_activity_summary(
-        activity_id=activity_id,
-        date=f"{day}T06:00:00Z",
-        name=f"Materialized {activity_id}",
-        sport_type="Run",
-        distance=6000.0,
-        moving_time=1800,
-        elapsed_time=1900,
-        total_elevation_gain=120.0,
-        summary_json=(
-            f'{{"id":{activity_id},"name":"Materialized","sport_type":"Run","start_date_local":"{day}T06:00:00Z",'
-            '"distance":6000,"moving_time":1800,"elapsed_time":1900,"total_elevation_gain":120,'
-            '"average_heartrate":145,"max_heartrate":172,"has_heartrate":true}'
-        ),
-        synced_at=f"{day}T07:00:00Z",
+        ActivitySummaryRecord(
+            activity_id=activity_id,
+            date=f"{day}T06:00:00Z",
+            name=f"Materialized {activity_id}",
+            sport_type="Run",
+            distance=6000.0,
+            moving_time=1800,
+            elapsed_time=1900,
+            total_elevation_gain=120.0,
+            summary_json=(
+                f'{{"id":{activity_id},"name":"Materialized","sport_type":"Run","start_date_local":"{day}T06:00:00Z",'
+                '"distance":6000,"moving_time":1800,"elapsed_time":1900,"total_elevation_gain":120,'
+                '"average_heartrate":145,"max_heartrate":172,"has_heartrate":true}'
+            ),
+            synced_at=f"{day}T07:00:00Z",
+        )
     )
     repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
     rows = []
@@ -99,7 +103,7 @@ def test_duckdb_materializer_writes_fact_tiers_and_clears_dirty_rows(tmp_path: P
     _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
     with repo:
         _seed_dirty_activity_with_streams(repo)
-        result = materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        result = materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
 
         activity_fact = repo.fetch_activity_metric_fact(920, metric_version=1)
         daily_facts = repo.fetch_daily_load_facts("2026-05-21", "2026-05-22", scope="all")
@@ -133,7 +137,7 @@ def test_duckdb_materializer_rolls_back_facts_and_keeps_dirty_rows_on_failure(tm
         failing_repo = FailingDailyFactRepo(repo.conn)
 
         with pytest.raises(RuntimeError, match="daily fact failed"):
-            materialize_read_model(failing_repo, metric_version=1, now="2026-05-24T12:00:00")
+            materialize_read_model(failing_repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
 
         assert repo.dirty_activity_rows(activity_id=920)
         success_count = repo.conn.execute(
@@ -216,7 +220,7 @@ def test_WR_03_record_failed_run_commits_under_process_lock(tmp_path: Path, monk
         failing_repo = FailingDailyFactRepo(repo.conn)
 
         with pytest.raises(RuntimeError, match="daily fact failed"):
-            materialize_read_model(failing_repo, metric_version=1, now="2026-05-24T12:00:00")
+            materialize_read_model(failing_repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
 
     # The failed-run record must commit through the lock-aware helper under the lock.
     assert commit_under_lock, (
@@ -269,20 +273,22 @@ def _seed_dirty_activity_with_pauses(
     Total = 180 rows ≥ MIN_STREAM_POINTS=120.
     """
     repo.upsert_activity_summary(
-        activity_id=activity_id,
-        date=f"{day}T07:00:00Z",
-        name=f"Pause activity {activity_id}",
-        sport_type="Run",
-        distance=5000.0,
-        moving_time=1500,
-        elapsed_time=1800,
-        total_elevation_gain=80.0,
-        summary_json=(
-            f'{{"id":{activity_id},"name":"Pause","sport_type":"Run","start_date_local":"{day}T07:00:00Z",'
-            '"distance":5000,"moving_time":1500,"elapsed_time":1800,"total_elevation_gain":80,'
-            '"average_heartrate":145,"max_heartrate":170,"has_heartrate":true}'
-        ),
-        synced_at=f"{day}T08:00:00Z",
+        ActivitySummaryRecord(
+            activity_id=activity_id,
+            date=f"{day}T07:00:00Z",
+            name=f"Pause activity {activity_id}",
+            sport_type="Run",
+            distance=5000.0,
+            moving_time=1500,
+            elapsed_time=1800,
+            total_elevation_gain=80.0,
+            summary_json=(
+                f'{{"id":{activity_id},"name":"Pause","sport_type":"Run","start_date_local":"{day}T07:00:00Z",'
+                '"distance":5000,"moving_time":1500,"elapsed_time":1800,"total_elevation_gain":80,'
+                '"average_heartrate":145,"max_heartrate":170,"has_heartrate":true}'
+            ),
+            synced_at=f"{day}T08:00:00Z",
+        )
     )
     repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
     rows = []
@@ -337,20 +343,22 @@ def _seed_dirty_activity_no_hr(
     assert vertical_speed_* is None in the no-HR test case.
     """
     repo.upsert_activity_summary(
-        activity_id=activity_id,
-        date=f"{day}T06:00:00Z",
-        name=f"No-HR activity {activity_id}",
-        sport_type="Run",
-        distance=4000.0,
-        moving_time=1200,
-        elapsed_time=1300,
-        total_elevation_gain=60.0,
-        summary_json=(
-            f'{{"id":{activity_id},"name":"NoHR","sport_type":"Run","start_date_local":"{day}T06:00:00Z",'
-            '"distance":4000,"moving_time":1200,"elapsed_time":1300,"total_elevation_gain":60,'
-            '"has_heartrate":false}'
-        ),
-        synced_at=f"{day}T07:00:00Z",
+        ActivitySummaryRecord(
+            activity_id=activity_id,
+            date=f"{day}T06:00:00Z",
+            name=f"No-HR activity {activity_id}",
+            sport_type="Run",
+            distance=4000.0,
+            moving_time=1200,
+            elapsed_time=1300,
+            total_elevation_gain=60.0,
+            summary_json=(
+                f'{{"id":{activity_id},"name":"NoHR","sport_type":"Run","start_date_local":"{day}T06:00:00Z",'
+                '"distance":4000,"moving_time":1200,"elapsed_time":1300,"total_elevation_gain":60,'
+                '"has_heartrate":false}'
+            ),
+            synced_at=f"{day}T07:00:00Z",
+        )
     )
     repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
     rows = []
@@ -403,7 +411,7 @@ def test_duckdb_materializer_populates_metric_columns_not_defaults(tmp_path: Pat
     _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
     with repo:
         _seed_dirty_activity_with_streams(repo)
-        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
 
         fact = repo.fetch_activity_metric_fact(920, metric_version=1)
 
@@ -422,7 +430,7 @@ def test_duckdb_materializer_pause_inclusive_hr_recovery(tmp_path: Path) -> None
     _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
     with repo:
         _seed_dirty_activity_with_pauses(repo)
-        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
 
         fact = repo.fetch_activity_metric_fact(921, metric_version=1)
 
@@ -441,7 +449,7 @@ def test_duckdb_materializer_rolling_median_populates(tmp_path: Path) -> None:
     _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
     with repo:
         _seed_dirty_activity_with_pauses(repo, activity_id=921, day="2026-05-21")
-        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
 
         rolling = repo.fetch_rolling_period_facts("2026-05-24", 7, scope="all")
 
@@ -462,7 +470,7 @@ def test_duckdb_materializer_no_hr_columns_stay_at_defaults(tmp_path: Path) -> N
         # may or may not return a value (we must not crash either way).
         _seed_dirty_activity_no_hr(repo, activity_id=922, day="2026-05-22")
         # No exception must be raised
-        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
 
         fact = repo.fetch_activity_metric_fact(922, metric_version=1)
 
@@ -495,22 +503,24 @@ def _seed_activity_with_hr(
     hr_avg = round(sum(heartrates) / len(heartrates))
     n = len(heartrates)
     repo.upsert_activity_summary(
-        activity_id=activity_id,
-        date=f"{day}T06:00:00Z",
-        name=f"HR fixture {activity_id}",
-        sport_type="Run",
-        distance=6000.0,
-        moving_time=n,
-        elapsed_time=n + 100,
-        total_elevation_gain=80.0,
-        summary_json=(
-            f'{{"id":{activity_id},"name":"HR fixture","sport_type":"Run",'
-            f'"start_date_local":"{day}T06:00:00Z","distance":6000,'
-            f'"moving_time":{n},"elapsed_time":{n + 100},'
-            f'"total_elevation_gain":80,"average_heartrate":{hr_avg},'
-            f'"max_heartrate":{hr_max},"has_heartrate":true}}'
-        ),
-        synced_at=f"{day}T07:00:00Z",
+        ActivitySummaryRecord(
+            activity_id=activity_id,
+            date=f"{day}T06:00:00Z",
+            name=f"HR fixture {activity_id}",
+            sport_type="Run",
+            distance=6000.0,
+            moving_time=n,
+            elapsed_time=n + 100,
+            total_elevation_gain=80.0,
+            summary_json=(
+                f'{{"id":{activity_id},"name":"HR fixture","sport_type":"Run",'
+                f'"start_date_local":"{day}T06:00:00Z","distance":6000,'
+                f'"moving_time":{n},"elapsed_time":{n + 100},'
+                f'"total_elevation_gain":80,"average_heartrate":{hr_avg},'
+                f'"max_heartrate":{hr_max},"has_heartrate":true}}'
+            ),
+            synced_at=f"{day}T07:00:00Z",
+        )
     )
     repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
     rows = [
@@ -564,7 +574,7 @@ def test_duckdb_materializer_hrr_uses_per_activity_max_not_running_max(tmp_path:
         _seed_activity_with_hr(repo, activity_id=801, day="2026-05-20", heartrates=[150] * 160 + [190] * 20)
         # Day 2 — easy activity: own max 150, median 120.
         _seed_activity_with_hr(repo, activity_id=802, day="2026-05-21", heartrates=[120] * 175 + [150] * 5)
-        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
 
         easy_fact = repo.fetch_activity_metric_fact(802, metric_version=1)
         running_max = max_heartrate_to_date(repo, "2026-05-21")
@@ -590,12 +600,12 @@ def test_materializer_extracts_calories_from_detail_json(tmp_path: Path) -> None
         # Activity with a calories value in its detail (update re-enqueues dirty).
         _seed_dirty_activity_with_streams(repo, activity_id=930, day="2026-05-21")
         repo.update_activity_detail(930, '{"id": 930, "resource_state": 3, "calories": 612.5}')
-        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
         with_cal = repo.fetch_activity_metric_fact(930, metric_version=1)
 
         # Activity whose detail has no calories field -> NULL.
         _seed_dirty_activity_with_streams(repo, activity_id=931, day="2026-05-22")
-        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
         without_cal = repo.fetch_activity_metric_fact(931, metric_version=1)
 
     assert with_cal is not None and with_cal["calories_kcal"] == 612.5
@@ -612,7 +622,7 @@ def test_materializer_populates_start_time_local_from_start_date_local(tmp_path:
     _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
     with repo:
         _seed_dirty_activity_with_streams(repo, activity_id=940, day="2026-05-21")
-        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
         fact = repo.fetch_activity_metric_fact(940, metric_version=1)
 
     assert fact is not None
@@ -639,7 +649,7 @@ def test_WR_04_partial_batch_does_not_undercount_daily_facts(tmp_path: Path) -> 
         _seed_dirty_activity_with_streams(repo, activity_id=921, day="2026-05-21")
 
         # limit=1 would, naively, materialize only one of the two same-day activities.
-        result = materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00", limit=1)
+        result = materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00", limit=1))
 
         # fetch_daily_load_facts uses an exclusive upper bound (day < end_day).
         daily_facts = repo.fetch_daily_load_facts("2026-05-21", "2026-05-22", scope="all")
@@ -677,7 +687,7 @@ def test_materialize_batched_fact_upserts_match_sequential(tmp_path, monkeypatch
         try:
             _seed_dirty_activity_with_streams(repo, activity_id=920, day="2026-05-21")
             _seed_dirty_activity_with_streams(repo, activity_id=921, day="2026-05-10")
-            materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+            materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
             return {table: repo.conn.execute(f"SELECT * FROM {table} ORDER BY ALL").fetchall() for table in fact_tables}
         finally:
             repo.close()
@@ -702,7 +712,7 @@ def test_daily_fact_sums_between_matches_per_day_reads(tmp_path: Path) -> None:
     with repo:
         _seed_dirty_activity_with_streams(repo, activity_id=920, day="2026-05-21")
         _seed_dirty_activity_with_streams(repo, activity_id=921, day="2026-05-10")
-        materialize_read_model(repo, metric_version=1, now="2026-05-24T12:00:00")
+        materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
 
         start, end = "2026-05-10", "2026-05-24"
         batched = repo.daily_fact_sums_between(start, end, 1)
@@ -823,7 +833,7 @@ def test_materializer_avoids_per_activity_scalar_read_fanout(tmp_path: Path) -> 
             _seed_dirty_activity_with_streams(repo, activity_id=950 + idx, day=f"2026-05-{10 + idx:02d}")
         counting_repo = CountingRepo(repo.conn)
 
-        materialize_read_model(counting_repo, metric_version=1, now="2026-05-24T12:00:00")
+        materialize_read_model(counting_repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
 
     assert counting_repo.hot_scalar_reads == 0
 
@@ -859,7 +869,7 @@ def test_materializer_batch_reads_run_before_write_transaction(tmp_path: Path) -
         _seed_dirty_activity_with_streams(repo, activity_id=980, day="2026-05-21")
         depth_repo = TransactionDepthRepo(repo.conn)
 
-        materialize_read_model(depth_repo, metric_version=1, now="2026-05-24T12:00:00")
+        materialize_read_model(depth_repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
 
     assert depth_repo.batch_read_depths
     assert set(depth_repo.batch_read_depths) == {0}

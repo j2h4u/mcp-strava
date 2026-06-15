@@ -2,11 +2,29 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, cast
 
 from mcp_strava.metric_registry import AGGREGATE_METRIC_BUNDLES, METRIC_REGISTRY, metrics_for_aggregate_bundle
 from mcp_strava.types import CompletenessMetadata, ServiceEnvelope, ServiceRationale, ServiceWarning
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BundleSectionContent:
+    """Cohesive optional payload fields for a single bundle section."""
+
+    rows: list[dict[str, Any]] | None = field(default=None)
+    items: list[dict[str, Any]] | None = field(default=None)
+    metrics: dict[str, Any] | None = field(default=None)
+    facts: dict[str, object] | None = field(default=None)
+    periods: dict[str, Any] | None = field(default=None)
+    comparison: dict[str, object] | None = field(default=None)
+    season: str | None = field(default=None)
+    current_week: dict[str, Any] | None = field(default=None)
+    read_model: dict[str, Any] | None = field(default=None)
+    row_count: int | None = field(default=None)
+
 
 PRODUCT_FACT_BUNDLES = frozenset({"daily_brief", "weekly_digest", "historical_facts"})
 
@@ -53,12 +71,15 @@ def format_aggregate_product_bundle(
     sections = {
         section_id: bundle_section(
             requested=metric_ids,
-            rows=filter_rows(rows, set(metric_ids)),
+            content=BundleSectionContent(rows=filter_rows(rows, set(metric_ids))),
         )
         for section_id, metric_ids in section_specs[str(bundle_id)].items()
     }
     if read_model is not None:
-        sections["read_model"] = bundle_section(requested=("fitness",), facts=read_model)
+        sections["read_model"] = bundle_section(
+            requested=("fitness",),
+            content=BundleSectionContent(facts=read_model),
+        )
     return bundle_data(
         bundle_id=str(bundle_id),
         as_of_day=None,
@@ -119,33 +140,21 @@ def pick_metrics(values: dict[str, Any], metric_ids: tuple[str, ...]) -> dict[st
     }
 
 
-def _collect_section_fields(
-    *,
-    rows: list[dict[str, Any]] | None,
-    items: list[dict[str, Any]] | None,
-    metrics: dict[str, Any] | None,
-    facts: dict[str, object] | None,
-    periods: dict[str, Any] | None,
-    comparison: dict[str, object] | None,
-    season: str | None,
-    current_week: dict[str, Any] | None,
-    read_model: dict[str, Any] | None,
-    row_count: int | None,
-) -> dict[str, Any]:
+def _collect_section_fields(content: BundleSectionContent) -> dict[str, Any]:
     """Collect all optional section fields into a dict, omitting None values."""
     return {
         key: value
         for key, value in (
-            ("rows", rows),
-            ("items", items),
-            ("metrics", metrics),
-            ("facts", facts),
-            ("periods", periods),
-            ("comparison", comparison),
-            ("season", season),
-            ("current_week", current_week),
-            ("read_model", read_model),
-            ("row_count", row_count),
+            ("rows", content.rows),
+            ("items", content.items),
+            ("metrics", content.metrics),
+            ("facts", content.facts),
+            ("periods", content.periods),
+            ("comparison", content.comparison),
+            ("season", content.season),
+            ("current_week", content.current_week),
+            ("read_model", content.read_model),
+            ("row_count", content.row_count),
         )
         if value is not None
     }
@@ -154,30 +163,16 @@ def _collect_section_fields(
 def bundle_section(
     *,
     requested: tuple[str, ...],
-    rows: list[dict[str, Any]] | None = None,
-    items: list[dict[str, Any]] | None = None,
-    metrics: dict[str, Any] | None = None,
-    facts: dict[str, object] | None = None,
-    periods: dict[str, Any] | None = None,
-    comparison: dict[str, object] | None = None,
-    season: str | None = None,
-    current_week: dict[str, Any] | None = None,
-    read_model: dict[str, Any] | None = None,
-    row_count: int | None = None,
+    content: BundleSectionContent,
 ) -> dict[str, Any]:
-    section = _collect_section_fields(
-        rows=rows,
-        items=items,
-        metrics=metrics,
-        facts=facts,
-        periods=periods,
-        comparison=comparison,
-        season=season,
-        current_week=current_week,
-        read_model=read_model,
-        row_count=row_count,
+    section = _collect_section_fields(content)
+    included = included_metrics(
+        requested,
+        rows=content.rows,
+        items=content.items,
+        metrics=content.metrics,
+        facts=content.facts,
     )
-    included = included_metrics(requested, rows=rows, items=items, metrics=metrics, facts=facts)
     section["bundle_completeness"] = bundle_completeness(requested, included_metrics=tuple(included))
     return section
 

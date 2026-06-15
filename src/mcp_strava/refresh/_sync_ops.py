@@ -15,10 +15,14 @@ from mcp_strava.adapters.duckdb.activity_selectors import (
 )
 from mcp_strava.adapters.duckdb.kudos_store import activities_missing_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.read_model_materializer import (
+    MaterializationOptions,
+)
+from mcp_strava.adapters.duckdb.read_model_materializer import (
     materialize_read_model as materialize_duckdb_read_model,
 )
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.repository_models import ActivitySummaryRecord
 from mcp_strava.adapters.duckdb.source_hashing import summary_payload_changed
 from mcp_strava.adapters.duckdb.stream_coverage_queries import activities_missing_stream_channels
 from mcp_strava.constants import Config
@@ -232,16 +236,18 @@ def sync_summaries(repo, transport, now_iso: str, *, after_epoch: int | None = N
             elif not summary_payload_changed(existing.summary_json, summary_json):
                 continue
             repo.upsert_activity_summary(
-                activity_id=act.id,
-                date=act.start_date_local[:10],
-                name=act.name,
-                sport_type=act.sport_type,
-                distance=act.distance,
-                moving_time=act.moving_time,
-                elapsed_time=act.elapsed_time,
-                total_elevation_gain=act.total_elevation_gain,
-                summary_json=summary_json,
-                synced_at=now_iso,
+                ActivitySummaryRecord(
+                    activity_id=act.id,
+                    date=act.start_date_local[:10],
+                    name=act.name,
+                    sport_type=act.sport_type,
+                    distance=act.distance,
+                    moving_time=act.moving_time,
+                    elapsed_time=act.elapsed_time,
+                    total_elevation_gain=act.total_elevation_gain,
+                    summary_json=summary_json,
+                    synced_at=now_iso,
+                )
             )
         if len(data) < Config.Api.STRAVA_PAGE_SIZE:
             break
@@ -375,11 +381,13 @@ def materialize_read_model_stage(
     started = datetime.now(UTC)
     result = materialize_duckdb_read_model(
         repo,
-        metric_version=current_version,
-        now=now_iso,
-        renew_lease=renew_lease,
-        limit=materialize_limit,
-        trigger_reason=trigger_reason,
+        current_version,
+        MaterializationOptions(
+            now=now_iso,
+            renew_lease=renew_lease,
+            limit=materialize_limit,
+            trigger_reason=trigger_reason,
+        ),
     )
     duration_ms = int((datetime.now(UTC) - started).total_seconds() * 1000)
     # Self-explanatory materialize-ok signal: the version materialized at and how

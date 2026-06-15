@@ -56,6 +56,46 @@ class LogicVersionRow(TypedDict):
     changed_at: object
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ActivitySummaryRecord:
+    activity_id: int
+    date: str
+    name: str
+    sport_type: str
+    distance: float
+    moving_time: int
+    elapsed_time: int
+    total_elevation_gain: float
+    summary_json: str
+    synced_at: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class StreamChannelRecord:
+    activity_id: int
+    channel_key: str
+    original_size: int | None
+    resolution: str | None
+    series_type: str | None
+    fetched_at: str | None
+    batch_id: str | None
+    status: str
+    error: str | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SyncLogRecord:
+    timestamp: str
+    status: str
+    activities_seen: int | None
+    activities_new: int | None
+    streams_fetched: int | None
+    details_fetched: int | None
+    api_calls: int | None
+    error: str | None
+    kudos_fetched: int | None
+
+
 @dataclass(frozen=True)
 class ActivityMaterializationSource:
     activity: RepositoryActivityRow

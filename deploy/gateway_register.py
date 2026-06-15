@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -140,31 +141,69 @@ def _build_mutations(
     return dump_yaml(updated_catalog), dump_yaml(updated_compose)
 
 
+# ---------------------------------------------------------------------------
+# Parameter groups — defined after the functions they reference as defaults
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GatewayPaths:
+    """File-system locations the registration operates on."""
+
+    catalog_path: Path = field(default=DEFAULT_CATALOG)
+    compose_path: Path = field(default=DEFAULT_COMPOSE)
+    backup_dir: Path | None = field(default=None)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GatewayOptions:
+    """Service identity and behavior knobs."""
+
+    service_name: str = field(default=DEFAULT_SERVICE_NAME)
+    service_url: str = field(default=DEFAULT_SERVICE_URL)
+    apply: bool = field(default=False)
+    confirm_live_gateway: bool = field(default=False)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GatewayDeps:
+    """Injectable docker command lists and callables — the test-seam group."""
+
+    restart_cmd: list[str] | None = field(default=None)
+    rollback_restart_cmd: list[str] | None = field(default=None)
+    compose_config_cmd: list[str] | None = field(default=None)
+    run_cmd: Callable[[list[str]], int] = field(default_factory=lambda: _run_subprocess)
+    atomic_write_fn: Callable[[Path, str], None] = field(default_factory=lambda: atomic_write_text)
+
+
+# ---------------------------------------------------------------------------
+# Module-level singletons used as parameter defaults (frozen dataclasses are
+# safe as defaults — same instance is never mutated).
+# ---------------------------------------------------------------------------
+
+_DEFAULT_PATHS = GatewayPaths()
+_DEFAULT_OPTIONS = GatewayOptions()
+_DEFAULT_DEPS = GatewayDeps()
+
+
 def register_strava_gateway(
-    catalog_path: Path = DEFAULT_CATALOG,
-    compose_path: Path = DEFAULT_COMPOSE,
-    *,
-    service_name: str = DEFAULT_SERVICE_NAME,
-    service_url: str = DEFAULT_SERVICE_URL,
-    restart_cmd: list[str] | None = None,
-    rollback_restart_cmd: list[str] | None = None,
-    compose_config_cmd: list[str] | None = None,
-    backup_dir: Path | None = None,
-    apply: bool = False,
-    confirm_live_gateway: bool = False,
-    run_cmd: Callable[[list[str]], int] = _run_subprocess,
-    atomic_write_fn: Callable[[Path, str], None] = atomic_write_text,
+    paths: GatewayPaths = _DEFAULT_PATHS,
+    options: GatewayOptions = _DEFAULT_OPTIONS,
+    deps: GatewayDeps = _DEFAULT_DEPS,
 ) -> int:
+    catalog_path = paths.catalog_path
+    compose_path = paths.compose_path
+
     if not catalog_path.exists() or not compose_path.exists():
         print("gateway files missing", file=sys.stderr)
         return EXIT_FAILED
 
     live_target = _is_live_target(catalog_path) or _is_live_target(compose_path)
-    if live_target and apply and not confirm_live_gateway:
+    if live_target and options.apply and not options.confirm_live_gateway:
         print("live gateway mutation requires --apply and --confirm-live-gateway", file=sys.stderr)
         return EXIT_FAILED
 
-    compose_config_cmd = compose_config_cmd or [
+    compose_config_cmd = deps.compose_config_cmd or [
         "docker",
         "compose",
         "--env-file",
@@ -173,7 +212,7 @@ def register_strava_gateway(
         str(compose_path),
         "config",
     ]
-    restart_cmd = restart_cmd or [
+    restart_cmd = deps.restart_cmd or [
         "docker",
         "compose",
         "--env-file",
@@ -185,23 +224,26 @@ def register_strava_gateway(
         "--force-recreate",
         "mcp-gateway",
     ]
-    rollback_restart_cmd = rollback_restart_cmd or restart_cmd
-    backup_dir = backup_dir or (catalog_path.parent / "backups")
+    rollback_restart_cmd = deps.rollback_restart_cmd or restart_cmd
+    backup_dir = paths.backup_dir or (catalog_path.parent / "backups")
+
+    run_cmd = deps.run_cmd
+    atomic_write_fn = deps.atomic_write_fn
 
     catalog_obj = load_yaml(catalog_path)
     compose_obj = load_yaml(compose_path)
     next_catalog_text, next_compose_text = _build_mutations(
         catalog_obj,
         compose_obj,
-        service_name=service_name,
-        service_url=service_url,
+        service_name=options.service_name,
+        service_url=options.service_url,
     )
     next_catalog_obj = yaml.safe_load(next_catalog_text) or {}
     next_compose_obj = yaml.safe_load(next_compose_text) or {}
     if next_catalog_obj == catalog_obj and next_compose_obj == compose_obj:
         return EXIT_OK
 
-    if not apply:
+    if not options.apply:
         print("dry-run: planned catalog/compose mutation prepared")
         return EXIT_OK
 
@@ -249,13 +291,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     return register_strava_gateway(
-        catalog_path=args.catalog,
-        compose_path=args.compose,
-        service_name=args.service,
-        service_url=args.url,
-        backup_dir=args.backup_dir,
-        apply=args.apply,
-        confirm_live_gateway=args.confirm_live_gateway,
+        paths=GatewayPaths(
+            catalog_path=args.catalog,
+            compose_path=args.compose,
+            backup_dir=args.backup_dir,
+        ),
+        options=GatewayOptions(
+            service_name=args.service,
+            service_url=args.url,
+            apply=args.apply,
+            confirm_live_gateway=args.confirm_live_gateway,
+        ),
     )
 
 

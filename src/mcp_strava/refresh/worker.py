@@ -99,11 +99,9 @@ def _materialize_dirty_read_model(batch_size: int) -> int:
 
 def _run_stream_channel_backfill(repo, transport, refresh_policy, clock, sleeper):
     return refresh_runtime.run_stream_channel_catchup(
-        repo,
-        transport,
-        refresh_policy,
-        clock,
-        sleeper,
+        refresh_runtime.RefreshCollaborators(
+            repo=repo, transport=transport, policy=refresh_policy, clock=clock, sleeper=sleeper
+        ),
         limit=refresh_policy.stream_backfill_batch_size,
         owner="refresh-worker-stream-backfill",
     )
@@ -239,11 +237,9 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> int:
 
         if pending_count > 0 or refresh_due:
             result = refresh_runtime.run_once(
-                repo,
-                transport,
-                refresh_policy,
-                clock,
-                sleeper,
+                refresh_runtime.RefreshCollaborators(
+                    repo=repo, transport=transport, policy=refresh_policy, clock=clock, sleeper=sleeper
+                ),
                 owner="refresh-worker",
                 force=False,
                 mode="periodic",

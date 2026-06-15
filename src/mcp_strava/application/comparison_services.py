@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from contextlib import nullcontext
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 
@@ -13,6 +14,18 @@ from mcp_strava.application.aggregate_services import (
     get_training_aggregates_service,
 )
 from mcp_strava.types import CompletenessMetadata, ServiceEnvelope, ServiceRationale, ServiceWarning
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class PeriodComparisonRequest:
+    """Cohesive date-range pair and optional sport filter for a period comparison."""
+
+    period_a_start: str
+    period_a_end: str
+    period_b_start: str
+    period_b_end: str
+    sport: str | None = None
+
 
 _FLAT_EPSILON = 1e-9  # |delta| below this counts as no change (float "== 0")
 
@@ -227,12 +240,8 @@ def _compare_request(
 
 
 def compare_periods_service(
+    request: PeriodComparisonRequest,
     *,
-    period_a_start: str,
-    period_a_end: str,
-    period_b_start: str,
-    period_b_end: str,
-    sport: str | None = None,
     now: datetime | None = None,
     signal_first_use: bool = True,
     connection=None,
@@ -241,9 +250,9 @@ def compare_periods_service(
     with _connection_context(connection) as conn:
         period_a_envelope = get_training_aggregates_service(
             _compare_request(
-                start_day=period_a_start,
-                end_day_exclusive=period_a_end,
-                sport=sport,
+                start_day=request.period_a_start,
+                end_day_exclusive=request.period_a_end,
+                sport=request.sport,
             ),
             now=checked_at,
             signal_first_use=signal_first_use,
@@ -251,9 +260,9 @@ def compare_periods_service(
         )
         period_b_envelope = get_training_aggregates_service(
             _compare_request(
-                start_day=period_b_start,
-                end_day_exclusive=period_b_end,
-                sport=sport,
+                start_day=request.period_b_start,
+                end_day_exclusive=request.period_b_end,
+                sport=request.sport,
             ),
             now=checked_at,
             signal_first_use=False,
@@ -263,14 +272,14 @@ def compare_periods_service(
     period_a_by_key = _compare_rows_by_key(_aggregate_rows(period_a_envelope))
     period_b_by_key = _compare_rows_by_key(_aggregate_rows(period_b_envelope))
     keys = sorted(set(period_a_by_key) | set(period_b_by_key))
-    global_section = {"scope_filter": "sport" if sport else "all", "metrics": {}}
+    global_section = {"scope_filter": "sport" if request.sport else "all", "metrics": {}}
     per_sport_section: dict[str, dict[str, Any]] = {}
     for scope, sport_name, metric_id in keys:
         comparison = _compare_aggregate_pair(
             period_a_by_key.get((scope, sport_name, metric_id)), period_b_by_key.get((scope, sport_name, metric_id))
         )
         if scope == "per_sport":
-            if sport is not None and sport_name != sport:
+            if request.sport is not None and sport_name != request.sport:
                 continue
             resolved_sport = sport_name or "unknown"
             per_sport_section.setdefault(resolved_sport, {"metrics": {}})
@@ -280,8 +289,8 @@ def compare_periods_service(
 
     data = {
         "periods": {
-            "period_a": {"start": period_a_start, "end": period_a_end},
-            "period_b": {"start": period_b_start, "end": period_b_end},
+            "period_a": {"start": request.period_a_start, "end": request.period_a_end},
+            "period_b": {"start": request.period_b_start, "end": request.period_b_end},
         },
         "global": global_section,
         "per_sport": per_sport_section,

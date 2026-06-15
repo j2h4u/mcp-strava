@@ -7,6 +7,7 @@ No storage imports — callers are responsible for fetching rows via the reposit
 from collections.abc import Mapping
 from datetime import datetime
 
+from mcp_strava.cardiac_drift import DriftParams as _DriftParams
 from mcp_strava.cardiac_drift import cardiac_drift as _drift_algo
 from mcp_strava.constants import SPORT_WALK, WALK_TRIMP_DISCOUNT, Config
 from mcp_strava.types import CardiacDriftResult, HrRecovery, VerticalSpeed
@@ -70,12 +71,14 @@ def calc_cardiac_drift(rows, sport_type=None):
     result = _drift_algo(
         heartrate=hr,
         velocity=vel,
-        min_cluster_size=Config.Drift.MIN_CLUSTER_SIZE,
-        min_segment_duration=Config.Drift.MIN_SEGMENT_DURATION,
-        drift_threshold_pct=threshold,
-        outlier_iqr_mult=Config.Drift.OUTLIER_IQR_MULT,
-        max_k=Config.Drift.MAX_K,
-        gvf_threshold=Config.Drift.GVF_THRESHOLD,
+        params=_DriftParams(
+            min_cluster_size=Config.Drift.MIN_CLUSTER_SIZE,
+            min_segment_duration=Config.Drift.MIN_SEGMENT_DURATION,
+            drift_threshold_pct=threshold,
+            outlier_iqr_mult=Config.Drift.OUTLIER_IQR_MULT,
+            max_k=Config.Drift.MAX_K,
+            gvf_threshold=Config.Drift.GVF_THRESHOLD,
+        ),
     )
 
     if result.get("error"):

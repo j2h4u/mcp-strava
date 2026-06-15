@@ -513,12 +513,16 @@ def test_compare_periods_service_includes_global_and_per_sport_comparisons(tmp_p
     db_path = _aggregate_fixture(tmp_path / "compare.duckdb")
     conn = open_fixture_db(db_path)
     try:
+        from mcp_strava.application.comparison_services import PeriodComparisonRequest
+
         envelope = compare_periods_service(
-            period_a_start="2026-05-05",
-            period_a_end="2026-05-13",
-            period_b_start="2026-05-13",
-            period_b_end="2026-06-01",
-            sport=None,
+            PeriodComparisonRequest(
+                period_a_start="2026-05-05",
+                period_a_end="2026-05-13",
+                period_b_start="2026-05-13",
+                period_b_end="2026-06-01",
+                sport=None,
+            ),
             now=datetime.fromisoformat("2026-05-21T09:00:00"),
             signal_first_use=False,
             connection=conn,
@@ -665,12 +669,16 @@ def test_compare_periods_service_delegates_to_bounded_all_time_aggregates(monkey
 
     monkeypatch.setattr(comparison_services, "get_training_aggregates_service", fake_aggregate_service, raising=False)
 
+    from mcp_strava.application.comparison_services import PeriodComparisonRequest
+
     envelope = comparison_services.compare_periods_service(
-        period_a_start="2026-05-01",
-        period_a_end="2026-05-08",
-        period_b_start="2026-05-08",
-        period_b_end="2026-05-15",
-        sport=None,
+        PeriodComparisonRequest(
+            period_a_start="2026-05-01",
+            period_a_end="2026-05-08",
+            period_b_start="2026-05-08",
+            period_b_end="2026-05-15",
+            sport=None,
+        ),
         now=datetime.fromisoformat("2026-05-21T09:00:00"),
         signal_first_use=False,
         connection=object(),
@@ -703,12 +711,16 @@ def test_compare_periods_service_with_sport_filter_uses_only_filtered_sport(tmp_
     db_path = _aggregate_fixture(tmp_path / "compare-run.duckdb")
     conn = open_fixture_db(db_path)
     try:
+        from mcp_strava.application.comparison_services import PeriodComparisonRequest
+
         envelope = compare_periods_service(
-            period_a_start="2026-05-05",
-            period_a_end="2026-05-13",
-            period_b_start="2026-05-13",
-            period_b_end="2026-06-01",
-            sport="Run",
+            PeriodComparisonRequest(
+                period_a_start="2026-05-05",
+                period_a_end="2026-05-13",
+                period_b_start="2026-05-13",
+                period_b_end="2026-06-01",
+                sport="Run",
+            ),
             now=datetime.fromisoformat("2026-05-21T09:00:00"),
             signal_first_use=False,
             connection=conn,
@@ -817,12 +829,16 @@ def test_tool_metric_payloads_match_registry_exposure(tmp_path: Path) -> None:
 
     compare_conn = open_fixture_db(_aggregate_fixture(tmp_path / "registry-compare.duckdb"))
     try:
+        from mcp_strava.application.comparison_services import PeriodComparisonRequest
+
         compare = dc_to_dict(
             compare_periods_service(
-                period_a_start="2026-05-05",
-                period_a_end="2026-05-13",
-                period_b_start="2026-05-13",
-                period_b_end="2026-06-01",
+                PeriodComparisonRequest(
+                    period_a_start="2026-05-05",
+                    period_a_end="2026-05-13",
+                    period_b_start="2026-05-13",
+                    period_b_end="2026-06-01",
+                ),
                 now=now,
                 signal_first_use=False,
                 connection=compare_conn,

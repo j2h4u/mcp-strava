@@ -4,21 +4,24 @@ from pathlib import Path
 import pytest
 
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.repository_models import ActivitySummaryRecord, StreamChannelRecord
 from tests._fixtures_duckdb import create_empty_fixture_db
 
 
 def _seed_activity(repo: DuckDBRepository, activity_id: int = 10) -> None:
     repo.upsert_activity_summary(
-        activity_id=activity_id,
-        date="2026-05-01T06:00:00Z",
-        name="Fixture Run",
-        sport_type="Run",
-        distance=10000.0,
-        moving_time=3600,
-        elapsed_time=3700,
-        total_elevation_gain=120.0,
-        summary_json="{}",
-        synced_at="2026-05-01T07:00:00Z",
+        ActivitySummaryRecord(
+            activity_id=activity_id,
+            date="2026-05-01T06:00:00Z",
+            name="Fixture Run",
+            sport_type="Run",
+            distance=10000.0,
+            moving_time=3600,
+            elapsed_time=3700,
+            total_elevation_gain=120.0,
+            summary_json="{}",
+            synced_at="2026-05-01T07:00:00Z",
+        )
     )
 
 
@@ -85,7 +88,7 @@ def test_replace_stream_rows_and_channel_metadata_is_atomic(tmp_path: Path) -> N
         )
 
         class BoomRepo(DuckDBRepository):
-            def upsert_stream_channel_metadata(self, *args, **kwargs):
+            def upsert_stream_channel_metadata(self, record: StreamChannelRecord, *, commit: bool = True):
                 raise RuntimeError("boom")
 
         failing_repo = BoomRepo(repo.conn)
@@ -156,15 +159,17 @@ def test_replace_stream_rows_and_channel_metadata_preserves_other_activities(tmp
             ],
         )
         repo.upsert_stream_channel_metadata(
-            activity_id=20,
-            channel_key="watts",
-            original_size=1,
-            resolution="high",
-            series_type="distance",
-            fetched_at="2026-05-01T08:00:00Z",
-            batch_id="neighbor",
-            status="available",
-            error=None,
+            StreamChannelRecord(
+                activity_id=20,
+                channel_key="watts",
+                original_size=1,
+                resolution="high",
+                series_type="distance",
+                fetched_at="2026-05-01T08:00:00Z",
+                batch_id="neighbor",
+                status="available",
+                error=None,
+            )
         )
         before_stream = repo.conn.execute(
             "SELECT heartrate, velocity, values_json FROM streams WHERE activity_id = 20 AND time_offset = 0"
@@ -310,15 +315,17 @@ def test_merge_stream_channel_values_is_update_only_and_preserves_existing_keys(
             ],
         )
         repo.upsert_stream_channel_metadata(
-            activity_id=10,
-            channel_key="distance",
-            original_size=2,
-            resolution="high",
-            series_type="distance",
-            fetched_at="2026-05-01T08:00:00Z",
-            batch_id=None,
-            status="available",
-            error=None,
+            StreamChannelRecord(
+                activity_id=10,
+                channel_key="distance",
+                original_size=2,
+                resolution="high",
+                series_type="distance",
+                fetched_at="2026-05-01T08:00:00Z",
+                batch_id=None,
+                status="available",
+                error=None,
+            )
         )
         before = repo.conn.execute(
             "SELECT heartrate, velocity, values_json FROM streams WHERE activity_id = 10 AND time_offset = 1"

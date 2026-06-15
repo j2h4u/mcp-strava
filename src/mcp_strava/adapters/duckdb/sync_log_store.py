@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Protocol
 
+from mcp_strava.adapters.duckdb.repository_models import SyncLogRecord
 from mcp_strava.adapters.duckdb.repository_utils import Row, as_int_opt, as_str_opt
 from mcp_strava.types import RepositorySyncLogEntry
 
@@ -19,19 +20,7 @@ class SyncLogRepository(Protocol):
     def _commit_if_standalone(self) -> None: ...
 
 
-def append_sync_log(
-    repo: SyncLogRepository,
-    *,
-    timestamp: str,
-    status: str,
-    activities_seen: int | None,
-    activities_new: int | None,
-    streams_fetched: int | None,
-    details_fetched: int | None,
-    api_calls: int | None,
-    error: str | None,
-    kudos_fetched: int | None,
-) -> None:
+def append_sync_log(repo: SyncLogRepository, record: SyncLogRecord) -> None:
     repo._execute(
         """
         INSERT INTO sync_log (
@@ -41,15 +30,15 @@ def append_sync_log(
         """,
         [
             repo._next_id("sync_log"),
-            timestamp,
-            status,
-            activities_seen,
-            activities_new,
-            streams_fetched,
-            details_fetched,
-            api_calls,
-            error,
-            kudos_fetched,
+            record.timestamp,
+            record.status,
+            record.activities_seen,
+            record.activities_new,
+            record.streams_fetched,
+            record.details_fetched,
+            record.api_calls,
+            record.error,
+            record.kudos_fetched,
         ],
     )
     repo._commit_if_standalone()

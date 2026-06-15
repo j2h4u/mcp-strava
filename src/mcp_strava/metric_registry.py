@@ -250,6 +250,7 @@ COMPUTE_SOURCE_MODULES: tuple[str, ...] = (
     "mcp_strava.metric_registry_metrics_report",
     "mcp_strava.metric_registry_metrics_stream",
     "mcp_strava.metric_registry_metrics_training",
+    "mcp_strava.metric_registry_specs",
     "mcp_strava.metric_registry_shared",
     "mcp_strava.metric_registry_status",
     "mcp_strava.metrics",

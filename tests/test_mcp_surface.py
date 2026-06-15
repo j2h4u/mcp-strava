@@ -358,7 +358,7 @@ def test_mcp_tools_have_annotations_and_structured_output(monkeypatch) -> None:
     monkeypatch.setattr(
         mcp_http,
         "compare_periods_service",
-        lambda **_: _envelope({"global": {"metrics": {}}}),
+        lambda _request, **_: _envelope({"global": {"metrics": {}}}),
     )
     monkeypatch.setattr(
         mcp_http,
@@ -614,7 +614,7 @@ def test_get_workout_detail_missing_id_is_unavailable(monkeypatch) -> None:
     monkeypatch.setattr(
         mcp_http,
         "compare_periods_service",
-        lambda **_: _envelope({"global": {"metrics": {}}}),
+        lambda _request, **_: _envelope({"global": {"metrics": {}}}),
     )
     monkeypatch.setattr(
         mcp_http,

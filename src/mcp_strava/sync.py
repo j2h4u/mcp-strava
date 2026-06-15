@@ -26,11 +26,9 @@ def sync_activities(quick: bool = False):
     with MirrorConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
         return refresh_runtime.run_once(
-            repo,
-            transport,
-            refresh_policy,
-            clock,
-            sleeper,
+            refresh_runtime.RefreshCollaborators(
+                repo=repo, transport=transport, policy=refresh_policy, clock=clock, sleeper=sleeper
+            ),
             force=quick,
             mode="quick" if quick else "daily",
         )
@@ -44,11 +42,9 @@ def backfill_activities(since: str | None = None):
     with MirrorConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
         return refresh_runtime.run_catchup(
-            repo,
-            transport,
-            refresh_policy,
-            clock,
-            sleeper,
+            refresh_runtime.RefreshCollaborators(
+                repo=repo, transport=transport, policy=refresh_policy, clock=clock, sleeper=sleeper
+            ),
             since=since,
             owner="refresh-backfill",
         )

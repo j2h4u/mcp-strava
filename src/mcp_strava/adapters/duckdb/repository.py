@@ -16,6 +16,7 @@ from mcp_strava.adapters.duckdb.connection import (
     open_fixture_db,
 )
 from mcp_strava.adapters.duckdb.read_model_repository import ReadModelRepositoryMixin
+from mcp_strava.adapters.duckdb.repository_models import ActivitySummaryRecord
 from mcp_strava.adapters.duckdb.repository_utils import (
     Row,
 )
@@ -275,20 +276,7 @@ class DuckDBRepository(ReadModelRepositoryMixin, StreamWriteRepositoryMixin):
     def _now_iso(self) -> str:
         return datetime.now(UTC).replace(tzinfo=None).isoformat()
 
-    def upsert_activity_summary(
-        self,
-        *,
-        activity_id: int,
-        date: str,
-        name: str,
-        sport_type: str,
-        distance: float,
-        moving_time: int,
-        elapsed_time: int,
-        total_elevation_gain: float,
-        summary_json: str,
-        synced_at: str,
-    ) -> None:
+    def upsert_activity_summary(self, record: ActivitySummaryRecord) -> None:
         self.begin()
         try:
             self._execute(
@@ -309,20 +297,20 @@ class DuckDBRepository(ReadModelRepositoryMixin, StreamWriteRepositoryMixin):
                     synced_at=excluded.synced_at
                 """,
                 [
-                    activity_id,
-                    date[:10],
-                    name,
-                    sport_type,
-                    distance,
-                    moving_time,
-                    elapsed_time,
-                    total_elevation_gain,
-                    summary_json,
-                    synced_at,
+                    record.activity_id,
+                    record.date[:10],
+                    record.name,
+                    record.sport_type,
+                    record.distance,
+                    record.moving_time,
+                    record.elapsed_time,
+                    record.total_elevation_gain,
+                    record.summary_json,
+                    record.synced_at,
                 ],
             )
             self.update_activity_source_state_and_enqueue_dirty(
-                activity_id, metric_version=self.current_metric_version()
+                record.activity_id, metric_version=self.current_metric_version()
             )
         except Exception:
             self.rollback()

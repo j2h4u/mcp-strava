@@ -213,11 +213,9 @@ def _run_dry_run_catchup(since: str | None, limit: int | None, db_path: Path | N
     with conn_context as conn:
         repo = conn if isinstance(conn, DuckDBRepository) else DuckDBRepository.from_connection(conn)
         stream_result = backfill_stream_channels(
-            repo,
-            transport,
-            refresh_policy,
-            clock,
-            sleeper,
+            refresh_runtime.RefreshCollaborators(
+                repo=repo, transport=transport, policy=refresh_policy, clock=clock, sleeper=sleeper
+            ),
             since=since,
             limit=limit,
             dry_run=True,
@@ -238,11 +236,9 @@ def _run_live_catchup(since: str | None, limit: int | None) -> dict:
     with MirrorConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
         stream_result = backfill_stream_channels(
-            repo,
-            transport,
-            refresh_policy,
-            clock,
-            sleeper,
+            refresh_runtime.RefreshCollaborators(
+                repo=repo, transport=transport, policy=refresh_policy, clock=clock, sleeper=sleeper
+            ),
             since=since,
             limit=limit,
             dry_run=False,

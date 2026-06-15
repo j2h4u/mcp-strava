@@ -16,6 +16,7 @@ from mcp_strava.adapters.duckdb.daily_load_queries import (
     observed_trimp_history_by_sport,
 )
 from mcp_strava.adapters.duckdb.kudos_store import activities_missing_kudos, upsert_kudos
+from mcp_strava.adapters.duckdb.repository_models import ActivitySummaryRecord
 from mcp_strava.adapters.duckdb.schema import create_schema
 from mcp_strava.adapters.duckdb.stream_metric_queries import max_heartrate_to_date
 
@@ -154,16 +155,18 @@ def test_duckdb_repository_refresh_source_dirty_and_status_roundtrip(tmp_path: P
         assert store.mark_refresh_requests_consumed("2026-05-21T12:00:00Z") == 1
 
         repo.upsert_activity_summary(
-            activity_id=100,
-            date="2026-05-21T06:00:00Z",
-            name="DuckDB Run",
-            sport_type="Run",
-            distance=6000.0,
-            moving_time=1800,
-            elapsed_time=1900,
-            total_elevation_gain=120.0,
-            summary_json='{"id":100,"name":"DuckDB Run","synced_at":"ignored"}',
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=100,
+                date="2026-05-21T06:00:00Z",
+                name="DuckDB Run",
+                sport_type="Run",
+                distance=6000.0,
+                moving_time=1800,
+                elapsed_time=1900,
+                total_elevation_gain=120.0,
+                summary_json='{"id":100,"name":"DuckDB Run","synced_at":"ignored"}',
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
         source = repo.source_state_for_activity(100)
         dirty = repo.dirty_activity_rows()
@@ -184,16 +187,18 @@ def test_duckdb_repository_fact_upserts_queries_and_dirty_clear(tmp_path: Path) 
 
     with DuckDBRepository.from_path(fixture) as repo:
         repo.upsert_activity_summary(
-            activity_id=100,
-            date="2026-05-21T06:00:00Z",
-            name="DuckDB Run",
-            sport_type="Run",
-            distance=6000.0,
-            moving_time=1800,
-            elapsed_time=1900,
-            total_elevation_gain=120.0,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=100,
+                date="2026-05-21T06:00:00Z",
+                name="DuckDB Run",
+                sport_type="Run",
+                distance=6000.0,
+                moving_time=1800,
+                elapsed_time=1900,
+                total_elevation_gain=120.0,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
         dirty = repo.dirty_activity_rows_for_materialization(metric_version=1)
         assert dirty
@@ -442,20 +447,22 @@ def _seed_hr_activity_with_streams(
     OBSERVED. Constant heartrate keeps the per-activity TRIMP deterministic and
     lets a Walk and a Run on the same day produce comparable raw TRIMP."""
     repo.upsert_activity_summary(
-        activity_id=activity_id,
-        date=f"{day}T06:00:00Z",
-        name=f"{sport_type} {activity_id}",
-        sport_type=sport_type,
-        distance=6000.0,
-        moving_time=1800,
-        elapsed_time=1900,
-        total_elevation_gain=120.0,
-        summary_json=(
-            f'{{"id":{activity_id},"name":"{sport_type}","sport_type":"{sport_type}",'
-            f'"start_date_local":"{day}T06:00:00Z","distance":6000,"moving_time":1800,'
-            '"elapsed_time":1900,"total_elevation_gain":120,"has_heartrate":true}'
-        ),
-        synced_at=f"{day}T07:00:00Z",
+        ActivitySummaryRecord(
+            activity_id=activity_id,
+            date=f"{day}T06:00:00Z",
+            name=f"{sport_type} {activity_id}",
+            sport_type=sport_type,
+            distance=6000.0,
+            moving_time=1800,
+            elapsed_time=1900,
+            total_elevation_gain=120.0,
+            summary_json=(
+                f'{{"id":{activity_id},"name":"{sport_type}","sport_type":"{sport_type}",'
+                f'"start_date_local":"{day}T06:00:00Z","distance":6000,"moving_time":1800,'
+                '"elapsed_time":1900,"total_elevation_gain":120,"has_heartrate":true}'
+            ),
+            synced_at=f"{day}T07:00:00Z",
+        )
     )
     repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
     rows = [
@@ -683,16 +690,18 @@ def test_activities_missing_kudos_filters_and_returns_typed_ids(tmp_path: Path) 
 
     def _seed(repo: DuckDBRepository, activity_id: int, kudos_count: int) -> None:
         repo.upsert_activity_summary(
-            activity_id=activity_id,
-            date="2026-05-21T06:00:00Z",
-            name=f"Run {activity_id}",
-            sport_type="Run",
-            distance=6000.0,
-            moving_time=1800,
-            elapsed_time=1900,
-            total_elevation_gain=120.0,
-            summary_json=f'{{"id":{activity_id},"kudos_count":{kudos_count}}}',
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=activity_id,
+                date="2026-05-21T06:00:00Z",
+                name=f"Run {activity_id}",
+                sport_type="Run",
+                distance=6000.0,
+                moving_time=1800,
+                elapsed_time=1900,
+                total_elevation_gain=120.0,
+                summary_json=f'{{"id":{activity_id},"kudos_count":{kudos_count}}}',
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
 
     with DuckDBRepository.from_path(fixture) as repo:
@@ -716,16 +725,18 @@ def _seed_kudos_window_activities(repo: DuckDBRepository) -> None:
     for activity_id, days_ago in [(301, 1), (305, 5), (320, 20)]:
         start_date = (date.today() - timedelta(days=days_ago)).isoformat() + "T06:00:00"
         repo.upsert_activity_summary(
-            activity_id=activity_id,
-            date=start_date,
-            name=f"Run {activity_id}",
-            sport_type="Run",
-            distance=6000.0,
-            moving_time=1800,
-            elapsed_time=1900,
-            total_elevation_gain=120.0,
-            summary_json=f'{{"id":{activity_id},"kudos_count":3}}',
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=activity_id,
+                date=start_date,
+                name=f"Run {activity_id}",
+                sport_type="Run",
+                distance=6000.0,
+                moving_time=1800,
+                elapsed_time=1900,
+                total_elevation_gain=120.0,
+                summary_json=f'{{"id":{activity_id},"kudos_count":3}}',
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
 
 

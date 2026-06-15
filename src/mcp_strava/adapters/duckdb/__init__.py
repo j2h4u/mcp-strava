@@ -1,13 +1,14 @@
 """DuckDB storage adapter boundary."""
 
 from mcp_strava.adapters.duckdb.connection import open_expected_mirror_db, open_fixture_db
-from mcp_strava.adapters.duckdb.read_model_materializer import materialize_read_model
+from mcp_strava.adapters.duckdb.read_model_materializer import MaterializationOptions, materialize_read_model
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.settings import CANONICAL_DUCKDB_RUNTIME_PATH
 
 __all__ = [
     "CANONICAL_DUCKDB_RUNTIME_PATH",
     "DuckDBRepository",
+    "MaterializationOptions",
     "materialize_read_model",
     "open_expected_mirror_db",
     "open_fixture_db",

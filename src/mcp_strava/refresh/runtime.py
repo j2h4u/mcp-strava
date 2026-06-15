@@ -7,8 +7,11 @@ from datetime import UTC, date, datetime, timedelta
 
 from mcp_strava.adapters.duckdb.activity_lookup_queries import latest_activity_at
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
+from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.repository_models import SyncLogRecord
 from mcp_strava.adapters.duckdb.sync_log_store import append_sync_log
 from mcp_strava.adapters.strava import StravaUnavailableError
+from mcp_strava.adapters.strava.types import Clock, FetchTransport, Sleeper
 from mcp_strava.refresh import _sync_ops
 from mcp_strava.refresh.checkpoints import Stage, is_active_backfill_stage, is_stream_channel_backfill_stage
 from mcp_strava.refresh.policy import RefreshPolicy, refresh_interval_elapsed
@@ -28,6 +31,17 @@ _BACKFILL_STAGE_ORDER = (
 )
 _STREAM_CHANNEL_BACKFILL_MIN_LEASE_SECONDS = 30 * 60
 _READ_MODEL_LEASE_ERROR = "refresh lease lost during read-model materialization"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RefreshCollaborators:
+    """Shared infrastructure objects passed to every refresh entry-point."""
+
+    repo: DuckDBRepository
+    transport: FetchTransport
+    policy: RefreshPolicy
+    clock: Clock
+    sleeper: Sleeper
 
 
 @dataclass(frozen=True)
@@ -51,16 +65,16 @@ class RefreshSkipped:
 
 
 def run_once(
-    repo,
-    transport,
-    policy: RefreshPolicy,
-    clock,
-    sleeper,
+    collaborators: RefreshCollaborators,
     *,
     owner: str = "refresh-runtime",
     force: bool = False,
     mode: str = "daily",
 ) -> RefreshResult | RefreshSkipped:
+    repo = collaborators.repo
+    transport = collaborators.transport
+    policy = collaborators.policy
+    clock = collaborators.clock
     refresh_store = RefreshStateStore.from_connection(repo.conn)
     now_iso = _now_iso(clock)
     expires_at = _plus_seconds_iso(clock, policy.lease_duration_seconds)
@@ -76,21 +90,23 @@ def run_once(
         start_index = _daily_start_index(state.checkpoint_stage)
         refresh_store.record_refresh_attempt(now_iso)
         activities_seen, activities_new, streams_fetched, details_fetched, kudos_fetched = _run_daily_stages(
-            repo, transport, refresh_store, policy, clock, owner, now_iso, start_index
+            collaborators, refresh_store, owner, now_iso, start_index
         )
         refresh_store.set_checkpoint(Stage.COMPLETE.value, None)
         refresh_store.record_refresh_success(now_iso)
         append_sync_log(
             repo,
-            timestamp=now_iso,
-            status="ok",
-            activities_seen=activities_seen,
-            activities_new=activities_new,
-            streams_fetched=streams_fetched,
-            details_fetched=details_fetched,
-            api_calls=sum(getattr(transport, "calls_by_path", {}).values()) or None,
-            error=None,
-            kudos_fetched=kudos_fetched,
+            SyncLogRecord(
+                timestamp=now_iso,
+                status="ok",
+                activities_seen=activities_seen,
+                activities_new=activities_new,
+                streams_fetched=streams_fetched,
+                details_fetched=details_fetched,
+                api_calls=sum(getattr(transport, "calls_by_path", {}).values()) or None,
+                error=None,
+                kudos_fetched=kudos_fetched,
+            ),
         )
         return RefreshResult(
             status="ok",
@@ -109,15 +125,15 @@ def run_once(
 
 
 def run_catchup(
-    repo,
-    transport,
-    policy: RefreshPolicy,
-    clock,
-    sleeper,
+    collaborators: RefreshCollaborators,
     *,
     since: str | None = None,
     owner: str = "refresh-backfill",
 ) -> RefreshResult | RefreshSkipped:
+    repo = collaborators.repo
+    transport = collaborators.transport
+    policy = collaborators.policy
+    clock = collaborators.clock
     refresh_store = RefreshStateStore.from_connection(repo.conn)
     now_iso = _now_iso(clock)
     expires_at = _plus_seconds_iso(clock, policy.lease_duration_seconds)
@@ -150,15 +166,17 @@ def run_catchup(
         refresh_store.set_checkpoint(Stage.COMPLETE_BACKFILL.value, None)
         append_sync_log(
             repo,
-            timestamp=now_iso,
-            status="ok",
-            activities_seen=None,
-            activities_new=None,
-            streams_fetched=streams_fetched,
-            details_fetched=details_fetched,
-            api_calls=sum(getattr(transport, "calls_by_path", {}).values()) or None,
-            error=None,
-            kudos_fetched=None,
+            SyncLogRecord(
+                timestamp=now_iso,
+                status="ok",
+                activities_seen=None,
+                activities_new=None,
+                streams_fetched=streams_fetched,
+                details_fetched=details_fetched,
+                api_calls=sum(getattr(transport, "calls_by_path", {}).values()) or None,
+                error=None,
+                kudos_fetched=None,
+            ),
         )
         return RefreshResult(
             status="ok",
@@ -174,17 +192,17 @@ def run_catchup(
 
 
 def run_stream_channel_catchup(
-    repo,
-    transport,
-    policy: RefreshPolicy,
-    clock,
-    sleeper,
+    collaborators: RefreshCollaborators,
     *,
     since: str | None = None,
     limit: int | None = None,
     dry_run: bool = False,
     owner: str = "refresh-backfill-stream-channels",
 ) -> dict | RefreshSkipped:
+    repo = collaborators.repo
+    transport = collaborators.transport
+    policy = collaborators.policy
+    clock = collaborators.clock
     refresh_store = RefreshStateStore.from_connection(repo.conn)
     now_iso = _now_iso(clock)
     lease_seconds = max(policy.lease_duration_seconds, _STREAM_CHANNEL_BACKFILL_MIN_LEASE_SECONDS)
@@ -297,9 +315,17 @@ def _check_daily_preconditions(state, now_iso: str, policy: RefreshPolicy, force
 
 
 def _run_daily_stages(
-    repo, transport, refresh_store, policy: RefreshPolicy, clock, owner: str, now_iso: str, start_index: int
+    collaborators: RefreshCollaborators,
+    refresh_store,
+    owner: str,
+    now_iso: str,
+    start_index: int,
 ) -> tuple[int, int, int, int, int]:
     """Execute each daily stage in order, resuming from start_index. Returns counters."""
+    repo = collaborators.repo
+    transport = collaborators.transport
+    policy = collaborators.policy
+    clock = collaborators.clock
     activities_seen = 0
     activities_new = 0
     streams_fetched = 0

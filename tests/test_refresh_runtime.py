@@ -11,10 +11,12 @@ import pytest
 from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.repository_models import ActivitySummaryRecord
 from mcp_strava.adapters.duckdb.stream_read_queries import activity_stream_rows
 from mcp_strava.adapters.duckdb.sync_log_store import read_sync_log
 from mcp_strava.adapters.strava import StravaResponse, StravaUnavailableError
 from mcp_strava.adapters.strava.types import StravaRateInfo
+from mcp_strava.refresh.runtime import RefreshCollaborators
 from tests._fixtures_duckdb import create_fixture_db
 
 
@@ -167,7 +169,15 @@ def test_run_once_completes_daily_refresh_per_REFRESH_01_STRAVA_03(tmp_path):
 
     clock = FakeClock()
     with _repo(tmp_path) as repo:
-        result = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock))
+        result = run_once(
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport(),
+                policy=RefreshPolicy(),
+                clock=clock,
+                sleeper=FakeSleeper(clock),
+            )
+        )
         state = _refresh_store(repo).get_refresh_state()
         logs = read_sync_log(repo)
 
@@ -184,19 +194,41 @@ def test_run_once_skips_until_refresh_interval_then_re_runs_per_D06_D15(tmp_path
     policy = RefreshPolicy(regular_refresh_interval_seconds=3600)
     transport = FakeStravaTransport()
     with _repo(tmp_path) as repo:
-        assert run_once(repo, transport, policy, clock, FakeSleeper(clock)).status == "ok"
-        skipped = run_once(repo, transport, policy, clock, FakeSleeper(clock))
+        assert (
+            run_once(
+                RefreshCollaborators(
+                    repo=repo, transport=transport, policy=policy, clock=clock, sleeper=FakeSleeper(clock)
+                )
+            ).status
+            == "ok"
+        )
+        skipped = run_once(
+            RefreshCollaborators(repo=repo, transport=transport, policy=policy, clock=clock, sleeper=FakeSleeper(clock))
+        )
         assert isinstance(skipped, RefreshSkipped)
         assert skipped.reason == "already_complete"
         clock.advance(3599)
-        skipped = run_once(repo, transport, policy, clock, FakeSleeper(clock))
+        skipped = run_once(
+            RefreshCollaborators(repo=repo, transport=transport, policy=policy, clock=clock, sleeper=FakeSleeper(clock))
+        )
         assert isinstance(skipped, RefreshSkipped)
         assert skipped.reason == "already_complete"
         calls_before_periodic = dict(transport.calls_by_path)
         clock.advance(1)
-        periodic = run_once(repo, transport, policy, clock, FakeSleeper(clock), mode="periodic")
+        periodic = run_once(
+            RefreshCollaborators(
+                repo=repo, transport=transport, policy=policy, clock=clock, sleeper=FakeSleeper(clock)
+            ),
+            mode="periodic",
+        )
         calls_before_force = dict(transport.calls_by_path)
-        forced = run_once(repo, transport, policy, clock, FakeSleeper(clock), force=True, mode="quick")
+        forced = run_once(
+            RefreshCollaborators(
+                repo=repo, transport=transport, policy=policy, clock=clock, sleeper=FakeSleeper(clock)
+            ),
+            force=True,
+            mode="quick",
+        )
 
     def _activities_calls(calls_dict: dict) -> int:
         return sum(v for k, v in calls_dict.items() if k.startswith("/athlete/activities"))
@@ -214,11 +246,29 @@ def test_run_once_force_still_honors_lease_and_backoff_per_D15(tmp_path):
     with _repo(tmp_path) as repo:
         store = _refresh_store(repo)
         assert store.acquire_refresh_lease("other", "2026-05-21T12:10:00", "2026-05-21T12:00:00")
-        skipped = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock), force=True)
+        skipped = run_once(
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport(),
+                policy=RefreshPolicy(),
+                clock=clock,
+                sleeper=FakeSleeper(clock),
+            ),
+            force=True,
+        )
         assert skipped.reason == "refresh_in_progress"
         store.release_refresh_lease("other")
         store.record_refresh_failure("2026-05-21T12:00:00", "rate_limited", "2026-05-21T13:00:00")
-        skipped = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock), force=True)
+        skipped = run_once(
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport(),
+                policy=RefreshPolicy(),
+                clock=clock,
+                sleeper=FakeSleeper(clock),
+            ),
+            force=True,
+        )
 
     assert skipped.reason == "refresh_delayed"
 
@@ -229,14 +279,24 @@ def test_run_once_failure_persists_backoff_and_resumes_per_D09_D13(tmp_path):
     clock = FakeClock()
     with _repo(tmp_path) as repo:
         result = run_once(
-            repo,
-            FakeStravaTransport({"/streams": StravaUnavailableError("rate_limited")}),
-            RefreshPolicy(),
-            clock,
-            FakeSleeper(clock),
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport({"/streams": StravaUnavailableError("rate_limited")}),
+                policy=RefreshPolicy(),
+                clock=clock,
+                sleeper=FakeSleeper(clock),
+            )
         )
         state = _refresh_store(repo).get_refresh_state()
-        skipped = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock))
+        skipped = run_once(
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport(),
+                policy=RefreshPolicy(),
+                clock=clock,
+                sleeper=FakeSleeper(clock),
+            )
+        )
 
     assert result.status == "failed"
     assert result.reason == "rate_limited"
@@ -253,16 +313,22 @@ def test_run_once_after_stream_failure_resumes_without_summary_page_walk_per_D09
     policy = RefreshPolicy()
     with _repo(tmp_path) as repo:
         failed = run_once(
-            repo,
-            FakeStravaTransport({"/streams": StravaUnavailableError("rate_limited")}),
-            policy,
-            clock,
-            FakeSleeper(clock),
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport({"/streams": StravaUnavailableError("rate_limited")}),
+                policy=policy,
+                clock=clock,
+                sleeper=FakeSleeper(clock),
+            )
         )
         failed_state = _refresh_store(repo).get_refresh_state()
         clock.advance(policy.backoff_seconds_on_rate_limit_default + 1)
         resumed_transport = FakeStravaTransport()
-        resumed = run_once(repo, resumed_transport, policy, clock, FakeSleeper(clock))
+        resumed = run_once(
+            RefreshCollaborators(
+                repo=repo, transport=resumed_transport, policy=policy, clock=clock, sleeper=FakeSleeper(clock)
+            )
+        )
 
     assert failed.status == "failed"
     assert failed_state.checkpoint_stage == Stage.STREAMS.value
@@ -307,7 +373,16 @@ def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch,
     monkeypatch.setattr(_sync_ops, "materialize_read_model_stage", fake_materialize, raising=False)
 
     with _repo(tmp_path) as repo:
-        result = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock), force=True)
+        result = run_once(
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport(),
+                policy=RefreshPolicy(),
+                clock=clock,
+                sleeper=FakeSleeper(clock),
+            ),
+            force=True,
+        )
 
     assert result.status == "ok"
     assert order == ["summaries", "streams", "details", "schema_validate", "read_model_materialize", "kudos"]
@@ -333,7 +408,16 @@ def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch
 
     with _repo(tmp_path) as repo:
         _refresh_store(repo).set_checkpoint(Stage.READ_MODEL_MATERIALIZE.value, None)
-        result = run_once(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock), force=True)
+        result = run_once(
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport(),
+                policy=RefreshPolicy(),
+                clock=clock,
+                sleeper=FakeSleeper(clock),
+            ),
+            force=True,
+        )
 
     assert result.status == "ok"
     assert order == ["read_model_materialize", "kudos"]
@@ -357,7 +441,16 @@ def test_materialization_lost_lease_fails_closed(monkeypatch, tmp_path):
     with _repo(tmp_path) as repo:
         monkeypatch.setattr(RefreshStateStore, "renew_refresh_lease", lambda *_args, **_kwargs: False)
         with pytest.raises(RuntimeError, match="refresh lease lost during read-model materialization"):
-            run_once(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper(), force=True)
+            run_once(
+                RefreshCollaborators(
+                    repo=repo,
+                    transport=FakeStravaTransport(),
+                    policy=RefreshPolicy(),
+                    clock=FakeClock(),
+                    sleeper=FakeSleeper(),
+                ),
+                force=True,
+            )
 
 
 def test_run_backfill_skips_summaries_and_kudos_per_D16(tmp_path):
@@ -367,18 +460,25 @@ def test_run_backfill_skips_summaries_and_kudos_per_D16(tmp_path):
     transport = FakeStravaTransport()
     with _repo(tmp_path) as repo:
         repo.upsert_activity_summary(
-            activity_id=500,
-            date="2026-05-21T06:00:00Z",
-            name="Needs Backfill",
-            sport_type="Run",
-            distance=1000,
-            moving_time=600,
-            elapsed_time=620,
-            total_elevation_gain=10,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=500,
+                date="2026-05-21T06:00:00Z",
+                name="Needs Backfill",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=620,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
-        result = run_catchup(repo, transport, RefreshPolicy(), clock, FakeSleeper(clock), since="2026-05-20")
+        result = run_catchup(
+            RefreshCollaborators(
+                repo=repo, transport=transport, policy=RefreshPolicy(), clock=clock, sleeper=FakeSleeper(clock)
+            ),
+            since="2026-05-20",
+        )
         state = _refresh_store(repo).get_refresh_state()
 
     assert result.status == "ok"
@@ -403,7 +503,14 @@ def test_run_backfill_materializes_after_source_changing_work(monkeypatch, tmp_p
 
     with _repo(tmp_path) as repo:
         result = run_catchup(
-            repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper(), since="2026-05-20"
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport(),
+                policy=RefreshPolicy(),
+                clock=FakeClock(),
+                sleeper=FakeSleeper(),
+            ),
+            since="2026-05-20",
         )
 
     assert result.status == "ok"
@@ -416,23 +523,27 @@ def test_run_backfill_failure_preserves_backfill_checkpoint_per_D16(tmp_path):
     clock = FakeClock()
     with _repo(tmp_path) as repo:
         repo.upsert_activity_summary(
-            activity_id=500,
-            date="2026-05-21T06:00:00Z",
-            name="Needs Backfill",
-            sport_type="Run",
-            distance=1000,
-            moving_time=600,
-            elapsed_time=620,
-            total_elevation_gain=10,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=500,
+                date="2026-05-21T06:00:00Z",
+                name="Needs Backfill",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=620,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
         result = run_catchup(
-            repo,
-            FakeStravaTransport({"/streams": StravaUnavailableError("rate_limited")}),
-            RefreshPolicy(),
-            clock,
-            FakeSleeper(clock),
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport({"/streams": StravaUnavailableError("rate_limited")}),
+                policy=RefreshPolicy(),
+                clock=clock,
+                sleeper=FakeSleeper(clock),
+            ),
             since="2026-05-20",
         )
         state = _refresh_store(repo).get_refresh_state()
@@ -481,11 +592,13 @@ def test_stream_channel_backfill_materializes_after_source_changing_work(monkeyp
 
     with _repo(tmp_path) as repo:
         result = run_stream_channel_catchup(
-            repo,
-            FakeStravaTransport(),
-            RefreshPolicy(),
-            FakeClock(),
-            FakeSleeper(),
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport(),
+                policy=RefreshPolicy(),
+                clock=FakeClock(),
+                sleeper=FakeSleeper(),
+            )
         )
 
     assert result["status"] == "ok"
@@ -498,20 +611,37 @@ def test_run_once_after_complete_backfill_starts_daily_refresh_per_D16(tmp_path)
     clock = FakeClock()
     with _repo(tmp_path) as repo:
         repo.upsert_activity_summary(
-            activity_id=500,
-            date="2026-05-21T06:00:00Z",
-            name="Needs Backfill",
-            sport_type="Run",
-            distance=1000,
-            moving_time=600,
-            elapsed_time=620,
-            total_elevation_gain=10,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=500,
+                date="2026-05-21T06:00:00Z",
+                name="Needs Backfill",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=620,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
-        assert run_catchup(repo, FakeStravaTransport(), RefreshPolicy(), clock, FakeSleeper(clock)).status == "ok"
+        assert (
+            run_catchup(
+                RefreshCollaborators(
+                    repo=repo,
+                    transport=FakeStravaTransport(),
+                    policy=RefreshPolicy(),
+                    clock=clock,
+                    sleeper=FakeSleeper(clock),
+                )
+            ).status
+            == "ok"
+        )
         daily_transport = FakeStravaTransport()
-        result = run_once(repo, daily_transport, RefreshPolicy(), clock, FakeSleeper(clock))
+        result = run_once(
+            RefreshCollaborators(
+                repo=repo, transport=daily_transport, policy=RefreshPolicy(), clock=clock, sleeper=FakeSleeper(clock)
+            )
+        )
 
     assert result.status == "ok"
     assert daily_transport.calls_by_path["/athlete/activities?per_page=100&page=1"] == 1
@@ -718,7 +848,7 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
         def mark_refresh_requests_consumed(self, consumed_at):
             return 0
 
-    def fake_run_once(repo, transport, refresh_policy, clock, sleeper, *, owner, force, mode):
+    def fake_run_once(collaborators, *, owner, force, mode):
         calls.append((owner, force, mode))
         return SimpleNamespace(
             status="ok",
@@ -1048,16 +1178,18 @@ def test_sync_streams_requests_all_configured_channels_and_writes_projection_met
     transport = RichStreamsTransport()
     with _repo(tmp_path) as repo:
         repo.upsert_activity_summary(
-            activity_id=500,
-            date="2026-05-21T06:00:00Z",
-            name="Morning Run",
-            sport_type="Run",
-            distance=1000,
-            moving_time=600,
-            elapsed_time=620,
-            total_elevation_gain=10,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=500,
+                date="2026-05-21T06:00:00Z",
+                name="Morning Run",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=620,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
         fetched = sync_streams(repo, transport, since="2026-05-20")
         stream_rows = activity_stream_rows(repo, 500)
@@ -1120,16 +1252,18 @@ def test_sync_streams_records_missing_requested_channels_without_failure(tmp_pat
 
     with _repo(tmp_path) as repo:
         repo.upsert_activity_summary(
-            activity_id=500,
-            date="2026-05-21T06:00:00Z",
-            name="Missing Channels",
-            sport_type="Run",
-            distance=1000,
-            moving_time=600,
-            elapsed_time=620,
-            total_elevation_gain=10,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=500,
+                date="2026-05-21T06:00:00Z",
+                name="Missing Channels",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=620,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
         fetched = sync_streams(repo, PartialStreamsTransport(), since="2026-05-20")
         missing = repo.conn.execute(
@@ -1168,24 +1302,28 @@ def test_unavailable_stream_channels_do_not_create_repeat_backfill_work(tmp_path
         repo._execute("DELETE FROM stream_channels")
         repo._execute("DELETE FROM activities")
         repo.upsert_activity_summary(
-            activity_id=500,
-            date="2026-05-21T06:00:00Z",
-            name="Unavailable Channels",
-            sport_type="Run",
-            distance=1000,
-            moving_time=600,
-            elapsed_time=620,
-            total_elevation_gain=10,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=500,
+                date="2026-05-21T06:00:00Z",
+                name="Unavailable Channels",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=620,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
         assert sync_streams(repo, PartialStreamsTransport(), since="2026-05-20") == 1
         result = run_stream_channel_catchup(
-            repo,
-            FakeStravaTransport(),
-            RefreshPolicy(),
-            FakeClock(),
-            FakeSleeper(),
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport(),
+                policy=RefreshPolicy(),
+                clock=FakeClock(),
+                sleeper=FakeSleeper(),
+            ),
             dry_run=True,
         )
 
@@ -1199,16 +1337,18 @@ def test_stream_channel_backfill_dry_run_reports_remaining_work_without_transpor
     transport = FakeStravaTransport()
     with _repo(tmp_path) as repo:
         repo.upsert_activity_summary(
-            activity_id=500,
-            date="2026-05-21T06:00:00Z",
-            name="Channel Gap Run",
-            sport_type="Run",
-            distance=1000,
-            moving_time=600,
-            elapsed_time=620,
-            total_elevation_gain=10,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=500,
+                date="2026-05-21T06:00:00Z",
+                name="Channel Gap Run",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=620,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
         repo.insert_stream_rows_chunked(
             500,
@@ -1230,11 +1370,13 @@ def test_stream_channel_backfill_dry_run_reports_remaining_work_without_transpor
             ],
         )
         result = run_stream_channel_catchup(
-            repo,
-            transport,
-            RefreshPolicy(),
-            FakeClock(),
-            FakeSleeper(),
+            RefreshCollaborators(
+                repo=repo,
+                transport=transport,
+                policy=RefreshPolicy(),
+                clock=FakeClock(),
+                sleeper=FakeSleeper(),
+            ),
             dry_run=True,
         )
 
@@ -1255,7 +1397,15 @@ def test_run_once_rejects_active_stream_channel_backfill_checkpoint(tmp_path):
     with _repo(tmp_path) as repo:
         _refresh_store(repo).set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, "500")
         with pytest.raises(RuntimeError, match="admin catchup"):
-            run_once(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper())
+            run_once(
+                RefreshCollaborators(
+                    repo=repo,
+                    transport=FakeStravaTransport(),
+                    policy=RefreshPolicy(),
+                    clock=FakeClock(),
+                    sleeper=FakeSleeper(),
+                )
+            )
 
 
 def test_run_catchup_rejects_stream_channel_backfill_checkpoint(tmp_path):
@@ -1264,7 +1414,15 @@ def test_run_catchup_rejects_stream_channel_backfill_checkpoint(tmp_path):
     with _repo(tmp_path) as repo:
         _refresh_store(repo).set_checkpoint(Stage.STREAM_CHANNELS_BACKFILL.value, "500")
         with pytest.raises(RuntimeError, match="admin catchup"):
-            run_catchup(repo, FakeStravaTransport(), RefreshPolicy(), FakeClock(), FakeSleeper())
+            run_catchup(
+                RefreshCollaborators(
+                    repo=repo,
+                    transport=FakeStravaTransport(),
+                    policy=RefreshPolicy(),
+                    clock=FakeClock(),
+                    sleeper=FakeSleeper(),
+                )
+            )
 
 
 def test_stream_channel_backfill_uses_only_streams_endpoint(tmp_path):
@@ -1294,16 +1452,18 @@ def test_stream_channel_backfill_uses_only_streams_endpoint(tmp_path):
     transport = StreamsOnlyTransport()
     with _repo(tmp_path) as repo:
         repo.upsert_activity_summary(
-            activity_id=500,
-            date="2026-05-21T06:00:00Z",
-            name="Streams Only",
-            sport_type="Run",
-            distance=1000,
-            moving_time=600,
-            elapsed_time=620,
-            total_elevation_gain=10,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=500,
+                date="2026-05-21T06:00:00Z",
+                name="Streams Only",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=620,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
         repo.insert_stream_rows_chunked(
             500,
@@ -1324,7 +1484,11 @@ def test_stream_channel_backfill_uses_only_streams_endpoint(tmp_path):
                 }
             ],
         )
-        result = run_stream_channel_catchup(repo, transport, RefreshPolicy(), FakeClock(), FakeSleeper())
+        result = run_stream_channel_catchup(
+            RefreshCollaborators(
+                repo=repo, transport=transport, policy=RefreshPolicy(), clock=FakeClock(), sleeper=FakeSleeper()
+            )
+        )
 
     assert result["status"] in {"ok", "delayed"}
     assert any(path.startswith("/activities/500/streams") for path in transport.calls_by_path)
@@ -1353,16 +1517,18 @@ def test_stream_channel_backfill_renews_long_lease_during_progress(monkeypatch, 
 
     with _repo(tmp_path) as repo:
         repo.upsert_activity_summary(
-            activity_id=500,
-            date="2026-05-21T06:00:00Z",
-            name="Lease Renewal",
-            sport_type="Run",
-            distance=1000,
-            moving_time=600,
-            elapsed_time=620,
-            total_elevation_gain=10,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=500,
+                date="2026-05-21T06:00:00Z",
+                name="Lease Renewal",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=620,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
         repo.insert_stream_rows_chunked(
             500,
@@ -1392,11 +1558,13 @@ def test_stream_channel_backfill_renews_long_lease_during_progress(monkeypatch, 
 
         monkeypatch.setattr(RefreshStateStore, "renew_refresh_lease", record_renewal)
         result = run_stream_channel_catchup(
-            repo,
-            WaitingStreamsTransport(),
-            RefreshPolicy(lease_duration_seconds=10),
-            clock,
-            FakeSleeper(clock),
+            RefreshCollaborators(
+                repo=repo,
+                transport=WaitingStreamsTransport(),
+                policy=RefreshPolicy(lease_duration_seconds=10),
+                clock=clock,
+                sleeper=FakeSleeper(clock),
+            )
         )
 
     assert result["status"] == "ok"
@@ -1412,16 +1580,18 @@ def test_stream_channel_backfill_rate_limit_keeps_checkpoint_and_rows(tmp_path):
 
     with _repo(tmp_path) as repo:
         repo.upsert_activity_summary(
-            activity_id=500,
-            date="2026-05-21T06:00:00Z",
-            name="Rate Limited Backfill",
-            sport_type="Run",
-            distance=1000,
-            moving_time=600,
-            elapsed_time=620,
-            total_elevation_gain=10,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=500,
+                date="2026-05-21T06:00:00Z",
+                name="Rate Limited Backfill",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=620,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
         repo.insert_stream_rows_chunked(
             500,
@@ -1443,11 +1613,13 @@ def test_stream_channel_backfill_rate_limit_keeps_checkpoint_and_rows(tmp_path):
             ],
         )
         result = run_stream_channel_catchup(
-            repo,
-            FakeStravaTransport({"/streams": StravaUnavailableError("rate_limited")}),
-            RefreshPolicy(),
-            FakeClock(),
-            FakeSleeper(),
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport({"/streams": StravaUnavailableError("rate_limited")}),
+                policy=RefreshPolicy(),
+                clock=FakeClock(),
+                sleeper=FakeSleeper(),
+            )
         )
         state = _refresh_store(repo).get_refresh_state()
         rows = activity_stream_rows(repo, 500)
@@ -1461,20 +1633,22 @@ def _seed_one_dirty_activity(repo, *, activity_id: int = 920, day: str = "2026-0
     """Seed one HR-bearing activity so the dirty queue + activity_source_state
     have a row to materialize/enqueue. Mirrors the materializer test fixture."""
     repo.upsert_activity_summary(
-        activity_id=activity_id,
-        date=f"{day}T06:00:00Z",
-        name=f"Materialized {activity_id}",
-        sport_type="Run",
-        distance=6000.0,
-        moving_time=1800,
-        elapsed_time=1900,
-        total_elevation_gain=120.0,
-        summary_json=(
-            f'{{"id":{activity_id},"name":"Materialized","sport_type":"Run","start_date_local":"{day}T06:00:00Z",'
-            '"distance":6000,"moving_time":1800,"elapsed_time":1900,"total_elevation_gain":120,'
-            '"average_heartrate":145,"max_heartrate":172,"has_heartrate":true}'
-        ),
-        synced_at=f"{day}T07:00:00Z",
+        ActivitySummaryRecord(
+            activity_id=activity_id,
+            date=f"{day}T06:00:00Z",
+            name=f"Materialized {activity_id}",
+            sport_type="Run",
+            distance=6000.0,
+            moving_time=1800,
+            elapsed_time=1900,
+            total_elevation_gain=120.0,
+            summary_json=(
+                f'{{"id":{activity_id},"name":"Materialized","sport_type":"Run","start_date_local":"{day}T06:00:00Z",'
+                '"distance":6000,"moving_time":1800,"elapsed_time":1900,"total_elevation_gain":120,'
+                '"average_heartrate":145,"max_heartrate":172,"has_heartrate":true}}'
+            ),
+            synced_at=f"{day}T07:00:00Z",
+        )
     )
     repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
     rows = [

@@ -71,4 +71,10 @@ class Sleeper(Protocol):
     def sleep(self, seconds: float) -> None: ...
 
 
+class FetchTransport(Protocol):
+    """Structural protocol for any object with a Strava-style fetch method."""
+
+    def fetch(self, path: str) -> StravaResponse: ...
+
+
 Headers = Mapping[str, str]

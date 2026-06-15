@@ -18,7 +18,7 @@ from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
     get_training_aggregates_service,
 )
-from mcp_strava.application.comparison_services import compare_periods_service
+from mcp_strava.application.comparison_services import PeriodComparisonRequest, compare_periods_service
 from mcp_strava.application.metric_services import (
     get_fitness_state_service,
     get_workout_detail_service,
@@ -404,11 +404,13 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:  # noqa: C901
             "compare_periods",
             cache_args,
             lambda: compare_periods_service(
-                period_a_start=period_a_start,
-                period_a_end=period_a_end,
-                period_b_start=period_b_start,
-                period_b_end=period_b_end,
-                sport=sport,
+                PeriodComparisonRequest(
+                    period_a_start=period_a_start,
+                    period_a_end=period_a_end,
+                    period_b_start=period_b_start,
+                    period_b_end=period_b_end,
+                    sport=sport,
+                ),
                 signal_first_use=False,
             ),
         )
@@ -457,7 +459,7 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:  # noqa: C901
         annotations=_tool_annotations(),
         structured_output=True,
     )
-    def get_training_aggregates(
+    def get_training_aggregates(  # noqa: PLR0913 — MCP tool-handler params map 1:1 to the tool input schema
         end_date: Annotated[
             str,
             Field(description="Exclusive end of the date range, ISO YYYY-MM-DD.", examples=["2026-06-01"]),

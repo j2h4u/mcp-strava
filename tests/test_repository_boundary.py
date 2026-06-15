@@ -9,6 +9,7 @@ from mcp_strava.adapters.duckdb.athlete_zone_store import insert_athlete_zones, 
 from mcp_strava.adapters.duckdb.kudos_store import kudos_for_activity, list_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.repository_models import ActivitySummaryRecord, SyncLogRecord
 from mcp_strava.adapters.duckdb.stream_read_queries import activity_stream_rows
 from mcp_strava.adapters.duckdb.sync_log_store import append_sync_log, read_sync_log
 from tests._fixtures_duckdb import create_empty_fixture_db
@@ -56,16 +57,18 @@ def test_repository_boundary_covers_activity_stream_zone_kudos_and_synclog(tmp_p
 
     with DuckDBRepository.from_path(fixture) as repo:
         repo.upsert_activity_summary(
-            activity_id=1,
-            date="2026-05-21T06:00:00Z",
-            name="Morning Run",
-            sport_type="Run",
-            distance=10000.0,
-            moving_time=3600,
-            elapsed_time=3700,
-            total_elevation_gain=120.0,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=1,
+                date="2026-05-21T06:00:00Z",
+                name="Morning Run",
+                sport_type="Run",
+                distance=10000.0,
+                moving_time=3600,
+                elapsed_time=3700,
+                total_elevation_gain=120.0,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
         rows = recent_activities(repo, limit=5)
         assert rows and rows[0].id == 1
@@ -151,15 +154,17 @@ def test_repository_boundary_covers_activity_stream_zone_kudos_and_synclog(tmp_p
 
         append_sync_log(
             repo,
-            timestamp="2026-05-21T09:00:00Z",
-            status="ok",
-            activities_seen=1,
-            activities_new=1,
-            streams_fetched=1,
-            details_fetched=1,
-            api_calls=1,
-            error=None,
-            kudos_fetched=1,
+            SyncLogRecord(
+                timestamp="2026-05-21T09:00:00Z",
+                status="ok",
+                activities_seen=1,
+                activities_new=1,
+                streams_fetched=1,
+                details_fetched=1,
+                api_calls=1,
+                error=None,
+                kudos_fetched=1,
+            ),
         )
         assert read_sync_log(repo, limit=5)
 
@@ -172,16 +177,18 @@ def test_replace_stream_rows_and_channel_metadata_stores_null_values_json_when_n
 
     with DuckDBRepository.from_path(fixture) as repo:
         repo.upsert_activity_summary(
-            activity_id=1,
-            date="2026-05-21T06:00:00Z",
-            name="Morning Run",
-            sport_type="Run",
-            distance=10000.0,
-            moving_time=3600,
-            elapsed_time=3700,
-            total_elevation_gain=120.0,
-            summary_json="{}",
-            synced_at="2026-05-21T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=1,
+                date="2026-05-21T06:00:00Z",
+                name="Morning Run",
+                sport_type="Run",
+                distance=10000.0,
+                moving_time=3600,
+                elapsed_time=3700,
+                total_elevation_gain=120.0,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
         )
         repo.replace_stream_rows_and_channel_metadata(
             1,
@@ -320,16 +327,18 @@ def test_activities_missing_streams_filters_by_since_per_D16(tmp_path: Path) -> 
 
     with DuckDBRepository.from_path(fixture) as repo:
         repo.upsert_activity_summary(
-            activity_id=101,
-            date="2026-05-20T06:00:00Z",
-            name="Missing Streams",
-            sport_type="Run",
-            distance=1000,
-            moving_time=600,
-            elapsed_time=700,
-            total_elevation_gain=10,
-            summary_json="{}",
-            synced_at="2026-05-20T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=101,
+                date="2026-05-20T06:00:00Z",
+                name="Missing Streams",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=700,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-20T07:00:00Z",
+            )
         )
         rows = activities_missing_streams(repo, "2026-05-19")
 
@@ -342,16 +351,18 @@ def test_activities_missing_details_filters_by_since_per_D16(tmp_path: Path) -> 
 
     with DuckDBRepository.from_path(fixture) as repo:
         repo.upsert_activity_summary(
-            activity_id=101,
-            date="2026-05-20T06:00:00Z",
-            name="Missing Details",
-            sport_type="Run",
-            distance=1000,
-            moving_time=600,
-            elapsed_time=700,
-            total_elevation_gain=10,
-            summary_json="{}",
-            synced_at="2026-05-20T07:00:00Z",
+            ActivitySummaryRecord(
+                activity_id=101,
+                date="2026-05-20T06:00:00Z",
+                name="Missing Details",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=700,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-20T07:00:00Z",
+            )
         )
         rows = activities_missing_details(repo, "2026-05-19")
 

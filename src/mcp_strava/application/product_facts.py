@@ -18,7 +18,7 @@ from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
     get_training_aggregates_service,
 )
-from mcp_strava.application.comparison_services import compare_periods_service
+from mcp_strava.application.comparison_services import PeriodComparisonRequest, compare_periods_service
 from mcp_strava.application.freshness import _freshness_now
 from mcp_strava.application.metric_services import (
     get_fitness_state_service,
@@ -26,6 +26,7 @@ from mcp_strava.application.metric_services import (
     list_workouts_service,
 )
 from mcp_strava.application.product_bundle_format import (
+    BundleSectionContent,
     bundle_completeness,
     bundle_data,
     bundle_section,
@@ -145,8 +146,10 @@ def get_daily_brief_facts_service(
     sections = {
         "current_state": bundle_section(
             requested=("fitness", "fatigue", "form", "form_zone", "acwr", "acwr_zone"),
-            metrics=pick_metrics(
-                dict_data(fitness_payload), ("fitness", "fatigue", "form", "form_zone", "acwr", "acwr_zone")
+            content=BundleSectionContent(
+                metrics=pick_metrics(
+                    dict_data(fitness_payload), ("fitness", "fatigue", "form", "form_zone", "acwr", "acwr_zone")
+                ),
             ),
         ),
         "recent_workouts": bundle_section(
@@ -160,15 +163,15 @@ def get_daily_brief_facts_service(
                 "trimp",
                 "kudos_count",
             ),
-            items=data_list(recent_payload),
+            content=BundleSectionContent(items=data_list(recent_payload)),
         ),
         "daily_load_14d": bundle_section(
             requested=("trimp", "distance_km", "moving_time_min", "elevation_m", "kudos_count"),
-            rows=rows_from_payload(daily_payload),
+            content=BundleSectionContent(rows=rows_from_payload(daily_payload)),
         ),
         "by_sport": bundle_section(
             requested=("trimp", "distance_km", "moving_time_min", "elevation_m", "kudos_count"),
-            rows=rows_from_payload(by_sport_payload),
+            content=BundleSectionContent(rows=rows_from_payload(by_sport_payload)),
         ),
         "model_context": bundle_section(
             requested=(
@@ -182,36 +185,38 @@ def get_daily_brief_facts_service(
                 "total_trimp_14d",
                 "avg_trimp_per_day",
             ),
-            metrics={
-                **pick_metrics(
-                    dict_data(fitness_payload),
-                    (
-                        "fitness",
-                        "fatigue",
-                        "form",
-                        "form_zone",
-                        "acwr",
-                        "acwr_zone",
-                        "weekly_trimp",
-                        "total_trimp_14d",
-                        "avg_trimp_per_day",
+            content=BundleSectionContent(
+                metrics={
+                    **pick_metrics(
+                        dict_data(fitness_payload),
+                        (
+                            "fitness",
+                            "fatigue",
+                            "form",
+                            "form_zone",
+                            "acwr",
+                            "acwr_zone",
+                            "weekly_trimp",
+                            "total_trimp_14d",
+                            "avg_trimp_per_day",
+                        ),
                     ),
-                ),
-                **pick_metrics(bundle_metric_values, ("weekly_trimp", "total_trimp_14d", "avg_trimp_per_day")),
-            },
+                    **pick_metrics(bundle_metric_values, ("weekly_trimp", "total_trimp_14d", "avg_trimp_per_day")),
+                },
+            ),
         ),
         "status_facts": bundle_section(
             requested=tuple(sorted({definition.metric_id for definition in STATUS_FACT_REGISTRY.values()})),
-            items=status_facts,
+            content=BundleSectionContent(items=status_facts),
         ),
         "supported_gear": gear_section,
         "freshness": bundle_section(
             requested=("activity_date",),
-            facts=freshness_payload,
+            content=BundleSectionContent(facts=freshness_payload),
         ),
         "read_model": bundle_section(
             requested=("fitness",),
-            facts=read_model,
+            content=BundleSectionContent(facts=read_model),
         ),
     }
     data = bundle_data(
@@ -266,10 +271,12 @@ def get_weekly_digest_facts_service(
             connection=conn,
         )
         trends = compare_periods_service(
-            period_a_start=week_start.isoformat(),
-            period_a_end=end_exclusive.isoformat(),
-            period_b_start=previous_start.isoformat(),
-            period_b_end=previous_end.isoformat(),
+            PeriodComparisonRequest(
+                period_a_start=week_start.isoformat(),
+                period_a_end=end_exclusive.isoformat(),
+                period_b_start=previous_start.isoformat(),
+                period_b_end=previous_end.isoformat(),
+            ),
             now=checked_at,
             signal_first_use=False,
             connection=conn,
@@ -283,16 +290,23 @@ def get_weekly_digest_facts_service(
     sections = {
         "load": bundle_section(
             requested=("trimp", "weekly_trimp", "active_days"),
-            rows=filter_rows(rows, {"trimp", "weekly_trimp", "active_days"}),
+            content=BundleSectionContent(rows=filter_rows(rows, {"trimp", "weekly_trimp", "active_days"})),
         ),
         "volume": bundle_section(
             requested=("distance_km", "moving_time_min", "elapsed_time_min", "elevation_m", "volume_7d"),
-            rows=filter_rows(rows, {"distance_km", "moving_time_min", "elapsed_time_min", "elevation_m", "volume_7d"}),
+            content=BundleSectionContent(
+                rows=filter_rows(
+                    rows, {"distance_km", "moving_time_min", "elapsed_time_min", "elevation_m", "volume_7d"}
+                ),
+            ),
         ),
         "efficiency": bundle_section(
             requested=("avg_hr", "max_hr", "cardiac_cost", "cardiac_cost_adjusted", "cardiac_drift_pct", "hrr_pct"),
-            rows=filter_rows(
-                rows, {"avg_hr", "max_hr", "cardiac_cost", "cardiac_cost_adjusted", "cardiac_drift_pct", "hrr_pct"}
+            content=BundleSectionContent(
+                rows=filter_rows(
+                    rows,
+                    {"avg_hr", "max_hr", "cardiac_cost", "cardiac_cost_adjusted", "cardiac_drift_pct", "hrr_pct"},
+                ),
             ),
         ),
         "by_sport": bundle_section(
@@ -305,7 +319,7 @@ def get_weekly_digest_facts_service(
                 "cardiac_cost",
                 "cardiac_drift_pct",
             ),
-            rows=[row for row in rows if row.get("scope") == "per_sport"],
+            content=BundleSectionContent(rows=[row for row in rows if row.get("scope") == "per_sport"]),
         ),
         "current_week_activities": bundle_section(
             requested=(
@@ -318,20 +332,26 @@ def get_weekly_digest_facts_service(
                 "trimp",
                 "kudos_count",
             ),
-            items=data_list(current_payload),
+            content=BundleSectionContent(items=data_list(current_payload)),
         ),
         "period_trends": bundle_section(
             requested=tuple(metrics_for_aggregate_bundle("period_comparison")),
-            periods={
-                "current": {"start": week_start.isoformat(), "end_exclusive": end_exclusive.isoformat()},
-                "previous": {"start": previous_start.isoformat(), "end_exclusive": previous_end.isoformat()},
-            },
-            comparison=cast("dict[str, object]", trends_payload["data"]),
+            content=BundleSectionContent(
+                periods={
+                    "current": {"start": week_start.isoformat(), "end_exclusive": end_exclusive.isoformat()},
+                    "previous": {"start": previous_start.isoformat(), "end_exclusive": previous_end.isoformat()},
+                },
+                comparison=cast("dict[str, object]", trends_payload["data"]),
+            ),
         ),
         "freshness": bundle_section(
-            requested=("activity_date",), facts=cast("dict[str, object]", weekly_payload["freshness"])
+            requested=("activity_date",),
+            content=BundleSectionContent(facts=cast("dict[str, object]", weekly_payload["freshness"])),
         ),
-        "read_model": bundle_section(requested=("fitness",), facts=read_model),
+        "read_model": bundle_section(
+            requested=("fitness",),
+            content=BundleSectionContent(facts=read_model),
+        ),
     }
     data = bundle_data(
         bundle_id="weekly_digest",
@@ -382,26 +402,33 @@ def get_historical_facts_service(
     sections = {
         "activity_context": bundle_section(
             requested=("activity_streak_days", "rest_streak_days", "last_hike_days_ago"),
-            facts=pick_metrics(facts, ("activity_streak_days", "rest_streak_days", "last_hike_days_ago")),
+            content=BundleSectionContent(
+                facts=pick_metrics(facts, ("activity_streak_days", "rest_streak_days", "last_hike_days_ago")),
+            ),
         ),
         "calendar_context": bundle_section(
             requested=("activity_date",),
-            season=season(as_of),
-            current_week={
-                "week_start": week_start.isoformat(),
-                "window_start": week_start.isoformat(),
-                "window_end_exclusive": end_exclusive.isoformat(),
-            },
+            content=BundleSectionContent(
+                season=season(as_of),
+                current_week={
+                    "week_start": week_start.isoformat(),
+                    "window_start": week_start.isoformat(),
+                    "window_end_exclusive": end_exclusive.isoformat(),
+                },
+            ),
         ),
         "coverage": bundle_section(
             requested=tuple(metrics_for_aggregate_bundle("historical_facts")),
-            read_model=read_model,
-            row_count=len(rows),
+            content=BundleSectionContent(read_model=read_model, row_count=len(rows)),
         ),
         "freshness": bundle_section(
-            requested=("activity_date",), facts=cast("dict[str, object]", historical_payload["freshness"])
+            requested=("activity_date",),
+            content=BundleSectionContent(facts=cast("dict[str, object]", historical_payload["freshness"])),
         ),
-        "read_model": bundle_section(requested=("fitness",), facts=read_model),
+        "read_model": bundle_section(
+            requested=("fitness",),
+            content=BundleSectionContent(facts=read_model),
+        ),
     }
     data = bundle_data(
         bundle_id="historical_facts",

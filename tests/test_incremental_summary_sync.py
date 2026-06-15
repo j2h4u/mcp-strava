@@ -21,6 +21,7 @@ from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.strava import StravaResponse
 from mcp_strava.adapters.strava.types import StravaRateInfo
+from mcp_strava.refresh.runtime import RefreshCollaborators
 from tests._fixtures_duckdb import create_fixture_db
 
 
@@ -249,7 +250,10 @@ def test_run_once_null_marker_triggers_full_walk_and_writes_marker(tmp_path, mon
         store = RefreshStateStore.from_connection(repo.conn)
         assert store.get_last_full_summary_sync_at() is None
 
-        result = run_once(repo, transport, policy, clock, FakeSleeper(), force=True)
+        result = run_once(
+            RefreshCollaborators(repo=repo, transport=transport, policy=policy, clock=clock, sleeper=FakeSleeper()),
+            force=True,
+        )
 
         marker_after = store.get_last_full_summary_sync_at()
 
@@ -288,7 +292,10 @@ def test_run_once_stale_marker_triggers_full_walk_and_updates_marker(tmp_path, m
         store = RefreshStateStore.from_connection(repo.conn)
         store.set_last_full_summary_sync_at(stale_marker)
 
-        result = run_once(repo, transport, policy, clock, FakeSleeper(), force=True)
+        result = run_once(
+            RefreshCollaborators(repo=repo, transport=transport, policy=policy, clock=clock, sleeper=FakeSleeper()),
+            force=True,
+        )
 
         marker_after = store.get_last_full_summary_sync_at()
 
@@ -326,7 +333,10 @@ def test_run_once_fresh_marker_triggers_incremental(tmp_path, monkeypatch):
         store = RefreshStateStore.from_connection(repo.conn)
         store.set_last_full_summary_sync_at(fresh_marker)
 
-        result = run_once(repo, transport, policy, clock, FakeSleeper(), force=True)
+        result = run_once(
+            RefreshCollaborators(repo=repo, transport=transport, policy=policy, clock=clock, sleeper=FakeSleeper()),
+            force=True,
+        )
 
         marker_after = store.get_last_full_summary_sync_at()
 
@@ -363,7 +373,10 @@ def test_run_once_cold_start_triggers_full_walk(tmp_path, monkeypatch):
         store = RefreshStateStore.from_connection(repo.conn)
         assert store.get_last_full_summary_sync_at() is None
 
-        result = run_once(repo, transport, policy, clock, FakeSleeper(), force=True)
+        result = run_once(
+            RefreshCollaborators(repo=repo, transport=transport, policy=policy, clock=clock, sleeper=FakeSleeper()),
+            force=True,
+        )
 
     assert result.status == "ok"
     assert len(captured) == 1

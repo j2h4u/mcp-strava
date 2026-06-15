@@ -2,6 +2,7 @@
 
 import logging
 import time
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,6 +22,16 @@ from mcp_strava.hr_zones import get_zone_model
 from mcp_strava.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MaterializationOptions:
+    now: str | datetime | None = None
+    limit: int | None = None
+    run_id: int | None = None  # accepted for API surface; unused internally
+    renew_lease: object = field(default=None)
+    settings: Settings | None = None
+    trigger_reason: str = "materialize_read_model"
 
 
 def _now_parts(now: str | datetime | None) -> tuple[str, str]:
@@ -66,20 +77,15 @@ def _record_failed_run(repo: DuckDBRepository, started_at: str, metric_version: 
 def materialize_read_model(
     repo: DuckDBRepository,
     metric_version: int,
-    now: str | datetime | None = None,
-    limit: int | None = None,
-    run_id: int | None = None,
-    renew_lease=None,
-    settings: Settings | None = None,
-    trigger_reason: str = "materialize_read_model",
+    opts: MaterializationOptions | None = None,
 ) -> dict[str, Any]:
-    del run_id
-    _settings = settings or get_settings()
+    _opts = opts or MaterializationOptions()
+    _settings = _opts.settings or get_settings()
     athlete = _settings.athlete
     if athlete.hr_rest is None:
         raise RuntimeError(_HR_REST_MISSING_MSG)
-    computed_at, today = _now_parts(now)
-    dirty_rows = repo.dirty_activity_rows_for_materialization(metric_version, limit=limit)
+    computed_at, today = _now_parts(_opts.now)
+    dirty_rows = repo.dirty_activity_rows_for_materialization(metric_version, limit=_opts.limit)
     if not dirty_rows:
         return {"status": "noop", "activities_materialized": 0, "dirty_rows_cleared": 0}
 
@@ -103,7 +109,7 @@ def materialize_read_model(
 
     try:
         activity_facts: list[dict[str, object]] = _activity_facts_batched(
-            repo, dirty_rows, metric_version, computed_at, _settings, renew_lease=renew_lease
+            repo, dirty_rows, metric_version, computed_at, _settings, renew_lease=_opts.renew_lease
         )
     except Exception as exc:
         _record_failed_run(repo, computed_at, metric_version, exc)
@@ -142,7 +148,7 @@ def materialize_read_model(
                 "finished_at": computed_at,
                 "status": "ok",
                 "metric_version": metric_version,
-                "trigger_reason": trigger_reason,
+                "trigger_reason": _opts.trigger_reason,
                 "activities_considered": len(dirty_rows),
                 "activities_materialized": activity_count,
                 "daily_facts_materialized": len(daily_trimp),
