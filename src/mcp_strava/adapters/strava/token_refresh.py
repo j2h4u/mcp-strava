@@ -7,6 +7,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from http import HTTPStatus
 from typing import cast
 
 from mcp_strava.adapters.strava.types import Clock, RefreshedTokens, Sleeper, StravaUnavailableError
@@ -38,7 +39,7 @@ class TokenRefreshTransport:
             try:
                 response = self._http(request)
                 status = int(getattr(response, "status", getattr(response, "code", 200)))
-                if status >= 400:
+                if status >= HTTPStatus.BAD_REQUEST:
                     raise StravaUnavailableError("token_unavailable")
                 data = self._read_json(response)
                 return RefreshedTokens(
@@ -47,7 +48,7 @@ class TokenRefreshTransport:
                     expires_at=int(str(data["expires_at"])),
                 )
             except urllib.error.HTTPError as exc:
-                if 400 <= int(exc.code) < 500:
+                if HTTPStatus.BAD_REQUEST <= int(exc.code) < HTTPStatus.INTERNAL_SERVER_ERROR:
                     raise StravaUnavailableError("token_unavailable") from exc
                 if attempt == 2:
                     raise StravaUnavailableError("token_unavailable") from exc

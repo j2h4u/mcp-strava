@@ -6,6 +6,7 @@ import json
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from http import HTTPStatus
 from typing import cast
 
 from mcp_strava.adapters.strava.rate_limit import RateLimitPolicy
@@ -49,7 +50,7 @@ class StravaTransport:
                 rate_info = self.policy.update_from_headers(getattr(response, "headers", {}) or {})
                 return StravaResponse(data=data, rate_info=rate_info, status=status)
             except urllib.error.HTTPError as exc:
-                if exc.code == 401:
+                if exc.code == HTTPStatus.UNAUTHORIZED:
                     if refreshed:
                         raise StravaUnavailableError("token_unavailable") from exc
                     try:
@@ -61,7 +62,7 @@ class StravaTransport:
                     refreshed = True
                     attempts += 1
                     continue
-                if exc.code == 429:
+                if exc.code == HTTPStatus.TOO_MANY_REQUESTS:
                     last_reason = "rate_limited"
                     self.policy.mark_rate_limited()
                     attempts += 1
@@ -69,7 +70,7 @@ class StravaTransport:
                         break
                     self.sleeper.sleep(self._retry_after_seconds(exc))
                     continue
-                if exc.code == 404:
+                if exc.code == HTTPStatus.NOT_FOUND:
                     raise
                 last_reason = "network_unstable"
                 attempts += 1
