@@ -31,10 +31,10 @@ services:
       - ${MCP_STRAVA_DATA_DIR:-/srv/mcp-strava/data}:/runtime/data
     expose: ["8080"]
     networks:
-      - mcp-backends
+      - mcp-private-noauth
     # Default profile intentionally avoids host port publication.
 
 networks:
-  mcp-backends:
+  mcp-private-noauth:
     external: true
-    name: mcp-backends
+    name: mcp-private-noauth
