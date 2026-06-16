@@ -1,6 +1,7 @@
 services:
   mcp-strava:
     container_name: mcp-strava
+    init: true
     build:
       context: ..
       dockerfile: deploy/Dockerfile

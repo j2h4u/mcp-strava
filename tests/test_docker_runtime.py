@@ -9,6 +9,7 @@ from pathlib import Path
 
 import duckdb
 import pytest
+import yaml
 
 from tests._fixtures_duckdb import create_fixture_db
 
@@ -118,6 +119,13 @@ def test_runtime_path_references_stay_in_deploy_surface() -> None:
         if any(host_path in text for host_path in host_runtime_paths):
             offenders.append(rel)
     assert offenders == []
+
+
+def test_compose_enables_tiny_init_for_zombie_reaping() -> None:
+    compose = yaml.safe_load(_read_text(_repo_root() / "deploy" / "docker-compose.yml"))
+    service = compose["services"]["mcp-strava"]
+
+    assert service["init"] is True
 
 
 def test_entrypoint_runs_preflight_before_exec(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
