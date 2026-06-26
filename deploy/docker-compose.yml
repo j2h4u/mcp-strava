@@ -5,6 +5,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+    mem_limit: 4g
     restart: unless-stopped
     environment:
       MCP_STRAVA_RUNTIME_PROFILE: container

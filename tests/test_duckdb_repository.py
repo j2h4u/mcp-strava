@@ -394,6 +394,136 @@ def test_bump_logic_version_invalidates_current_metric_version_memo() -> None:
     assert repo.current_metric_version() == v + 1
 
 
+def test_prune_old_read_model_metric_versions_keeps_current_version_pinned(tmp_path: Path) -> None:
+    """Successful recompute cleanup should delete superseded read-model rows only.
+
+    This exercises the repository pruning hook directly: after a new metric_version
+    has been materialized, rows from older versions are removed, while callers can
+    still pin reads to the current version and get the surviving facts back.
+    """
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "strava.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    def seed_fact_version(repo: DuckDBRepository, metric_version: int, computed_at: str) -> None:
+        repo.upsert_activity_metric_fact(
+            {
+                **_activity_fact_values(activity_id=100),
+                "metric_version": metric_version,
+                "computed_at": computed_at,
+            }
+        )
+        repo.upsert_daily_load_fact(
+            {
+                "day": "2026-05-21",
+                "scope": "all",
+                "sport_type": "all",
+                "metric_version": metric_version,
+                "computed_at": computed_at,
+                "completeness_status": "complete",
+                "missing_reasons_json": "[]",
+                "activity_count": 1,
+                "stream_point_count": 180,
+                "heartrate_point_count": 180,
+                "observed_trimp": 42.5,
+                "effective_trimp": 42.5,
+                "distance_m": 6000.0,
+                "moving_time_s": 1800,
+                "elevation_gain_m": 120.0,
+                "zone4_seconds": 40,
+                "zone5_seconds": 50,
+                "high_zone_seconds": 90,
+                "anomaly_count": 0,
+            }
+        )
+        repo.upsert_training_model_daily_fact(
+            {
+                "day": "2026-05-21",
+                "scope": "all",
+                "sport_type": "all",
+                "metric_version": metric_version,
+                "computed_at": computed_at,
+                "completeness_status": "complete",
+                "missing_reasons_json": "[]",
+                "effective_trimp": 42.5,
+                "observed_trimp": 42.5,
+                "fitness": 10.0,
+                "fatigue": 12.0,
+                "form": -2.0,
+                "form_zone": "normal",
+                "acwr_zone": "sweet_spot",
+                "acwr": 1.2,
+                "load_7d": 12.0,
+                "load_28d": None,
+                "load_42d": 10.0,
+                "input_days": 1,
+                "missing_days": 0,
+            }
+        )
+        repo.upsert_rolling_period_fact(
+            {
+                "as_of_day": "2026-05-21",
+                "window_days": 7,
+                "scope": "all",
+                "sport_type": "all",
+                "metric_version": metric_version,
+                "computed_at": computed_at,
+                "completeness_status": "complete",
+                "missing_reasons_json": "[]",
+                "activity_count": 1,
+                "active_days": 1,
+                "rest_days": 0,
+                "observed_trimp": 42.5,
+                "effective_trimp": 42.5,
+                "distance_m": 6000.0,
+                "moving_time_s": 1800,
+                "elevation_gain_m": 120.0,
+                "high_zone_seconds": 90,
+                "anomaly_count": 0,
+                "fitness": 10.0,
+                "fatigue": 12.0,
+                "form": -2.0,
+                "form_zone": "normal",
+                "acwr_zone": "sweet_spot",
+                "acwr": 1.2,
+                "median_cardiac_cost": None,
+                "median_adjusted_cardiac_cost": None,
+                "median_hr_recovery": None,
+                "median_cardiac_drift_pct": None,
+            }
+        )
+        repo.enqueue_metric_dirty_activity(
+            activity_id=100 + metric_version,
+            activity_day="2026-05-21",
+            metric_version=metric_version,
+            source_revision=1,
+            reason="test_dirty",
+            queued_at=computed_at,
+        )
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        seed_fact_version(repo, 1, "2026-05-24T12:00:00")
+        seed_fact_version(repo, 2, "2026-05-24T13:00:00")
+
+        deleted = repo.prune_old_read_model_metric_versions(2)
+        current_fact = repo.fetch_activity_metric_fact(100, metric_version=2)
+        old_fact = repo.fetch_activity_metric_fact(100, metric_version=1)
+        status = repo.read_model_status()
+
+    assert deleted == {
+        "activity_metric_facts": 1,
+        "daily_load_facts": 1,
+        "training_model_daily": 1,
+        "rolling_period_facts": 1,
+        "metric_dirty_activities": 1,
+    }
+    assert current_fact is not None
+    assert current_fact["metric_version"] == 2
+    assert old_fact is None
+    assert "metric_versions_present" not in status
+
+
 def test_logic_version_seed_is_idempotent_across_constructions() -> None:
     """Calling from_connection twice on the same DB does not insert a 2nd row."""
     import duckdb
@@ -632,16 +762,29 @@ def test_walk_discount_recomputes_end_to_end_on_fingerprint_mismatch(tmp_path: P
 
         bumped = repo.current_metric_version()
         # The re-materialized daily fact at the BUMPED version carries the discount.
-        # Pin to metric_version=2 — the table still holds the v1 row from the first
-        # cycle, and an unpinned fetch would ambiguously return both versions.
         walk_day_facts = repo.fetch_daily_load_facts("2026-05-21", "2026-05-22", scope="all", metric_version=2)
         walk_day_fact = next(f for f in walk_day_facts if str(f["day"]) == "2026-05-21")
+        old_version_counts = {
+            table: repo.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE metric_version = 1").fetchone()[0]
+            for table in (
+                "activity_metric_facts",
+                "daily_load_facts",
+                "training_model_daily",
+                "rolling_period_facts",
+            )
+        }
 
     # (1) version advanced to N+1
     assert bumped == 2, "fingerprint mismatch must bump metric_version to N+1"
     # (2) the mass-enqueue + recompute fired: both seed activities re-materialized at N+1
     assert materialized_at_bump >= 2
     assert result.get("activities_materialized", 0) >= 1
+    assert old_version_counts == {
+        "activity_metric_facts": 0,
+        "daily_load_facts": 0,
+        "training_model_daily": 0,
+        "rolling_period_facts": 0,
+    }
     # (3) the re-materialized walk-day effective_trimp reflects the current discount
     assert walk_day_fact["metric_version"] == 2
     assert walk_day_fact["effective_trimp"] == expected_effective

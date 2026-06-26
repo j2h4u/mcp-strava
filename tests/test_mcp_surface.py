@@ -79,7 +79,6 @@ def _envelope(data: dict, *, unavailable: bool = False) -> ServiceEnvelope:
                     "last_materialized_at": "2026-05-22T09:30:00Z",
                     "dirty_count": 0,
                     "oldest_dirty_day": None,
-                    "metric_versions_present": [1],
                     "stale_reason": None,
                 },
             },

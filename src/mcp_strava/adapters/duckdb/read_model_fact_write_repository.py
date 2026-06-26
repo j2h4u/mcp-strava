@@ -91,3 +91,28 @@ class ReadModelFactWriteRepositoryMixin(ReadModelRepositoryHost):
             [payload[col] for col in columns],
         )
         return _as_int(payload["id"])
+
+    def prune_old_read_model_metric_versions(self, current_metric_version: int) -> dict[str, int]:
+        """Delete superseded read-model rows and return deleted counts per table."""
+        tables = (
+            "activity_metric_facts",
+            "daily_load_facts",
+            "training_model_daily",
+            "rolling_period_facts",
+            "metric_dirty_activities",
+        )
+        deleted_counts: dict[str, int] = {}
+        for table in tables:
+            safe_table = _safe_identifier(table)
+            row = self._fetchone(
+                f"SELECT COUNT(*) AS deleted_count FROM {safe_table} WHERE metric_version < ?",
+                [current_metric_version],
+            )
+            deleted_count = _as_int(row["deleted_count"]) if row is not None else 0
+            if deleted_count > 0:
+                self._execute(
+                    f"DELETE FROM {safe_table} WHERE metric_version < ?",
+                    [current_metric_version],
+                )
+            deleted_counts[table] = deleted_count
+        return deleted_counts

@@ -235,9 +235,4 @@ CREATE TABLE IF NOT EXISTS read_model_logic_version (
 );
 
 CREATE INDEX idx_duckdb_activities_day_id ON activities(activity_day, id);
-CREATE INDEX idx_duckdb_activity_metric_day_sport_version ON activity_metric_facts(activity_day, sport_type, metric_version);
-CREATE INDEX idx_duckdb_daily_load_day_scope_sport_version ON daily_load_facts(day, scope, sport_type, metric_version);
-CREATE INDEX idx_duckdb_training_model_day_scope_sport_version ON training_model_daily(day, scope, sport_type, metric_version);
-CREATE INDEX idx_duckdb_rolling_period_asof_window_scope_sport_version
-    ON rolling_period_facts(as_of_day, window_days, scope, sport_type, metric_version);
 """

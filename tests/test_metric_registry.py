@@ -351,7 +351,7 @@ def test_activity_metric_fact_schema_matches_registry_metadata():
         assert primary_key_columns == ["activity_id", "metric_version"]
 
 
-def test_duckdb_schema_smoke_keeps_tables_views_and_activity_index():
+def test_duckdb_schema_smoke_keeps_tables_views_and_nonduplicative_indexes():
     with duckdb.connect(database=":memory:") as conn:
         create_schema(conn)
         table_names = {
@@ -380,7 +380,11 @@ def test_duckdb_schema_smoke_keeps_tables_views_and_activity_index():
 
     assert set(DUCKDB_TABLES).issubset(table_names)
     assert set(DUCKDB_VIEWS).issubset(view_names)
-    assert "idx_duckdb_activity_metric_day_sport_version" in index_names
+    assert "idx_duckdb_activities_day_id" in index_names
+    assert "idx_duckdb_activity_metric_day_sport_version" not in index_names
+    assert "idx_duckdb_daily_load_day_scope_sport_version" not in index_names
+    assert "idx_duckdb_training_model_day_scope_sport_version" not in index_names
+    assert "idx_duckdb_rolling_period_asof_window_scope_sport_version" not in index_names
 
 
 def test_schema_activity_metric_fact_ddl_is_registry_generated():

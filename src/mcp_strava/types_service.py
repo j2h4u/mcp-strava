@@ -56,7 +56,6 @@ class ReadModelMetadata:
     last_materialized_at: str | None
     dirty_count: int
     oldest_dirty_day: str | None
-    metric_versions_present: list[int] = field(default_factory=list)
     stale_reason: str | None = None
 
 

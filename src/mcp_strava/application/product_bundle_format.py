@@ -296,7 +296,6 @@ def read_model_from(*payloads: dict[str, object]) -> dict[str, Any]:
         "last_materialized_at": None,
         "dirty_count": 0,
         "oldest_dirty_day": None,
-        "metric_versions_present": [],
         "stale_reason": "read_model_metadata_absent",
     }
 

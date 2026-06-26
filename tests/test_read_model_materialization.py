@@ -667,6 +667,33 @@ def test_WR_04_partial_batch_does_not_undercount_daily_facts(tmp_path: Path) -> 
     )
 
 
+def test_partial_new_version_keeps_old_version_until_dirty_queue_drains(tmp_path: Path) -> None:
+    _fixture, repo = _create_duckdb_read_model_repo(tmp_path)
+    with repo:
+        _seed_dirty_activity_with_streams(repo, activity_id=920, day="2026-05-21")
+        _seed_dirty_activity_with_streams(repo, activity_id=921, day="2026-05-22")
+        _seed_dirty_activity_with_streams(repo, activity_id=922, day="2026-05-23")
+
+        materialize_read_model(repo, 1, MaterializationOptions(now="2026-05-24T12:00:00"))
+        repo.enqueue_metric_version_recompute(2, reason="logic_fingerprint_changed", queued_at="2026-05-24T13:00:00")
+
+        result = materialize_read_model(repo, 2, MaterializationOptions(now="2026-05-24T13:00:00", limit=1))
+
+        old_count = repo.conn.execute("SELECT COUNT(*) FROM activity_metric_facts WHERE metric_version = 1").fetchone()[
+            0
+        ]
+        new_count = repo.conn.execute("SELECT COUNT(*) FROM activity_metric_facts WHERE metric_version = 2").fetchone()[
+            0
+        ]
+        remaining_dirty = repo.dirty_activity_rows(metric_version=2)
+
+    assert result["dirty_rows_remaining"] == 2
+    assert result["old_metric_version_rows_pruned"] == {}
+    assert old_count == 3
+    assert new_count == 1
+    assert len(remaining_dirty) == 2
+
+
 def test_materialize_batched_fact_upserts_match_sequential(tmp_path, monkeypatch):
     """Batched fact upserts are byte-identical to single-row upserts.
 

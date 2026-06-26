@@ -227,7 +227,6 @@ def _assert_read_model_metadata(payload: dict) -> None:
     assert isinstance(metadata, dict)
     assert set(metadata) >= READ_MODEL_METADATA_KEYS
     assert metadata["last_materialized_at"] == "2026-05-21T06:20:00"
-    assert metadata["metric_versions_present"] == [1]
 
 
 def _read_model_current() -> dict[str, object]:
@@ -236,7 +235,6 @@ def _read_model_current() -> dict[str, object]:
         "last_materialized_at": "2026-05-21T06:20:00",
         "dirty_count": 0,
         "oldest_dirty_day": None,
-        "metric_versions_present": [1],
         "stale_reason": None,
     }
 

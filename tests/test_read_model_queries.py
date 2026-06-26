@@ -13,7 +13,6 @@ READ_MODEL_METADATA_KEYS = {
     "last_materialized_at",
     "dirty_count",
     "oldest_dirty_day",
-    "metric_versions_present",
     "stale_reason",
 }
 
@@ -336,7 +335,6 @@ def test_read_model_status_reports_metadata_fields(tmp_path: Path) -> None:
     assert status["last_materialized_at"] == "2026-05-21T06:20:00"
     assert status["dirty_count"] == 1
     assert status["oldest_dirty_day"] == "2026-05-21"
-    assert status["metric_versions_present"] == [1]
     assert status["stale_reason"] == "dirty_queue_not_empty"
 
 

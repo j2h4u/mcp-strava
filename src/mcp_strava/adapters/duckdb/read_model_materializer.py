@@ -161,6 +161,8 @@ def materialize_read_model(
             }
         )
         cleared = repo.clear_dirty_activity_rows(dirty_rows)
+        remaining_dirty = len(repo.dirty_activity_rows(metric_version=metric_version))
+        pruned_counts = repo.prune_old_read_model_metric_versions(metric_version) if remaining_dirty == 0 else {}
     except Exception as exc:
         repo.rollback()
         _record_failed_run(repo, computed_at, metric_version, exc)
@@ -170,17 +172,21 @@ def materialize_read_model(
     # Operational counter for a domain that has regressed before: surfaces materialize
     # cost so the next slowdown is visible without a profiler.
     logger.info(
-        "read-model materialize: activities=%d daily=%d rolling=%d cleared=%d elapsed_ms=%d",
+        "read-model materialize: activities=%d daily=%d rolling=%d cleared=%d remaining_dirty=%d pruned=%d elapsed_ms=%d",
         activity_count,
         len(daily_trimp),
         len(ROLLING_WINDOWS),
         cleared,
+        remaining_dirty,
+        sum(pruned_counts.values()),
         int((time.perf_counter() - started) * 1000),
     )
     return {
         "status": "ok",
         "activities_materialized": activity_count,
         "dirty_rows_cleared": cleared,
+        "dirty_rows_remaining": remaining_dirty,
+        "old_metric_version_rows_pruned": pruned_counts,
         "daily_facts_materialized": len(daily_trimp),
         "rolling_facts_materialized": len(ROLLING_WINDOWS),
     }

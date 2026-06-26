@@ -30,7 +30,6 @@ class ReadModelRepositoryMixin(
                 "last_materialized_at": None,
                 "dirty_count": 0,
                 "oldest_dirty_day": None,
-                "metric_versions_present": [],
                 "stale_reason": "read_model_schema_missing",
             }
 
@@ -58,17 +57,9 @@ class ReadModelRepositoryMixin(
             + metric_sql,
             params,
         )
-        # Single pass over the four fact tables: MAX(computed_at) and the set
-        # of distinct metric_versions present, in one round-trip. The previous
-        # implementation scanned the same union twice (one MAX query plus four
-        # separate DISTINCT scans inside a helper), which dominated
-        # weekly_digest latency.
         facts_summary = self._fetchone(
             """
-            SELECT
-                MAX(computed_at) AS last_materialized_at,
-                LIST(DISTINCT metric_version ORDER BY metric_version)
-                    FILTER (WHERE metric_version IS NOT NULL) AS metric_versions_present
+            SELECT MAX(computed_at) AS last_materialized_at
             FROM (
                 SELECT computed_at, metric_version FROM activity_metric_facts
                 UNION ALL
@@ -90,17 +81,13 @@ class ReadModelRepositoryMixin(
             last_materialized_at = str(run["last_materialized_at"])
         elif facts_summary and facts_summary["last_materialized_at"]:
             last_materialized_at = str(facts_summary["last_materialized_at"])
-        # metric_versions_present is a DuckDB LIST aggregate — an opaque ``object``
-        # cell. Narrow it to a concrete list before iterating/coercing the elements.
-        raw_versions = facts_summary["metric_versions_present"] if facts_summary else None
-        versions: list[int] = sorted(_as_int(v) for v in raw_versions) if isinstance(raw_versions, list) else []
 
         status = "current"
         stale_reason = None
         if dirty_count > 0:
             status = "stale"
             stale_reason = "dirty_queue_not_empty"
-        elif not versions and last_materialized_at is None:
+        elif last_materialized_at is None:
             status = "unavailable"
             stale_reason = "no_materialized_facts"
 
@@ -109,7 +96,6 @@ class ReadModelRepositoryMixin(
             last_materialized_at=last_materialized_at,
             dirty_count=dirty_count,
             oldest_dirty_day=str(dirty["oldest_dirty_day"]) if dirty and dirty["oldest_dirty_day"] else None,
-            metric_versions_present=versions,
             stale_reason=stale_reason,
         )
         return {
@@ -117,7 +103,6 @@ class ReadModelRepositoryMixin(
             "last_materialized_at": metadata.last_materialized_at,
             "dirty_count": metadata.dirty_count,
             "oldest_dirty_day": metadata.oldest_dirty_day,
-            "metric_versions_present": metadata.metric_versions_present,
             "stale_reason": metadata.stale_reason,
         }
 
