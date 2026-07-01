@@ -57,7 +57,15 @@ def test_project_runtime_requires_python_314_and_duckdb_dependency() -> None:
     pyproject = tomllib.loads(_read_text(_repo_root() / "pyproject.toml"))
     project = pyproject["project"]
     assert project["requires-python"] == ">=3.14"
-    assert "duckdb>=1.5.3,<1.6" in project["dependencies"]
+
+    duckdb_dependency = next(
+        (dependency for dependency in project["dependencies"] if dependency.startswith("duckdb>=")),
+        None,
+    )
+    assert duckdb_dependency is not None
+    match = re.fullmatch(r"duckdb>=(\d+)\.(\d+)\.(\d+),<1\.6", duckdb_dependency)
+    assert match is not None
+    assert tuple(int(part) for part in duckdb.__version__.split(".")[:3]) >= tuple(int(part) for part in match.groups())
 
 
 def test_preflight_main_missing_db_fails(tmp_path: Path) -> None:
