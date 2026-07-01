@@ -10,18 +10,18 @@ license = "PolyForm-Noncommercial-1.0.0"
 license-files = ["LICENSE.md"]
 requires-python = ">=3.14"
 dependencies = [
-    "duckdb>=1.5.3,<1.6",
-    "mcp>=1.27.2,<1.28",
-    "numpy>=2.4.6",
+    "duckdb>=1.5.4,<1.6",
+    "mcp>=1.28.1,<1.29",
+    "numpy>=2.5.0",
     "PyYAML>=6.0.2,<7",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.1.0",
-    "ruff>=0.15.17",
-    "basedpyright>=1.39.8",
-    "import-linter>=2.3",
+    "pytest>=9.1.1",
+    "ruff>=0.15.20",
+    "basedpyright>=1.39.9",
+    "import-linter>=2.12",
     "vulture>=2.14",
     "pytest-xdist>=3.8.0",
     "actionlint-py>=1.7.12.24",
