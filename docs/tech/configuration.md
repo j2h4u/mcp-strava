@@ -12,7 +12,7 @@ constants in the code, because no operator needs to tune them.
 
 Strava credentials (`STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, tokens) are not
 env vars — they live in the token file. See the README's *First-Time Strava
-Setup*.
+Setup* and [Strava API access notes](strava-api-access.md).
 
 ## Athlete
 
@@ -45,6 +45,12 @@ Setup*.
 |---|---|---|
 | `MCP_STRAVA_REFRESH_WORKER_ENABLED` | `true` | Run the background mirror-refresh worker. Set false for a read-only deployment or when syncing out of band. |
 | `MCP_STRAVA_REFRESH_INTERVAL_SECONDS` | `3600` | Seconds between refresh cycles (minimum 60). |
+
+If Strava disables API access for the configured application, the refresh worker
+records `strava_application_inactive` and the Docker healthcheck eventually marks
+the container unhealthy. This is an upstream account/application access problem,
+not a local configuration parse failure. The MCP read surface may still serve
+already-mirrored data if the database is intact.
 
 ## Prompts
 

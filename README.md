@@ -1,10 +1,10 @@
 # Coach's view of your training
 
-Give an AI agent a coach's view of your training — over your own Strava data, even on a free Strava account.
+Give an AI agent a coach's view of your training over your own Strava data, using a local mirror and your active Strava API access.
 
 `mcp-strava` connects your Strava account to an AI agent so it can act as your coach and sports physiologist: it reads your real training history and answers questions like "am I overtraining?", "how does this month compare to last?", or "what should this week look like?" — grounded in your actual workouts, not guesses.
 
-It works with any Strava account, including the free tier. You bring your own Strava API credentials, so you don't need a paid Strava subscription to give an agent full read access to your training history.
+`mcp-strava` uses Strava's public API through your own API application. As of Strava's June 2026 developer-program changes, Standard Tier API access requires an active Strava subscription or a Strava-provided grace period; Extended Access Tier applications are handled separately by Strava. A free Strava account alone is no longer enough for API refresh.
 
 ## What You Can Use It For
 
@@ -25,7 +25,7 @@ That choice gives you:
 - Fast historical questions, including daily, weekly, monthly, all-time, and per-sport aggregates.
 - Reproducible metrics such as training impulse (TRIMP), fitness, fatigue, form, acute:chronic workload ratio (ACWR), cardiac drift, recovery, and sport-efficiency summaries.
 
-**How it compares to the official connector.** Strava [announced an official MCP connector for Claude](https://press.strava.com/articles/strava-launches-mcp-connector) on June 1, 2026, providing read-only access to training history, streams, GPS, power, clubs, and events — but it is rolling out to Strava *subscribers*. `mcp-strava` is the self-hosted alternative: it works on any account including the free tier, keeps a local mirror on your machine, and adds prepared aggregate bundles and CLI reports on top.
+**How it compares to the official connector.** Strava [announced an official MCP connector for Claude](https://press.strava.com/articles/strava-launches-mcp-connector) on June 1, 2026, providing read-only access to training history, streams, GPS, power, clubs, and events for Strava subscribers. `mcp-strava` is the self-hosted alternative: it keeps a local mirror on your machine, uses your own API application, and adds prepared aggregate bundles and CLI reports on top. It still depends on whatever Strava API access your account and application tier currently have.
 
 ## MCP Tools
 
@@ -60,11 +60,13 @@ That choice gives you:
 - `uv`
 - Docker with Compose
 - `just`
-- A Strava API application for OAuth credentials
+- Active Strava API access and a Strava API application for OAuth credentials
 
 ## First-Time Strava Setup
 
 This project stores Strava credentials in a local env file, not in a keychain. Treat this file as secret material and keep it outside git.
+
+Strava's current Developer Program requires a subscription for Standard Tier API access. If the Docker healthcheck reports `strava_application_inactive`, verify the application tier and subscription/grace status in the [Strava API settings dashboard](https://www.strava.com/settings/api).
 
 ### 1. Create A Strava Application
 
@@ -125,6 +127,14 @@ MCP_STRAVA_TOKEN_PATH=.env uv run python -m mcp_strava admin token-refresh
 ```
 
 After the token file exists, routine token refresh and Strava rate-limit handling are automatic.
+
+## Strava API Access Notes
+
+`mcp-strava` currently syncs through these public Strava API surfaces: athlete activities, activity details, activity streams, and activity kudos. It does not use the Club endpoints or Segment Explore endpoint that Strava scheduled for September 1, 2026 deprecation.
+
+Strava has announced a future API base-URL migration from `https://www.strava.com/api/v3` to `https://api-v3.strava.com`. Their changelog says the new base URL becomes available on January 4, 2027, and the old base URL is due for retirement on June 1, 2027. Until the new host is live, keep using the current base URL. `mcp-strava` already sends data API access tokens in the `Authorization: Bearer ...` header.
+
+Live refresh is API-only. If Strava disables API access for the configured application, the existing local DuckDB mirror remains usable for read-only analytics, but this project does not document or support a non-API refresh path.
 
 ## Local Docker Usage
 
@@ -197,6 +207,7 @@ The MCP server is read-only and factual. It does not expose sync, admin, debug, 
 
 **Usage**
 - [Configuration](docs/tech/configuration.md) — server environment variables and their defaults.
+- [Strava API access notes](docs/tech/strava-api-access.md) — subscription/tier requirements, endpoint impact, and the 2027 base-URL migration.
 
 **Operations**
 - [Deployment runbook](docs/tech/deployment.md) — gateway registration, DuckDB compaction, rollback, secret handling.
