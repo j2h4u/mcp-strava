@@ -783,11 +783,11 @@ def test_worker_logs_exception_message_and_traceback(monkeypatch, capsys):
             assert timeout == 5
             return True
 
-    def fake_run_pending_once(*, emit_idle: bool = True) -> int:
+    def fake_run_pending_once_result(*, emit_idle: bool = True):
         assert emit_idle is False
         raise RuntimeError("duckdb fatal detail")
 
-    monkeypatch.setattr(worker, "run_pending_once", fake_run_pending_once)
+    monkeypatch.setattr(worker, "_run_pending_once_result", fake_run_pending_once_result)
     monkeypatch.setattr(worker, "_emit", lambda event, **fields: events.append((event, fields)))
 
     worker.run_forever(poll_seconds=5, stop_event=StopAfterFirstWait(), emit_start=False)
@@ -798,6 +798,39 @@ def test_worker_logs_exception_message_and_traceback(monkeypatch, capsys):
     ]
     assert "Traceback" in captured.err
     assert "RuntimeError: duckdb fatal detail" in captured.err
+
+
+def test_worker_health_records_refresh_failure_reason(monkeypatch, tmp_path):
+    from mcp_strava.refresh import worker
+
+    health_path = tmp_path / "refresh-health.json"
+    monkeypatch.setenv("MCP_STRAVA_REFRESH_HEALTH_PATH", str(health_path))
+
+    class StopAfterFirstWait:
+        def is_set(self) -> bool:
+            return False
+
+        def wait(self, timeout: int) -> bool:
+            assert timeout == 5
+            return True
+
+    monkeypatch.setattr(
+        worker,
+        "_run_pending_once_result",
+        lambda *, emit_idle=False: worker._CycleResult(
+            exit_code=1,
+            failure_reason="strava_application_inactive",
+        ),
+    )
+    monkeypatch.setattr(worker, "_emit", lambda *_args, **_kwargs: None)
+
+    worker.run_forever(poll_seconds=5, stop_event=StopAfterFirstWait(), emit_start=False)
+
+    data = json.loads(health_path.read_text())
+    assert data["last_outcome"] == "error"
+    assert data["consecutive_failures"] == 1
+    assert data["last_error_type"] == "RefreshFailed"
+    assert data["last_error"] == "strava_application_inactive"
 
 
 def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_path):

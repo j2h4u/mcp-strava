@@ -10,7 +10,7 @@ from http import HTTPStatus
 from typing import cast
 
 from mcp_strava.adapters.strava.rate_limit import RateLimitPolicy
-from mcp_strava.adapters.strava.types import Clock, Sleeper, StravaResponse, StravaUnavailableError
+from mcp_strava.adapters.strava.types import Clock, RefreshReason, Sleeper, StravaResponse, StravaUnavailableError
 from mcp_strava.constants import Config
 
 
@@ -88,6 +88,8 @@ class StravaTransport:
             if new_attempts < Config.Transport.MAX_RETRIES:
                 self.sleeper.sleep(self._retry_after_seconds(exc))
             return new_attempts, "rate_limited", refreshed
+        if exc.code == HTTPStatus.FORBIDDEN and self._is_application_inactive(exc):
+            raise StravaUnavailableError(RefreshReason.STRAVA_APPLICATION_INACTIVE.value) from exc
         if exc.code == HTTPStatus.NOT_FOUND:
             raise exc
         new_attempts = attempts + 1
@@ -121,3 +123,29 @@ class StravaTransport:
             return int(retry_after) + 1 if retry_after is not None else 15
         except TypeError, ValueError:
             return 15
+
+    @staticmethod
+    def _is_application_inactive(exc: urllib.error.HTTPError) -> bool:
+        try:
+            raw = exc.read()
+        except OSError:
+            return False
+        try:
+            parsed = cast(object, json.loads(raw.decode()))
+        except json.JSONDecodeError, UnicodeDecodeError:
+            return False
+        if not isinstance(parsed, dict):
+            return False
+        errors = parsed.get("errors")
+        if not isinstance(errors, list):
+            return False
+        for error in errors:
+            if not isinstance(error, dict):
+                continue
+            if (
+                error.get("resource") == "Application"
+                and error.get("field") == "Status"
+                and error.get("code") == "Inactive"
+            ):
+                return True
+        return False

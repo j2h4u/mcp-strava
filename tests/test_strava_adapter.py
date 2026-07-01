@@ -2,6 +2,7 @@ import json
 import threading
 import urllib.error
 import urllib.request
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -444,6 +445,36 @@ def test_fetch_429_then_401_exhaustion_preserves_rate_limited_reason():
     exc = exc_info.value
     assert exc.reason == "rate_limited", f"expected 'rate_limited', got {exc.reason!r}"
     assert exc.detail is not None, "detail must be non-None for rate_limited exhaustion"
+
+
+def test_fetch_403_application_inactive_reports_actionable_reason():
+    from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport, StravaUnavailableError
+
+    class TokenProvider:
+        def access_token(self):
+            return "access-secret"
+
+        def refresh(self):
+            return "access-new"
+
+    body = json.dumps(
+        {
+            "message": "Forbidden",
+            "errors": [{"resource": "Application", "field": "Status", "code": "Inactive"}],
+        }
+    ).encode()
+    http = FakeStravaHttp([urllib.error.HTTPError("url", 403, "Forbidden", {}, BytesIO(body))])
+
+    with pytest.raises(StravaUnavailableError) as exc_info:
+        StravaTransport(
+            TokenProvider(),
+            RateLimitPolicy(),
+            clock=FakeClock(),
+            sleeper=FakeSleeper(),
+            http=http,
+        ).fetch("/athlete")
+
+    assert exc_info.value.reason == "strava_application_inactive"
 
 
 def test_file_lock_creates_sidecar_with_owner_only_permissions(tmp_path):

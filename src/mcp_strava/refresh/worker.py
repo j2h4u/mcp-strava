@@ -8,6 +8,7 @@ import os
 import sys
 import time
 import traceback
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Event
 
@@ -110,6 +111,20 @@ def _run_stream_channel_backfill(repo, transport, refresh_policy, clock, sleeper
 _prev_free_blocks: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _CycleResult:
+    exit_code: int
+    failure_reason: str | None = None
+
+
+def _cycle_ok() -> _CycleResult:
+    return _CycleResult(exit_code=0)
+
+
+def _cycle_failed(reason: str | None) -> _CycleResult:
+    return _CycleResult(exit_code=1, failure_reason=reason or "unknown")
+
+
 def _emit_mirror_storage() -> None:
     """Emit the DuckDB reclaimable-space indicator with a per-cycle delta.
 
@@ -130,15 +145,15 @@ def _emit_mirror_storage() -> None:
     _emit("mirror_storage", **stats)
 
 
-def _handle_run_once_result(result, refresh_store) -> int | None:
-    """Emit events for a run_once result; return exit code or None to continue."""
+def _handle_run_once_result(result, refresh_store) -> _CycleResult | None:
+    """Emit events for a run_once result; return cycle result or None to continue."""
     if isinstance(result, RefreshSkipped):
         if result.reason == "already_complete":
             consumed = refresh_store.mark_refresh_requests_consumed(_now_iso())
             _emit("refresh_request_consumed", result="already_complete", consumed=consumed)
             return None
         _emit("refresh_skipped", reason=result.reason)
-        return 0
+        return _cycle_ok()
     if result.status == "ok":
         consumed = refresh_store.mark_refresh_requests_consumed(_now_iso())
         _emit(
@@ -159,14 +174,14 @@ def _handle_run_once_result(result, refresh_store) -> int | None:
         # Rate-limit usage/limit snapshot when reason == "rate_limited".
         **(result.rate_info or {}),
     )
-    return 1
+    return _cycle_failed(str(result.reason or "unknown"))
 
 
-def _handle_backfill_result(backfill_result) -> int:
-    """Emit events for a stream-channel backfill result; return exit code."""
+def _handle_backfill_result(backfill_result) -> _CycleResult:
+    """Emit events for a stream-channel backfill result; return cycle result."""
     if isinstance(backfill_result, RefreshSkipped):
         _emit("stream_backfill_skipped", reason=backfill_result.reason)
-        return 0
+        return _cycle_ok()
     if backfill_result["status"] == "ok":
         _emit(
             "stream_backfill_ok",
@@ -174,24 +189,29 @@ def _handle_backfill_result(backfill_result) -> int:
             activities_to_backfill=backfill_result["activities_to_backfill"],
             checkpoint_stage=backfill_result["checkpoint_stage"],
         )
-        return 0
+        return _cycle_ok()
+    reason = str(backfill_result.get("reason", "unknown"))
     _emit(
         "stream_backfill_failed",
-        reason=backfill_result.get("reason", "unknown"),
+        reason=reason,
         checkpoint_stage=backfill_result.get("checkpoint_stage"),
     )
-    return 1
+    return _cycle_failed(reason)
 
 
 def run_pending_once(*, emit_idle: bool = True) -> int:
     """Run one refresh cycle, then always emit the storage indicator."""
+    return _run_pending_once_result(emit_idle=emit_idle).exit_code
+
+
+def _run_pending_once_result(*, emit_idle: bool = True) -> _CycleResult:
     try:
         return _run_pending_cycle(emit_idle=emit_idle)
     finally:
         _emit_mirror_storage()
 
 
-def _run_pending_cycle(*, emit_idle: bool = True) -> int:
+def _run_pending_cycle(*, emit_idle: bool = True) -> _CycleResult:
     """Run one refresh cycle when interval policy or queued requests require it."""
     settings = get_settings()
     ensure_runtime_refresh_schema(settings)
@@ -208,21 +228,21 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> int:
         if blocked_reason is not None:
             if emit_idle:
                 _emit("refresh_skipped", reason=blocked_reason)
-            return 0
+            return _cycle_ok()
         refresh_due = _regular_refresh_due(state, now_iso, refresh_policy)
         stream_backfill_due = _stream_channel_backfill_due(state)
 
     if pending_count == 0 and not refresh_due and not stream_backfill_due:
         if emit_idle:
             _emit("refresh_idle")
-        return 0
+        return _cycle_ok()
 
     try:
         _, clock, sleeper, transport, refresh_policy = build_refresh_collaborators(settings)
     except RuntimeError:
         record_refresh_misconfigured(settings)
         _emit("refresh_failed", reason="refresh_misconfigured", pending_requests=pending_count)
-        return 1
+        return _cycle_failed("refresh_misconfigured")
 
     with MirrorConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
@@ -233,7 +253,7 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> int:
         if pending_count == 0 and not refresh_due and not stream_backfill_due:
             if emit_idle:
                 _emit("refresh_idle")
-            return 0
+            return _cycle_ok()
 
         if pending_count > 0 or refresh_due:
             result = refresh_runtime.run_once(
@@ -250,6 +270,13 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> int:
 
         backfill_result = _run_stream_channel_backfill(repo, transport, refresh_policy, clock, sleeper)
         return _handle_backfill_result(backfill_result)
+
+
+def _record_health(cycle: _CycleResult) -> None:
+    if cycle.exit_code == 0:
+        health.record_cycle("ok")
+        return
+    health.record_cycle("error", error_type="RefreshFailed", error=cycle.failure_reason)
 
 
 def _poll_seconds(raw: str | None) -> int:
@@ -275,8 +302,7 @@ def run_forever(
 
     while stop_event is None or not stop_event.is_set():
         try:
-            return_code = run_pending_once(emit_idle=False)
-            health.record_cycle("ok" if return_code == 0 else "error")
+            _record_health(_run_pending_once_result(emit_idle=False))
         except Exception as exc:  # noqa: BLE001 - worker loop boundary records failures and keeps scheduler alive.
             _emit("refresh_worker_error", error_type=type(exc).__name__, error=str(exc))
             traceback.print_exc(file=sys.stderr)

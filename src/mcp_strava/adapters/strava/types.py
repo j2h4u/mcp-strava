@@ -12,6 +12,7 @@ class RefreshReason(StrEnum):
     TOKEN_UNAVAILABLE = "token_unavailable"
     RATE_LIMITED = "rate_limited"
     NETWORK_UNSTABLE = "network_unstable"
+    STRAVA_APPLICATION_INACTIVE = "strava_application_inactive"
     REFRESH_INCOMPLETE = "refresh_incomplete"
 
 

@@ -222,6 +222,7 @@ ALLOWED_REASON_CODES = frozenset(
         "token_unavailable",
         "rate_limited",
         "network_unstable",
+        "strava_application_inactive",
         "refresh_incomplete",
         "refresh_misconfigured",
         "sync_in_progress",
