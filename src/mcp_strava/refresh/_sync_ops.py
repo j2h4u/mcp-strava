@@ -9,7 +9,6 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from mcp_strava.adapters.duckdb.activity_selectors import activities_missing_streams
-from mcp_strava.adapters.duckdb.kudos_store import activities_missing_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.stream_coverage_queries import activities_missing_stream_channels
 from mcp_strava.refresh.checkpoints import Stage
@@ -287,23 +286,3 @@ def sync_stream_channels_backfill(
             on_progress()
     estimate["completed"] = completed
     return estimate
-
-
-def _sync_kudos(repo, transport, now_iso: str, window_days: int | None = None) -> int:
-    # Read through the typed repository boundary (returns list[int]) rather than
-    # touching repo.conn — keeps raw DB-API tuples inside the data layer.
-    fetched = 0
-    for activity_id in activities_missing_kudos(repo, window_days):
-        response = transport.fetch(f"/activities/{activity_id}/kudos?per_page=100")
-        if not isinstance(response.data, list):
-            continue
-        for athlete in response.data:
-            upsert_kudos(
-                repo,
-                activity_id,
-                athlete.get("firstname", ""),
-                athlete.get("lastname", ""),
-                now_iso,
-            )
-        fetched += 1
-    return fetched

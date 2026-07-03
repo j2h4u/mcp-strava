@@ -12,7 +12,7 @@ from mcp_strava.adapters.duckdb.repository_models import SyncLogRecord
 from mcp_strava.adapters.duckdb.sync_log_store import append_sync_log
 from mcp_strava.adapters.strava import StravaUnavailableError
 from mcp_strava.adapters.strava.types import Clock, FetchTransport, Sleeper
-from mcp_strava.refresh import _sync_ops, read_model_stage, source_ingest
+from mcp_strava.refresh import _sync_ops, kudos_sync, read_model_stage, source_ingest
 from mcp_strava.refresh.checkpoints import Stage, is_active_backfill_stage, is_stream_channel_backfill_stage
 from mcp_strava.refresh.policy import RefreshPolicy, refresh_interval_elapsed
 
@@ -376,7 +376,7 @@ def _run_daily_stages(
         )
     if start_index <= _stage_index(Stage.KUDOS):
         refresh_store.set_checkpoint(Stage.KUDOS.value, None)
-        kudos_fetched = _sync_ops._sync_kudos(repo, transport, now_iso)
+        kudos_fetched = kudos_sync._sync_kudos(repo, transport, now_iso)
     return activities_seen, activities_new, streams_fetched, details_fetched, kudos_fetched
 
 

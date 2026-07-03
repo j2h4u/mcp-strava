@@ -16,7 +16,7 @@ from mcp_strava.adapters.duckdb.stream_read_queries import activity_stream_rows
 from mcp_strava.adapters.duckdb.sync_log_store import read_sync_log
 from mcp_strava.adapters.strava import StravaResponse, StravaUnavailableError
 from mcp_strava.adapters.strava.types import StravaRateInfo
-from mcp_strava.refresh import RefreshPolicy, _sync_ops, read_model_stage, run_catchup
+from mcp_strava.refresh import RefreshPolicy, _sync_ops, kudos_sync, read_model_stage, run_catchup
 from mcp_strava.refresh.runtime import RefreshCollaborators
 from tests._fixtures_duckdb import create_fixture_db
 
@@ -550,7 +550,7 @@ def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch,
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams") or 0)
     monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
     monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
-    monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
+    monkeypatch.setattr(kudos_sync, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
 
     def fake_materialize(repo, now_iso, renew_lease):
         del repo
@@ -597,7 +597,7 @@ def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams") or 0)
     monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
     monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
-    monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
+    monkeypatch.setattr(kudos_sync, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
     monkeypatch.setattr(
         read_model_stage,
         "materialize_read_model_stage",
@@ -629,7 +629,7 @@ def test_materialization_lost_lease_fails_closed(monkeypatch, tmp_path):
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(kudos_sync, "_sync_kudos", lambda *_args, **_kwargs: 0)
 
     def fake_materialize(repo, now_iso, renew_lease):
         del repo, now_iso
@@ -2149,7 +2149,7 @@ def test_sync_kudos_indexes_raw_rows_positionally(tmp_path):
     wedging the worker (healthcheck red) while the MCP read surface stayed ok.
     The body was never exercised because other tests monkeypatch _sync_kudos.
     """
-    from mcp_strava.refresh._sync_ops import _sync_kudos
+    from mcp_strava.refresh.kudos_sync import _sync_kudos
     from mcp_strava.refresh.read_model_stage import schema_validate
     from mcp_strava.refresh.source_ingest import sync_summaries
 
