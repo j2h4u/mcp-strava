@@ -361,7 +361,7 @@ def test_materialization_uses_bronze_summary_day_for_source_dirty_and_facts(tmp_
 def test_schema_validate_and_materialization_follow_moved_bronze_summary_day(tmp_path: Path) -> None:
     from mcp_strava.adapters.duckdb.read_model_materializer import MaterializationOptions, materialize_read_model
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-    from mcp_strava.refresh._sync_ops import schema_validate
+    from mcp_strava.refresh.read_model_stage import schema_validate
     from mcp_strava.settings import load_settings
 
     fixture = tmp_path / "strava.duckdb"
@@ -537,7 +537,7 @@ def test_duckdb_repository_backfills_legacy_activity_payloads_once(tmp_path: Pat
 
 def test_schema_validate_bootstraps_legacy_bronze_payloads_once(tmp_path: Path) -> None:
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-    from mcp_strava.refresh._sync_ops import schema_validate
+    from mcp_strava.refresh.read_model_stage import schema_validate
 
     fixture = tmp_path / "strava.duckdb"
     conn = open_fixture_db(fixture)
@@ -1342,7 +1342,7 @@ def test_walk_discount_recomputes_end_to_end_on_fingerprint_mismatch(tmp_path: P
     """
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
     from mcp_strava.metrics import discounted_effective_trimp
-    from mcp_strava.refresh._sync_ops import materialize_read_model_stage
+    from mcp_strava.refresh.read_model_stage import materialize_read_model_stage
     from tests._fixtures_duckdb import create_empty_fixture_db
 
     fixture = tmp_path / "walk_e2e.duckdb"
@@ -1418,7 +1418,7 @@ def test_recompute_drains_full_queue_ignoring_limit(tmp_path: Path) -> None:
     at limit/cycle and need ~N/limit refresh cycles to converge (the 25/hour pathology).
     """
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-    from mcp_strava.refresh._sync_ops import materialize_read_model_stage
+    from mcp_strava.refresh.read_model_stage import materialize_read_model_stage
     from tests._fixtures_duckdb import create_empty_fixture_db
 
     fixture = tmp_path / "drain.duckdb"

@@ -16,7 +16,7 @@ from mcp_strava.adapters.duckdb.stream_read_queries import activity_stream_rows
 from mcp_strava.adapters.duckdb.sync_log_store import read_sync_log
 from mcp_strava.adapters.strava import StravaResponse, StravaUnavailableError
 from mcp_strava.adapters.strava.types import StravaRateInfo
-from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_catchup
+from mcp_strava.refresh import RefreshPolicy, _sync_ops, read_model_stage, run_catchup
 from mcp_strava.refresh.runtime import RefreshCollaborators
 from tests._fixtures_duckdb import create_fixture_db
 
@@ -121,7 +121,8 @@ def test_sync_summaries_skips_rewrite_when_summary_unchanged(tmp_path):
     unchanged rows must be left untouched. synced_at staying at its first value
     across an unchanged re-sync is the observable proof that no write happened.
     """
-    from mcp_strava.refresh._sync_ops import schema_validate, sync_summaries
+    from mcp_strava.refresh._sync_ops import sync_summaries
+    from mcp_strava.refresh.read_model_stage import schema_validate
 
     activity = {
         "id": 500,
@@ -206,7 +207,7 @@ def test_sync_summaries_captures_raw_payloads_in_bronze_without_forcing_silver_r
     with _repo(tmp_path) as repo:
         sync_summaries(repo, _SummaryTransport(), "2026-05-29T00:00:00")
         first_before_processing = activity_by_id(repo, 501)
-        from mcp_strava.refresh._sync_ops import schema_validate
+        from mcp_strava.refresh.read_model_stage import schema_validate
 
         schema_validate(repo)
         first = activity_by_id(repo, 501)
@@ -233,7 +234,8 @@ def test_sync_summaries_captures_raw_payloads_in_bronze_without_forcing_silver_r
 
 
 def test_sync_summaries_does_not_write_modeled_activity_rows(tmp_path, monkeypatch):
-    from mcp_strava.refresh._sync_ops import schema_validate, sync_summaries
+    from mcp_strava.refresh._sync_ops import sync_summaries
+    from mcp_strava.refresh.read_model_stage import schema_validate
 
     activity = {
         "id": 503,
@@ -270,7 +272,8 @@ def test_sync_summaries_does_not_write_modeled_activity_rows(tmp_path, monkeypat
 
 
 def test_sync_details_captures_raw_payloads_in_bronze_without_silver_mutation(tmp_path):
-    from mcp_strava.refresh._sync_ops import schema_validate, sync_details, sync_summaries
+    from mcp_strava.refresh._sync_ops import sync_details, sync_summaries
+    from mcp_strava.refresh.read_model_stage import schema_validate
 
     activity_id = 502
     summary = {
@@ -544,7 +547,7 @@ def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch,
     monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *_args, **_kwargs: order.append("summaries") or (0, 0))
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams") or 0)
     monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
-    monkeypatch.setattr(_sync_ops, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
+    monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
     monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
 
     def fake_materialize(repo, now_iso, renew_lease):
@@ -554,7 +557,7 @@ def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch,
         order.append("read_model_materialize")
         return {"status": "ok", "activities_materialized": 0}
 
-    monkeypatch.setattr(_sync_ops, "materialize_read_model_stage", fake_materialize, raising=False)
+    monkeypatch.setattr(read_model_stage, "materialize_read_model_stage", fake_materialize, raising=False)
 
     with _repo(tmp_path) as repo:
         result = run_once(
@@ -589,10 +592,10 @@ def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch
     monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *_args, **_kwargs: order.append("summaries") or (0, 0))
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams") or 0)
     monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
-    monkeypatch.setattr(_sync_ops, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
+    monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
     monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
     monkeypatch.setattr(
-        _sync_ops,
+        read_model_stage,
         "materialize_read_model_stage",
         lambda *_args, **_kwargs: order.append("read_model_materialize") or {"status": "ok"},
         raising=False,
@@ -621,14 +624,14 @@ def test_materialization_lost_lease_fails_closed(monkeypatch, tmp_path):
     monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *_args, **_kwargs: (0, 0))
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: 0)
-    monkeypatch.setattr(_sync_ops, "schema_validate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: 0)
 
     def fake_materialize(repo, now_iso, renew_lease):
         del repo, now_iso
         renew_lease()
 
-    monkeypatch.setattr(_sync_ops, "materialize_read_model_stage", fake_materialize, raising=False)
+    monkeypatch.setattr(read_model_stage, "materialize_read_model_stage", fake_materialize, raising=False)
 
     with _repo(tmp_path) as repo:
         monkeypatch.setattr(RefreshStateStore, "renew_refresh_lease", lambda *_args, **_kwargs: False)
@@ -686,9 +689,9 @@ def test_run_backfill_materializes_after_source_changing_work(monkeypatch, tmp_p
     order: list[str] = []
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams_backfill") or 1)
     monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: order.append("details_backfill") or 1)
-    monkeypatch.setattr(_sync_ops, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
+    monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
     monkeypatch.setattr(
-        _sync_ops,
+        read_model_stage,
         "materialize_read_model_stage",
         lambda *_args, **_kwargs: order.append("read_model_materialize") or {"status": "ok"},
         raising=False,
@@ -715,8 +718,10 @@ def test_run_backfill_detail_only_ingest_invalidates_and_rematerializes(tmp_path
     transport = FakeStravaTransport()
     order: list[str] = []
 
-    real_schema_validate = _sync_ops.schema_validate
-    real_materialize = _sync_ops.materialize_read_model_stage
+    from mcp_strava.refresh import read_model_stage
+
+    real_schema_validate = read_model_stage.schema_validate
+    real_materialize = read_model_stage.materialize_read_model_stage
 
     def wrapped_schema_validate(repo):
         order.append("schema_validate")
@@ -729,13 +734,13 @@ def test_run_backfill_detail_only_ingest_invalidates_and_rematerializes(tmp_path
     try:
         with _repo(tmp_path) as repo:
             _sync_ops.sync_summaries(repo, transport, "2026-05-29T00:00:00")
-            _sync_ops.schema_validate(repo)
+            read_model_stage.schema_validate(repo)
             _sync_ops.sync_streams(repo, transport, since="2026-05-20")
-            _sync_ops.materialize_read_model_stage(repo, "2026-05-29T00:05:00", None)
+            read_model_stage.materialize_read_model_stage(repo, "2026-05-29T00:05:00", None)
             order.clear()
             monkeypatch = pytest.MonkeyPatch()
-            monkeypatch.setattr(_sync_ops, "schema_validate", wrapped_schema_validate)
-            monkeypatch.setattr(_sync_ops, "materialize_read_model_stage", wrapped_materialize)
+            monkeypatch.setattr(read_model_stage, "schema_validate", wrapped_schema_validate)
+            monkeypatch.setattr(read_model_stage, "materialize_read_model_stage", wrapped_materialize)
 
             before_source = repo.source_state_for_activity(activity_id)
             before_dirty = repo.dirty_activity_rows()
@@ -850,7 +855,7 @@ def test_stream_channel_backfill_materializes_after_source_changing_work(monkeyp
         ),
     )
     monkeypatch.setattr(
-        _sync_ops,
+        read_model_stage,
         "materialize_read_model_stage",
         lambda *_args, **_kwargs: order.append("read_model_materialize") or {"status": "ok"},
         raising=False,
@@ -986,7 +991,7 @@ def test_worker_materializes_read_model_in_bounded_batch(monkeypatch):
 
     monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
     monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(fake_repository_from_connection))
-    monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", fake_materialize_stage)
+    monkeypatch.setattr(worker.read_model_stage, "materialize_read_model_stage", fake_materialize_stage)
     monkeypatch.setattr(worker, "_emit", lambda event, **fields: events.append((event, fields)))
 
     assert worker._materialize_dirty_read_model(batch_size=5) == 5
@@ -1029,7 +1034,7 @@ def test_worker_materialization_uses_repository_factory_and_runtime_stage(monkey
 
     monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
     monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(fake_repository_from_connection))
-    monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", fake_materialize_stage)
+    monkeypatch.setattr(worker.read_model_stage, "materialize_read_model_stage", fake_materialize_stage)
     monkeypatch.setattr(worker, "_emit", lambda *_args, **_kwargs: None)
 
     assert worker._materialize_dirty_read_model(batch_size=3) == 3
@@ -1174,7 +1179,9 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
     monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
     # Empty dirty queue still calls the chokepoint (fingerprint check); these tests
     # exercise the periodic-refresh cycle, not materialization, so stub it out.
-    monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", lambda *_a, **_k: {"dirty_rows_cleared": 0})
+    monkeypatch.setattr(
+        worker.read_model_stage, "materialize_read_model_stage", lambda *_a, **_k: {"dirty_rows_cleared": 0}
+    )
     monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
     monkeypatch.setattr(worker.RefreshStateStore, "from_connection", staticmethod(lambda _conn: FakeRefreshStore()))
     monkeypatch.setattr(
@@ -1249,7 +1256,9 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
     monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
     # Empty dirty queue still calls the chokepoint (fingerprint check); these tests
     # exercise the periodic-refresh cycle, not materialization, so stub it out.
-    monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", lambda *_a, **_k: {"dirty_rows_cleared": 0})
+    monkeypatch.setattr(
+        worker.read_model_stage, "materialize_read_model_stage", lambda *_a, **_k: {"dirty_rows_cleared": 0}
+    )
     monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
     monkeypatch.setattr(worker.RefreshStateStore, "from_connection", staticmethod(lambda _conn: FakeRefreshStore()))
     monkeypatch.setattr(
@@ -1315,7 +1324,9 @@ def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
     monkeypatch.setattr(worker, "MirrorConn", FakeDbConn)
     # Empty dirty queue still calls the chokepoint (fingerprint check); these tests
     # exercise the periodic-refresh cycle, not materialization, so stub it out.
-    monkeypatch.setattr(worker._sync_ops, "materialize_read_model_stage", lambda *_a, **_k: {"dirty_rows_cleared": 0})
+    monkeypatch.setattr(
+        worker.read_model_stage, "materialize_read_model_stage", lambda *_a, **_k: {"dirty_rows_cleared": 0}
+    )
     monkeypatch.setattr(worker.DuckDBRepository, "from_connection", staticmethod(lambda _conn: FakeRepo()))
     monkeypatch.setattr(worker.RefreshStateStore, "from_connection", staticmethod(lambda _conn: FakeRefreshStore()))
     monkeypatch.setattr(
@@ -2030,7 +2041,7 @@ def test_chokepoint_materializes_at_bumped_version_on_fingerprint_mismatch(tmp_p
     to — never at the pre-bump N. The version is re-resolved internally post-bump,
     so the enqueue version and the materialize version cannot disagree."""
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-    from mcp_strava.refresh._sync_ops import materialize_read_model_stage
+    from mcp_strava.refresh.read_model_stage import materialize_read_model_stage
     from tests._fixtures_duckdb import create_empty_fixture_db
 
     fixture = tmp_path / "fingerprint.duckdb"
@@ -2074,7 +2085,7 @@ def test_chokepoint_bump_and_enqueue_are_atomic_on_enqueue_failure(tmp_path):
     """
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
     from mcp_strava.metric_registry import cached_logic_fingerprint
-    from mcp_strava.refresh._sync_ops import materialize_read_model_stage
+    from mcp_strava.refresh.read_model_stage import materialize_read_model_stage
     from tests._fixtures_duckdb import create_empty_fixture_db
 
     class EnqueueExplodesRepo(DuckDBRepository):
@@ -2130,7 +2141,8 @@ def test_sync_kudos_indexes_raw_rows_positionally(tmp_path):
     wedging the worker (healthcheck red) while the MCP read surface stayed ok.
     The body was never exercised because other tests monkeypatch _sync_kudos.
     """
-    from mcp_strava.refresh._sync_ops import _sync_kudos, schema_validate, sync_summaries
+    from mcp_strava.refresh._sync_ops import _sync_kudos, sync_summaries
+    from mcp_strava.refresh.read_model_stage import schema_validate
 
     repo = _repo(tmp_path)
     # Seed activity 500 through the real summary path, then mark it as having

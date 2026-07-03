@@ -18,7 +18,7 @@ from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.constants import Config
 from mcp_strava.maintenance.compact import storage_stats
-from mcp_strava.refresh import RefreshSkipped, Stage, _sync_ops, health
+from mcp_strava.refresh import RefreshSkipped, Stage, health, read_model_stage
 from mcp_strava.refresh.bootstrap import (
     build_refresh_collaborators,
     ensure_runtime_refresh_schema,
@@ -74,7 +74,7 @@ def _materialize_dirty_read_model(batch_size: int) -> int:
             # activity, and recomputes within this same call; on a match it is a
             # cheap no-op. We report dirty_rows_cleared so a fingerprint-driven
             # recompute on an empty queue is still observable.
-            result = _sync_ops.materialize_read_model_stage(
+            result = read_model_stage.materialize_read_model_stage(
                 repo,
                 _now_iso(),
                 None,
@@ -86,7 +86,7 @@ def _materialize_dirty_read_model(batch_size: int) -> int:
             return cleared
         claim_count = min(dirty_count, batch_size)
         _emit("read_model_materialize_started", dirty_count=dirty_count, batch_size=claim_count)
-        result = _sync_ops.materialize_read_model_stage(
+        result = read_model_stage.materialize_read_model_stage(
             repo,
             _now_iso(),
             None,

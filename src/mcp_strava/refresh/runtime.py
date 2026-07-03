@@ -12,7 +12,7 @@ from mcp_strava.adapters.duckdb.repository_models import SyncLogRecord
 from mcp_strava.adapters.duckdb.sync_log_store import append_sync_log
 from mcp_strava.adapters.strava import StravaUnavailableError
 from mcp_strava.adapters.strava.types import Clock, FetchTransport, Sleeper
-from mcp_strava.refresh import _sync_ops
+from mcp_strava.refresh import _sync_ops, read_model_stage
 from mcp_strava.refresh.checkpoints import Stage, is_active_backfill_stage, is_stream_channel_backfill_stage
 from mcp_strava.refresh.policy import RefreshPolicy, refresh_interval_elapsed
 
@@ -170,10 +170,10 @@ def run_catchup(
                     Stage.DETAILS_BACKFILL.value, str(activity_id)
                 ),
             )
-            _sync_ops.schema_validate(repo)
+            read_model_stage.schema_validate(repo)
         if start_index <= _backfill_stage_index(Stage.READ_MODEL_MATERIALIZE_BACKFILL):
             refresh_store.set_checkpoint(Stage.READ_MODEL_MATERIALIZE_BACKFILL.value, None)
-            _sync_ops.materialize_read_model_stage(
+            read_model_stage.materialize_read_model_stage(
                 repo,
                 now_iso,
                 _lease_renewer(refresh_store, clock, owner, policy.lease_duration_seconds),
@@ -270,7 +270,7 @@ def run_stream_channel_catchup(
             checkpoint_stage=Stage.STREAM_CHANNELS_BACKFILL,
             on_progress=renew_lease,
         )
-        _sync_ops.materialize_read_model_stage(
+        read_model_stage.materialize_read_model_stage(
             repo,
             now_iso,
             _lease_renewer(refresh_store, clock, owner, lease_seconds),
@@ -349,7 +349,7 @@ def _run_daily_stages(
     if start_index <= _stage_index(Stage.SUMMARIES):
         refresh_store.set_checkpoint(Stage.SUMMARIES.value, None)
         activities_seen, activities_new = _run_summaries_stage(repo, transport, refresh_store, policy, now_iso)
-        _sync_ops.schema_validate(repo)
+        read_model_stage.schema_validate(repo)
     if start_index <= _stage_index(Stage.STREAMS):
         refresh_store.set_checkpoint(Stage.STREAMS.value, None)
         streams_fetched = _sync_ops.sync_streams(
@@ -366,10 +366,10 @@ def _run_daily_stages(
         )
     if start_index <= _stage_index(Stage.SCHEMA_VALIDATE):
         refresh_store.set_checkpoint(Stage.SCHEMA_VALIDATE.value, None)
-        _sync_ops.schema_validate(repo)
+        read_model_stage.schema_validate(repo)
     if start_index <= _stage_index(Stage.READ_MODEL_MATERIALIZE):
         refresh_store.set_checkpoint(Stage.READ_MODEL_MATERIALIZE.value, None)
-        _sync_ops.materialize_read_model_stage(
+        read_model_stage.materialize_read_model_stage(
             repo,
             now_iso,
             _lease_renewer(refresh_store, clock, owner, policy.lease_duration_seconds),
