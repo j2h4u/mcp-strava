@@ -4,7 +4,36 @@ from __future__ import annotations
 
 from mcp_strava.metric_registry import activity_metric_facts_table_sql
 
+BRONZE_PAYLOAD_SCHEMA_SQL = """
+CREATE SCHEMA IF NOT EXISTS bronze;
+
+CREATE TABLE IF NOT EXISTS bronze.activity_payloads (
+    activity_id BIGINT NOT NULL,
+    activity_day DATE,
+    payload_kind VARCHAR NOT NULL,
+    endpoint VARCHAR NOT NULL,
+    fetched_at VARCHAR NOT NULL,
+    payload_json VARCHAR NOT NULL,
+    raw_hash VARCHAR NOT NULL,
+    modeled_projection_hash VARCHAR,
+    schema_status VARCHAR NOT NULL,
+    drift_fingerprint VARCHAR,
+    recorded_at VARCHAR NOT NULL,
+    migrated_from_legacy BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE OR REPLACE VIEW bronze.latest_activity_payloads AS
+SELECT *
+FROM bronze.activity_payloads
+QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY activity_id, payload_kind
+    ORDER BY fetched_at DESC, recorded_at DESC, raw_hash DESC
+) = 1;
+"""
+
 DUCKDB_SCHEMA_SQL = f"""
+{BRONZE_PAYLOAD_SCHEMA_SQL}
+
 CREATE TABLE activities (
     id BIGINT PRIMARY KEY,
     activity_day DATE NOT NULL,

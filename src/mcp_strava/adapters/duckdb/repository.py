@@ -16,7 +16,11 @@ from mcp_strava.adapters.duckdb.connection import (
     open_fixture_db,
 )
 from mcp_strava.adapters.duckdb.read_model_repository import ReadModelRepositoryMixin
-from mcp_strava.adapters.duckdb.repository_models import ActivitySummaryRecord
+from mcp_strava.adapters.duckdb.repository_models import (
+    ActivitySourcePayload,
+    ActivitySourcePayloadRow,
+    ActivitySummaryRecord,
+)
 from mcp_strava.adapters.duckdb.repository_utils import (
     Row,
 )
@@ -29,6 +33,8 @@ from mcp_strava.adapters.duckdb.repository_utils import (
 from mcp_strava.adapters.duckdb.repository_utils import (
     safe_identifier as _safe_identifier,
 )
+from mcp_strava.adapters.duckdb.schema_tables import BRONZE_PAYLOAD_SCHEMA_SQL
+from mcp_strava.adapters.duckdb.source_hashing import raw_payload_hash, semantic_json_hash
 from mcp_strava.adapters.duckdb.stream_write_repository import StreamWriteRepositoryMixin
 
 
@@ -66,8 +72,184 @@ class DuckDBRepository(ReadModelRepositoryMixin, StreamWriteRepositoryMixin):
         return repo
 
     def _ensure_schema_extensions(self) -> None:
-        """Seed the read_model_logic_version sidecar on construction."""
+        """Create additive storage extensions and seed schema sidecars."""
+        self._ensure_bronze_payload_schema()
+        self._backfill_bronze_activity_payloads_from_legacy()
+        self._bootstrap_legacy_source_state_from_bronze()
         self._seed_logic_version()
+
+    def _ensure_bronze_payload_schema(self) -> None:
+        """Create the source-payload namespace for existing mirrors."""
+        with duckdb_process_lock():
+            has_payload_table = self.conn.execute(
+                """
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'bronze'
+                  AND table_name = 'activity_payloads'
+                LIMIT 1
+                """
+            ).fetchone()
+            if has_payload_table is not None:
+                columns = {
+                    str(cast("tuple[object, ...]", row)[0])
+                    for row in self.conn.execute(
+                        """
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = 'bronze'
+                          AND table_name = 'activity_payloads'
+                        """
+                    ).fetchall()
+                }
+                if "recorded_at" not in columns:
+                    self.conn.execute(
+                        """
+                        ALTER TABLE bronze.activity_payloads
+                        ADD COLUMN recorded_at VARCHAR
+                        """
+                    )
+                    self.conn.execute(
+                        """
+                        UPDATE bronze.activity_payloads
+                        SET recorded_at = fetched_at
+                        WHERE recorded_at IS NULL
+                        """
+                    )
+            self.conn.execute(BRONZE_PAYLOAD_SCHEMA_SQL)
+
+    def _backfill_bronze_activity_payloads_from_legacy(self) -> None:
+        """Seed bronze payloads from existing activity raw columns once."""
+        if not self._table_exists("activities"):
+            return
+        if self._bronze_legacy_payloads_are_backfilled():
+            return
+        rows = self._fetchall(
+            """
+            SELECT id, activity_day, summary_json, detail_json, synced_at
+            FROM activities
+            WHERE summary_json IS NOT NULL OR detail_json IS NOT NULL
+            """
+        )
+        for row in rows:
+            activity_id = _as_int(row["id"])
+            activity_day = str(row["activity_day"]) if row["activity_day"] is not None else None
+            fetched_at = str(row["synced_at"] or self._now_iso())
+            self._backfill_legacy_activity_payload(
+                activity_id=activity_id,
+                activity_day=activity_day,
+                payload_kind="summary",
+                endpoint="/athlete/activities",
+                fetched_at=fetched_at,
+                payload_json=row["summary_json"],
+            )
+            self._backfill_legacy_activity_payload(
+                activity_id=activity_id,
+                activity_day=activity_day,
+                payload_kind="detail",
+                endpoint=f"/activities/{activity_id}",
+                fetched_at=fetched_at,
+                payload_json=row["detail_json"],
+            )
+
+    def _backfill_legacy_activity_payload(
+        self,
+        *,
+        activity_id: int,
+        activity_day: str | None,
+        payload_kind: str,
+        endpoint: str,
+        fetched_at: str,
+        payload_json: object,
+    ) -> None:
+        if not isinstance(payload_json, str):
+            return
+        exists = self._fetchone(
+            """
+            SELECT 1
+            FROM bronze.activity_payloads
+            WHERE activity_id = ?
+              AND payload_kind = ?
+              AND payload_json = ?
+              AND migrated_from_legacy = TRUE
+            LIMIT 1
+            """,
+            [activity_id, payload_kind, payload_json],
+        )
+        if exists is not None:
+            return
+        self.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=activity_id,
+                activity_day=activity_day,
+                payload_kind=payload_kind,
+                endpoint=endpoint,
+                fetched_at=fetched_at,
+                payload_json=payload_json,
+                raw_hash=raw_payload_hash(payload_json),
+                modeled_projection_hash=semantic_json_hash(payload_json),
+                schema_status="clean",
+                migrated_from_legacy=True,
+            )
+        )
+
+    def _bronze_legacy_payloads_are_backfilled(self) -> bool:
+        row = self._fetchone(
+            """
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM activities
+                    WHERE summary_json IS NOT NULL
+                ) + (
+                    SELECT COUNT(*)
+                    FROM activities
+                    WHERE detail_json IS NOT NULL
+                ) AS legacy_payload_count,
+                (
+                    SELECT COUNT(*)
+                    FROM bronze.activity_payloads
+                    WHERE migrated_from_legacy = TRUE
+                ) AS migrated_payload_count
+            """
+        )
+        if row is None:
+            return False
+        return _as_int(row["migrated_payload_count"]) >= _as_int(row["legacy_payload_count"])
+
+    def _bootstrap_legacy_source_state_from_bronze(self) -> None:
+        """Seed source state from migrated legacy payloads once per activity.
+
+        This is only for upgraded mirrors that still lack any materialized
+        read-model provenance. If facts already exist, the mirror is already
+        current enough for reopen and we leave legacy bronze rows alone.
+        """
+        if not self._read_model_enabled():
+            return
+        if self._has_read_model_provenance():
+            return
+        metric_version = self.current_metric_version()
+        rows = self._fetchall(
+            """
+            SELECT DISTINCT p.activity_id
+            FROM bronze.latest_activity_payloads p
+            LEFT JOIN activity_source_state s ON s.activity_id = p.activity_id
+            LEFT JOIN activity_metric_facts f
+              ON f.activity_id = p.activity_id
+             AND f.metric_version = ?
+            WHERE p.migrated_from_legacy = TRUE
+              AND s.activity_id IS NULL
+              AND f.activity_id IS NULL
+            ORDER BY p.activity_id
+            """,
+            [metric_version],
+        )
+        for row in rows:
+            self.update_activity_source_state_and_enqueue_dirty(
+                _as_int(row["activity_id"]),
+                reason="bronze_payload_changed",
+                metric_version=metric_version,
+            )
 
     def _seed_logic_version(self) -> None:
         """Idempotently seed the read_model_logic_version singleton with the
@@ -275,6 +457,174 @@ class DuckDBRepository(ReadModelRepositoryMixin, StreamWriteRepositoryMixin):
 
     def _now_iso(self) -> str:
         return datetime.now(UTC).replace(tzinfo=None).isoformat()
+
+    def write_activity_payload(self, payload: ActivitySourcePayload) -> None:
+        """Append one raw Strava activity payload to the bronze namespace."""
+        latest = self.latest_activity_payload(payload.activity_id, payload.payload_kind)
+        if latest is not None and latest["raw_hash"] == payload.raw_hash:
+            return
+        self._execute(
+            """
+            INSERT INTO bronze.activity_payloads (
+                activity_id,
+                activity_day,
+                payload_kind,
+                endpoint,
+                fetched_at,
+                payload_json,
+                raw_hash,
+                modeled_projection_hash,
+                schema_status,
+                drift_fingerprint,
+                recorded_at,
+                migrated_from_legacy
+            ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                payload.activity_id,
+                payload.activity_day,
+                payload.payload_kind,
+                payload.endpoint,
+                payload.fetched_at,
+                payload.payload_json,
+                payload.raw_hash,
+                payload.modeled_projection_hash,
+                payload.schema_status,
+                payload.drift_fingerprint,
+                self._now_iso(),
+                payload.migrated_from_legacy,
+            ],
+        )
+        self._commit_if_standalone()
+
+    def latest_activity_payload(self, activity_id: int, payload_kind: str) -> ActivitySourcePayloadRow | None:
+        row = self._fetchone(
+            """
+            SELECT
+                activity_id,
+                activity_day,
+                payload_kind,
+                endpoint,
+                fetched_at,
+                payload_json,
+                raw_hash,
+                modeled_projection_hash,
+                schema_status,
+                drift_fingerprint,
+                migrated_from_legacy
+            FROM bronze.latest_activity_payloads
+            WHERE activity_id = ? AND payload_kind = ?
+            """,
+            [activity_id, payload_kind],
+        )
+        return cast("ActivitySourcePayloadRow | None", row)
+
+    def activity_ids_with_bronze_payloads(self) -> list[int]:
+        rows = self._fetchall(
+            """
+            SELECT DISTINCT activity_id
+            FROM bronze.latest_activity_payloads
+            ORDER BY activity_id
+            """
+        )
+        return [_as_int(row["activity_id"]) for row in rows]
+
+    def activity_ids_with_source_bronze_payloads(self) -> list[int]:
+        """Return activities whose latest bronze payload came from source ingest."""
+        rows = self._fetchall(
+            """
+            SELECT DISTINCT activity_id
+            FROM bronze.latest_activity_payloads
+            WHERE migrated_from_legacy = FALSE
+            ORDER BY activity_id
+            """
+        )
+        return [_as_int(row["activity_id"]) for row in rows]
+
+    def activity_ids_needing_source_state_bootstrap(self) -> list[int]:
+        """Return bronze-backed activities that still lack current provenance.
+
+        Migrated legacy payloads are only included when the mirror has not yet
+        materialized any read-model facts. That keeps reopen of already-current
+        mirrors from fabricating dirty rows while still allowing a legacy-only
+        DB to seed provenance exactly once.
+        """
+        if self._has_read_model_provenance():
+            return []
+        metric_version = self.current_metric_version()
+        rows = self._fetchall(
+            """
+            SELECT DISTINCT activity_id
+            FROM (
+                SELECT activity_id
+                FROM bronze.latest_activity_payloads
+                WHERE migrated_from_legacy = FALSE
+                UNION
+                SELECT p.activity_id
+                FROM bronze.latest_activity_payloads p
+                LEFT JOIN activity_source_state s ON s.activity_id = p.activity_id
+                LEFT JOIN activity_metric_facts f
+                  ON f.activity_id = p.activity_id
+                 AND f.metric_version = ?
+                WHERE p.migrated_from_legacy = TRUE
+                  AND s.activity_id IS NULL
+                  AND f.activity_id IS NULL
+            )
+            ORDER BY activity_id
+            """,
+            [metric_version],
+        )
+        return [_as_int(row["activity_id"]) for row in rows]
+
+    def _has_read_model_provenance(self) -> bool:
+        return (
+            self._fetchone(
+                """
+            SELECT 1
+            FROM (
+                SELECT 1 FROM activity_metric_facts
+                UNION ALL
+                SELECT 1 FROM daily_load_facts
+                UNION ALL
+                SELECT 1 FROM training_model_daily
+                UNION ALL
+                SELECT 1 FROM rolling_period_facts
+                UNION ALL
+                SELECT 1 FROM read_model_refresh_runs
+            ) provenance
+            LIMIT 1
+            """
+            )
+            is not None
+        )
+
+    def insert_activity_summary_if_missing(self, record: ActivitySummaryRecord) -> bool:
+        """Create the modeled activity shell for a bronze summary, without updates."""
+        existing = self._fetchone("SELECT 1 FROM activities WHERE id = ? LIMIT 1", [record.activity_id])
+        if existing is not None:
+            return False
+        self._execute(
+            """
+            INSERT INTO activities (
+                id, activity_day, name, sport_type, distance, moving_time,
+                elapsed_time, total_elevation_gain, summary_json, synced_at
+            ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                record.activity_id,
+                record.date[:10],
+                record.name,
+                record.sport_type,
+                record.distance,
+                record.moving_time,
+                record.elapsed_time,
+                record.total_elevation_gain,
+                record.summary_json,
+                record.synced_at,
+            ],
+        )
+        self._commit_if_standalone()
+        return True
 
     def upsert_activity_summary(self, record: ActivitySummaryRecord) -> None:
         self.begin()

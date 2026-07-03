@@ -13,6 +13,9 @@ NON_SEMANTIC_SOURCE_KEYS = frozenset(
         "updated_at",
         "modified_at",
         "batch_id",
+        # Strava summary payloads can include this string duplicate of ``id``.
+        # It is useful for API clients, but not a semantic training-data change.
+        "id_str",
     }
 )
 
@@ -54,6 +57,11 @@ def semantic_json_hash(value: object) -> str:
         ensure_ascii=True,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def raw_payload_hash(payload_json: str) -> str:
+    """Hash the exact persisted source payload string."""
+    return hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
 
 
 def summary_payload_changed(stored_summary_json: object, new_summary_json: object) -> bool:

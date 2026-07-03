@@ -6,6 +6,10 @@ from collections.abc import Iterable
 from typing import Protocol
 
 from mcp_strava.adapters.duckdb.activity_rows import to_activity_row
+from mcp_strava.adapters.duckdb.hydrated_activity_sql import (
+    activity_hydration_joins,
+    hydrated_activity_select,
+)
 from mcp_strava.adapters.duckdb.repository_models import ActivityMaterializationSource
 from mcp_strava.adapters.duckdb.repository_utils import Row, as_int
 from mcp_strava.adapters.duckdb.repository_utils import placeholders as make_placeholders
@@ -20,11 +24,11 @@ class ActivityLookupRepository(Protocol):
 
 def recent_activities(repo: ActivityLookupRepository, limit: int = 15) -> list[RepositoryActivityRow]:
     rows = repo._fetchall(
-        """
-        SELECT id, activity_day, name, sport_type, distance, moving_time, elapsed_time,
-               total_elevation_gain, summary_json, detail_json, synced_at
-        FROM activities
-        ORDER BY activity_day DESC, id DESC
+        f"""
+        SELECT {hydrated_activity_select()}
+        FROM activities a
+        {activity_hydration_joins()}
+        ORDER BY a.activity_day DESC, a.id DESC
         LIMIT ?
         """,
         [limit],
@@ -34,11 +38,11 @@ def recent_activities(repo: ActivityLookupRepository, limit: int = 15) -> list[R
 
 def activity_by_id(repo: ActivityLookupRepository, activity_id: int) -> RepositoryActivityRow | None:
     row = repo._fetchone(
-        """
-        SELECT id, activity_day, name, sport_type, distance, moving_time, elapsed_time,
-               total_elevation_gain, summary_json, detail_json, synced_at
-        FROM activities
-        WHERE id = ?
+        f"""
+        SELECT {hydrated_activity_select()}
+        FROM activities a
+        {activity_hydration_joins()}
+        WHERE a.id = ?
         """,
         [activity_id],
     )
@@ -54,10 +58,10 @@ def activity_materialization_sources(
     placeholders = make_placeholders(len(ids))
     rows = repo._fetchall(
         f"""
-        SELECT a.id, a.activity_day, a.name, a.sport_type, a.distance, a.moving_time,
-               a.elapsed_time, a.total_elevation_gain, a.summary_json, a.detail_json,
-               a.synced_at, s.source_hash, s.source_revision
+        SELECT {hydrated_activity_select()},
+               s.source_hash, s.source_revision
         FROM activities a
+        {activity_hydration_joins()}
         JOIN activity_source_state s ON s.activity_id = a.id
         WHERE a.id IN ({placeholders})
         """,

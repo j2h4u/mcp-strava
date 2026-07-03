@@ -5,6 +5,7 @@ from pathlib import Path
 
 from mcp_strava.adapters.duckdb.connection import open_fixture_db
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+from mcp_strava.adapters.duckdb.repository_models import ActivitySourcePayload
 from mcp_strava.adapters.duckdb.schema import create_schema
 from mcp_strava.metric_registry import MATERIALIZED_ROLLING_WINDOW_DAYS
 
@@ -341,14 +342,58 @@ def test_read_model_status_reports_metadata_fields(tmp_path: Path) -> None:
 def test_activity_metric_fact_queries_return_facts_and_joined_activity_context(tmp_path: Path) -> None:
     repo = _repo_with_facts(tmp_path / "activity-facts.duckdb")
     with repo:
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=701,
+                activity_day="2026-05-20",
+                payload_kind="summary",
+                endpoint="/athlete/activities",
+                fetched_at="2026-05-21T09:00:00",
+                payload_json='{"id":701,"name":"Bronze Workout","kudos_count":7}',
+                raw_hash="raw-701",
+                modeled_projection_hash="semantic-701",
+                schema_status="clean",
+            )
+        )
         rows = repo.fetch_activity_metric_facts("2026-05-19", "2026-05-22", metric_version=1)
         single = repo.fetch_activity_metric_fact(701, metric_version=1)
 
     assert [row["activity_id"] for row in rows] == [702, 701, 703]
     assert single is not None
-    assert single["activity_name"] == "Workout 701"
+    assert single["activity_name"] == "Bronze Workout"
+    assert single["summary_json"] == '{"id":701,"name":"Bronze Workout","kudos_count":7}'
     assert single["cardiac_cost"] == 44.0
     assert single["stream_sample_count"] == 130
+
+
+def test_activity_aggregate_view_prefers_bronze_summary_payload(tmp_path: Path) -> None:
+    repo = _repo_with_facts(tmp_path / "activity-aggregate-view.duckdb")
+    with repo:
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=701,
+                activity_day="2026-05-20",
+                payload_kind="summary",
+                endpoint="/athlete/activities",
+                fetched_at="2026-05-21T09:00:00",
+                payload_json='{"id":701,"average_heartrate":151,"max_heartrate":177,"kudos_count":9}',
+                raw_hash="raw-701-view",
+                modeled_projection_hash="semantic-701-view",
+                schema_status="clean",
+            )
+        )
+        row = repo._fetchone(
+            """
+            SELECT avg_hr, max_hr, kudos_count
+            FROM v_activity_aggregate_facts
+            WHERE activity_id = 701 AND metric_version = 1
+            """
+        )
+
+    assert row is not None
+    assert row["avg_hr"] == 151.0
+    assert row["max_hr"] == 177.0
+    assert row["kudos_count"] == 9.0
 
 
 def test_read_model_queries_fail_soft_when_schema_missing(tmp_path: Path) -> None:

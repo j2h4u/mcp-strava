@@ -44,7 +44,15 @@ def activities_missing_kudos(repo: KudosRepository, window_days: int | None = No
     """Activity ids that have kudos on Strava but none mirrored locally yet."""
     query = """
         SELECT a.id FROM activities a
-        WHERE CAST(json_extract(a.summary_json, '$.kudos_count') AS INTEGER) > 0
+        LEFT JOIN bronze.latest_activity_payloads summary_payload
+          ON summary_payload.activity_id = a.id
+         AND summary_payload.payload_kind = 'summary'
+        WHERE CAST(
+            json_extract(
+                COALESCE(summary_payload.payload_json, a.summary_json),
+                '$.kudos_count'
+            ) AS INTEGER
+        ) > 0
           AND NOT EXISTS (SELECT 1 FROM kudos k WHERE k.activity_id = a.id)
     """
     params: list[object] = []

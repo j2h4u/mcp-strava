@@ -44,11 +44,23 @@ SELECT
     f.elevation_gain_m,
     f.heartrate_sample_count,
     f.stream_sample_count,
-    TRY_CAST(json_extract_string(a.summary_json, '$.average_heartrate') AS DOUBLE) AS avg_hr,
-    TRY_CAST(json_extract_string(a.summary_json, '$.max_heartrate') AS DOUBLE) AS max_hr,
-    COALESCE(TRY_CAST(json_extract_string(a.summary_json, '$.kudos_count') AS DOUBLE), 0.0) AS kudos_count
+    TRY_CAST(
+        json_extract_string(COALESCE(summary_payload.payload_json, a.summary_json), '$.average_heartrate')
+        AS DOUBLE
+    ) AS avg_hr,
+    TRY_CAST(
+        json_extract_string(COALESCE(summary_payload.payload_json, a.summary_json), '$.max_heartrate')
+        AS DOUBLE
+    ) AS max_hr,
+    COALESCE(
+        TRY_CAST(json_extract_string(COALESCE(summary_payload.payload_json, a.summary_json), '$.kudos_count') AS DOUBLE),
+        0.0
+    ) AS kudos_count
 FROM activity_metric_facts f
-LEFT JOIN activities a ON a.id = f.activity_id;
+LEFT JOIN activities a ON a.id = f.activity_id
+LEFT JOIN bronze.latest_activity_payloads summary_payload
+  ON summary_payload.activity_id = a.id
+ AND summary_payload.payload_kind = 'summary';
 
 CREATE OR REPLACE VIEW v_daily_aggregate_facts AS
 SELECT

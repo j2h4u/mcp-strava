@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from mcp_strava.adapters.duckdb.hydrated_activity_sql import activity_hydration_joins
 from mcp_strava.adapters.duckdb.read_model_repository_host import ReadModelRepositoryHost
 from mcp_strava.adapters.duckdb.repository_models import (
     DirtyActivityRow,
@@ -31,11 +32,16 @@ class ReadModelSourceRepositoryMixin(ReadModelRepositoryHost):
 
     def _read_activity_source_components(self, activity_id: int) -> SourceComponents | None:
         activity = self._fetchone(
-            """
-            SELECT id, activity_day, name, sport_type, distance, moving_time,
-                   elapsed_time, total_elevation_gain, summary_json, detail_json
-            FROM activities
-            WHERE id = ?
+            f"""
+            SELECT a.id,
+                   COALESCE(summary_payload.activity_day, a.activity_day) AS activity_day,
+                   a.name, a.sport_type, a.distance,
+                   a.moving_time, a.elapsed_time, a.total_elevation_gain,
+                   COALESCE(summary_payload.payload_json, a.summary_json) AS summary_json,
+                   COALESCE(detail_payload.payload_json, a.detail_json) AS detail_json
+            FROM activities a
+            {activity_hydration_joins()}
+            WHERE a.id = ?
             """,
             [activity_id],
         )

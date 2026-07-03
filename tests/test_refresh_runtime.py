@@ -11,11 +11,12 @@ import pytest
 from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-from mcp_strava.adapters.duckdb.repository_models import ActivitySummaryRecord
+from mcp_strava.adapters.duckdb.repository_models import ActivitySourcePayload, ActivitySummaryRecord
 from mcp_strava.adapters.duckdb.stream_read_queries import activity_stream_rows
 from mcp_strava.adapters.duckdb.sync_log_store import read_sync_log
 from mcp_strava.adapters.strava import StravaResponse, StravaUnavailableError
 from mcp_strava.adapters.strava.types import StravaRateInfo
+from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_catchup
 from mcp_strava.refresh.runtime import RefreshCollaborators
 from tests._fixtures_duckdb import create_fixture_db
 
@@ -120,7 +121,7 @@ def test_sync_summaries_skips_rewrite_when_summary_unchanged(tmp_path):
     unchanged rows must be left untouched. synced_at staying at its first value
     across an unchanged re-sync is the observable proof that no write happened.
     """
-    from mcp_strava.refresh._sync_ops import sync_summaries
+    from mcp_strava.refresh._sync_ops import schema_validate, sync_summaries
 
     activity = {
         "id": 500,
@@ -145,23 +146,180 @@ def test_sync_summaries_skips_rewrite_when_summary_unchanged(tmp_path):
     transport = _SummaryTransport(activity)
     with _repo(tmp_path) as repo:
         seen1, new1 = sync_summaries(repo, transport, "2026-05-29T00:00:00")
+        first_before_processing = activity_by_id(repo, 500)
+        schema_validate(repo)
         first = activity_by_id(repo, 500)
+        repo.clear_dirty_activity_rows(repo.dirty_activity_rows())
 
         # Same content, later sync timestamp -> must be a no-op (no row rewrite).
         seen2, new2 = sync_summaries(repo, transport, "2026-05-29T01:00:00")
         unchanged = activity_by_id(repo, 500)
+        repo.clear_dirty_activity_rows(repo.dirty_activity_rows())
 
-        # Genuinely changed content -> must still write through.
+        # Genuinely changed content is captured in bronze, but direct silver
+        # rewrite is deferred to the processing stage.
         transport.payload = {**activity, "name": "Renamed Run"}
         sync_summaries(repo, transport, "2026-05-29T02:00:00")
+        dirty_before_processing = repo.dirty_activity_rows()
+        schema_validate(repo)
+        dirty_after_processing = repo.dirty_activity_rows()
         changed = activity_by_id(repo, 500)
+        bronze = repo.latest_activity_payload(500, "summary")
 
     assert (seen1, new1) == (1, 1)
     assert (seen2, new2) == (1, 0)
+    assert first_before_processing is None
+    assert first is not None
+    assert unchanged is not None
+    assert changed is not None
     assert first.synced_at == "2026-05-29T00:00:00"
     assert unchanged.synced_at == "2026-05-29T00:00:00"  # untouched by the no-op re-sync
     assert changed.name == "Renamed Run"
-    assert changed.synced_at == "2026-05-29T02:00:00"  # real change wrote through
+    assert changed.synced_at == "2026-05-29T02:00:00"
+    assert bronze is not None
+    assert '"Renamed Run"' in str(bronze["payload_json"])
+    assert dirty_before_processing == []
+    assert len(dirty_after_processing) == 1
+    assert dirty_after_processing[0]["reason"] == "bronze_payload_changed"
+
+
+def test_sync_summaries_captures_raw_payloads_in_bronze_without_forcing_silver_rewrite(tmp_path):
+    from mcp_strava.refresh._sync_ops import sync_summaries
+
+    activity = {
+        "id": 501,
+        "name": "Morning Run",
+        "sport_type": "Run",
+        "start_date_local": "2026-05-21T06:00:00Z",
+        "distance": 1000,
+        "moving_time": 600,
+        "elapsed_time": 620,
+        "total_elevation_gain": 10,
+    }
+
+    class _SummaryTransport:
+        def fetch(self, path: str) -> StravaResponse:
+            if path.startswith("/athlete/activities"):
+                return StravaResponse(data=[activity], rate_info=StravaRateInfo(), status=200)
+            return StravaResponse(data=[], rate_info=StravaRateInfo(), status=200)
+
+    with _repo(tmp_path) as repo:
+        sync_summaries(repo, _SummaryTransport(), "2026-05-29T00:00:00")
+        first_before_processing = activity_by_id(repo, 501)
+        from mcp_strava.refresh._sync_ops import schema_validate
+
+        schema_validate(repo)
+        first = activity_by_id(repo, 501)
+        sync_summaries(repo, _SummaryTransport(), "2026-05-29T01:00:00")
+        unchanged = activity_by_id(repo, 501)
+
+        bronze_count = repo._scalar_int(
+            """
+            SELECT COUNT(*)
+            FROM bronze.activity_payloads
+            WHERE activity_id = 501 AND payload_kind = 'summary'
+            """
+        )
+        latest = repo.latest_activity_payload(501, "summary")
+
+    assert first_before_processing is None
+    assert first is not None
+    assert unchanged is not None
+    assert first.synced_at == "2026-05-29T00:00:00"
+    assert unchanged.synced_at == "2026-05-29T00:00:00"
+    assert bronze_count == 1
+    assert latest is not None
+    assert latest["fetched_at"] == "2026-05-29T00:00:00"
+
+
+def test_sync_summaries_does_not_write_modeled_activity_rows(tmp_path, monkeypatch):
+    from mcp_strava.refresh._sync_ops import schema_validate, sync_summaries
+
+    activity = {
+        "id": 503,
+        "name": "Source Only Run",
+        "sport_type": "Run",
+        "start_date_local": "2026-05-21T06:00:00Z",
+        "distance": 1000,
+        "moving_time": 600,
+        "elapsed_time": 620,
+        "total_elevation_gain": 10,
+    }
+
+    class _SummaryTransport:
+        def fetch(self, path: str) -> StravaResponse:
+            if path.startswith("/athlete/activities"):
+                return StravaResponse(data=[activity], rate_info=StravaRateInfo(), status=200)
+            return StravaResponse(data=[], rate_info=StravaRateInfo(), status=200)
+
+    with _repo(tmp_path) as repo:
+
+        def explode(*_args, **_kwargs):
+            raise AssertionError("source ingest must not write modeled activity rows")
+
+        monkeypatch.setattr(repo, "upsert_activity_summary", explode)
+        seen, new = sync_summaries(repo, _SummaryTransport(), "2026-05-29T00:00:00")
+        before_processing = activity_by_id(repo, 503)
+        schema_validate(repo)
+        after_processing = activity_by_id(repo, 503)
+
+    assert (seen, new) == (1, 1)
+    assert before_processing is None
+    assert after_processing is not None
+    assert after_processing.name == "Source Only Run"
+
+
+def test_sync_details_captures_raw_payloads_in_bronze_without_silver_mutation(tmp_path):
+    from mcp_strava.refresh._sync_ops import schema_validate, sync_details, sync_summaries
+
+    activity_id = 502
+    summary = {
+        "id": activity_id,
+        "name": "Morning Run",
+        "sport_type": "Run",
+        "start_date_local": "2026-05-21T06:00:00Z",
+        "distance": 1000,
+        "moving_time": 600,
+        "elapsed_time": 620,
+        "total_elevation_gain": 10,
+    }
+    detail = {"id": activity_id, "name": "Morning Run", "resource_state": 3, "calories": 321}
+
+    class _DetailTransport:
+        def fetch(self, path: str) -> StravaResponse:
+            if path.startswith("/athlete/activities"):
+                return StravaResponse(data=[summary], rate_info=StravaRateInfo(), status=200)
+            if path == f"/activities/{activity_id}":
+                return StravaResponse(data=detail, rate_info=StravaRateInfo(), status=200)
+            return StravaResponse(data=[], rate_info=StravaRateInfo(), status=200)
+
+    with _repo(tmp_path) as repo:
+        transport = _DetailTransport()
+        sync_summaries(repo, transport, "2026-05-29T00:00:00")
+        repo.clear_dirty_activity_rows(repo.dirty_activity_rows())
+        schema_validate(repo)
+        fetched = sync_details(repo, transport)
+        fetched_again = sync_details(repo, transport)
+        dirty_before_processing = repo.dirty_activity_rows()
+        schema_validate(repo)
+        dirty_after_processing = repo.dirty_activity_rows()
+
+        bronze = repo.latest_activity_payload(activity_id, "detail")
+        stored = activity_by_id(repo, activity_id)
+        silver = repo._fetchone("SELECT detail_json FROM activities WHERE id = ?", [activity_id])
+
+    assert fetched == 1
+    assert fetched_again == 0
+    assert bronze is not None
+    assert bronze["payload_json"] == '{"id": 502, "name": "Morning Run", "resource_state": 3, "calories": 321}'
+    assert stored is not None
+    assert stored.detail_json == '{"id": 502, "name": "Morning Run", "resource_state": 3, "calories": 321}'
+    assert silver is not None
+    assert silver["detail_json"] is None
+    assert len(dirty_before_processing) == 1
+    assert dirty_before_processing[0]["reason"] == "bronze_payload_changed"
+    assert len(dirty_after_processing) == 1
+    assert dirty_after_processing[0]["reason"] == "bronze_payload_changed"
 
 
 def test_run_once_completes_daily_refresh_per_REFRESH_01_STRAVA_03(tmp_path):
@@ -185,6 +343,32 @@ def test_run_once_completes_daily_refresh_per_REFRESH_01_STRAVA_03(tmp_path):
     assert state.checkpoint_stage == Stage.COMPLETE.value
     assert state.last_success_at is not None
     assert logs
+
+
+def test_run_once_daily_refresh_does_not_call_legacy_modeled_writes(tmp_path, monkeypatch):
+    from mcp_strava.refresh import RefreshPolicy, Stage, run_once
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError("daily refresh must not call legacy modeled activity writes")
+
+    clock = FakeClock()
+    with _repo(tmp_path) as repo:
+        monkeypatch.setattr(repo, "upsert_activity_summary", explode)
+        monkeypatch.setattr(repo, "update_activity_detail", explode)
+
+        result = run_once(
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport(),
+                policy=RefreshPolicy(),
+                clock=clock,
+                sleeper=FakeSleeper(clock),
+            )
+        )
+        state = _refresh_store(repo).get_refresh_state()
+
+    assert result.status == "ok"
+    assert state.checkpoint_stage == Stage.COMPLETE.value
 
 
 def test_run_once_skips_until_refresh_interval_then_re_runs_per_D06_D15(tmp_path):
@@ -385,7 +569,15 @@ def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch,
         )
 
     assert result.status == "ok"
-    assert order == ["summaries", "streams", "details", "schema_validate", "read_model_materialize", "kudos"]
+    assert order == [
+        "summaries",
+        "schema_validate",
+        "streams",
+        "details",
+        "schema_validate",
+        "read_model_materialize",
+        "kudos",
+    ]
 
 
 def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch, tmp_path):
@@ -494,6 +686,7 @@ def test_run_backfill_materializes_after_source_changing_work(monkeypatch, tmp_p
     order: list[str] = []
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams_backfill") or 1)
     monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: order.append("details_backfill") or 1)
+    monkeypatch.setattr(_sync_ops, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
     monkeypatch.setattr(
         _sync_ops,
         "materialize_read_model_stage",
@@ -514,7 +707,80 @@ def test_run_backfill_materializes_after_source_changing_work(monkeypatch, tmp_p
         )
 
     assert result.status == "ok"
-    assert order == ["streams_backfill", "details_backfill", "read_model_materialize"]
+    assert order == ["streams_backfill", "details_backfill", "schema_validate", "read_model_materialize"]
+
+
+def test_run_backfill_detail_only_ingest_invalidates_and_rematerializes(tmp_path):
+    activity_id = 500
+    transport = FakeStravaTransport()
+    order: list[str] = []
+
+    real_schema_validate = _sync_ops.schema_validate
+    real_materialize = _sync_ops.materialize_read_model_stage
+
+    def wrapped_schema_validate(repo):
+        order.append("schema_validate")
+        return real_schema_validate(repo)
+
+    def wrapped_materialize(repo, now_iso, renew_lease):
+        order.append("materialize")
+        return real_materialize(repo, now_iso, renew_lease)
+
+    try:
+        with _repo(tmp_path) as repo:
+            _sync_ops.sync_summaries(repo, transport, "2026-05-29T00:00:00")
+            _sync_ops.schema_validate(repo)
+            _sync_ops.sync_streams(repo, transport, since="2026-05-20")
+            _sync_ops.materialize_read_model_stage(repo, "2026-05-29T00:05:00", None)
+            order.clear()
+            monkeypatch = pytest.MonkeyPatch()
+            monkeypatch.setattr(_sync_ops, "schema_validate", wrapped_schema_validate)
+            monkeypatch.setattr(_sync_ops, "materialize_read_model_stage", wrapped_materialize)
+
+            before_source = repo.source_state_for_activity(activity_id)
+            before_dirty = repo.dirty_activity_rows()
+            before_fact = repo._fetchone(
+                "SELECT calories_kcal FROM activity_metric_facts WHERE activity_id = ? AND metric_version = ?",
+                [activity_id, repo.current_metric_version()],
+            )
+
+            result = run_catchup(
+                RefreshCollaborators(
+                    repo=repo,
+                    transport=transport,
+                    policy=RefreshPolicy(),
+                    clock=FakeClock(),
+                    sleeper=FakeSleeper(),
+                ),
+                since="2026-05-20",
+            )
+
+            after_source = repo.source_state_for_activity(activity_id)
+            after_dirty = repo.dirty_activity_rows()
+            detail_bronze = repo.latest_activity_payload(activity_id, "detail")
+            after_fact = repo._fetchone(
+                "SELECT calories_kcal FROM activity_metric_facts WHERE activity_id = ? AND metric_version = ?",
+                [activity_id, repo.current_metric_version()],
+            )
+    finally:
+        monkeypatch.undo()
+
+    assert before_source is not None
+    assert before_dirty == []
+    assert before_fact is not None
+    assert before_fact["calories_kcal"] is None
+    assert result.status == "ok"
+    assert result.streams_fetched == 0
+    assert result.details_fetched == 1
+    assert after_source is not None
+    assert int(after_source["source_revision"]) == int(before_source["source_revision"]) + 1
+    assert after_source["detail_hash"] != before_source["detail_hash"]
+    assert after_dirty == []
+    assert detail_bronze is not None
+    assert detail_bronze["payload_json"] == '{"id": 500, "name": "Morning Run", "resource_state": 3}'
+    assert after_fact is not None
+    assert after_fact["calories_kcal"] is None
+    assert order == ["schema_validate", "materialize"]
 
 
 def test_run_backfill_failure_preserves_backfill_checkpoint_per_D16(tmp_path):
@@ -1307,6 +1573,34 @@ def test_sync_streams_records_missing_requested_channels_without_failure(tmp_pat
     assert missing > 0
 
 
+def test_sync_streams_does_not_mutate_refresh_checkpoint_without_runtime_callback(tmp_path):
+    from mcp_strava.refresh._sync_ops import sync_streams
+
+    with _repo(tmp_path) as repo:
+        repo.upsert_activity_summary(
+            ActivitySummaryRecord(
+                activity_id=500,
+                date="2026-05-21T06:00:00Z",
+                name="Morning Run",
+                sport_type="Run",
+                distance=1000,
+                moving_time=600,
+                elapsed_time=620,
+                total_elevation_gain=10,
+                summary_json="{}",
+                synced_at="2026-05-21T07:00:00Z",
+            )
+        )
+
+        assert _refresh_store(repo).get_refresh_state().checkpoint_stage is None
+        assert sync_streams(repo, FakeStravaTransport(), since="2026-05-20") == 1
+
+        state = _refresh_store(repo).get_refresh_state()
+
+    assert state.checkpoint_stage is None
+    assert state.checkpoint_cursor is None
+
+
 def test_unavailable_stream_channels_do_not_create_repeat_backfill_work(tmp_path):
     from mcp_strava.refresh import RefreshPolicy, run_stream_channel_catchup
     from mcp_strava.refresh._sync_ops import sync_streams
@@ -1836,13 +2130,26 @@ def test_sync_kudos_indexes_raw_rows_positionally(tmp_path):
     wedging the worker (healthcheck red) while the MCP read surface stayed ok.
     The body was never exercised because other tests monkeypatch _sync_kudos.
     """
-    from mcp_strava.refresh._sync_ops import _sync_kudos, sync_summaries
+    from mcp_strava.refresh._sync_ops import _sync_kudos, schema_validate, sync_summaries
 
     repo = _repo(tmp_path)
     # Seed activity 500 through the real summary path, then mark it as having
-    # kudos so the _sync_kudos SELECT picks it up.
+    # kudos through the bronze source payload so the _sync_kudos SELECT picks it up.
     sync_summaries(repo, FakeStravaTransport(), "2026-05-29T00:00:00")
-    repo.conn.execute("UPDATE activities SET summary_json = json_object('kudos_count', 2) WHERE id = 500")
+    schema_validate(repo)
+    repo.write_activity_payload(
+        ActivitySourcePayload(
+            activity_id=500,
+            activity_day="2026-05-21",
+            payload_kind="summary",
+            endpoint="/athlete/activities",
+            fetched_at="2026-05-29T00:10:00",
+            payload_json='{"id":500,"kudos_count":2}',
+            raw_hash="raw-kudos-500",
+            modeled_projection_hash="semantic-kudos-500",
+            schema_status="clean",
+        )
+    )
 
     class _KudosTransport:
         def __init__(self):

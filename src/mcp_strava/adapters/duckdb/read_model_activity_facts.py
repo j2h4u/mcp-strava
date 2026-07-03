@@ -103,7 +103,7 @@ def _activity_fact(
         raise RuntimeError(_HR_REST_MISSING_MSG)
 
     # Running max-HR-to-date for this activity's day.
-    activity_day = str(dirty_row["activity_day"])
+    activity_day = str(source["activity_day"])
     hr_max_observed = max_heartrate_to_date(repo, activity_day)
 
     # When no HR samples exist at all (for any activity up to this date),
@@ -154,7 +154,7 @@ def _activity_fact(
 
     return {
         "activity_id": activity_id,
-        "activity_day": dirty_row["activity_day"],
+        "activity_day": source["activity_day"],
         "sport_type": activity.sport_type,
         "source_hash": source["source_hash"],
         "source_revision": int(source["source_revision"]),
@@ -207,6 +207,7 @@ def _build_zone_bounds_maps(
     dirty_rows,
     scalars,
     hr_max_by_day,
+    activity_day_by_id,
     athlete,
 ) -> tuple[dict[int, list[int]], dict[int, int | None]]:
     """Pre-compute HR zone bounds and hr_max_used for each activity in the batch."""
@@ -214,7 +215,7 @@ def _build_zone_bounds_maps(
     hr_max_used_by_activity_id: dict[int, int | None] = {}
     for dirty_row in dirty_rows:
         activity_id = int(dirty_row["activity_id"])
-        activity_day = str(dirty_row["activity_day"])
+        activity_day = activity_day_by_id[activity_id]
         scalar = scalars[activity_id]
         hr_max_observed = hr_max_by_day.get(activity_day)
         if hr_max_observed is None or scalar.hr_count == 0:
@@ -274,10 +275,11 @@ def _activity_facts_batched(
     activity_ids = [int(row["activity_id"]) for row in dirty_rows]
     sources = activity_materialization_sources(repo, activity_ids)
     scalars = activity_stream_scalars_for_materialization(repo, activity_ids, Config.Thresholds.VEL_MOVING)
-    hr_max_by_day = max_heartrate_to_dates(repo, (str(row["activity_day"]) for row in dirty_rows))
+    activity_day_by_id = {activity_id: str(source.activity.activity_day) for activity_id, source in sources.items()}
+    hr_max_by_day = max_heartrate_to_dates(repo, activity_day_by_id.values())
 
     bounds_by_activity_id, hr_max_used_by_activity_id = _build_zone_bounds_maps(
-        dirty_rows, scalars, hr_max_by_day, athlete
+        dirty_rows, scalars, hr_max_by_day, activity_day_by_id, athlete
     )
     zone_trimp_by_activity_id = activity_zone_trimp_for_bounds(repo, bounds_by_activity_id)
     hr_rows_by_activity_id = stream_hr_velocity_time_rows_for_activities(repo, activity_ids)
@@ -294,13 +296,14 @@ def _activity_facts_batched(
             raise RuntimeError(f"Dirty activity missing source row: {activity_id}")
 
         activity = source.activity
+        activity_day = activity_day_by_id[activity_id]
         scalar = scalars[activity_id]
         zone1, zone2, zone3, zone4, zone5, trimp_val = _unpack_zone_trimp(zone_trimp_by_activity_id.get(activity_id))
 
         hr_rec = calc_hr_recovery(hr_rows_by_activity_id.get(activity_id, []))
         vspeed = calc_vertical_speed(alt_rows_by_activity_id.get(activity_id, []))
         drift = calc_cardiac_drift(drift_rows_by_activity_id.get(activity_id, []), activity.sport_type)
-        hr_max_observed = hr_max_by_day.get(str(dirty_row["activity_day"]))
+        hr_max_observed = hr_max_by_day.get(activity_day)
         hr_max_for_hrr = scalar.max_hr if scalar.max_hr is not None else hr_max_observed
         hrr = calc_hrr_pct(scalar.median_hr, athlete.hr_rest, hr_max_for_hrr)
         completeness, missing = _completeness_status(activity, scalar)
@@ -308,7 +311,7 @@ def _activity_facts_batched(
         fact_rows.append(
             {
                 "activity_id": activity_id,
-                "activity_day": dirty_row["activity_day"],
+                "activity_day": activity_day,
                 "sport_type": activity.sport_type,
                 "source_hash": source.source_hash,
                 "source_revision": source.source_revision,

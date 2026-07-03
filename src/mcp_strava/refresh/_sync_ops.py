@@ -6,7 +6,7 @@ import json
 from calendar import monthrange
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
 from mcp_strava.adapters.duckdb.activity_selectors import (
@@ -22,8 +22,8 @@ from mcp_strava.adapters.duckdb.read_model_materializer import (
 )
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-from mcp_strava.adapters.duckdb.repository_models import ActivitySummaryRecord
-from mcp_strava.adapters.duckdb.source_hashing import summary_payload_changed
+from mcp_strava.adapters.duckdb.repository_models import ActivitySourcePayload, ActivitySummaryRecord
+from mcp_strava.adapters.duckdb.source_hashing import raw_payload_hash, semantic_json_hash, summary_payload_changed
 from mcp_strava.adapters.duckdb.stream_coverage_queries import activities_missing_stream_channels
 from mcp_strava.constants import Config
 from mcp_strava.metric_registry import cached_logic_fingerprint
@@ -206,6 +206,54 @@ def _replace_streams(repo, act_id: int, data: dict, fetched_at: str | None = Non
     return repo.replace_stream_rows_and_channel_metadata(act_id, rows=rows, metadata=metadata, chunk_size=5000)
 
 
+def _write_activity_payload(
+    repo,
+    *,
+    activity_id: int,
+    activity_day: str | None,
+    payload_kind: str,
+    endpoint: str,
+    fetched_at: str,
+    payload_json: str,
+) -> None:
+    repo.write_activity_payload(
+        ActivitySourcePayload(
+            activity_id=activity_id,
+            activity_day=activity_day,
+            payload_kind=payload_kind,
+            endpoint=endpoint,
+            fetched_at=fetched_at,
+            payload_json=payload_json,
+            raw_hash=raw_payload_hash(payload_json),
+            modeled_projection_hash=semantic_json_hash(payload_json),
+            schema_status="clean",
+        )
+    )
+
+
+def _latest_summary_record(repo, activity_id: int) -> ActivitySummaryRecord | None:
+    payload = repo.latest_activity_payload(activity_id, "summary")
+    if payload is None:
+        return None
+    payload_json = str(payload["payload_json"])
+    raw = cast("object", json.loads(payload_json))
+    if not isinstance(raw, dict):
+        raise RuntimeError(f"Bronze summary payload for activity {activity_id} is not a JSON object")
+    act = parse_strava_activity(cast("dict[str, object]", raw))
+    return ActivitySummaryRecord(
+        activity_id=act.id,
+        date=act.start_date_local[:10],
+        name=act.name,
+        sport_type=act.sport_type,
+        distance=act.distance,
+        moving_time=act.moving_time,
+        elapsed_time=act.elapsed_time,
+        total_elevation_gain=act.total_elevation_gain,
+        summary_json=payload_json,
+        synced_at=str(payload["fetched_at"]),
+    )
+
+
 def sync_summaries(repo, transport, now_iso: str, *, after_epoch: int | None = None) -> tuple[int, int]:
     page = 1
     seen = 0
@@ -226,6 +274,15 @@ def sync_summaries(repo, transport, now_iso: str, *, after_epoch: int | None = N
             act = parse_strava_activity(raw)
             existing = activity_by_id(repo, act.id)
             summary_json = json.dumps(raw)
+            _write_activity_payload(
+                repo,
+                activity_id=act.id,
+                activity_day=act.start_date_local[:10],
+                payload_kind="summary",
+                endpoint="/athlete/activities",
+                fetched_at=now_iso,
+                payload_json=summary_json,
+            )
             # Skip the write when an existing activity is semantically unchanged:
             # the daily refresh re-sees every activity each cycle, and rewriting
             # an unchanged PRIMARY-KEY-indexed row churns the DuckDB ART index
@@ -235,20 +292,12 @@ def sync_summaries(repo, transport, now_iso: str, *, after_epoch: int | None = N
                 new += 1
             elif not summary_payload_changed(existing.summary_json, summary_json):
                 continue
-            repo.upsert_activity_summary(
-                ActivitySummaryRecord(
+            else:
+                _emit(
+                    "summary_silver_update_deferred",
                     activity_id=act.id,
-                    date=act.start_date_local[:10],
-                    name=act.name,
-                    sport_type=act.sport_type,
-                    distance=act.distance,
-                    moving_time=act.moving_time,
-                    elapsed_time=act.elapsed_time,
-                    total_elevation_gain=act.total_elevation_gain,
-                    summary_json=summary_json,
-                    synced_at=now_iso,
+                    reason="bronze_pipeline_boundary",
                 )
-            )
         if len(data) < Config.Api.STRAVA_PAGE_SIZE:
             break
         page += 1
@@ -259,12 +308,12 @@ def sync_streams(
     repo,
     transport,
     since: str | None = None,
-    checkpoint_stage: Stage = Stage.STREAMS,
+    on_activity: Callable[[int], None] | None = None,
 ) -> int:
-    refresh_store = RefreshStateStore.from_connection(repo.conn)
     fetched = 0
     for activity in activities_missing_streams(repo, since):
-        refresh_store.set_checkpoint(checkpoint_stage.value, str(activity.id))
+        if on_activity is not None:
+            on_activity(activity.id)
         response = transport.fetch(f"/activities/{activity.id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
         if isinstance(response.data, dict):
             journal_schema_drift(response.data, "streams")
@@ -279,22 +328,51 @@ def sync_details(
     repo,
     transport,
     since: str | None = None,
-    checkpoint_stage: Stage = Stage.DETAILS,
+    on_activity: Callable[[int], None] | None = None,
 ) -> int:
-    refresh_store = RefreshStateStore.from_connection(repo.conn)
     fetched = 0
     for activity in activities_missing_details(repo, since):
-        refresh_store.set_checkpoint(checkpoint_stage.value, str(activity.id))
+        if on_activity is not None:
+            on_activity(activity.id)
         response = transport.fetch(f"/activities/{activity.id}")
         if isinstance(response.data, dict):
             journal_schema_drift(response.data, "detailed_activity")
-            repo.update_activity_detail(activity.id, json.dumps(response.data))
+            detail_json = json.dumps(response.data)
+            _write_activity_payload(
+                repo,
+                activity_id=activity.id,
+                activity_day=activity.activity_day,
+                payload_kind="detail",
+                endpoint=f"/activities/{activity.id}",
+                fetched_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
+                payload_json=detail_json,
+            )
             fetched += 1
     return fetched
 
 
 def schema_validate(repo) -> None:
-    return None
+    """Process committed bronze payloads into source-state invalidation."""
+    if not isinstance(repo, DuckDBRepository):
+        raise TypeError(f"DuckDBRepository required, got {type(repo).__name__}")
+    changed = 0
+    metric_version = repo.current_metric_version()
+    activity_ids = repo.activity_ids_with_source_bronze_payloads()
+    for activity_id in activity_ids:
+        summary = _latest_summary_record(repo, activity_id)
+        if summary is not None:
+            repo.insert_activity_summary_if_missing(summary)
+        if repo.update_activity_source_state_and_enqueue_dirty(
+            activity_id,
+            reason="bronze_payload_changed",
+            metric_version=metric_version,
+        ):
+            changed += 1
+    _emit(
+        "bronze_payloads_processed",
+        activities_considered=len(activity_ids),
+        activities_changed=changed,
+    )
 
 
 def materialize_read_model_stage(

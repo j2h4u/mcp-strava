@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from mcp_strava.adapters.duckdb.hydrated_activity_sql import (
+    activity_hydration_joins,
+    hydrated_activity_fact_select,
+)
 from mcp_strava.adapters.duckdb.read_model_fact_write_repository import ReadModelFactWriteRepositoryMixin
 from mcp_strava.adapters.duckdb.read_model_logic_repository import ReadModelLogicRepositoryMixin
 from mcp_strava.adapters.duckdb.read_model_source_repository import ReadModelSourceRepositoryMixin
@@ -160,9 +164,11 @@ class ReadModelRepositoryMixin(
             )
             params.extend([cursor, cursor, cursor])
         sql = f"""
-            SELECT f.*, a.name AS activity_name, a.activity_day AS activity_date, a.summary_json, a.detail_json
+            SELECT f.*,
+                   {hydrated_activity_fact_select()}
             FROM activity_metric_facts f
             LEFT JOIN activities a ON a.id = f.activity_id
+            {activity_hydration_joins()}
             WHERE {" AND ".join(where)}
             ORDER BY f.activity_day DESC, f.activity_id DESC
         """
@@ -184,9 +190,11 @@ class ReadModelRepositoryMixin(
         return self._one(
             self._fetchone(
                 f"""
-                SELECT f.*, a.name AS activity_name, a.activity_day AS activity_date, a.summary_json, a.detail_json
+                SELECT f.*,
+                       {hydrated_activity_fact_select()}
                 FROM activity_metric_facts f
                 LEFT JOIN activities a ON a.id = f.activity_id
+                {activity_hydration_joins()}
                 WHERE {" AND ".join(where)}
                 ORDER BY f.metric_version DESC
                 LIMIT 1

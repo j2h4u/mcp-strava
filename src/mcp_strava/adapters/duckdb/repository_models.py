@@ -50,6 +50,20 @@ class SourceComponents(TypedDict):
     source_hash: str
 
 
+class ActivitySourcePayloadRow(TypedDict):
+    activity_id: object
+    activity_day: object
+    payload_kind: object
+    endpoint: object
+    fetched_at: object
+    payload_json: object
+    raw_hash: object
+    modeled_projection_hash: object
+    schema_status: object
+    drift_fingerprint: object
+    migrated_from_legacy: object
+
+
 class LogicVersionRow(TypedDict):
     metric_version: int
     logic_fingerprint: str
@@ -68,6 +82,21 @@ class ActivitySummaryRecord:
     total_elevation_gain: float
     summary_json: str
     synced_at: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ActivitySourcePayload:
+    activity_id: int
+    activity_day: str | None
+    payload_kind: str
+    endpoint: str
+    fetched_at: str
+    payload_json: str
+    raw_hash: str
+    modeled_projection_hash: str | None
+    schema_status: str
+    drift_fingerprint: str | None = None
+    migrated_from_legacy: bool = False
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

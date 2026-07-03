@@ -16,7 +16,7 @@ from mcp_strava.adapters.duckdb.daily_load_queries import (
     observed_trimp_history_by_sport,
 )
 from mcp_strava.adapters.duckdb.kudos_store import activities_missing_kudos, upsert_kudos
-from mcp_strava.adapters.duckdb.repository_models import ActivitySummaryRecord
+from mcp_strava.adapters.duckdb.repository_models import ActivitySourcePayload, ActivitySummaryRecord
 from mcp_strava.adapters.duckdb.schema import create_schema
 from mcp_strava.adapters.duckdb.stream_metric_queries import max_heartrate_to_date
 
@@ -177,6 +177,626 @@ def test_duckdb_repository_refresh_source_dirty_and_status_roundtrip(tmp_path: P
         assert len(dirty) == 1
         assert dirty[0]["reason"] == "source_changed"
         assert repo.read_model_status(metric_version=1)["status"] == "stale"
+
+
+def test_source_state_hash_uses_latest_bronze_payloads(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "strava.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        repo.upsert_activity_summary(
+            ActivitySummaryRecord(
+                activity_id=101,
+                date="2026-05-21T06:00:00Z",
+                name="DuckDB Run",
+                sport_type="Run",
+                distance=6000.0,
+                moving_time=1800,
+                elapsed_time=1900,
+                total_elevation_gain=120.0,
+                summary_json='{"id":101,"name":"Legacy Run"}',
+                synced_at="2026-05-21T07:00:00Z",
+            )
+        )
+        initial = repo.source_state_for_activity(101)
+        repo.clear_dirty_activity_rows(repo.dirty_activity_rows())
+
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=101,
+                activity_day="2026-05-21",
+                payload_kind="summary",
+                endpoint="/athlete/activities",
+                fetched_at="2026-05-21T08:00:00",
+                payload_json='{"id":101,"name":"Bronze Run"}',
+                raw_hash="raw-bronze",
+                modeled_projection_hash="semantic-bronze",
+                schema_status="clean",
+            )
+        )
+        changed = repo.update_activity_source_state_and_enqueue_dirty(101, metric_version=1)
+        updated = repo.source_state_for_activity(101)
+        dirty = repo.dirty_activity_rows()
+        silver = repo._fetchone("SELECT summary_json FROM activities WHERE id = 101")
+
+    assert initial is not None
+    assert updated is not None
+    assert changed is True
+    assert updated["source_revision"] == int(initial["source_revision"]) + 1
+    assert updated["summary_hash"] != initial["summary_hash"]
+    assert len(dirty) == 1
+    assert dirty[0]["activity_id"] == 101
+    assert silver is not None
+    assert silver["summary_json"] == '{"id":101,"name":"Legacy Run"}'
+
+
+def test_source_state_hash_uses_latest_bronze_detail_payload(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "strava.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        repo.upsert_activity_summary(
+            ActivitySummaryRecord(
+                activity_id=102,
+                date="2026-05-21T06:00:00Z",
+                name="DuckDB Run",
+                sport_type="Run",
+                distance=6000.0,
+                moving_time=1800,
+                elapsed_time=1900,
+                total_elevation_gain=120.0,
+                summary_json='{"id":102,"name":"Legacy Run"}',
+                synced_at="2026-05-21T07:00:00Z",
+            )
+        )
+        repo.update_activity_detail(102, '{"id":102,"calories":100}')
+        initial = repo.source_state_for_activity(102)
+        repo.clear_dirty_activity_rows(repo.dirty_activity_rows())
+
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=102,
+                activity_day="2026-05-21",
+                payload_kind="detail",
+                endpoint="/activities/102",
+                fetched_at="2026-05-21T08:00:00",
+                payload_json='{"id":102,"calories":150}',
+                raw_hash="raw-detail-bronze",
+                modeled_projection_hash="semantic-detail-bronze",
+                schema_status="clean",
+            )
+        )
+        changed = repo.update_activity_source_state_and_enqueue_dirty(102, metric_version=1)
+        updated = repo.source_state_for_activity(102)
+        dirty = repo.dirty_activity_rows()
+        silver = repo._fetchone("SELECT detail_json FROM activities WHERE id = 102")
+
+    assert initial is not None
+    assert updated is not None
+    assert changed is True
+    assert updated["source_revision"] == int(initial["source_revision"]) + 1
+    assert updated["detail_hash"] != initial["detail_hash"]
+    assert len(dirty) == 1
+    assert dirty[0]["activity_id"] == 102
+    assert silver is not None
+    assert silver["detail_json"] == '{"id":102,"calories":100}'
+
+
+def test_materialization_uses_bronze_summary_day_for_source_dirty_and_facts(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.read_model_materializer import MaterializationOptions, materialize_read_model
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.settings import load_settings
+
+    fixture = tmp_path / "strava.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        repo.upsert_activity_summary(
+            ActivitySummaryRecord(
+                activity_id=103,
+                date="2026-05-21T06:00:00Z",
+                name="Moved Run",
+                sport_type="Run",
+                distance=6000.0,
+                moving_time=1800,
+                elapsed_time=1900,
+                total_elevation_gain=120.0,
+                summary_json='{"id":103,"name":"Moved Run","sport_type":"Run"}',
+                synced_at="2026-05-21T07:00:00Z",
+            )
+        )
+        repo.clear_dirty_activity_rows(repo.dirty_activity_rows())
+
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=103,
+                activity_day="2026-05-22",
+                payload_kind="summary",
+                endpoint="/athlete/activities",
+                fetched_at="2026-05-22T08:00:00",
+                payload_json='{"id":103,"name":"Moved Run","sport_type":"Run"}',
+                raw_hash="raw-moved-day",
+                modeled_projection_hash="semantic-moved-day",
+                schema_status="clean",
+            )
+        )
+        changed = repo.update_activity_source_state_and_enqueue_dirty(103, metric_version=1)
+        source = repo.source_state_for_activity(103)
+        dirty = repo.dirty_activity_rows(activity_id=103)
+
+        result = materialize_read_model(
+            repo,
+            1,
+            MaterializationOptions(
+                now="2026-05-22T09:00:00",
+                settings=load_settings(
+                    environ={"MCP_STRAVA_HR_REST": "50"},
+                    env_file=tmp_path / "missing.env",
+                    project_root=tmp_path,
+                ),
+            ),
+        )
+
+        fact = repo.fetch_activity_metric_fact(103, metric_version=1)
+        rows_old_day = repo.fetch_activity_metric_facts("2026-05-21", "2026-05-21", metric_version=1)
+        rows_new_day = repo.fetch_activity_metric_facts("2026-05-22", "2026-05-23", metric_version=1)
+
+    assert changed is True
+    assert source is not None
+    assert source["activity_day"] == "2026-05-22"
+    assert len(dirty) == 1
+    assert dirty[0]["activity_day"] == "2026-05-22"
+    assert result["activities_materialized"] == 1
+    assert fact is not None
+    assert fact["activity_day"] == "2026-05-22"
+    assert fact["activity_date"] == "2026-05-22"
+    assert rows_old_day == []
+    assert [row["activity_id"] for row in rows_new_day] == [103]
+
+
+def test_schema_validate_and_materialization_follow_moved_bronze_summary_day(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.read_model_materializer import MaterializationOptions, materialize_read_model
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.refresh._sync_ops import schema_validate
+    from mcp_strava.settings import load_settings
+
+    fixture = tmp_path / "strava.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        repo.upsert_activity_summary(
+            ActivitySummaryRecord(
+                activity_id=104,
+                date="2026-05-21T06:00:00Z",
+                name="Moved Day Run",
+                sport_type="Run",
+                distance=6000.0,
+                moving_time=1800,
+                elapsed_time=1900,
+                total_elevation_gain=120.0,
+                summary_json='{"id":104,"name":"Moved Day Run","sport_type":"Run"}',
+                synced_at="2026-05-21T07:00:00Z",
+            )
+        )
+        repo.clear_dirty_activity_rows(repo.dirty_activity_rows())
+
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=104,
+                activity_day="2026-05-22",
+                payload_kind="summary",
+                endpoint="/athlete/activities",
+                fetched_at="2026-05-22T08:00:00",
+                payload_json='{"id":104,"name":"Moved Day Run","sport_type":"Run"}',
+                raw_hash="raw-moved-day-104",
+                modeled_projection_hash="semantic-moved-day-104",
+                schema_status="clean",
+            )
+        )
+
+        schema_validate(repo)
+        source = repo.source_state_for_activity(104)
+        dirty = repo.dirty_activity_rows(activity_id=104)
+        result = materialize_read_model(
+            repo,
+            1,
+            MaterializationOptions(
+                now="2026-05-22T09:00:00",
+                settings=load_settings(
+                    environ={"MCP_STRAVA_HR_REST": "50"},
+                    env_file=tmp_path / "missing.env",
+                    project_root=tmp_path,
+                ),
+            ),
+        )
+        fact = repo.fetch_activity_metric_fact(104, metric_version=1)
+        rows_new_day = repo.fetch_activity_metric_facts("2026-05-22", "2026-05-24", metric_version=1)
+        rows_old_day = repo.fetch_activity_metric_facts("2026-05-21", "2026-05-22", metric_version=1)
+
+    assert source is not None
+    assert source["activity_day"] == "2026-05-22"
+    assert len(dirty) == 1
+    assert dirty[0]["activity_day"] == "2026-05-22"
+    assert result["activities_materialized"] == 1
+    assert fact is not None
+    assert fact["activity_day"] == "2026-05-22"
+    assert fact["activity_date"] == "2026-05-22"
+    assert [row["activity_id"] for row in rows_new_day] == [104]
+    assert rows_old_day == []
+
+
+def test_duckdb_repository_activity_payloads_are_append_only_and_latest_readable(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "strava.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=100,
+                activity_day="2026-05-21",
+                payload_kind="summary",
+                endpoint="/athlete/activities",
+                fetched_at="2026-05-21T07:00:00",
+                payload_json='{"id":100,"name":"First"}',
+                raw_hash="raw-a",
+                modeled_projection_hash="semantic-a",
+                schema_status="clean",
+            )
+        )
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=100,
+                activity_day="2026-05-21",
+                payload_kind="summary",
+                endpoint="/athlete/activities",
+                fetched_at="2026-05-21T08:00:00",
+                payload_json='{"id":100,"name":"Second"}',
+                raw_hash="raw-b",
+                modeled_projection_hash="semantic-b",
+                schema_status="clean",
+            )
+        )
+
+        count = repo._scalar_int("SELECT COUNT(*) FROM bronze.activity_payloads WHERE activity_id = 100")
+        latest = repo.latest_activity_payload(100, "summary")
+        activity_count = repo._scalar_int("SELECT COUNT(*) FROM activities")
+
+    assert count == 2
+    assert latest is not None
+    assert latest["payload_json"] == '{"id":100,"name":"Second"}'
+    assert latest["raw_hash"] == "raw-b"
+    assert activity_count == 0
+
+
+def test_duckdb_repository_backfills_legacy_activity_payloads_once(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "strava.duckdb"
+    conn = open_fixture_db(fixture)
+    try:
+        create_schema(conn)
+        conn.execute(
+            """
+            INSERT INTO activities (
+                id,
+                activity_day,
+                name,
+                sport_type,
+                distance,
+                moving_time,
+                elapsed_time,
+                total_elevation_gain,
+                summary_json,
+                detail_json,
+                synced_at
+            ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                200,
+                "2026-05-21",
+                "Legacy Run",
+                "Run",
+                5000.0,
+                1800,
+                1900,
+                100.0,
+                '{"id":200,"name":"Legacy Run"}',
+                '{"id":200,"resource_state":3}',
+                "2026-05-21T09:00:00",
+            ],
+        )
+    finally:
+        conn.close()
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        count_after_first_open = repo._scalar_int(
+            "SELECT COUNT(*) FROM bronze.activity_payloads WHERE activity_id = 200"
+        )
+        summary = repo.latest_activity_payload(200, "summary")
+        detail = repo.latest_activity_payload(200, "detail")
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        count_after_second_open = repo._scalar_int(
+            "SELECT COUNT(*) FROM bronze.activity_payloads WHERE activity_id = 200"
+        )
+
+    assert count_after_first_open == 2
+    assert count_after_second_open == 2
+    assert summary is not None
+    assert summary["payload_json"] == '{"id":200,"name":"Legacy Run"}'
+    assert summary["migrated_from_legacy"] is True
+    assert detail is not None
+    assert detail["payload_json"] == '{"id":200,"resource_state":3}'
+
+
+def test_schema_validate_bootstraps_legacy_bronze_payloads_once(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.refresh._sync_ops import schema_validate
+
+    fixture = tmp_path / "strava.duckdb"
+    conn = open_fixture_db(fixture)
+    try:
+        create_schema(conn)
+        conn.execute(
+            """
+            INSERT INTO activities (
+                id,
+                activity_day,
+                name,
+                sport_type,
+                distance,
+                moving_time,
+                elapsed_time,
+                total_elevation_gain,
+                summary_json,
+                detail_json,
+                synced_at
+            ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                210,
+                "2026-05-21",
+                "Legacy Bootstrap Run",
+                "Run",
+                5000.0,
+                1800,
+                1900,
+                100.0,
+                '{"id":210,"name":"Legacy Bootstrap Run"}',
+                '{"id":210,"resource_state":3}',
+                "2026-05-21T09:00:00",
+            ],
+        )
+    finally:
+        conn.close()
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        source = repo.source_state_for_activity(210)
+        dirty = repo.dirty_activity_rows(activity_id=210)
+        source_count = repo._scalar_int("SELECT COUNT(*) FROM activity_source_state WHERE activity_id = 210")
+        dirty_count = repo._scalar_int("SELECT COUNT(*) FROM metric_dirty_activities WHERE activity_id = 210")
+        schema_validate(repo)
+        dirty_after_validate = repo.dirty_activity_rows(activity_id=210)
+        schema_validate(repo)
+        dirty_after_second_validate = repo.dirty_activity_rows(activity_id=210)
+
+    assert source is not None
+    assert source["activity_day"] == "2026-05-21"
+    assert source_count == 1
+    assert dirty_count == 1
+    assert len(dirty) == 1
+    assert dirty[0]["reason"] == "bronze_payload_changed"
+    assert len(dirty_after_validate) == 1
+    assert len(dirty_after_second_validate) == 1
+    assert dirty_after_second_validate[0]["reason"] == "bronze_payload_changed"
+
+
+def test_reopening_current_fact_mirrors_does_not_bootstrap_dirty_rows(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from tests.test_read_model_queries import _activity_fact, _insert_activity_fact
+
+    fixture = tmp_path / "current.duckdb"
+    conn = open_fixture_db(fixture)
+    create_schema(conn)
+    conn.execute(
+        """
+        INSERT INTO activities (
+            id,
+            activity_day,
+            name,
+            sport_type,
+            distance,
+            moving_time,
+            elapsed_time,
+            total_elevation_gain,
+            summary_json,
+            detail_json,
+            synced_at
+        ) VALUES (?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            220,
+            "2026-05-21",
+            "Current Run",
+            "Run",
+            5000.0,
+            1800,
+            1900,
+            100.0,
+            '{"id":220,"name":"Current Run"}',
+            '{"id":220,"resource_state":3}',
+            "2026-05-21T09:00:00",
+        ],
+    )
+    _insert_activity_fact(
+        conn,
+        _activity_fact(
+            activity_id=220,
+            day="2026-05-21",
+            sport_type="Run",
+            completeness_status="complete",
+            missing_reasons=[],
+            trimp=42.0,
+            cardiac_cost=41.0,
+            adjusted_cardiac_cost=40.0,
+            stream_sample_count=120,
+            heartrate_sample_count=120,
+        ),
+    )
+    conn.execute(
+        """
+        INSERT INTO daily_load_facts (
+            day, scope, sport_type, metric_version, computed_at,
+            completeness_status, missing_reasons_json, activity_count,
+            stream_point_count, heartrate_point_count, observed_trimp,
+            effective_trimp, distance_m, moving_time_s, elevation_gain_m,
+            zone4_seconds, zone5_seconds, high_zone_seconds, anomaly_count
+        ) VALUES (
+            CAST('2026-05-21' AS DATE), 'all', 'all', 1, '2026-05-21T10:05:00',
+            'complete', '[]', 1, 120, 120, 42.0, 42.0, 5000.0, 1800, 100.0, 0, 0, 0, 0
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        status = repo.read_model_status(metric_version=1)
+        dirty_count = repo._scalar_int("SELECT COUNT(*) FROM metric_dirty_activities WHERE activity_id = 220")
+        source_count = repo._scalar_int("SELECT COUNT(*) FROM activity_source_state WHERE activity_id = 220")
+        bootstrap_ids = repo.activity_ids_needing_source_state_bootstrap()
+
+    assert status["status"] == "current"
+    assert status["dirty_count"] == 0
+    assert dirty_count == 0
+    assert source_count == 0
+    assert bootstrap_ids == []
+
+
+def test_activity_lookup_reads_latest_bronze_payloads_over_legacy_columns(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id, recent_activities
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "strava.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        repo.upsert_activity_summary(
+            ActivitySummaryRecord(
+                activity_id=201,
+                date="2026-05-21T06:00:00Z",
+                name="Bridge Run",
+                sport_type="Run",
+                distance=5000.0,
+                moving_time=1800,
+                elapsed_time=1900,
+                total_elevation_gain=100.0,
+                summary_json='{"id":201,"name":"Legacy Summary"}',
+                synced_at="2026-05-21T07:00:00",
+            )
+        )
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=201,
+                activity_day="2026-05-21",
+                payload_kind="summary",
+                endpoint="/athlete/activities",
+                fetched_at="2026-05-21T08:00:00",
+                payload_json='{"id":201,"name":"Bronze Summary"}',
+                raw_hash="raw-summary",
+                modeled_projection_hash="semantic-summary",
+                schema_status="clean",
+            )
+        )
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=201,
+                activity_day="2026-05-21",
+                payload_kind="detail",
+                endpoint="/activities/201",
+                fetched_at="2026-05-21T08:10:00",
+                payload_json='{"id":201,"resource_state":3}',
+                raw_hash="raw-detail",
+                modeled_projection_hash="semantic-detail",
+                schema_status="clean",
+            )
+        )
+
+        by_id = activity_by_id(repo, 201)
+        recent = recent_activities(repo, limit=1)
+        silver = repo._fetchone("SELECT summary_json, detail_json FROM activities WHERE id = 201")
+
+    assert by_id is not None
+    assert by_id.summary_json == '{"id":201,"name":"Bronze Summary"}'
+    assert by_id.detail_json == '{"id":201,"resource_state":3}'
+    assert recent[0].summary_json == '{"id":201,"name":"Bronze Summary"}'
+    assert silver is not None
+    assert silver["summary_json"] == '{"id":201,"name":"Legacy Summary"}'
+    assert silver["detail_json"] is None
+
+
+def test_activity_selectors_return_latest_bronze_payloads(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.activity_selectors import activities_missing_details, activities_missing_streams
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "strava.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        repo.upsert_activity_summary(
+            ActivitySummaryRecord(
+                activity_id=202,
+                date="2026-05-21T06:00:00Z",
+                name="Selector Run",
+                sport_type="Run",
+                distance=5000.0,
+                moving_time=1800,
+                elapsed_time=1900,
+                total_elevation_gain=100.0,
+                summary_json='{"id":202,"name":"Legacy Summary"}',
+                synced_at="2026-05-21T07:00:00",
+            )
+        )
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=202,
+                activity_day="2026-05-21",
+                payload_kind="summary",
+                endpoint="/athlete/activities",
+                fetched_at="2026-05-21T08:00:00",
+                payload_json='{"id":202,"name":"Bronze Summary"}',
+                raw_hash="raw-summary-202",
+                modeled_projection_hash="semantic-summary-202",
+                schema_status="clean",
+            )
+        )
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=202,
+                activity_day="2026-05-21",
+                payload_kind="detail",
+                endpoint="/activities/202",
+                fetched_at="2026-05-21T08:10:00",
+                payload_json='{"id":202,"resource_state":3}',
+                raw_hash="raw-detail-202",
+                modeled_projection_hash="semantic-detail-202",
+                schema_status="clean",
+            )
+        )
+
+        missing_streams = activities_missing_streams(repo)
+        missing_details = activities_missing_details(repo)
+
+    selected = next(activity for activity in missing_streams if activity.id == 202)
+    assert selected.summary_json == '{"id":202,"name":"Bronze Summary"}'
+    assert selected.detail_json == '{"id":202,"resource_state":3}'
+    assert all(activity.id != 202 for activity in missing_details)
 
 
 def test_duckdb_repository_fact_upserts_queries_and_dirty_clear(tmp_path: Path) -> None:
@@ -857,6 +1477,46 @@ def test_activities_missing_kudos_filters_and_returns_typed_ids(tmp_path: Path) 
 
         assert ids == [201]
         assert all(isinstance(i, int) for i in ids)
+
+
+def test_activities_missing_kudos_prefers_bronze_summary_payload(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "strava.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        repo.upsert_activity_summary(
+            ActivitySummaryRecord(
+                activity_id=204,
+                date="2026-05-21T06:00:00Z",
+                name="Run 204",
+                sport_type="Run",
+                distance=6000.0,
+                moving_time=1800,
+                elapsed_time=1900,
+                total_elevation_gain=120.0,
+                summary_json='{"id":204,"kudos_count":0}',
+                synced_at="2026-05-21T07:00:00Z",
+            )
+        )
+        repo.write_activity_payload(
+            ActivitySourcePayload(
+                activity_id=204,
+                activity_day="2026-05-21",
+                payload_kind="summary",
+                endpoint="/athlete/activities",
+                fetched_at="2026-05-21T08:00:00",
+                payload_json='{"id":204,"kudos_count":4}',
+                raw_hash="raw-kudos",
+                modeled_projection_hash="semantic-kudos",
+                schema_status="clean",
+            )
+        )
+
+        ids = activities_missing_kudos(repo)
+
+    assert ids == [204]
 
 
 def _seed_kudos_window_activities(repo: DuckDBRepository) -> None:
