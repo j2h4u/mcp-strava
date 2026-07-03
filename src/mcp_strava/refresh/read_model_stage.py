@@ -46,7 +46,7 @@ def _latest_summary_record(repo, activity_id: int) -> ActivitySummaryRecord | No
     )
 
 
-def schema_validate(repo) -> None:
+def process_bronze_payloads(repo) -> None:
     """Process committed bronze payloads into source-state invalidation."""
     if not isinstance(repo, DuckDBRepository):
         raise TypeError(f"DuckDBRepository required, got {type(repo).__name__}")

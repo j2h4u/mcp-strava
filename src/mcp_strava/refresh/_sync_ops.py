@@ -9,9 +9,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from mcp_strava.adapters.duckdb.activity_selectors import activities_missing_streams
-from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.stream_coverage_queries import activities_missing_stream_channels
-from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.refresh.schema_drift import journal_schema_drift
 from mcp_strava.refresh.stream_payload import STREAM_KEYS, STREAM_KEYS_QUERY, _stream_payload
 
@@ -44,14 +42,7 @@ def _safe_quick_sync_start_day(latest_raw: object | None) -> str:
     return (date(year, month, day) - timedelta(days=7)).isoformat()
 
 
-def _insert_streams(repo, act_id: int, data: dict, fetched_at: str | None = None) -> int:
-    rows, metadata = _stream_payload(data, fetched_at=fetched_at, activity_id=act_id)
-    if not rows:
-        return 0
-    return repo.replace_stream_rows_and_channel_metadata(act_id, rows=rows, metadata=metadata, chunk_size=5000)
-
-
-def _replace_streams(repo, act_id: int, data: dict, fetched_at: str | None = None) -> int:
+def _write_streams(repo, act_id: int, data: dict, fetched_at: str | None = None) -> int:
     rows, metadata = _stream_payload(data, fetched_at=fetched_at, activity_id=act_id)
     if not rows:
         return 0
@@ -71,7 +62,7 @@ def sync_streams(
         response = transport.fetch(f"/activities/{activity.id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
         if isinstance(response.data, dict):
             journal_schema_drift(response.data, "streams")
-            _insert_streams(
+            _write_streams(
                 repo, activity.id, response.data, fetched_at=datetime.now(UTC).replace(tzinfo=None).isoformat()
             )
             fetched += 1
@@ -113,17 +104,17 @@ def sync_stream_channels_backfill(
     *,
     since: str | None = None,
     limit: int | None = None,
-    checkpoint_stage: Stage = Stage.STREAM_CHANNELS_BACKFILL,
+    on_activity: Callable[[int], None] | None = None,
     on_progress: Callable[[], None] | None = None,
 ) -> dict:
-    refresh_store = RefreshStateStore.from_connection(repo.conn)
     estimate = estimate_stream_channel_backfill(repo, since=since, limit=limit)
     completed = 0
     for item in estimate["candidates"]:
         activity_id = int(item["activity_id"])
+        if on_activity is not None:
+            on_activity(activity_id)
         if on_progress is not None:
             on_progress()
-        refresh_store.set_checkpoint(checkpoint_stage.value, str(activity_id))
         response = transport.fetch(f"/activities/{activity_id}/streams?keys={STREAM_KEYS_QUERY}&key_by_type=true")
         if not isinstance(response.data, dict):
             continue

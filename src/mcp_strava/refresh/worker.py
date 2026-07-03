@@ -61,6 +61,31 @@ def _stream_channel_backfill_due(state) -> bool:
     return state.checkpoint_stage == Stage.STREAM_CHANNELS_BACKFILL.value
 
 
+def _should_run_stream_channel_backfill(refresh_store) -> bool:
+    return _stream_channel_backfill_due(refresh_store.get_refresh_state())
+
+
+def _maybe_emit_idle(*, emit_idle: bool) -> _CycleResult:
+    if emit_idle:
+        _emit("refresh_idle")
+    return _cycle_ok()
+
+
+def _refresh_cycle_pending_work(
+    refresh_store,
+    state,
+    now_iso: str,
+    refresh_policy: RefreshPolicy,
+) -> tuple[int, bool, bool]:
+    pending_count = len(refresh_store.pending_refresh_requests())
+    blocked_reason = _refresh_blocked_reason(state, now_iso)
+    if blocked_reason is not None:
+        raise RuntimeError(blocked_reason)
+    refresh_due = _regular_refresh_due(state, now_iso, refresh_policy)
+    stream_backfill_due = _stream_channel_backfill_due(state)
+    return pending_count, refresh_due, stream_backfill_due
+
+
 def _materialize_dirty_read_model(batch_size: int) -> int:
     with MirrorConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
@@ -223,19 +248,17 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> _CycleResult:
     with MirrorConn() as conn:
         refresh_store = RefreshStateStore.from_connection(conn)
         state = refresh_store.get_refresh_state()
-        pending_count = len(refresh_store.pending_refresh_requests())
-        blocked_reason = _refresh_blocked_reason(state, now_iso)
-        if blocked_reason is not None:
+        try:
+            pending_count, refresh_due, stream_backfill_due = _refresh_cycle_pending_work(
+                refresh_store, state, now_iso, refresh_policy
+            )
+        except RuntimeError as exc:
             if emit_idle:
-                _emit("refresh_skipped", reason=blocked_reason)
+                _emit("refresh_skipped", reason=str(exc))
             return _cycle_ok()
-        refresh_due = _regular_refresh_due(state, now_iso, refresh_policy)
-        stream_backfill_due = _stream_channel_backfill_due(state)
 
     if pending_count == 0 and not refresh_due and not stream_backfill_due:
-        if emit_idle:
-            _emit("refresh_idle")
-        return _cycle_ok()
+        return _maybe_emit_idle(emit_idle=emit_idle)
 
     try:
         _, clock, sleeper, transport, refresh_policy = build_refresh_collaborators(settings)
@@ -247,13 +270,12 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> _CycleResult:
     with MirrorConn() as conn:
         repo = DuckDBRepository.from_connection(conn)
         refresh_store = RefreshStateStore.from_connection(conn)
-        pending_count = len(refresh_store.pending_refresh_requests())
         state = refresh_store.get_refresh_state()
-        stream_backfill_due = _stream_channel_backfill_due(state)
+        pending_count, refresh_due, stream_backfill_due = _refresh_cycle_pending_work(
+            refresh_store, state, now_iso, refresh_policy
+        )
         if pending_count == 0 and not refresh_due and not stream_backfill_due:
-            if emit_idle:
-                _emit("refresh_idle")
-            return _cycle_ok()
+            return _maybe_emit_idle(emit_idle=emit_idle)
 
         if pending_count > 0 or refresh_due:
             result = refresh_runtime.run_once(
@@ -267,6 +289,9 @@ def _run_pending_cycle(*, emit_idle: bool = True) -> _CycleResult:
             exit_code = _handle_run_once_result(result, refresh_store)
             if exit_code is not None:
                 return exit_code
+
+        if not _should_run_stream_channel_backfill(refresh_store):
+            return _cycle_ok()
 
         backfill_result = _run_stream_channel_backfill(repo, transport, refresh_policy, clock, sleeper)
         return _handle_backfill_result(backfill_result)

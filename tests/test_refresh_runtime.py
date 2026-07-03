@@ -121,7 +121,7 @@ def test_sync_summaries_skips_rewrite_when_summary_unchanged(tmp_path):
     unchanged rows must be left untouched. synced_at staying at its first value
     across an unchanged re-sync is the observable proof that no write happened.
     """
-    from mcp_strava.refresh.read_model_stage import schema_validate
+    from mcp_strava.refresh.read_model_stage import process_bronze_payloads
     from mcp_strava.refresh.source_ingest import sync_summaries
 
     activity = {
@@ -148,7 +148,7 @@ def test_sync_summaries_skips_rewrite_when_summary_unchanged(tmp_path):
     with _repo(tmp_path) as repo:
         seen1, new1 = sync_summaries(repo, transport, "2026-05-29T00:00:00")
         first_before_processing = activity_by_id(repo, 500)
-        schema_validate(repo)
+        process_bronze_payloads(repo)
         first = activity_by_id(repo, 500)
         repo.clear_dirty_activity_rows(repo.dirty_activity_rows())
 
@@ -162,7 +162,7 @@ def test_sync_summaries_skips_rewrite_when_summary_unchanged(tmp_path):
         transport.payload = {**activity, "name": "Renamed Run"}
         sync_summaries(repo, transport, "2026-05-29T02:00:00")
         dirty_before_processing = repo.dirty_activity_rows()
-        schema_validate(repo)
+        process_bronze_payloads(repo)
         dirty_after_processing = repo.dirty_activity_rows()
         changed = activity_by_id(repo, 500)
         bronze = repo.latest_activity_payload(500, "summary")
@@ -207,9 +207,9 @@ def test_sync_summaries_captures_raw_payloads_in_bronze_without_forcing_silver_r
     with _repo(tmp_path) as repo:
         sync_summaries(repo, _SummaryTransport(), "2026-05-29T00:00:00")
         first_before_processing = activity_by_id(repo, 501)
-        from mcp_strava.refresh.read_model_stage import schema_validate
+        from mcp_strava.refresh.read_model_stage import process_bronze_payloads
 
-        schema_validate(repo)
+        process_bronze_payloads(repo)
         first = activity_by_id(repo, 501)
         sync_summaries(repo, _SummaryTransport(), "2026-05-29T01:00:00")
         unchanged = activity_by_id(repo, 501)
@@ -234,7 +234,7 @@ def test_sync_summaries_captures_raw_payloads_in_bronze_without_forcing_silver_r
 
 
 def test_sync_summaries_does_not_write_modeled_activity_rows(tmp_path, monkeypatch):
-    from mcp_strava.refresh.read_model_stage import schema_validate
+    from mcp_strava.refresh.read_model_stage import process_bronze_payloads
     from mcp_strava.refresh.source_ingest import sync_summaries
 
     activity = {
@@ -262,7 +262,7 @@ def test_sync_summaries_does_not_write_modeled_activity_rows(tmp_path, monkeypat
         monkeypatch.setattr(repo, "upsert_activity_summary", explode)
         seen, new = sync_summaries(repo, _SummaryTransport(), "2026-05-29T00:00:00")
         before_processing = activity_by_id(repo, 503)
-        schema_validate(repo)
+        process_bronze_payloads(repo)
         after_processing = activity_by_id(repo, 503)
 
     assert (seen, new) == (1, 1)
@@ -272,7 +272,7 @@ def test_sync_summaries_does_not_write_modeled_activity_rows(tmp_path, monkeypat
 
 
 def test_sync_details_captures_raw_payloads_in_bronze_without_silver_mutation(tmp_path):
-    from mcp_strava.refresh.read_model_stage import schema_validate
+    from mcp_strava.refresh.read_model_stage import process_bronze_payloads
     from mcp_strava.refresh.source_ingest import sync_details, sync_summaries
 
     activity_id = 502
@@ -300,11 +300,11 @@ def test_sync_details_captures_raw_payloads_in_bronze_without_silver_mutation(tm
         transport = _DetailTransport()
         sync_summaries(repo, transport, "2026-05-29T00:00:00")
         repo.clear_dirty_activity_rows(repo.dirty_activity_rows())
-        schema_validate(repo)
+        process_bronze_payloads(repo)
         fetched = sync_details(repo, transport)
         fetched_again = sync_details(repo, transport)
         dirty_before_processing = repo.dirty_activity_rows()
-        schema_validate(repo)
+        process_bronze_payloads(repo)
         dirty_after_processing = repo.dirty_activity_rows()
 
         bronze = repo.latest_activity_payload(activity_id, "detail")
@@ -549,7 +549,11 @@ def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch,
     monkeypatch.setattr(source_ingest, "sync_summaries", lambda *_args, **_kwargs: order.append("summaries") or (0, 0))
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams") or 0)
     monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
-    monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
+    monkeypatch.setattr(
+        read_model_stage,
+        "process_bronze_payloads",
+        lambda *_args, **_kwargs: order.append("process_bronze_payloads"),
+    )
     monkeypatch.setattr(kudos_sync, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
 
     def fake_materialize(repo, now_iso, renew_lease):
@@ -576,10 +580,10 @@ def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch,
     assert result.status == "ok"
     assert order == [
         "summaries",
-        "schema_validate",
+        "process_bronze_payloads",
         "streams",
         "details",
-        "schema_validate",
+        "process_bronze_payloads",
         "read_model_materialize",
         "kudos",
     ]
@@ -596,7 +600,11 @@ def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch
     monkeypatch.setattr(source_ingest, "sync_summaries", lambda *_args, **_kwargs: order.append("summaries") or (0, 0))
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams") or 0)
     monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
-    monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
+    monkeypatch.setattr(
+        read_model_stage,
+        "process_bronze_payloads",
+        lambda *_args, **_kwargs: order.append("process_bronze_payloads"),
+    )
     monkeypatch.setattr(kudos_sync, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
     monkeypatch.setattr(
         read_model_stage,
@@ -628,7 +636,7 @@ def test_materialization_lost_lease_fails_closed(monkeypatch, tmp_path):
     monkeypatch.setattr(source_ingest, "sync_summaries", lambda *_args, **_kwargs: (0, 0))
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: 0)
-    monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(read_model_stage, "process_bronze_payloads", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(kudos_sync, "_sync_kudos", lambda *_args, **_kwargs: 0)
 
     def fake_materialize(repo, now_iso, renew_lease):
@@ -695,7 +703,11 @@ def test_run_backfill_materializes_after_source_changing_work(monkeypatch, tmp_p
     from mcp_strava.refresh import source_ingest
 
     monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: order.append("details_backfill") or 1)
-    monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
+    monkeypatch.setattr(
+        read_model_stage,
+        "process_bronze_payloads",
+        lambda *_args, **_kwargs: order.append("process_bronze_payloads"),
+    )
     monkeypatch.setattr(
         read_model_stage,
         "materialize_read_model_stage",
@@ -716,7 +728,12 @@ def test_run_backfill_materializes_after_source_changing_work(monkeypatch, tmp_p
         )
 
     assert result.status == "ok"
-    assert order == ["streams_backfill", "details_backfill", "schema_validate", "read_model_materialize"]
+    assert order == [
+        "streams_backfill",
+        "details_backfill",
+        "process_bronze_payloads",
+        "read_model_materialize",
+    ]
 
 
 def test_run_backfill_detail_only_ingest_invalidates_and_rematerializes(tmp_path):
@@ -726,12 +743,12 @@ def test_run_backfill_detail_only_ingest_invalidates_and_rematerializes(tmp_path
 
     from mcp_strava.refresh import read_model_stage
 
-    real_schema_validate = read_model_stage.schema_validate
+    real_process_bronze_payloads = read_model_stage.process_bronze_payloads
     real_materialize = read_model_stage.materialize_read_model_stage
 
-    def wrapped_schema_validate(repo):
-        order.append("schema_validate")
-        return real_schema_validate(repo)
+    def wrapped_process_bronze_payloads(repo):
+        order.append("process_bronze_payloads")
+        return real_process_bronze_payloads(repo)
 
     def wrapped_materialize(repo, now_iso, renew_lease):
         order.append("materialize")
@@ -742,12 +759,12 @@ def test_run_backfill_detail_only_ingest_invalidates_and_rematerializes(tmp_path
             from mcp_strava.refresh.source_ingest import sync_summaries
 
             sync_summaries(repo, transport, "2026-05-29T00:00:00")
-            read_model_stage.schema_validate(repo)
+            read_model_stage.process_bronze_payloads(repo)
             _sync_ops.sync_streams(repo, transport, since="2026-05-20")
             read_model_stage.materialize_read_model_stage(repo, "2026-05-29T00:05:00", None)
             order.clear()
             monkeypatch = pytest.MonkeyPatch()
-            monkeypatch.setattr(read_model_stage, "schema_validate", wrapped_schema_validate)
+            monkeypatch.setattr(read_model_stage, "process_bronze_payloads", wrapped_process_bronze_payloads)
             monkeypatch.setattr(read_model_stage, "materialize_read_model_stage", wrapped_materialize)
 
             before_source = repo.source_state_for_activity(activity_id)
@@ -793,7 +810,7 @@ def test_run_backfill_detail_only_ingest_invalidates_and_rematerializes(tmp_path
     assert detail_bronze["payload_json"] == '{"id": 500, "name": "Morning Run", "resource_state": 3}'
     assert after_fact is not None
     assert after_fact["calories_kcal"] is None
-    assert order == ["schema_validate", "materialize"]
+    assert order == ["process_bronze_payloads", "materialize"]
 
 
 def test_run_backfill_failure_preserves_backfill_checkpoint_per_D16(tmp_path):
@@ -1112,7 +1129,7 @@ def test_worker_health_records_refresh_failure_reason(monkeypatch, tmp_path):
     assert data["last_error"] == "strava_application_inactive"
 
 
-def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_path):
+def test_worker_runs_periodic_refresh_without_stream_backfill_when_not_due(monkeypatch, tmp_path):
     from mcp_strava.refresh import Stage, worker
 
     calls = []
@@ -1202,7 +1219,7 @@ def test_worker_runs_periodic_refresh_without_pending_requests(monkeypatch, tmp_
 
     assert worker.run_pending_once(emit_idle=False) == 0
     assert calls == [("refresh-worker", False, "periodic")]
-    assert backfill_calls == [50]
+    assert backfill_calls == []
 
 
 def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypatch, tmp_path):
@@ -1281,6 +1298,66 @@ def test_worker_resumes_stream_channel_backfill_without_regular_refresh(monkeypa
 
     assert worker.run_pending_once(emit_idle=False) == 0
     assert backfill_calls == [25]
+
+
+def test_stream_channel_backfill_runtime_owns_checkpoint_writes(monkeypatch, tmp_path):
+    from mcp_strava.refresh import RefreshPolicy, Stage, _sync_ops, run_stream_channel_catchup
+
+    checkpoint_calls: list[tuple[str, str | None]] = []
+    original_set_checkpoint = RefreshStateStore.set_checkpoint
+
+    def record_checkpoint(store: RefreshStateStore, stage: str, cursor: str | None) -> None:
+        checkpoint_calls.append((stage, cursor))
+        original_set_checkpoint(store, stage, cursor)
+
+    def fake_sync_stream_channels_backfill(*_args, on_activity=None, on_progress=None, **_kwargs):
+        assert on_activity is not None
+        if on_progress is not None:
+            on_progress()
+        on_activity(500)
+        if on_progress is not None:
+            on_progress()
+        return {
+            "activities_considered": 1,
+            "activities_to_backfill": 1,
+            "missing_channels": {"watts": 1},
+            "metadata_missing": 1,
+            "estimated_api_calls": 1,
+            "completed": 1,
+        }
+
+    monkeypatch.setattr(
+        _sync_ops,
+        "estimate_stream_channel_backfill",
+        lambda *_args, **_kwargs: {
+            "activities_considered": 1,
+            "activities_to_backfill": 1,
+            "missing_channels": {"watts": 1},
+            "metadata_missing": 1,
+            "estimated_api_calls": 1,
+            "candidates": [{"activity_id": 500, "missing_channels": ["watts"], "metadata_missing": True}],
+        },
+    )
+    monkeypatch.setattr(_sync_ops, "sync_stream_channels_backfill", fake_sync_stream_channels_backfill)
+    monkeypatch.setattr(RefreshStateStore, "set_checkpoint", record_checkpoint)
+
+    with _repo(tmp_path) as repo:
+        result = run_stream_channel_catchup(
+            RefreshCollaborators(
+                repo=repo,
+                transport=FakeStravaTransport(),
+                policy=RefreshPolicy(),
+                clock=FakeClock(),
+                sleeper=FakeSleeper(),
+            )
+        )
+
+    assert result["status"] == "ok"
+    assert checkpoint_calls == [
+        (Stage.STREAM_CHANNELS_BACKFILL.value, None),
+        (Stage.STREAM_CHANNELS_BACKFILL.value, "500"),
+        (Stage.COMPLETE.value, None),
+    ]
 
 
 def test_worker_skips_periodic_refresh_before_interval(monkeypatch, tmp_path):
@@ -2150,14 +2227,14 @@ def test_sync_kudos_indexes_raw_rows_positionally(tmp_path):
     The body was never exercised because other tests monkeypatch _sync_kudos.
     """
     from mcp_strava.refresh.kudos_sync import _sync_kudos
-    from mcp_strava.refresh.read_model_stage import schema_validate
+    from mcp_strava.refresh.read_model_stage import process_bronze_payloads
     from mcp_strava.refresh.source_ingest import sync_summaries
 
     repo = _repo(tmp_path)
     # Seed activity 500 through the real summary path, then mark it as having
     # kudos through the bronze source payload so the _sync_kudos SELECT picks it up.
     sync_summaries(repo, FakeStravaTransport(), "2026-05-29T00:00:00")
-    schema_validate(repo)
+    process_bronze_payloads(repo)
     repo.write_activity_payload(
         ActivitySourcePayload(
             activity_id=500,

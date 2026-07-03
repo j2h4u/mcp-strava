@@ -1,4 +1,10 @@
-"""Shared SQL fragments for bronze-hydrated activity reads."""
+"""Shared SQL fragments for bronze-hydrated activity reads.
+
+These helpers intentionally treat payloads from ``bronze.latest_activity_payloads``
+as the canonical source whenever present. The legacy ``activities.summary_json`` and
+``activities.detail_json`` columns are consumed only as fallback values when bronze
+payloads are unavailable.
+"""
 
 from __future__ import annotations
 

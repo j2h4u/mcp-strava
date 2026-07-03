@@ -170,7 +170,7 @@ def run_catchup(
                     Stage.DETAILS_BACKFILL.value, str(activity_id)
                 ),
             )
-            read_model_stage.schema_validate(repo)
+            read_model_stage.process_bronze_payloads(repo)
         if start_index <= _backfill_stage_index(Stage.READ_MODEL_MATERIALIZE_BACKFILL):
             refresh_store.set_checkpoint(Stage.READ_MODEL_MATERIALIZE_BACKFILL.value, None)
             read_model_stage.materialize_read_model_stage(
@@ -267,7 +267,9 @@ def run_stream_channel_catchup(
             transport,
             since=since,
             limit=limit,
-            checkpoint_stage=Stage.STREAM_CHANNELS_BACKFILL,
+            on_activity=lambda activity_id: refresh_store.set_checkpoint(
+                Stage.STREAM_CHANNELS_BACKFILL.value, str(activity_id)
+            ),
             on_progress=renew_lease,
         )
         read_model_stage.materialize_read_model_stage(
@@ -349,7 +351,7 @@ def _run_daily_stages(
     if start_index <= _stage_index(Stage.SUMMARIES):
         refresh_store.set_checkpoint(Stage.SUMMARIES.value, None)
         activities_seen, activities_new = _run_summaries_stage(repo, transport, refresh_store, policy, now_iso)
-        read_model_stage.schema_validate(repo)
+        read_model_stage.process_bronze_payloads(repo)
     if start_index <= _stage_index(Stage.STREAMS):
         refresh_store.set_checkpoint(Stage.STREAMS.value, None)
         streams_fetched = _sync_ops.sync_streams(
@@ -366,7 +368,7 @@ def _run_daily_stages(
         )
     if start_index <= _stage_index(Stage.SCHEMA_VALIDATE):
         refresh_store.set_checkpoint(Stage.SCHEMA_VALIDATE.value, None)
-        read_model_stage.schema_validate(repo)
+        read_model_stage.process_bronze_payloads(repo)
     if start_index <= _stage_index(Stage.READ_MODEL_MATERIALIZE):
         refresh_store.set_checkpoint(Stage.READ_MODEL_MATERIALIZE.value, None)
         read_model_stage.materialize_read_model_stage(

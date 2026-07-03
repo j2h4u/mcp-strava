@@ -358,10 +358,10 @@ def test_materialization_uses_bronze_summary_day_for_source_dirty_and_facts(tmp_
     assert [row["activity_id"] for row in rows_new_day] == [103]
 
 
-def test_schema_validate_and_materialization_follow_moved_bronze_summary_day(tmp_path: Path) -> None:
+def test_process_bronze_payloads_and_materialization_follow_moved_bronze_summary_day(tmp_path: Path) -> None:
     from mcp_strava.adapters.duckdb.read_model_materializer import MaterializationOptions, materialize_read_model
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-    from mcp_strava.refresh.read_model_stage import schema_validate
+    from mcp_strava.refresh.read_model_stage import process_bronze_payloads
     from mcp_strava.settings import load_settings
 
     fixture = tmp_path / "strava.duckdb"
@@ -398,7 +398,7 @@ def test_schema_validate_and_materialization_follow_moved_bronze_summary_day(tmp
             )
         )
 
-        schema_validate(repo)
+        process_bronze_payloads(repo)
         source = repo.source_state_for_activity(104)
         dirty = repo.dirty_activity_rows(activity_id=104)
         result = materialize_read_model(
@@ -535,9 +535,9 @@ def test_duckdb_repository_backfills_legacy_activity_payloads_once(tmp_path: Pat
     assert detail["payload_json"] == '{"id":200,"resource_state":3}'
 
 
-def test_schema_validate_bootstraps_legacy_bronze_payloads_once(tmp_path: Path) -> None:
+def test_process_bronze_payloads_bootstraps_legacy_bronze_payloads_once(tmp_path: Path) -> None:
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-    from mcp_strava.refresh.read_model_stage import schema_validate
+    from mcp_strava.refresh.read_model_stage import process_bronze_payloads
 
     fixture = tmp_path / "strava.duckdb"
     conn = open_fixture_db(fixture)
@@ -581,9 +581,9 @@ def test_schema_validate_bootstraps_legacy_bronze_payloads_once(tmp_path: Path) 
         dirty = repo.dirty_activity_rows(activity_id=210)
         source_count = repo._scalar_int("SELECT COUNT(*) FROM activity_source_state WHERE activity_id = 210")
         dirty_count = repo._scalar_int("SELECT COUNT(*) FROM metric_dirty_activities WHERE activity_id = 210")
-        schema_validate(repo)
+        process_bronze_payloads(repo)
         dirty_after_validate = repo.dirty_activity_rows(activity_id=210)
-        schema_validate(repo)
+        process_bronze_payloads(repo)
         dirty_after_second_validate = repo.dirty_activity_rows(activity_id=210)
 
     assert source is not None
