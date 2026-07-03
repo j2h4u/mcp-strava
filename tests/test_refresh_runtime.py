@@ -1378,7 +1378,7 @@ def test_emit_mirror_storage_reports_free_block_delta(tmp_path, monkeypatch):
 
 
 def test_stream_payload_deduplicates_duplicate_time_offsets_from_strava_response(capsys):
-    from mcp_strava.refresh._sync_ops import _stream_payload
+    from mcp_strava.refresh.stream_payload import _stream_payload
 
     rows, metadata = _stream_payload(
         {
