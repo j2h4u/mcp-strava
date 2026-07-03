@@ -121,8 +121,8 @@ def test_sync_summaries_skips_rewrite_when_summary_unchanged(tmp_path):
     unchanged rows must be left untouched. synced_at staying at its first value
     across an unchanged re-sync is the observable proof that no write happened.
     """
-    from mcp_strava.refresh._sync_ops import sync_summaries
     from mcp_strava.refresh.read_model_stage import schema_validate
+    from mcp_strava.refresh.source_ingest import sync_summaries
 
     activity = {
         "id": 500,
@@ -185,7 +185,7 @@ def test_sync_summaries_skips_rewrite_when_summary_unchanged(tmp_path):
 
 
 def test_sync_summaries_captures_raw_payloads_in_bronze_without_forcing_silver_rewrite(tmp_path):
-    from mcp_strava.refresh._sync_ops import sync_summaries
+    from mcp_strava.refresh.source_ingest import sync_summaries
 
     activity = {
         "id": 501,
@@ -234,8 +234,8 @@ def test_sync_summaries_captures_raw_payloads_in_bronze_without_forcing_silver_r
 
 
 def test_sync_summaries_does_not_write_modeled_activity_rows(tmp_path, monkeypatch):
-    from mcp_strava.refresh._sync_ops import sync_summaries
     from mcp_strava.refresh.read_model_stage import schema_validate
+    from mcp_strava.refresh.source_ingest import sync_summaries
 
     activity = {
         "id": 503,
@@ -272,8 +272,8 @@ def test_sync_summaries_does_not_write_modeled_activity_rows(tmp_path, monkeypat
 
 
 def test_sync_details_captures_raw_payloads_in_bronze_without_silver_mutation(tmp_path):
-    from mcp_strava.refresh._sync_ops import sync_details, sync_summaries
     from mcp_strava.refresh.read_model_stage import schema_validate
+    from mcp_strava.refresh.source_ingest import sync_details, sync_summaries
 
     activity_id = 502
     summary = {
@@ -544,9 +544,11 @@ def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch,
     clock = FakeClock()
     order: list[str] = []
 
-    monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *_args, **_kwargs: order.append("summaries") or (0, 0))
+    from mcp_strava.refresh import source_ingest
+
+    monkeypatch.setattr(source_ingest, "sync_summaries", lambda *_args, **_kwargs: order.append("summaries") or (0, 0))
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams") or 0)
-    monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
+    monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
     monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
     monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
 
@@ -589,9 +591,11 @@ def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch
     clock = FakeClock()
     order: list[str] = []
 
-    monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *_args, **_kwargs: order.append("summaries") or (0, 0))
+    from mcp_strava.refresh import source_ingest
+
+    monkeypatch.setattr(source_ingest, "sync_summaries", lambda *_args, **_kwargs: order.append("summaries") or (0, 0))
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams") or 0)
-    monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
+    monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
     monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
     monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: order.append("kudos") or 0)
     monkeypatch.setattr(
@@ -619,11 +623,11 @@ def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch
 
 
 def test_materialization_lost_lease_fails_closed(monkeypatch, tmp_path):
-    from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_once
+    from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_once, source_ingest
 
-    monkeypatch.setattr(_sync_ops, "sync_summaries", lambda *_args, **_kwargs: (0, 0))
+    monkeypatch.setattr(source_ingest, "sync_summaries", lambda *_args, **_kwargs: (0, 0))
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: 0)
-    monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(_sync_ops, "_sync_kudos", lambda *_args, **_kwargs: 0)
 
@@ -688,7 +692,9 @@ def test_run_backfill_materializes_after_source_changing_work(monkeypatch, tmp_p
 
     order: list[str] = []
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams_backfill") or 1)
-    monkeypatch.setattr(_sync_ops, "sync_details", lambda *_args, **_kwargs: order.append("details_backfill") or 1)
+    from mcp_strava.refresh import source_ingest
+
+    monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: order.append("details_backfill") or 1)
     monkeypatch.setattr(read_model_stage, "schema_validate", lambda *_args, **_kwargs: order.append("schema_validate"))
     monkeypatch.setattr(
         read_model_stage,
@@ -733,7 +739,9 @@ def test_run_backfill_detail_only_ingest_invalidates_and_rematerializes(tmp_path
 
     try:
         with _repo(tmp_path) as repo:
-            _sync_ops.sync_summaries(repo, transport, "2026-05-29T00:00:00")
+            from mcp_strava.refresh.source_ingest import sync_summaries
+
+            sync_summaries(repo, transport, "2026-05-29T00:00:00")
             read_model_stage.schema_validate(repo)
             _sync_ops.sync_streams(repo, transport, since="2026-05-20")
             read_model_stage.materialize_read_model_stage(repo, "2026-05-29T00:05:00", None)
@@ -2141,8 +2149,9 @@ def test_sync_kudos_indexes_raw_rows_positionally(tmp_path):
     wedging the worker (healthcheck red) while the MCP read surface stayed ok.
     The body was never exercised because other tests monkeypatch _sync_kudos.
     """
-    from mcp_strava.refresh._sync_ops import _sync_kudos, sync_summaries
+    from mcp_strava.refresh._sync_ops import _sync_kudos
     from mcp_strava.refresh.read_model_stage import schema_validate
+    from mcp_strava.refresh.source_ingest import sync_summaries
 
     repo = _repo(tmp_path)
     # Seed activity 500 through the real summary path, then mark it as having

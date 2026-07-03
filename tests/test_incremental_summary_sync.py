@@ -21,6 +21,7 @@ from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
 from mcp_strava.adapters.strava import StravaResponse
 from mcp_strava.adapters.strava.types import StravaRateInfo
+from mcp_strava.refresh import source_ingest
 from mcp_strava.refresh.runtime import RefreshCollaborators
 from tests._fixtures_duckdb import create_fixture_db
 
@@ -199,7 +200,7 @@ def test_settings_full_resync_interval_seconds_default(monkeypatch):
 
 def test_sync_summaries_with_after_epoch_appends_after_param(tmp_path):
     """sync_summaries(after_epoch=N) appends &after=N to the first request URL."""
-    from mcp_strava.refresh._sync_ops import sync_summaries
+    from mcp_strava.refresh.source_ingest import sync_summaries
 
     transport = _OnePageTransport()
     with _repo(tmp_path) as repo:
@@ -212,7 +213,7 @@ def test_sync_summaries_with_after_epoch_appends_after_param(tmp_path):
 
 def test_sync_summaries_without_after_epoch_has_no_after_param(tmp_path):
     """sync_summaries(after_epoch=None) has no &after= in the URL."""
-    from mcp_strava.refresh._sync_ops import sync_summaries
+    from mcp_strava.refresh.source_ingest import sync_summaries
 
     transport = _OnePageTransport()
     with _repo(tmp_path) as repo:
@@ -230,17 +231,17 @@ def test_sync_summaries_without_after_epoch_has_no_after_param(tmp_path):
 
 def test_run_once_null_marker_triggers_full_walk_and_writes_marker(tmp_path, monkeypatch):
     """run_once with NULL last_full_summary_sync_at calls sync_summaries with after_epoch=None."""
-    from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_once
+    from mcp_strava.refresh import RefreshPolicy, run_once
 
     captured: list[int | None] = []
 
-    original_sync = _sync_ops.sync_summaries
+    original_sync = source_ingest.sync_summaries
 
     def fake_sync_summaries(repo, transport, now_iso, *, after_epoch=None):
         captured.append(after_epoch)
         return original_sync(repo, transport, now_iso, after_epoch=after_epoch)
 
-    monkeypatch.setattr(_sync_ops, "sync_summaries", fake_sync_summaries)
+    monkeypatch.setattr(source_ingest, "sync_summaries", fake_sync_summaries)
 
     clock = FakeClock()
     policy = RefreshPolicy(full_resync_interval_seconds=604800)
@@ -270,16 +271,16 @@ def test_run_once_null_marker_triggers_full_walk_and_writes_marker(tmp_path, mon
 
 def test_run_once_stale_marker_triggers_full_walk_and_updates_marker(tmp_path, monkeypatch):
     """run_once with stale last_full_summary_sync_at triggers full walk and updates marker."""
-    from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_once
+    from mcp_strava.refresh import RefreshPolicy, run_once
 
     captured: list[int | None] = []
-    original_sync = _sync_ops.sync_summaries
+    original_sync = source_ingest.sync_summaries
 
     def fake_sync(repo, transport, now_iso, *, after_epoch=None):
         captured.append(after_epoch)
         return original_sync(repo, transport, now_iso, after_epoch=after_epoch)
 
-    monkeypatch.setattr(_sync_ops, "sync_summaries", fake_sync)
+    monkeypatch.setattr(source_ingest, "sync_summaries", fake_sync)
 
     # Clock is at epoch 1716206400 = 2024-05-20T06:00:00
     clock = FakeClock(value=1_716_206_400.0)
@@ -311,16 +312,16 @@ def test_run_once_stale_marker_triggers_full_walk_and_updates_marker(tmp_path, m
 
 def test_run_once_fresh_marker_triggers_incremental(tmp_path, monkeypatch):
     """run_once with fresh last_full_summary_sync_at calls sync_summaries with non-None after_epoch."""
-    from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_once
+    from mcp_strava.refresh import RefreshPolicy, run_once
 
     captured: list[int | None] = []
-    original_sync = _sync_ops.sync_summaries
+    original_sync = source_ingest.sync_summaries
 
     def fake_sync(repo, transport, now_iso, *, after_epoch=None):
         captured.append(after_epoch)
         return original_sync(repo, transport, now_iso, after_epoch=after_epoch)
 
-    monkeypatch.setattr(_sync_ops, "sync_summaries", fake_sync)
+    monkeypatch.setattr(source_ingest, "sync_summaries", fake_sync)
 
     # Clock is at epoch 1716206400 = 2024-05-20T06:00:00
     clock = FakeClock(value=1_716_206_400.0)
@@ -354,16 +355,16 @@ def test_run_once_fresh_marker_triggers_incremental(tmp_path, monkeypatch):
 
 def test_run_once_cold_start_triggers_full_walk(tmp_path, monkeypatch):
     """Empty DB (no activities, NULL marker) triggers full walk (after_epoch=None)."""
-    from mcp_strava.refresh import RefreshPolicy, _sync_ops, run_once
+    from mcp_strava.refresh import RefreshPolicy, run_once
 
     captured: list[int | None] = []
-    original_sync = _sync_ops.sync_summaries
+    original_sync = source_ingest.sync_summaries
 
     def fake_sync(repo, transport, now_iso, *, after_epoch=None):
         captured.append(after_epoch)
         return original_sync(repo, transport, now_iso, after_epoch=after_epoch)
 
-    monkeypatch.setattr(_sync_ops, "sync_summaries", fake_sync)
+    monkeypatch.setattr(source_ingest, "sync_summaries", fake_sync)
 
     clock = FakeClock()
     policy = RefreshPolicy(full_resync_interval_seconds=604800)

@@ -12,7 +12,7 @@ from mcp_strava.adapters.duckdb.repository_models import SyncLogRecord
 from mcp_strava.adapters.duckdb.sync_log_store import append_sync_log
 from mcp_strava.adapters.strava import StravaUnavailableError
 from mcp_strava.adapters.strava.types import Clock, FetchTransport, Sleeper
-from mcp_strava.refresh import _sync_ops, read_model_stage
+from mcp_strava.refresh import _sync_ops, read_model_stage, source_ingest
 from mcp_strava.refresh.checkpoints import Stage, is_active_backfill_stage, is_stream_channel_backfill_stage
 from mcp_strava.refresh.policy import RefreshPolicy, refresh_interval_elapsed
 
@@ -162,7 +162,7 @@ def run_catchup(
             )
         if start_index <= _backfill_stage_index(Stage.DETAILS_BACKFILL):
             refresh_store.set_checkpoint(Stage.DETAILS_BACKFILL.value, None)
-            details_fetched = _sync_ops.sync_details(
+            details_fetched = source_ingest.sync_details(
                 repo,
                 transport,
                 since,
@@ -359,7 +359,7 @@ def _run_daily_stages(
         )
     if start_index <= _stage_index(Stage.DETAILS):
         refresh_store.set_checkpoint(Stage.DETAILS.value, None)
-        details_fetched = _sync_ops.sync_details(
+        details_fetched = source_ingest.sync_details(
             repo,
             transport,
             on_activity=lambda activity_id: refresh_store.set_checkpoint(Stage.DETAILS.value, str(activity_id)),
@@ -399,7 +399,7 @@ def _run_summaries_stage(
             after_epoch = int(datetime(d.year, d.month, d.day, tzinfo=UTC).timestamp())
         else:
             after_epoch = None  # empty DB but marker set — treat as full
-    activities_seen, activities_new = _sync_ops.sync_summaries(repo, transport, now_iso, after_epoch=after_epoch)
+    activities_seen, activities_new = source_ingest.sync_summaries(repo, transport, now_iso, after_epoch=after_epoch)
     if do_full:
         refresh_store.set_last_full_summary_sync_at(now_iso)
     return activities_seen, activities_new

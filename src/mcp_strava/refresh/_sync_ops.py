@@ -8,20 +8,13 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
-from mcp_strava.adapters.duckdb.activity_selectors import (
-    activities_missing_details,
-    activities_missing_streams,
-)
+from mcp_strava.adapters.duckdb.activity_selectors import activities_missing_streams
 from mcp_strava.adapters.duckdb.kudos_store import activities_missing_kudos, upsert_kudos
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
-from mcp_strava.adapters.duckdb.repository_models import ActivitySourcePayload
-from mcp_strava.adapters.duckdb.source_hashing import raw_payload_hash, semantic_json_hash, summary_payload_changed
 from mcp_strava.adapters.duckdb.stream_coverage_queries import activities_missing_stream_channels
-from mcp_strava.constants import Config
 from mcp_strava.refresh.checkpoints import Stage
 from mcp_strava.refresh.schema_drift import journal_schema_drift
-from mcp_strava.types import StravaStreamChannel, parse_strava_activity, parse_strava_stream_channels
+from mcp_strava.types import StravaStreamChannel, parse_strava_stream_channels
 
 
 def _emit(event: str, **fields: object) -> None:
@@ -198,81 +191,6 @@ def _replace_streams(repo, act_id: int, data: dict, fetched_at: str | None = Non
     return repo.replace_stream_rows_and_channel_metadata(act_id, rows=rows, metadata=metadata, chunk_size=5000)
 
 
-def _write_activity_payload(
-    repo,
-    *,
-    activity_id: int,
-    activity_day: str | None,
-    payload_kind: str,
-    endpoint: str,
-    fetched_at: str,
-    payload_json: str,
-) -> None:
-    repo.write_activity_payload(
-        ActivitySourcePayload(
-            activity_id=activity_id,
-            activity_day=activity_day,
-            payload_kind=payload_kind,
-            endpoint=endpoint,
-            fetched_at=fetched_at,
-            payload_json=payload_json,
-            raw_hash=raw_payload_hash(payload_json),
-            modeled_projection_hash=semantic_json_hash(payload_json),
-            schema_status="clean",
-        )
-    )
-
-
-def sync_summaries(repo, transport, now_iso: str, *, after_epoch: int | None = None) -> tuple[int, int]:
-    page = 1
-    seen = 0
-    new = 0
-    while True:
-        response = transport.fetch(
-            f"/athlete/activities?per_page=100&page={page}"
-            + (f"&after={after_epoch}" if after_epoch is not None else "")
-        )
-        data = response.data
-        if not data:
-            break
-        if not isinstance(data, list):
-            break
-        seen += len(data)
-        journal_schema_drift(data, "summary_activity", is_batch=True)
-        for raw in data:
-            act = parse_strava_activity(raw)
-            existing = activity_by_id(repo, act.id)
-            summary_json = json.dumps(raw)
-            _write_activity_payload(
-                repo,
-                activity_id=act.id,
-                activity_day=act.start_date_local[:10],
-                payload_kind="summary",
-                endpoint="/athlete/activities",
-                fetched_at=now_iso,
-                payload_json=summary_json,
-            )
-            # Skip the write when an existing activity is semantically unchanged:
-            # the daily refresh re-sees every activity each cycle, and rewriting
-            # an unchanged PRIMARY-KEY-indexed row churns the DuckDB ART index
-            # (unbounded file bloat + re-triggers ART corruption). Freshness does
-            # not depend on activities.synced_at, so leaving it untouched is safe.
-            if existing is None:
-                new += 1
-            elif not summary_payload_changed(existing.summary_json, summary_json):
-                continue
-            else:
-                _emit(
-                    "summary_silver_update_deferred",
-                    activity_id=act.id,
-                    reason="bronze_pipeline_boundary",
-                )
-        if len(data) < Config.Api.STRAVA_PAGE_SIZE:
-            break
-        page += 1
-    return seen, new
-
-
 def sync_streams(
     repo,
     transport,
@@ -288,33 +206,6 @@ def sync_streams(
             journal_schema_drift(response.data, "streams")
             _insert_streams(
                 repo, activity.id, response.data, fetched_at=datetime.now(UTC).replace(tzinfo=None).isoformat()
-            )
-            fetched += 1
-    return fetched
-
-
-def sync_details(
-    repo,
-    transport,
-    since: str | None = None,
-    on_activity: Callable[[int], None] | None = None,
-) -> int:
-    fetched = 0
-    for activity in activities_missing_details(repo, since):
-        if on_activity is not None:
-            on_activity(activity.id)
-        response = transport.fetch(f"/activities/{activity.id}")
-        if isinstance(response.data, dict):
-            journal_schema_drift(response.data, "detailed_activity")
-            detail_json = json.dumps(response.data)
-            _write_activity_payload(
-                repo,
-                activity_id=activity.id,
-                activity_day=activity.activity_day,
-                payload_kind="detail",
-                endpoint=f"/activities/{activity.id}",
-                fetched_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
-                payload_json=detail_json,
             )
             fetched += 1
     return fetched
