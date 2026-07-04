@@ -51,6 +51,7 @@ That choice gives you:
 ## How It Works
 
 - Mirrors Strava activities, streams, kudos, and gear facts into DuckDB.
+- Retains `GET /athlete/zones` raw payloads in bronze storage for future comparison/debugging only; current HR-zone/TRIMP metrics are still derived from streams and local settings.
 - Materializes read-model facts for fast MCP tool calls.
 - Returns freshness, completeness, warnings, and rationale with product responses so agents know what evidence they are using.
 
@@ -130,7 +131,7 @@ After the token file exists, routine token refresh and Strava rate-limit handlin
 
 ## Strava API Access Notes
 
-`mcp-strava` currently syncs through these public Strava API surfaces: athlete activities, activity details, activity streams, and activity kudos. It does not use the Club endpoints or Segment Explore endpoint that Strava scheduled for September 1, 2026 deprecation.
+`mcp-strava` currently syncs through these public Strava API surfaces: athlete activities, athlete zones (bronze raw only), activity details, activity streams, and activity kudos. Athlete zones are retained for future comparison/debugging and are not currently wired into HR-zone/TRIMP metrics. It does not use the Club endpoints or Segment Explore endpoint that Strava scheduled for September 1, 2026 deprecation.
 
 Strava has announced a future API base-URL migration from `https://www.strava.com/api/v3` to `https://api-v3.strava.com`. Their changelog says the new base URL becomes available on January 4, 2027, and the old base URL is due for retirement on June 1, 2027. Until the new host is live, keep using the current base URL. `mcp-strava` already sends data API access tokens in the `Authorization: Bearer ...` header.
 

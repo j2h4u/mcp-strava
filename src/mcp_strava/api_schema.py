@@ -70,7 +70,7 @@ class FieldSchema:
 class EndpointSchema:
     """Schema for one Strava API endpoint response."""
 
-    name: str  # "summary_activity", "detailed_activity", "streams"
+    name: str  # "summary_activity", "detailed_activity", "streams", "athlete_zones"
     endpoint: str  # "GET /athlete/activities"
     fields: dict[str, FieldSchema] = field(default_factory=dict)
 
@@ -248,6 +248,18 @@ STREAMS = EndpointSchema(
     },
 )
 
+# ─── Athlete zones (GET /athlete/zones) ───
+
+ATHLETE_ZONES = EndpointSchema(
+    name="athlete_zones",
+    endpoint="GET /athlete/zones",
+    fields={
+        # Stored in bronze only for now; no metric/read-model consumer.
+        "heart_rate": FieldSchema("heart_rate", "dict", Status.FREE_UNUSED),
+        "power": FieldSchema("power", "dict?", Status.NOT_APPLICABLE),
+    },
+)
+
 
 # ─── Registry ───
 
@@ -255,6 +267,7 @@ SCHEMA_REGISTRY: dict[str, EndpointSchema] = {
     "summary_activity": SUMMARY_ACTIVITY,
     "detailed_activity": DETAILED_ACTIVITY,
     "streams": STREAMS,
+    "athlete_zones": ATHLETE_ZONES,
 }
 
 
@@ -272,7 +285,7 @@ def validate_response(
 
     Args:
         data: Raw JSON dict from the API
-        endpoint_name: One of 'summary_activity', 'detailed_activity', 'streams'
+        endpoint_name: One of 'summary_activity', 'detailed_activity', 'streams', 'athlete_zones'
 
     Returns:
         ValidationResult with unknown_fields and active_summit lists.

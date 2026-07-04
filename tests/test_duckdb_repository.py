@@ -16,7 +16,11 @@ from mcp_strava.adapters.duckdb.daily_load_queries import (
     observed_trimp_history_by_sport,
 )
 from mcp_strava.adapters.duckdb.kudos_store import activities_missing_kudos, upsert_kudos
-from mcp_strava.adapters.duckdb.repository_models import ActivitySourcePayload, ActivitySummaryRecord
+from mcp_strava.adapters.duckdb.repository_models import (
+    ActivitySourcePayload,
+    ActivitySummaryRecord,
+    AthleteProfilePayload,
+)
 from mcp_strava.adapters.duckdb.schema import create_schema
 from mcp_strava.adapters.duckdb.stream_metric_queries import max_heartrate_to_date
 
@@ -472,6 +476,80 @@ def test_duckdb_repository_activity_payloads_are_append_only_and_latest_readable
     assert latest["payload_json"] == '{"id":100,"name":"Second"}'
     assert latest["raw_hash"] == "raw-b"
     assert activity_count == 0
+
+
+def test_duckdb_repository_athlete_profile_payloads_are_append_only_and_latest_readable(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "profile-payloads.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        repo.write_athlete_profile_payload(
+            AthleteProfilePayload(
+                profile_key="athlete_zones",
+                payload_kind="profile",
+                endpoint="/athlete/zones",
+                fetched_at="2026-05-21T07:00:00",
+                payload_json='{"heart_rate":{"custom_zones":false}}',
+                raw_hash="raw-zones-a",
+                schema_status="clean",
+            )
+        )
+        repo.write_athlete_profile_payload(
+            AthleteProfilePayload(
+                profile_key="athlete_zones",
+                payload_kind="profile",
+                endpoint="/athlete/zones",
+                fetched_at="2026-05-21T08:00:00",
+                payload_json='{"heart_rate":{"custom_zones":true}}',
+                raw_hash="raw-zones-b",
+                schema_status="clean",
+            )
+        )
+
+        count = repo._scalar_int(
+            "SELECT COUNT(*) FROM bronze.athlete_profile_payloads WHERE profile_key = 'athlete_zones'"
+        )
+        latest = repo.latest_athlete_profile_payload("athlete_zones", "profile")
+
+    assert count == 2
+    assert latest is not None
+    assert latest["payload_json"] == '{"heart_rate":{"custom_zones":true}}'
+    assert latest["raw_hash"] == "raw-zones-b"
+
+
+def test_duckdb_repository_open_bootstraps_missing_athlete_profile_bronze_schema(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+
+    fixture = tmp_path / "legacy-bronze.duckdb"
+    _create_duckdb_fixture(fixture)
+
+    conn = open_fixture_db(fixture)
+    try:
+        conn.execute("DROP VIEW bronze.latest_athlete_profile_payloads")
+        conn.execute("DROP TABLE bronze.athlete_profile_payloads")
+    finally:
+        conn.close()
+
+    with DuckDBRepository.from_path(fixture) as repo:
+        repo.write_athlete_profile_payload(
+            AthleteProfilePayload(
+                profile_key="athlete_zones",
+                payload_kind="profile",
+                endpoint="/athlete/zones",
+                fetched_at="2026-05-21T08:00:00",
+                payload_json='{"heart_rate":{"custom_zones":true}}',
+                raw_hash="raw-zones-b",
+                schema_status="clean",
+            )
+        )
+        latest = repo.latest_athlete_profile_payload("athlete_zones", "profile")
+        count = repo._scalar_int("SELECT COUNT(*) FROM bronze.athlete_profile_payloads")
+
+    assert latest is not None
+    assert latest["payload_json"] == '{"heart_rate":{"custom_zones":true}}'
+    assert count == 1
 
 
 def test_duckdb_repository_backfills_legacy_activity_payloads_once(tmp_path: Path) -> None:
@@ -1327,7 +1405,7 @@ def test_walk_discount_recomputes_end_to_end_on_fingerprint_mismatch(tmp_path: P
     mismatch at the materialize chokepoint must FIRE the full recompute PIPELINE —
     not merely re-run the discount arithmetic. Concretely:
 
-      1. Seed a Walk-containing day + a Run, materialize once at version N (=1).
+      1. Seed a Walk-containing day + a Run, materialize once at baseline version N.
       2. Write a DELIBERATELY-WRONG stored logic_fingerprint into the sidecar so
          stored != live (compute_logic_fingerprint()).
       3. Drive materialize_read_model_stage and assert the recompute actually fires:
@@ -1354,16 +1432,17 @@ def test_walk_discount_recomputes_end_to_end_on_fingerprint_mismatch(tmp_path: P
         by_sport = observed_trimp_history_by_sport(repo, bounds=bounds, since_day="2026-05-21", until_day="2026-05-21")
         expected_effective = discounted_effective_trimp(by_sport["2026-05-21"])
 
-        # First cycle: stored == live (seed adopted current) -> normal materialize at N=1.
+        baseline_version = repo.current_metric_version()
+        # First cycle: stored == live (seed adopted current) -> normal materialize at baseline N.
         materialize_read_model_stage(repo, "2026-05-24T12:00:00", None)
-        assert repo.current_metric_version() == 1
+        assert repo.current_metric_version() == baseline_version
 
         # Force a logic-edit signal: overwrite the stored fingerprint with a wrong
         # value so the next chokepoint sees stored != live (exactly how editing
         # WALK_TRIMP_DISCOUNT in source would look — stored stale, live moved on).
-        repo.bump_logic_version(1, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
+        repo.bump_logic_version(baseline_version, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
 
-        # The N=1 cycle already cleared the dirty queue, so it is empty here; the
+        # The baseline-N cycle already cleared the dirty queue, so it is empty here; the
         # mass-enqueue we are proving happens INSIDE the stage (the chokepoint
         # re-queues every activity at N+1 before re-materializing). We assert the
         # enqueue + recompute fired via the run record below, not a pre-stage count.
@@ -1375,17 +1454,22 @@ def test_walk_discount_recomputes_end_to_end_on_fingerprint_mismatch(tmp_path: P
             repo.conn.execute(
                 """
                 SELECT activities_materialized FROM read_model_refresh_runs
-                WHERE status = 'ok' AND metric_version = 2 ORDER BY id DESC LIMIT 1
-                """
+                WHERE status = 'ok' AND metric_version = ? ORDER BY id DESC LIMIT 1
+                """,
+                [baseline_version + 1],
             ).fetchone()[0]
         )
 
         bumped = repo.current_metric_version()
         # The re-materialized daily fact at the BUMPED version carries the discount.
-        walk_day_facts = repo.fetch_daily_load_facts("2026-05-21", "2026-05-22", scope="all", metric_version=2)
+        walk_day_facts = repo.fetch_daily_load_facts(
+            "2026-05-21", "2026-05-22", scope="all", metric_version=baseline_version + 1
+        )
         walk_day_fact = next(f for f in walk_day_facts if str(f["day"]) == "2026-05-21")
         old_version_counts = {
-            table: repo.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE metric_version = 1").fetchone()[0]
+            table: repo.conn.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE metric_version = ?", [baseline_version]
+            ).fetchone()[0]
             for table in (
                 "activity_metric_facts",
                 "daily_load_facts",
@@ -1395,7 +1479,7 @@ def test_walk_discount_recomputes_end_to_end_on_fingerprint_mismatch(tmp_path: P
         }
 
     # (1) version advanced to N+1
-    assert bumped == 2, "fingerprint mismatch must bump metric_version to N+1"
+    assert bumped == baseline_version + 1, "fingerprint mismatch must bump metric_version to N+1"
     # (2) the mass-enqueue + recompute fired: both seed activities re-materialized at N+1
     assert materialized_at_bump >= 2
     assert result.get("activities_materialized", 0) >= 1
@@ -1406,7 +1490,7 @@ def test_walk_discount_recomputes_end_to_end_on_fingerprint_mismatch(tmp_path: P
         "rolling_period_facts": 0,
     }
     # (3) the re-materialized walk-day effective_trimp reflects the current discount
-    assert walk_day_fact["metric_version"] == 2
+    assert walk_day_fact["metric_version"] == baseline_version + 1
     assert walk_day_fact["effective_trimp"] == expected_effective
     assert walk_day_fact["effective_trimp"] < walk_day_fact["observed_trimp"]
 
@@ -1427,20 +1511,21 @@ def test_recompute_drains_full_queue_ignoring_limit(tmp_path: Path) -> None:
         for activity_id, day in ((901, "2026-05-19"), (902, "2026-05-20"), (903, "2026-05-21")):
             _seed_hr_activity_with_streams(repo, activity_id=activity_id, day=day, sport_type="Run")
 
-        # First cycle: stored == live -> normal materialize at N=1, dirty queue cleared.
+        baseline_version = repo.current_metric_version()
+        # First cycle: stored == live -> normal materialize at baseline N, dirty queue cleared.
         materialize_read_model_stage(repo, "2026-05-24T12:00:00", None)
-        assert repo.current_metric_version() == 1
+        assert repo.current_metric_version() == baseline_version
 
         # Force a logic-edit signal (stored fingerprint goes stale).
-        repo.bump_logic_version(1, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
+        repo.bump_logic_version(baseline_version, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
 
         # Recompute with a SMALL steady-state limit. Drain-on-recompute must override it
         # and materialize all 3 enqueued activities in this single call.
         result = materialize_read_model_stage(repo, "2026-05-24T13:00:00", None, limit=1)
 
-        assert repo.current_metric_version() == 2
+        assert repo.current_metric_version() == baseline_version + 1
         assert result.get("activities_materialized", 0) == 3, "recompute must drain all activities, not `limit`"
-        assert int(repo.read_model_status(metric_version=2).get("dirty_count") or 0) == 0
+        assert int(repo.read_model_status(metric_version=baseline_version + 1).get("dirty_count") or 0) == 0
 
 
 def test_activities_missing_kudos_filters_and_returns_typed_ids(tmp_path: Path) -> None:

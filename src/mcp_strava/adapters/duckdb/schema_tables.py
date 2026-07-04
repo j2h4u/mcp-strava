@@ -22,11 +22,31 @@ CREATE TABLE IF NOT EXISTS bronze.activity_payloads (
     migrated_from_legacy BOOLEAN NOT NULL DEFAULT FALSE
 );
 
+CREATE TABLE IF NOT EXISTS bronze.athlete_profile_payloads (
+    profile_key VARCHAR NOT NULL,
+    payload_kind VARCHAR NOT NULL,
+    endpoint VARCHAR NOT NULL,
+    fetched_at VARCHAR NOT NULL,
+    payload_json VARCHAR NOT NULL,
+    raw_hash VARCHAR NOT NULL,
+    schema_status VARCHAR NOT NULL,
+    drift_fingerprint VARCHAR,
+    recorded_at VARCHAR NOT NULL
+);
+
 CREATE OR REPLACE VIEW bronze.latest_activity_payloads AS
 SELECT *
 FROM bronze.activity_payloads
 QUALIFY ROW_NUMBER() OVER (
     PARTITION BY activity_id, payload_kind
+    ORDER BY fetched_at DESC, recorded_at DESC, raw_hash DESC
+) = 1;
+
+CREATE OR REPLACE VIEW bronze.latest_athlete_profile_payloads AS
+SELECT *
+FROM bronze.athlete_profile_payloads
+QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY profile_key, payload_kind
     ORDER BY fetched_at DESC, recorded_at DESC, raw_hash DESC
 ) = 1;
 """

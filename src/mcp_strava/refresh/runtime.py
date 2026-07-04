@@ -351,6 +351,7 @@ def _run_daily_stages(
     if start_index <= _stage_index(Stage.SUMMARIES):
         refresh_store.set_checkpoint(Stage.SUMMARIES.value, None)
         activities_seen, activities_new = _run_summaries_stage(repo, transport, refresh_store, policy, now_iso)
+        source_ingest.sync_athlete_zones(repo, transport, now_iso)
         read_model_stage.process_bronze_payloads(repo)
     if start_index <= _stage_index(Stage.STREAMS):
         refresh_store.set_checkpoint(Stage.STREAMS.value, None)

@@ -64,6 +64,17 @@ class ActivitySourcePayloadRow(TypedDict):
     migrated_from_legacy: object
 
 
+class AthleteProfilePayloadRow(TypedDict):
+    profile_key: object
+    payload_kind: object
+    endpoint: object
+    fetched_at: object
+    payload_json: object
+    raw_hash: object
+    schema_status: object
+    drift_fingerprint: object
+
+
 class LogicVersionRow(TypedDict):
     metric_version: int
     logic_fingerprint: str
@@ -97,6 +108,18 @@ class ActivitySourcePayload:
     schema_status: str
     drift_fingerprint: str | None = None
     migrated_from_legacy: bool = False
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AthleteProfilePayload:
+    profile_key: str
+    payload_kind: str
+    endpoint: str
+    fetched_at: str
+    payload_json: str
+    raw_hash: str
+    schema_status: str
+    drift_fingerprint: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

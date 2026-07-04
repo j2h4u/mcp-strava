@@ -8,8 +8,9 @@ from datetime import UTC, datetime
 
 from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
 from mcp_strava.adapters.duckdb.activity_selectors import activities_missing_details
-from mcp_strava.adapters.duckdb.repository_models import ActivitySourcePayload
+from mcp_strava.adapters.duckdb.repository_models import ActivitySourcePayload, AthleteProfilePayload
 from mcp_strava.adapters.duckdb.source_hashing import raw_payload_hash, semantic_json_hash, summary_payload_changed
+from mcp_strava.adapters.strava import StravaUnavailableError
 from mcp_strava.constants import Config
 from mcp_strava.refresh.schema_drift import journal_schema_drift
 from mcp_strava.types import parse_strava_activity
@@ -18,6 +19,15 @@ from mcp_strava.types import parse_strava_activity
 def _emit(event: str, **fields: object) -> None:
     """Emit a structured JSON diagnostic event to stdout (house log style)."""
     print(json.dumps({"event": event, **fields}, ensure_ascii=False), flush=True)
+
+
+_OPTIONAL_ATHLETE_PROFILE_FAILURE_REASONS = frozenset(
+    {
+        "endpoint_unavailable",
+        "forbidden",
+        "strava_application_inactive",
+    }
+)
 
 
 def _write_activity_payload(
@@ -40,6 +50,28 @@ def _write_activity_payload(
             payload_json=payload_json,
             raw_hash=raw_payload_hash(payload_json),
             modeled_projection_hash=semantic_json_hash(payload_json),
+            schema_status="clean",
+        )
+    )
+
+
+def _write_athlete_profile_payload(
+    repo,
+    *,
+    profile_key: str,
+    payload_kind: str,
+    endpoint: str,
+    fetched_at: str,
+    payload_json: str,
+) -> None:
+    repo.write_athlete_profile_payload(
+        AthleteProfilePayload(
+            profile_key=profile_key,
+            payload_kind=payload_kind,
+            endpoint=endpoint,
+            fetched_at=fetched_at,
+            payload_json=payload_json,
+            raw_hash=raw_payload_hash(payload_json),
             schema_status="clean",
         )
     )
@@ -115,3 +147,52 @@ def sync_details(
             )
             fetched += 1
     return fetched
+
+
+def sync_athlete_zones(repo, transport, now_iso: str) -> int:
+    """Capture ``/athlete/zones`` as bronze-only raw source data.
+
+    This endpoint is deliberately retained only for future comparison/debugging.
+    Current HR-zone/TRIMP metrics still derive from activity streams and local
+    athlete settings, not from this profile payload.
+
+    A direct 403/404 or a typed unavailable/inactive transport failure is
+    treated as an optional endpoint miss: we log and skip without failing the
+    refresh. Rate-limit, token, and network failures still fail closed.
+    """
+    endpoint = "/athlete/zones"
+    try:
+        response = transport.fetch(endpoint)
+    except StravaUnavailableError as exc:
+        if exc.reason in _OPTIONAL_ATHLETE_PROFILE_FAILURE_REASONS:
+            payload: dict[str, object] = {
+                "endpoint": endpoint,
+                "reason": exc.reason,
+            }
+            if exc.status is not None:
+                payload["status"] = exc.status
+            _emit("athlete_zones_sync_skipped", **payload)
+            return 0
+        raise
+
+    if response.status in (403, 404):
+        _emit(
+            "athlete_zones_sync_skipped",
+            endpoint=endpoint,
+            status=response.status,
+            reason="endpoint_unavailable",
+        )
+        return 0
+    if not isinstance(response.data, dict):
+        return 0
+
+    journal_schema_drift(response.data, "athlete_zones")
+    _write_athlete_profile_payload(
+        repo,
+        profile_key="athlete_zones",
+        payload_kind="profile",
+        endpoint=endpoint,
+        fetched_at=now_iso,
+        payload_json=json.dumps(response.data),
+    )
+    return 1

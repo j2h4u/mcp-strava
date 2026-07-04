@@ -89,9 +89,11 @@ class StravaTransport:
                 self.sleeper.sleep(self._retry_after_seconds(exc))
             return new_attempts, "rate_limited", refreshed
         if exc.code == HTTPStatus.FORBIDDEN and self._is_application_inactive(exc):
-            raise StravaUnavailableError(RefreshReason.STRAVA_APPLICATION_INACTIVE.value) from exc
+            raise StravaUnavailableError(RefreshReason.STRAVA_APPLICATION_INACTIVE.value, status=exc.code) from exc
+        if exc.code == HTTPStatus.FORBIDDEN:
+            raise StravaUnavailableError("forbidden", status=exc.code) from exc
         if exc.code == HTTPStatus.NOT_FOUND:
-            raise exc
+            raise StravaUnavailableError("endpoint_unavailable", status=exc.code) from exc
         new_attempts = attempts + 1
         if new_attempts < Config.Transport.MAX_RETRIES:
             self.sleeper.sleep([1, 5, 30][new_attempts - 1])

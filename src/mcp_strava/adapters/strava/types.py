@@ -21,12 +21,15 @@ class StravaUnavailableError(Exception):
 
     ``detail`` carries optional diagnostic context for operator logs (e.g. the
     rate-limit usage/limit snapshot when ``reason == "rate_limited"``). It is
-    never surfaced to end users — only the opaque ``reason`` code is.
+    never surfaced to end users — only the opaque ``reason`` code is. ``status``
+    carries the upstream HTTP status when the adapter can preserve it without
+    leaking transport details across the boundary.
     """
 
-    def __init__(self, reason: str, detail: dict[str, Any] | None = None):
+    def __init__(self, reason: str, detail: dict[str, Any] | None = None, status: int | None = None):
         self.reason = reason
         self.detail: dict[str, Any] = detail or {}
+        self.status = status
         super().__init__(reason)
 
 

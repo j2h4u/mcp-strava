@@ -475,6 +475,32 @@ def test_fetch_403_application_inactive_reports_actionable_reason():
         ).fetch("/athlete")
 
     assert exc_info.value.reason == "strava_application_inactive"
+    assert exc_info.value.status == 403
+
+
+def test_fetch_404_reports_typed_endpoint_unavailable_reason():
+    from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport, StravaUnavailableError
+
+    class TokenProvider:
+        def access_token(self):
+            return "access-secret"
+
+        def refresh(self):
+            return "access-new"
+
+    http = FakeStravaHttp([urllib.error.HTTPError("url", 404, "Not Found", {}, None)])
+
+    with pytest.raises(StravaUnavailableError) as exc_info:
+        StravaTransport(
+            TokenProvider(),
+            RateLimitPolicy(),
+            clock=FakeClock(),
+            sleeper=FakeSleeper(),
+            http=http,
+        ).fetch("/athlete/zones")
+
+    assert exc_info.value.reason == "endpoint_unavailable"
+    assert exc_info.value.status == 404
 
 
 def test_file_lock_creates_sidecar_with_owner_only_permissions(tmp_path):

@@ -20,6 +20,8 @@ from mcp_strava.adapters.duckdb.repository_models import (
     ActivitySourcePayload,
     ActivitySourcePayloadRow,
     ActivitySummaryRecord,
+    AthleteProfilePayload,
+    AthleteProfilePayloadRow,
 )
 from mcp_strava.adapters.duckdb.repository_utils import (
     Row,
@@ -518,6 +520,58 @@ class DuckDBRepository(ReadModelRepositoryMixin, StreamWriteRepositoryMixin):
             [activity_id, payload_kind],
         )
         return cast("ActivitySourcePayloadRow | None", row)
+
+    def write_athlete_profile_payload(self, payload: AthleteProfilePayload) -> None:
+        """Append one raw non-activity athlete/profile payload to bronze storage."""
+        latest = self.latest_athlete_profile_payload(payload.profile_key, payload.payload_kind)
+        if latest is not None and latest["raw_hash"] == payload.raw_hash:
+            return
+        self._execute(
+            """
+            INSERT INTO bronze.athlete_profile_payloads (
+                profile_key,
+                payload_kind,
+                endpoint,
+                fetched_at,
+                payload_json,
+                raw_hash,
+                schema_status,
+                drift_fingerprint,
+                recorded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                payload.profile_key,
+                payload.payload_kind,
+                payload.endpoint,
+                payload.fetched_at,
+                payload.payload_json,
+                payload.raw_hash,
+                payload.schema_status,
+                payload.drift_fingerprint,
+                self._now_iso(),
+            ],
+        )
+        self._commit_if_standalone()
+
+    def latest_athlete_profile_payload(self, profile_key: str, payload_kind: str) -> AthleteProfilePayloadRow | None:
+        row = self._fetchone(
+            """
+            SELECT
+                profile_key,
+                payload_kind,
+                endpoint,
+                fetched_at,
+                payload_json,
+                raw_hash,
+                schema_status,
+                drift_fingerprint
+            FROM bronze.latest_athlete_profile_payloads
+            WHERE profile_key = ? AND payload_kind = ?
+            """,
+            [profile_key, payload_kind],
+        )
+        return cast("AthleteProfilePayloadRow | None", row)
 
     def activity_ids_with_source_bronze_payloads(self) -> list[int]:
         """Return activities whose latest bronze payload came from source ingest."""

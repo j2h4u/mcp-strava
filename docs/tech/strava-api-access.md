@@ -28,6 +28,7 @@ settings dashboard: <https://www.strava.com/settings/api>.
 The refresh path uses:
 
 - `GET /athlete/activities`
+- `GET /athlete/zones` (bronze raw retention only; not consumed by current HR-zone/TRIMP metrics)
 - `GET /activities/{id}`
 - `GET /activities/{id}/streams`
 - `GET /activities/{id}/kudos`

@@ -11,14 +11,18 @@ import pytest
 from mcp_strava.adapters.duckdb.activity_lookup_queries import activity_by_id
 from mcp_strava.adapters.duckdb.refresh_state_store import RefreshStateStore
 from mcp_strava.adapters.duckdb.repository import DuckDBRepository
-from mcp_strava.adapters.duckdb.repository_models import ActivitySourcePayload, ActivitySummaryRecord
+from mcp_strava.adapters.duckdb.repository_models import (
+    ActivitySourcePayload,
+    ActivitySummaryRecord,
+    AthleteProfilePayload,
+)
 from mcp_strava.adapters.duckdb.stream_read_queries import activity_stream_rows
 from mcp_strava.adapters.duckdb.sync_log_store import read_sync_log
 from mcp_strava.adapters.strava import StravaResponse, StravaUnavailableError
 from mcp_strava.adapters.strava.types import StravaRateInfo
 from mcp_strava.refresh import RefreshPolicy, _sync_ops, kudos_sync, read_model_stage, run_catchup
 from mcp_strava.refresh.runtime import RefreshCollaborators
-from tests._fixtures_duckdb import create_fixture_db
+from tests._fixtures_duckdb import create_empty_fixture_db, create_fixture_db
 
 
 @pytest.fixture(autouse=True)
@@ -109,6 +113,67 @@ def _repo(tmp_path: Path) -> DuckDBRepository:
 
 def _refresh_store(repo: DuckDBRepository) -> RefreshStateStore:
     return RefreshStateStore.from_connection(repo.conn)
+
+
+def _seed_hr_activity_with_streams(
+    repo: DuckDBRepository,
+    *,
+    activity_id: int,
+    day: str,
+    sport_type: str,
+    heartrate: int = 150,
+) -> None:
+    repo.upsert_activity_summary(
+        ActivitySummaryRecord(
+            activity_id=activity_id,
+            date=f"{day}T06:00:00Z",
+            name=f"{sport_type} {activity_id}",
+            sport_type=sport_type,
+            distance=6000.0,
+            moving_time=1800,
+            elapsed_time=1900,
+            total_elevation_gain=120.0,
+            summary_json=(
+                f'{{"id":{activity_id},"name":"{sport_type}","sport_type":"{sport_type}",'
+                f'"start_date_local":"{day}T06:00:00Z","distance":6000,"moving_time":1800,'
+                '"elapsed_time":1900,"total_elevation_gain":120,"has_heartrate":true}'
+            ),
+            synced_at=f"{day}T07:00:00Z",
+        )
+    )
+    repo.update_activity_detail(activity_id, f'{{"id": {activity_id}, "resource_state": 3}}')
+    repo.replace_stream_rows_and_channel_metadata(
+        activity_id,
+        rows=[
+            {
+                "time_offset": idx * 10,
+                "heartrate": heartrate,
+                "velocity": 3.0,
+                "altitude": 500.0,
+                "cadence": 84,
+                "lat": 43.2,
+                "lng": 76.9,
+                "grade": 1.0,
+                "gap_speed": 3.1,
+                "gap_distance": idx * 30.0,
+                "is_moving": True,
+                "values_json": "{}",
+            }
+            for idx in range(180)
+        ],
+        metadata=[
+            {
+                "channel_key": "heartrate",
+                "original_size": 180,
+                "resolution": "high",
+                "series_type": "distance",
+                "fetched_at": f"{day}T07:30:00Z",
+                "batch_id": "zones-bronze-only-test",
+                "status": "available",
+                "error": None,
+            }
+        ],
+    )
 
 
 def test_sync_summaries_skips_rewrite_when_summary_unchanged(tmp_path):
@@ -323,6 +388,105 @@ def test_sync_details_captures_raw_payloads_in_bronze_without_silver_mutation(tm
     assert dirty_before_processing[0]["reason"] == "bronze_payload_changed"
     assert len(dirty_after_processing) == 1
     assert dirty_after_processing[0]["reason"] == "bronze_payload_changed"
+
+
+def test_sync_athlete_zones_captures_bronze_only_profile_payload(tmp_path):
+    from mcp_strava.refresh.source_ingest import sync_athlete_zones
+
+    payload = {"heart_rate": {"custom_zones": False, "zones": [{"min": 90, "max": 120}]}}
+
+    class _ZonesTransport:
+        def fetch(self, path: str) -> StravaResponse:
+            assert path == "/athlete/zones"
+            return StravaResponse(data=payload, rate_info=StravaRateInfo(), status=200)
+
+    with _repo(tmp_path) as repo:
+        wrote = sync_athlete_zones(repo, _ZonesTransport(), "2026-05-29T00:00:00")
+        wrote_again = sync_athlete_zones(repo, _ZonesTransport(), "2026-05-29T01:00:00")
+        latest = repo.latest_athlete_profile_payload("athlete_zones", "profile")
+        count = repo._scalar_int(
+            "SELECT COUNT(*) FROM bronze.athlete_profile_payloads WHERE profile_key = 'athlete_zones'"
+        )
+        silver = repo._scalar_int("SELECT COUNT(*) FROM activities")
+
+    assert wrote == 1
+    assert wrote_again == 1
+    assert latest is not None
+    assert latest["payload_json"] == '{"heart_rate": {"custom_zones": false, "zones": [{"min": 90, "max": 120}]}}'
+    assert count == 1
+    assert silver == 42  # fixture rows only; athlete zones stay out of the activity/read-model path
+
+
+def test_sync_athlete_zones_skips_optional_endpoint_403_without_failing(tmp_path, capsys):
+    from mcp_strava.refresh.source_ingest import sync_athlete_zones
+
+    class _ForbiddenZonesTransport:
+        def fetch(self, path: str) -> StravaResponse:
+            assert path == "/athlete/zones"
+            raise StravaUnavailableError("forbidden", status=403)
+
+    with _repo(tmp_path) as repo:
+        wrote = sync_athlete_zones(repo, _ForbiddenZonesTransport(), "2026-05-29T00:00:00")
+        count = repo._scalar_int("SELECT COUNT(*) FROM bronze.athlete_profile_payloads")
+
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert wrote == 0
+    assert count == 0
+    assert events[-1]["event"] == "athlete_zones_sync_skipped"
+    assert events[-1]["status"] == 403
+    assert events[-1]["reason"] == "forbidden"
+
+
+def test_sync_athlete_zones_skips_optional_endpoint_404_without_failing(tmp_path, capsys):
+    from mcp_strava.refresh.source_ingest import sync_athlete_zones
+
+    class _MissingZonesTransport:
+        def fetch(self, path: str) -> StravaResponse:
+            assert path == "/athlete/zones"
+            raise StravaUnavailableError("endpoint_unavailable", status=404)
+
+    with _repo(tmp_path) as repo:
+        wrote = sync_athlete_zones(repo, _MissingZonesTransport(), "2026-05-29T00:00:00")
+        count = repo._scalar_int("SELECT COUNT(*) FROM bronze.athlete_profile_payloads")
+
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert wrote == 0
+    assert count == 0
+    assert events[-1]["event"] == "athlete_zones_sync_skipped"
+    assert events[-1]["status"] == 404
+    assert events[-1]["reason"] == "endpoint_unavailable"
+
+
+def test_sync_athlete_zones_skips_optional_unavailable_reason_without_failing(tmp_path, capsys):
+    from mcp_strava.refresh.source_ingest import sync_athlete_zones
+
+    class _UnavailableZonesTransport:
+        def fetch(self, path: str) -> StravaResponse:
+            assert path == "/athlete/zones"
+            raise StravaUnavailableError("strava_application_inactive", status=403)
+
+    with _repo(tmp_path) as repo:
+        wrote = sync_athlete_zones(repo, _UnavailableZonesTransport(), "2026-05-29T00:00:00")
+        count = repo._scalar_int("SELECT COUNT(*) FROM bronze.athlete_profile_payloads")
+
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert wrote == 0
+    assert count == 0
+    assert events[-1]["event"] == "athlete_zones_sync_skipped"
+    assert events[-1]["reason"] == "strava_application_inactive"
+    assert events[-1]["status"] == 403
+
+
+def test_sync_athlete_zones_keeps_rate_limit_fail_closed(tmp_path):
+    from mcp_strava.refresh.source_ingest import sync_athlete_zones
+
+    class _RateLimitedZonesTransport:
+        def fetch(self, path: str) -> StravaResponse:
+            assert path == "/athlete/zones"
+            raise StravaUnavailableError("rate_limited")
+
+    with _repo(tmp_path) as repo, pytest.raises(StravaUnavailableError, match="rate_limited"):
+        sync_athlete_zones(repo, _RateLimitedZonesTransport(), "2026-05-29T00:00:00")
 
 
 def test_run_once_completes_daily_refresh_per_REFRESH_01_STRAVA_03(tmp_path):
@@ -547,6 +711,9 @@ def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch,
     from mcp_strava.refresh import source_ingest
 
     monkeypatch.setattr(source_ingest, "sync_summaries", lambda *_args, **_kwargs: order.append("summaries") or (0, 0))
+    monkeypatch.setattr(
+        source_ingest, "sync_athlete_zones", lambda *_args, **_kwargs: order.append("athlete_zones") or 0
+    )
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams") or 0)
     monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
     monkeypatch.setattr(
@@ -580,6 +747,7 @@ def test_run_once_materializes_after_schema_validation_before_kudos(monkeypatch,
     assert result.status == "ok"
     assert order == [
         "summaries",
+        "athlete_zones",
         "process_bronze_payloads",
         "streams",
         "details",
@@ -598,6 +766,9 @@ def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch
     from mcp_strava.refresh import source_ingest
 
     monkeypatch.setattr(source_ingest, "sync_summaries", lambda *_args, **_kwargs: order.append("summaries") or (0, 0))
+    monkeypatch.setattr(
+        source_ingest, "sync_athlete_zones", lambda *_args, **_kwargs: order.append("athlete_zones") or 0
+    )
     monkeypatch.setattr(_sync_ops, "sync_streams", lambda *_args, **_kwargs: order.append("streams") or 0)
     monkeypatch.setattr(source_ingest, "sync_details", lambda *_args, **_kwargs: order.append("details") or 0)
     monkeypatch.setattr(
@@ -628,6 +799,63 @@ def test_run_once_resumes_from_read_model_materialization_checkpoint(monkeypatch
 
     assert result.status == "ok"
     assert order == ["read_model_materialize", "kudos"]
+
+
+def test_athlete_zones_bronze_payload_is_not_used_for_hr_zone_trimp_materialization(tmp_path: Path) -> None:
+    from mcp_strava.adapters.duckdb.read_model_materializer import MaterializationOptions, materialize_read_model
+    from mcp_strava.adapters.duckdb.repository import DuckDBRepository
+    from mcp_strava.settings import load_settings
+
+    fixture = tmp_path / "zones-bronze-only.duckdb"
+    create_empty_fixture_db(fixture)
+    with DuckDBRepository.from_path(fixture) as repo:
+        _seed_hr_activity_with_streams(repo, activity_id=880, day="2026-05-21", sport_type="Run", heartrate=160)
+        baseline = materialize_read_model(
+            repo,
+            1,
+            MaterializationOptions(
+                now="2026-05-22T09:00:00",
+                settings=load_settings(
+                    environ={"MCP_STRAVA_HR_REST": "53"},
+                    env_file=tmp_path / "missing.env",
+                    project_root=tmp_path,
+                ),
+            ),
+        )
+        baseline_fact = repo.fetch_activity_metric_fact(880, metric_version=1)
+
+        repo.write_athlete_profile_payload(
+            AthleteProfilePayload(
+                profile_key="athlete_zones",
+                payload_kind="profile",
+                endpoint="/athlete/zones",
+                fetched_at="2026-05-22T10:00:00",
+                payload_json=json.dumps({"heart_rate": {"custom_zones": True, "zones": [{"min": 1, "max": 2}] * 5}}),
+                raw_hash="zones-not-consumed",
+                schema_status="clean",
+            )
+        )
+        rematerialized = materialize_read_model(
+            repo,
+            1,
+            MaterializationOptions(
+                now="2026-05-22T11:00:00",
+                settings=load_settings(
+                    environ={"MCP_STRAVA_HR_REST": "53"},
+                    env_file=tmp_path / "missing.env",
+                    project_root=tmp_path,
+                ),
+            ),
+        )
+        after_fact = repo.fetch_activity_metric_fact(880, metric_version=1)
+
+    assert baseline["activities_materialized"] == 1
+    assert rematerialized["activities_materialized"] == 0
+    assert baseline_fact is not None
+    assert after_fact is not None
+    assert after_fact["trimp"] == baseline_fact["trimp"]
+    assert after_fact["zone1_seconds"] == baseline_fact["zone1_seconds"]
+    assert after_fact["zone5_seconds"] == baseline_fact["zone5_seconds"]
 
 
 def test_materialization_lost_lease_fails_closed(monkeypatch, tmp_path):
@@ -2127,20 +2355,20 @@ def test_chokepoint_materializes_at_bumped_version_on_fingerprint_mismatch(tmp_p
     so the enqueue version and the materialize version cannot disagree."""
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
     from mcp_strava.refresh.read_model_stage import materialize_read_model_stage
-    from tests._fixtures_duckdb import create_empty_fixture_db
 
     fixture = tmp_path / "fingerprint.duckdb"
     create_empty_fixture_db(fixture)
     with DuckDBRepository.from_path(fixture) as repo:
         _seed_one_dirty_activity(repo)
-        # First cycle: stored == live (seed adopted current) -> normal materialize at N=1.
+        baseline_version = repo.current_metric_version()
+        # First cycle: stored == live (seed adopted current) -> normal materialize at baseline N.
         materialize_read_model_stage(repo, "2026-05-24T12:00:00", None)
-        assert _last_ok_run_version(repo) == 1
+        assert _last_ok_run_version(repo) == baseline_version
 
         # Force a logic-edit signal: overwrite the stored fingerprint with a wrong
         # value (the live side is the real cached fingerprint). This is exactly how
         # a real source edit looks: stored is stale, live moved on.
-        repo.bump_logic_version(1, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
+        repo.bump_logic_version(baseline_version, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
         # Re-dirty the activity so there is something to recompute at N+1.
         repo.update_activity_detail(920, '{"id": 920, "resource_state": 3, "calories": 410}')
 
@@ -2148,11 +2376,11 @@ def test_chokepoint_materializes_at_bumped_version_on_fingerprint_mismatch(tmp_p
 
         bumped = repo.current_metric_version()
         materialized_version = _last_ok_run_version(repo)
-        fact_at_2 = repo.fetch_activity_metric_fact(920, metric_version=2)
+        fact_at_bumped = repo.fetch_activity_metric_fact(920, metric_version=baseline_version + 1)
 
-    assert bumped == 2, "fingerprint mismatch must bump metric_version to N+1"
-    assert materialized_version == 2, "materialize must run at the bumped N+1, not the stale N"
-    assert fact_at_2 is not None, "the recompute must write facts at the bumped version"
+    assert bumped == baseline_version + 1, "fingerprint mismatch must bump metric_version to N+1"
+    assert materialized_version == baseline_version + 1, "materialize must run at the bumped N+1, not the stale N"
+    assert fact_at_bumped is not None, "the recompute must write facts at the bumped version"
 
 
 def test_chokepoint_bump_and_enqueue_are_atomic_on_enqueue_failure(tmp_path):
@@ -2171,7 +2399,6 @@ def test_chokepoint_bump_and_enqueue_are_atomic_on_enqueue_failure(tmp_path):
     from mcp_strava.adapters.duckdb.repository import DuckDBRepository
     from mcp_strava.metric_registry import cached_logic_fingerprint
     from mcp_strava.refresh.read_model_stage import materialize_read_model_stage
-    from tests._fixtures_duckdb import create_empty_fixture_db
 
     class EnqueueExplodesRepo(DuckDBRepository):
         def enqueue_metric_version_recompute(self, *args, **kwargs):
@@ -2182,19 +2409,18 @@ def test_chokepoint_bump_and_enqueue_are_atomic_on_enqueue_failure(tmp_path):
     fixture = tmp_path / "atomic.duckdb"
     create_empty_fixture_db(fixture)
 
-    # Seed + adopt-current with a normal repo so stored == live at version 1.
+    # Seed + adopt-current with a normal repo so stored == live at baseline version N.
     with DuckDBRepository.from_path(fixture) as repo:
         _seed_one_dirty_activity(repo)
         materialize_read_model_stage(repo, "2026-05-24T12:00:00", None)
         version_before = repo.current_metric_version()
         stored_fp_before = repo.current_logic_version()["logic_fingerprint"]
-    assert version_before == 1
     assert stored_fp_before == cached_logic_fingerprint(), "precondition: stored == live before the edit"
 
     # Now drive a mismatch: stale the stored fingerprint, then run the chokepoint
     # through a repo whose enqueue explodes after the bump.
     with EnqueueExplodesRepo.from_path(fixture) as repo:
-        repo.bump_logic_version(1, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
+        repo.bump_logic_version(version_before, "STALE_WRONG_FINGERPRINT", "2026-05-24T12:30:00")
         repo._current_metric_version_cache = None
         with pytest.raises(RuntimeError, match="enqueue crashed mid-recompute"):
             materialize_read_model_stage(repo, "2026-05-24T13:00:00", None)
@@ -2207,7 +2433,7 @@ def test_chokepoint_bump_and_enqueue_are_atomic_on_enqueue_failure(tmp_path):
         stored = repo.current_logic_version()
         durable_version = repo.current_metric_version()
 
-    assert durable_version == 1, (
+    assert durable_version == version_before, (
         f"bump+enqueue must be atomic: a failed enqueue must NOT durably advance the version, got {durable_version}"
     )
     assert stored["logic_fingerprint"] == "STALE_WRONG_FINGERPRINT", (

@@ -54,3 +54,12 @@ def test_journal_ignores_non_dict_inputs_without_crashing(capsys):
     journal_schema_drift("garbage", "streams")
     journal_schema_drift([], "summary_activity")  # list but not batch -> not a dict -> ignored
     assert _events(capsys) == []
+
+
+def test_journal_supports_athlete_zones_endpoint(capsys):
+    data = {"heart_rate": {"custom_zones": False, "zones": [{"min": 0, "max": 120}]}, "surprise": True}
+    journal_schema_drift(data, "athlete_zones")
+    events = _events(capsys)
+    assert len(events) == 1
+    assert events[0]["endpoint"] == "GET /athlete/zones"
+    assert [f["field"] for f in events[0]["unknown_fields"]] == ["surprise"]
