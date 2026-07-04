@@ -145,6 +145,8 @@ def test_runtime_ci_uses_an_isolated_compose_project() -> None:
         'MCP_STRAVA_CI_RUNTIME_DIR="$ci_root" MCP_STRAVA_CI_DATA_DIR="$ci_root/data" {{compose_ci}} down -v --remove-orphans || true'
         in justfile
     )
+    assert 'chmod -R a+rX "$ci_root"' in justfile
+    assert "{{compose_ci}} logs --no-color --timestamps --tail=200 || true" in justfile
     assert "deploy/docker-compose.yml -f deploy/docker-compose.ci.yml" not in justfile
 
 

@@ -90,12 +90,19 @@ runtime-ci:
     set -euo pipefail
     mkdir -p .tmp
     ci_root="$(mktemp -d "$PWD/.tmp/runtime-ci.XXXXXX")"
+    chmod -R a+rX "$ci_root"
     cleanup() {
+        status="$1"
+        if [ "$status" -ne 0 ]; then
+            MCP_STRAVA_CI_RUNTIME_DIR="$ci_root" MCP_STRAVA_CI_DATA_DIR="$ci_root/data" {{compose_ci}} ps || true
+            MCP_STRAVA_CI_RUNTIME_DIR="$ci_root" MCP_STRAVA_CI_DATA_DIR="$ci_root/data" {{compose_ci}} logs --no-color --timestamps --tail=200 || true
+        fi
         MCP_STRAVA_CI_RUNTIME_DIR="$ci_root" MCP_STRAVA_CI_DATA_DIR="$ci_root/data" {{compose_ci}} down -v --remove-orphans || true
         rm -rf "$ci_root"
     }
-    trap cleanup EXIT
+    trap 'cleanup "$?"' EXIT
     uv run python -c 'from pathlib import Path; import sys; from tests._fixtures_duckdb import create_fixture_db; root = Path(sys.argv[1]); root.mkdir(parents=True, exist_ok=True); create_fixture_db(root / "data" / "strava.duckdb")' "$ci_root"
+    chmod -R a+rX "$ci_root"
     MCP_STRAVA_CI_RUNTIME_DIR="$ci_root" MCP_STRAVA_CI_DATA_DIR="$ci_root/data" {{compose_ci}} build
     MCP_STRAVA_CI_RUNTIME_DIR="$ci_root" MCP_STRAVA_CI_DATA_DIR="$ci_root/data" {{compose_ci}} up -d --force-recreate --remove-orphans --wait --wait-timeout 90
     MCP_STRAVA_CI_RUNTIME_DIR="$ci_root" MCP_STRAVA_CI_DATA_DIR="$ci_root/data" {{compose_ci}} exec -T mcp-strava {{smoke_basic}}
