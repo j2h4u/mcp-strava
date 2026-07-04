@@ -519,16 +519,6 @@ class DuckDBRepository(ReadModelRepositoryMixin, StreamWriteRepositoryMixin):
         )
         return cast("ActivitySourcePayloadRow | None", row)
 
-    def activity_ids_with_bronze_payloads(self) -> list[int]:
-        rows = self._fetchall(
-            """
-            SELECT DISTINCT activity_id
-            FROM bronze.latest_activity_payloads
-            ORDER BY activity_id
-            """
-        )
-        return [_as_int(row["activity_id"]) for row in rows]
-
     def activity_ids_with_source_bronze_payloads(self) -> list[int]:
         """Return activities whose latest bronze payload came from source ingest."""
         rows = self._fetchall(

@@ -18,6 +18,7 @@ The current runtime shape is a Docker-packaged local MCP server connected to the
 - **Deployment target**: Runtime should fit Docker and the local MCP gateway/network while keeping default serving local/container-network safe.
 - **Local-first security**: Default HTTP serving must be local/container-network safe and avoid public unauthenticated exposure.
 - **Testing**: Existing behavior must remain verifiable with non-overlapping Just gates: `just check` for static quality (including workflow lint), `just unit` for pytest, `just runtime` for Docker/runtime smoke, and `just verify` for the full local gate.
+
 <!-- GSD:project-end -->
 
 <!-- GSD:stack-start source:codebase/STACK.md -->
@@ -31,8 +32,8 @@ The current runtime shape is a Docker-packaged local MCP server connected to the
 - Single-owner DuckDB process serving MCP over HTTP with an in-process mirror-refresh scheduler (`deploy/service.py`).
 - Dependencies are declared in `pyproject.toml` and managed with `uv`.
 ## Frameworks
-- `mcp` (`mcp>=1.27.1,<1.28`) - MCP SDK powering the HTTP tool surface in `interfaces/mcp_http.py`.
-- `duckdb` (`duckdb>=1.5.3,<1.6`) - Embedded analytical database; the only runtime storage engine.
+- `mcp` (`mcp>=1.28.1,<1.29`) - MCP SDK powering the HTTP tool surface in `interfaces/mcp_http.py`.
+- `duckdb` (`duckdb>=1.5.4,<1.6`) - Embedded analytical database; the only runtime storage engine.
 - `PyYAML` (`PyYAML>=6.0.2,<7`) - Reference/config parsing.
 - `pytest` (dev/test extra) - Test framework; tests live in `tests/`.
 - `uv` - Dependency and execution manager (`uv run ...`).
@@ -230,6 +231,8 @@ Strava API ──► refresh/ + sync.py ──► DuckDB mirror (data/strava.duc
 ## Project Skills
 
 No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, `.github/skills/`, or `.codex/skills/` with a `SKILL.md` index file.
+
+`skills/SKILL.md` exists in this repo, but that is the runtime repo-local skill pointer for the Strava surface, not a generated project-skill entry from the scanner block above.
 <!-- GSD:skills-end -->
 
 <!-- GSD:workflow-start source:GSD defaults -->
@@ -253,3 +256,13 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 > Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
 > This section is managed by `generate-claude-profile` -- do not edit manually.
 <!-- GSD:profile-end -->
+
+## Agent Startup Route
+
+When changing code in this repo:
+
+1. Read `README.md` for the product shape, then `AGENTS.md` and `.planning/PROJECT.md` for current constraints and gates.
+2. If `.gsd-*` commands are available, use the matching GSD workflow for the task size: `gsd-quick` for small doc/code fixes, `gsd-debug` for investigation, `gsd-execute-phase` for planned phase work.
+3. If `/gsd-*` commands are unavailable, write a short plan in your working notes, keep the work scoped to the files in this repo, and leave any handoff in `.planning/quick/<slug>/SUMMARY.md` or the closest existing planning artifact for the task.
+4. Run the smallest relevant gates first, then the full local gate when the change is user-facing or crosses boundaries: `just check`, `just unit`, `just runtime`, and `just verify`.
+5. Prefer updating source docs over generated notes when a doc is clearly derived from them.

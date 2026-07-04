@@ -5,6 +5,8 @@
 **Researched:** 2026-05-20
 **Confidence:** HIGH
 
+**Status:** historical summary. For the current implementation contract, use `.planning/codebase/STACK.md`, `.planning/codebase/ARCHITECTURE.md`, and `pyproject.toml`; this document records the earlier design rationale only.
+
 ## Executive Summary
 
 mcp-strava should be built as a local-first analytics product, not a Strava endpoint wrapper. The product boundary is clear across all research: preserve the existing SQLite mirror as durable state, run user-facing analytics from local data, and expose only intent-level read-only MCP tools for workouts, reports, load trends, and recommendations.

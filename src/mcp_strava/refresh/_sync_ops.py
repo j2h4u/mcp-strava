@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from calendar import monthrange
 from collections.abc import Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from mcp_strava.adapters.duckdb.activity_selectors import activities_missing_streams
@@ -31,15 +31,6 @@ def _is_iso_day(value: str) -> bool:
         return False
     max_day = monthrange(year, month)[1]
     return 1 <= day <= max_day
-
-
-def _safe_quick_sync_start_day(latest_raw: object | None) -> str:
-    candidate = str(latest_raw or "2000-01-01")[:10]
-    latest_day = candidate if _is_iso_day(candidate) else "2000-01-01"
-    year = int(latest_day[:4])
-    month = int(latest_day[5:7])
-    day = int(latest_day[8:10])
-    return (date(year, month, day) - timedelta(days=7)).isoformat()
 
 
 def _write_streams(repo, act_id: int, data: dict, fetched_at: str | None = None) -> int:

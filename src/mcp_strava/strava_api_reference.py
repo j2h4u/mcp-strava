@@ -51,7 +51,7 @@ Last updated: 2026-05-05, verified against live API.
 
 # GET /athlete
 #   Returns: DetailedAthlete
-#   ✅ WE USE: cmd_gear (extracts shoes list)
+#   ✅ WE USE: athlete detail / gear-linked lookups
 
 # GET /athlete/zones
 #   Returns: heart rate zones, power zones
@@ -59,7 +59,7 @@ Last updated: 2026-05-05, verified against live API.
 
 # GET /athletes/{id}/stats
 #   Returns: recent_run_totals, ytd_run_totals, all_run_totals, etc.
-#   ✅ WE USE: cmd_stats
+#   ✅ WE USE: athlete stats summary
 
 # PUT /athlete  (body: {weight: kg})
 #   ⬜ Not used
@@ -310,7 +310,7 @@ ATHLETE_STATS_FIELDS = """
     all_ride_totals: {...}
     biggest_ride_distance: float
     biggest_climb_elevation_gain: float
-    ⬜ We fetch via cmd_stats but don't use much
+    ⬜ We fetch via athlete stats summary when needed, but don't use much
 """
 
 # ─── HR Zones (GET /athlete/zones) ───

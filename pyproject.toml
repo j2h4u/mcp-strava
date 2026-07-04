@@ -19,6 +19,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-cov>=6.2.1",
     "ruff>=0.15.20",
     "basedpyright>=1.39.9",
     "import-linter>=2.12",

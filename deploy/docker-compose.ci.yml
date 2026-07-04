@@ -1,0 +1,20 @@
+services:
+  mcp-strava:
+    container_name: mcp-strava-ci
+    restart: "no"
+    environment:
+      MCP_STRAVA_RUNTIME_PROFILE: container
+      MCP_STRAVA_HTTP_HOST: 0.0.0.0
+      MCP_STRAVA_HTTP_PORT: "8080"
+      MCP_STRAVA_ALLOW_CONTAINER_BIND: "1"
+      MCP_STRAVA_ALLOWED_HOSTS: 127.0.0.1:8080,localhost:8080,mcp-strava:8080,mcp-strava,mcp-strava-ci:8080,mcp-strava-ci
+      MCP_STRAVA_ALLOWED_ORIGINS: http://127.0.0.1:8080,http://localhost:8080,http://mcp-strava:8080,http://mcp-strava-ci:8080
+      MCP_STRAVA_DB_PATH: /runtime/data/strava.duckdb
+      MCP_STRAVA_TOKEN_PATH: /runtime/.env
+      MCP_STRAVA_PROJECT_ROOT: /runtime
+      MCP_STRAVA_REFRESH_WORKER_ENABLED: "0"
+    volumes:
+      - ${MCP_STRAVA_CI_RUNTIME_DIR:?set MCP_STRAVA_CI_RUNTIME_DIR}:/runtime
+      - ${MCP_STRAVA_CI_DATA_DIR:?set MCP_STRAVA_CI_DATA_DIR}:/runtime/data
+    networks:
+      - default

@@ -29,8 +29,6 @@ def test_imports():
     assert Config.Plan.TRIMP_MEDIUM == 120
     assert Config.Model.PROGRESSIVE_WINDOW == 21
     assert Config.Thresholds.PACE_CV_MAX == 0.25
-    assert Config.Plan.Score.TARGET_HIT == 100
-    assert Config.Plan.Score.SAFETY_CRITICAL == 30
     import mcp_strava.types as package_types
 
     assert get_daily_brief_facts_service is not None

@@ -7,6 +7,8 @@ description: Answer questions about the user's own Strava training history throu
 
 Read-only access to the user's own Strava training data through a local mirror. The tools return **facts and numbers** — you turn them into insight. There is no sync, SQL, token, or admin surface, and you never trigger a refresh: the mirror updates itself on a timer.
 
+Use `AGENTS.md` and `.planning/PROJECT.md` as the startup route for repo work. This skill is the lightweight pointer map for the Strava surface, not the full project runbook.
+
 ## What you can do
 
 - **Daily training brief** — where the user's model sits today (fitness, fatigue, form, ACWR) plus recent load. Start with `get_fitness_state`, then list recent sessions with `list_workouts`.

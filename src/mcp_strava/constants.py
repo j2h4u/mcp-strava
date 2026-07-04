@@ -97,25 +97,6 @@ class Config:
         TRIMP_HEAVY_DAY = 300  # TRIMP threshold for "heavy day" intensity cap
         TRIMP_WALK_RUN_BOUNDARY = 75  # below = walk-like, above = run-like (within EASY)
 
-        class Score:
-            """Brute-force optimizer scoring weights."""
-
-            TARGET_HIT = 100  # form in 5..15
-            NEAR_LOW = 60  # form in 0..5
-            NEAR_HIGH = 50  # form in 15..25
-            SLIGHTLY_TIRED = 30  # form in -5..0
-            TOO_FRESH = 20  # form > 25
-            MISS_PENALTY = -50  # form < -5
-            DEVIATION_FACTOR = 2  # penalty multiplier per point from 10
-            LOAD_BONUS = 0.1  # reward per TRIMP
-            PROGRESSIVE_FACTOR = 0.5  # multiplier for active TRIMP × load_bonus
-            AGGRESSIVE_PENALTY = 10  # penalty for too many active days
-            AGGRESSIVE_THRESHOLD = 0.6  # fraction of active days threshold
-            SAFETY_CRITICAL = 30  # penalty for form < -20
-            SAFETY_WARNING = 10  # penalty for form < -15
-            NO_REST_PENALTY = 25  # penalty for zero rest days (age 50+)
-            VARIETY_BONUS = 5  # reward per unique activity type
-
     class Model:
         """Training model time constants (days)."""
 

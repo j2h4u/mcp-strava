@@ -553,7 +553,6 @@ def test_sync_does_not_define_moved_helpers_per_D17() -> None:
         "_stream_payload",
         "STREAM_KEYS",
         "_is_iso_day",
-        "_safe_quick_sync_start_day",
     }
     defined: set[str] = set()
     for node in module.body:
@@ -626,6 +625,16 @@ def test_default_compose_has_no_public_host_port_binding() -> None:
     text = compose.read_text(encoding="utf-8")
     assert "0.0.0.0:" not in text
     assert 'ports: ["0.0.0.0' not in text
+
+
+def test_ci_compose_avoids_host_only_network_and_runtime_paths() -> None:
+    compose = Path("deploy/docker-compose.ci.yml")
+    if not compose.exists():
+        pytest.fail("deploy/docker-compose.ci.yml must exist")
+    text = compose.read_text(encoding="utf-8")
+    assert "mcp-private-noauth" not in text
+    assert "/opt/docker/mcp-strava" not in text
+    assert "/srv/mcp-strava" not in text
 
 
 def test_backfill_activities_invokes_run_catchup_per_D16(monkeypatch, tmp_path: Path) -> None:

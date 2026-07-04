@@ -25,13 +25,13 @@ scope: full-repo
 
 **Package Manager:**
 - `uv` for development (all Justfile recipes use `uv run`)
-- `pip install /app` for container image builds (no uv in container)
-- Lockfile: not present in repo (pip install from `pyproject.toml` constraints only)
+- `pip install /app` for container image builds
+- Lockfile: `uv.lock` is present in the repo and should stay in sync with `pyproject.toml`
 
 ## Frameworks
 
 **Core:**
-- `mcp>=1.27.1,<1.28` - MCP SDK; `FastMCP` used for HTTP server, tool registration, transport security
+- `mcp>=1.28.1,<1.29` - MCP SDK; `FastMCP` used for HTTP server, tool registration, transport security
   - Transport: `streamable-http` at `/mcp` path (`src/mcp_strava/interfaces/mcp_http.py`)
   - Security: `TransportSecuritySettings` with DNS rebinding protection, host/origin allowlists
 
@@ -42,14 +42,14 @@ scope: full-repo
 - `ruff>=0.15` - linter + formatter (`line-length = 120`, broad-exception catches require local justification via `BLE`)
 - `basedpyright>=1.31` - static type checker (`typeCheckingMode = "standard"`, `reportAny = "error"`, `pythonVersion = "3.14"`)
 - `actionlint-py` - GitHub Actions workflow linting through `just check`
-- `just` (Justfile) - task runner for lint, test, smoke, deploy recipes
+- `just` (Justfile) - task runner for static checks, pytest, runtime smoke, and deploy recipes
 - `setuptools>=69` - build backend (`package-dir = {"" = "src"}`)
 
 ## Key Dependencies
 
 **Critical:**
-- `duckdb>=1.5.3,<1.6` - embedded analytical database used as the local Strava mirror (`src/mcp_strava/adapters/duckdb/`)
-- `mcp>=1.27.1,<1.28` - Model Context Protocol SDK; pins minor to avoid breaking changes
+- `duckdb>=1.5.4,<1.6` - embedded analytical database used as the local Strava mirror (`src/mcp_strava/adapters/duckdb/`)
+- `mcp>=1.28.1,<1.29` - Model Context Protocol SDK; pins minor to avoid breaking changes
 - `PyYAML>=6.0.2,<7` - used in `deploy/gateway_register.py` for MCP gateway catalog manipulation
 
 **Standard library only for HTTP:**

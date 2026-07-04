@@ -17,11 +17,12 @@ scope: full-repo
 - Impact: Callers importing `TRAINING_SPORTS`, `RUNNING_SPORTS`, etc. from `constants` still work, but the dual-import path is confusing and the noqa markers suppress real lint rules rather than fixing the cause. New code should import from `mcp_strava.sports` directly.
 - Fix approach: Audit callers of `from mcp_strava.constants import TRAINING_SPORTS` (and similar) — most already import from `sports.py` — then drop the re-export block and the noqa markers.
 
-**`CURRENT_METRIC_VERSION = 1` is hardcoded in repository and never incremented:**
-- Issue: `CURRENT_METRIC_VERSION = 1` is defined in `src/mcp_strava/adapters/duckdb/repository.py:27` and passed throughout the materializer and read-model queries. There is no mechanism to bump it short of a manual code edit. When metric definitions change (e.g., new columns in `activity_metric_facts`), all old facts remain at version 1 and the staleness logic depends on version mismatches to trigger re-materialization.
-- Files: `src/mcp_strava/adapters/duckdb/repository.py:27`, `src/mcp_strava/refresh/runtime.py:109`, `src/mcp_strava/adapters/duckdb/read_model_materializer.py`
-- Impact: Any future metric schema change that should invalidate all existing facts requires manually bumping the constant AND re-running full materialization — easy to forget, with silent stale data as the consequence.
-- Fix approach: Document the bump procedure in a comment adjacent to the constant; add a test that asserts `CURRENT_METRIC_VERSION` matches a hash or count of `FactColumnDefinition` entries so a schema change is caught at CI time.
+**`CURRENT_METRIC_VERSION` is closed; read-model invalidation now uses the source-fingerprint contract:**
+- Status: closed/replaced by the live source-fingerprint path in `src/mcp_strava/metric_registry.py` and `src/mcp_strava/refresh/read_model_stage.py`.
+- Current contract: the read model self-invalidates from `compute_logic_fingerprint()` / `cached_logic_fingerprint()`, and `read_model_logic_version` stores the live fingerprint alongside the resolved metric version. A stored-vs-live mismatch triggers the bump-and-rematerialize flow automatically.
+- Files: `src/mcp_strava/metric_registry.py`, `src/mcp_strava/refresh/read_model_stage.py`, `src/mcp_strava/adapters/duckdb/read_model_logic_repository.py`, `.planning/PROJECT.md`, `.planning/codebase/ARCHITECTURE.md`
+- Impact: the old hardcoded-version concern no longer applies as an open debt item. Keep this note only as a historical pointer so older phase material does not reintroduce the manual knob.
+- Replacement guidance: follow the current PROJECT/architecture docs for the source-fingerprint flow; do not add back a manual `CURRENT_METRIC_VERSION` bump path.
 
 **`DuckDBRepository.conn` typed as `Any`:**
 - Issue: The `conn` field on `DuckDBRepository` (line 159) is typed `Any`, which means every `self.conn.execute(...)` call is unchecked by pyright. The actual DuckDB connection type is `duckdb.DuckDBPyConnection`.

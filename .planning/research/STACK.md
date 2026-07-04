@@ -4,6 +4,8 @@
 **Researched:** 2026-05-20
 **Confidence:** HIGH
 
+**Status:** historical/superseded. Use `.planning/codebase/STACK.md` for the current stack contract and `pyproject.toml` for the live dependency/source of truth. The SQLAlchemy/Alembic/SQLite recommendations below reflect an earlier design pass and are not the current implementation path.
+
 ## Recommended Stack
 
 ### Core Technologies
@@ -13,8 +15,8 @@
 | Python | 3.13.x | Runtime | Matches current codebase runtime and gives modern typing/perf without forcing bleeding-edge 3.14 adoption. | HIGH |
 | `mcp` (official Python SDK) | 1.27.1 | MCP server implementation | Official MCP Python SDK (Tier 1) with `FastMCP` and Streamable HTTP support; aligns with current MCP transport standard. | HIGH |
 | MCP Streamable HTTP transport | Spec `2025-06-18` | MCP over HTTP | Current spec transport; replaces legacy HTTP+SSE model and defines required HTTP/session/version headers. | HIGH |
-| SQLAlchemy Core | 2.0.49 | SQLite repository layer | Strong SQL control for analytics-heavy queries without ORM state coupling; ideal for clean repository boundary over SQLite. | HIGH |
-| Alembic | 1.18.4 | Schema migrations | Standard migration tool with explicit SQLite batch migration support (`move and copy`) needed for safe SQLite evolution. | HIGH |
+| SQLAlchemy Core | 2.0.49 | SQLite repository layer | Historical recommendation from the design pass; not current for this repo. | HIGH |
+| Alembic | 1.18.4 | Schema migrations | Historical recommendation from the design pass; not current for this repo. | HIGH |
 
 ### Supporting Libraries
 
@@ -119,6 +121,7 @@ Before any schema migration on `data/strava.db`:
 |-------|-----|-------------|
 | Legacy MCP HTTP+SSE transport as primary | Replaced by Streamable HTTP in modern MCP spec. | Streamable HTTP transport. |
 | Destructive “drop and resync” DB reset flows | Risks irreversible loss of mirrored Strava history and expensive rate-limited re-fetch. | Migration + backup + verification pipeline. |
+| Treating this research file as the live stack contract | It is a historical recommendation set and will drift from the implementation. | `.planning/codebase/STACK.md` plus `pyproject.toml`. |
 | Storing refreshed tokens by rewriting generic `.env` ad hoc | Fragile and easy to corrupt under concurrency/process interruption. | Typed settings + dedicated token persistence strategy (atomic write/lock or dedicated secrets path). |
 | Exposing SQL/sync/backfill via MCP tools | Violates read-only analytics boundary and increases accidental destructive risk. | Keep ops/admin commands CLI-only. |
 | ORM-heavy domain model for analytics queries | Adds state complexity with little benefit for query-centric reporting workloads. | SQLAlchemy Core repositories + explicit domain DTOs. |

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, cast
 
-from mcp_strava.metric_registry import AGGREGATE_METRIC_BUNDLES, METRIC_REGISTRY, metrics_for_aggregate_bundle
+from mcp_strava.metric_registry import METRIC_REGISTRY, metrics_for_aggregate_bundle
 from mcp_strava.types import CompletenessMetadata, ServiceEnvelope, ServiceRationale, ServiceWarning
 
 
@@ -408,7 +408,3 @@ def season(day: date) -> str:
     if day.month in {6, 7, 8}:
         return "summer"
     return "autumn"
-
-
-def registered_product_bundle_ids() -> tuple[str, ...]:
-    return tuple(bundle_id for bundle_id in AGGREGATE_METRIC_BUNDLES if bundle_id in PRODUCT_FACT_BUNDLES)

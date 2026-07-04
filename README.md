@@ -205,6 +205,15 @@ The MCP server is read-only and factual. It does not expose sync, admin, debug, 
 
 ## Documentation
 
+**Agent startup**
+- [Agent & project notes](AGENTS.md) — read this first for repo constraints, planning route, and verification gates.
+- [.planning/PROJECT.md](.planning/PROJECT.md) — current milestone/project status and active constraints.
+- [.planning/STATE.md](.planning/STATE.md) — current state ledger.
+- [.planning/codebase/ARCHITECTURE.md](.planning/codebase/ARCHITECTURE.md) — current architecture map.
+- [.planning/codebase/CONCERNS.md](.planning/codebase/CONCERNS.md) — current open concerns and closed items.
+- [.planning/milestones/](.planning/milestones/) — milestone archive and completed phase history.
+- [.planning/research/SUMMARY.md](.planning/research/SUMMARY.md) — historical research summary; useful context, not the current stack contract.
+
 **Usage**
 - [Configuration](docs/tech/configuration.md) — server environment variables and their defaults.
 - [Strava API access notes](docs/tech/strava-api-access.md) — subscription/tier requirements, endpoint impact, and the 2027 base-URL migration.
@@ -221,11 +230,10 @@ The MCP server is read-only and factual. It does not expose sync, admin, debug, 
 
 **Project**
 - [Contributing](CONTRIBUTING.md) — contribution workflow.
-- [Agent & project notes](AGENTS.md) — project context and constraints for AI coding agents.
 - [Commercial licensing](COMMERCIAL.md) — terms for commercial use.
 
 **Development**
-- [Strava MCP skill definition](skills/SKILL.md) — agent-facing tool/skill spec.
+- [Strava MCP skill definition](skills/SKILL.md) — agent-facing pointer map for the local Strava skill.
 - [Expert panel pattern](skills/expert-panel-pattern.md) — multi-expert review process used in this repo.
 
 ## License

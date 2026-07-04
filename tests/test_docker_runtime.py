@@ -136,6 +136,20 @@ def test_compose_enables_tiny_init_for_zombie_reaping() -> None:
     assert service["init"] is True
 
 
+def test_runtime_ci_uses_an_isolated_compose_project() -> None:
+    justfile = _read_text(_repo_root() / "Justfile")
+
+    assert (
+        'compose_ci := "docker compose -p mcp-strava-ci -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml"'
+        in justfile
+    )
+    assert "runtime-ci:" in justfile
+    assert (
+        'MCP_STRAVA_CI_RUNTIME_DIR="$ci_root" MCP_STRAVA_CI_DATA_DIR="$ci_root/data" {{compose_ci}} down -v --remove-orphans || true'
+        in justfile
+    )
+
+
 def test_entrypoint_runs_preflight_before_exec(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from mcp_strava.deploy import entrypoint
 
