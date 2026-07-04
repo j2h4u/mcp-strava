@@ -637,6 +637,15 @@ def test_ci_compose_avoids_host_only_network_and_runtime_paths() -> None:
     assert "/srv/mcp-strava" not in text
 
 
+def test_runtime_ci_compose_is_standalone() -> None:
+    justfile = Path("Justfile")
+    if not justfile.exists():
+        pytest.fail("Justfile must exist")
+    text = justfile.read_text(encoding="utf-8")
+    assert 'compose_ci := "docker compose -p mcp-strava-ci -f deploy/docker-compose.ci.yml"' in text
+    assert "deploy/docker-compose.yml -f deploy/docker-compose.ci.yml" not in text
+
+
 def test_backfill_activities_invokes_run_catchup_per_D16(monkeypatch, tmp_path: Path) -> None:
     import mcp_strava.sync as sync
     from mcp_strava.refresh.runtime import RefreshResult

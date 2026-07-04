@@ -1,6 +1,10 @@
 services:
   mcp-strava:
     container_name: mcp-strava-ci
+    init: true
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
     restart: "no"
     environment:
       MCP_STRAVA_RUNTIME_PROFILE: container
@@ -16,5 +20,3 @@ services:
     volumes:
       - ${MCP_STRAVA_CI_RUNTIME_DIR:?set MCP_STRAVA_CI_RUNTIME_DIR}:/runtime
       - ${MCP_STRAVA_CI_DATA_DIR:?set MCP_STRAVA_CI_DATA_DIR}:/runtime/data
-    networks:
-      - default

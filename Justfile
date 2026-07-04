@@ -1,7 +1,7 @@
 set shell := ["bash", "-uc"]
 
 compose := "docker compose -f deploy/docker-compose.yml"
-compose_ci := "docker compose -p mcp-strava-ci -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml"
+compose_ci := "docker compose -p mcp-strava-ci -f deploy/docker-compose.ci.yml"
 mcp_url := "http://127.0.0.1:8080/mcp"
 smoke_basic := "python -m mcp_strava.devtools.mcp_client.cli smoke-basic --timeout 20 --compact --url " + mcp_url
 
