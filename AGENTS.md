@@ -103,7 +103,7 @@ The current runtime shape is a Docker-packaged local MCP server connected to the
 ## Module Design
 - Modules expose functions and dataclasses directly; layer boundaries are enforced by package structure (`adapters/`, `application/`, `interfaces/`, `deploy/`, `refresh/`).
 - Shared constants live in `src/mcp_strava/constants.py`; shared types in `src/mcp_strava/types.py`.
-- `db.py` is a thin facade re-exporting `DbConn`, `repository_from_connection`, `repository_from_path`, `refresh_token`, `api_request`, and `get_daily_trimp_history`.
+- `db.py` has no current product use; current code imports focused adapter, sync, and repository modules directly.
 ## Practical Rules
 - Keep new business logic in core/application modules, not in `cli.py`.
 - Keep new result shapes in `src/mcp_strava/types.py` so downstream code stays typed and consistent.
@@ -146,7 +146,7 @@ Strava API ──► refresh/ + sync.py ──► DuckDB mirror (data/strava.duc
 - `cli.py` is a dispatcher; domain work lives in core modules and `application/`.
 - `types.py` is the contract boundary between modules and JSON output.
 - `adapters/duckdb/` owns all persistence; `adapters/strava/` owns Strava HTTP/auth.
-- `db.py` is a thin facade over the DuckDB repository factories and Strava transport.
+- `db.py` has no current product use in product/runtime code; tests guard direct imports and current code uses focused modules.
 - `application/` orchestrates computed outputs from core primitives instead of reimplementing formulas.
 - `metric_registry.py` owns metric IDs, aggregate metadata, status facts, and `activity_metric_facts` SQL metadata consumed by the DuckDB schema layer.
 - `cardiac_drift.py` keeps the expensive Jenks-based drift algorithm isolated.

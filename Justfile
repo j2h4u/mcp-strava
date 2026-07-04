@@ -33,6 +33,15 @@ _actionlint:
 _supply-chain-pins:
     uv run python scripts/check_supply_chain_pins.py
 
+# Audit installed dependencies for known vulnerabilities.
+deps-audit:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tmp="$(mktemp)"
+    trap 'rm -f "$tmp"' EXIT
+    uv export --locked --all-groups --no-emit-project --no-emit-workspace --no-emit-local --no-header --no-annotate --no-editable > "$tmp"
+    uv run --no-project --with pip-audit pip-audit -r "$tmp" --strict --no-deps
+
 # Run the canonical static type checker.
 _typecheck:
     uv run basedpyright src

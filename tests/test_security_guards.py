@@ -552,7 +552,6 @@ def test_sync_does_not_define_moved_helpers_per_D17() -> None:
         "_replace_streams",
         "_stream_payload",
         "STREAM_KEYS",
-        "_is_iso_day",
     }
     defined: set[str] = set()
     for node in module.body:

@@ -37,19 +37,6 @@ NEXT_STAGE_BACKFILL: dict[Stage, Stage] = {
 }
 
 
-def is_backfill_stage(stage: str | Stage | None) -> bool:
-    if stage is None:
-        return False
-    return str(stage) in {
-        Stage.STREAMS_BACKFILL.value,
-        Stage.DETAILS_BACKFILL.value,
-        Stage.READ_MODEL_MATERIALIZE_BACKFILL.value,
-        Stage.COMPLETE_BACKFILL.value,
-        Stage.STREAM_CHANNELS_BACKFILL.value,
-        Stage.COMPLETE_STREAM_CHANNELS_BACKFILL.value,
-    }
-
-
 def is_active_backfill_stage(stage: str | Stage | None) -> bool:
     if stage is None:
         return False

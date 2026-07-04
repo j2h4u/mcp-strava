@@ -34,7 +34,7 @@ def create_fixture_db(db_path: str | Path) -> None:
     Seeds ``ACTIVITY_COUNT`` daily Run
     activities starting ``BASE_DAY``, each with ``STREAM_POINTS_PER_ACTIVITY``
     stream points carrying heartrate/velocity/altitude/cadence and GPS, plus
-    one athlete-zones row, one sync-log row, and one kudos row.
+    one sync-log row and one kudos row.
     """
     conn = open_fixture_db(db_path)
     try:
@@ -117,10 +117,6 @@ def create_fixture_db(db_path: str | Path) -> None:
             stream_rows,
         )
 
-        conn.execute(
-            "INSERT INTO athlete_zones (id, fetched_at, zones_json) VALUES (?, ?, ?)",
-            [1, "2026-02-12T07:00:00Z", "[]"],
-        )
         conn.execute(
             """
             INSERT INTO sync_log (

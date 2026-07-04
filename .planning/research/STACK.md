@@ -81,7 +81,7 @@ Before any schema migration on `data/strava.db`:
 
 1. Preflight:
 - Verify DB file exists and is readable.
-- Record row counts for critical tables (`activities`, `streams`, `kudos`, `sync_log`, `athlete_zones`).
+- Record row counts for critical tables (`activities`, `streams`, `kudos`, `sync_log`).
 - Verify current schema version (`PRAGMA user_version` or Alembic version table).
 
 2. Backup:

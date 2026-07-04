@@ -6,7 +6,6 @@ DUCKDB_TABLES: tuple[str, ...] = (
     "activities",
     "streams",
     "stream_channels",
-    "athlete_zones",
     "sync_log",
     "kudos",
     "refresh_state",

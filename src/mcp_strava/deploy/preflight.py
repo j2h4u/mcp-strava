@@ -13,16 +13,6 @@ import duckdb
 from mcp_strava.adapters.duckdb.connection import open_expected_mirror_db as open_expected_duckdb
 from mcp_strava.adapters.duckdb.schema import DUCKDB_TABLES
 
-REQUIRED_RUNTIME_TABLES: tuple[str, ...] = (
-    "activities",
-    "streams",
-    "athlete_zones",
-    "sync_log",
-    "kudos",
-    "refresh_state",
-    "refresh_requests",
-)
-
 
 def _duckdb_table_exists(conn, table: str) -> bool:
     return (

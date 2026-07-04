@@ -39,8 +39,8 @@ no no-op CASTs — with identical external behavior.
 
 ### Validated
 
-- [x] Local DuckDB mirror stores Strava activities, streams, athlete zones, sync history, kudos, refresh state, and read-model facts in `data/strava.duckdb` / `/runtime/data/strava.duckdb` — validated through Phases 8-9
-- [x] Strava OAuth refresh-token flow and direct API fetching support activity summaries, details, streams, zones, athlete stats, gear, and kudos — existing
+- [x] Local DuckDB mirror stores Strava activities, streams, sync history, kudos, refresh state, and read-model facts in `data/strava.duckdb` / `/runtime/data/strava.duckdb` — validated through Phases 8-9
+- [x] Strava OAuth refresh-token flow and direct API fetching support activity summaries, details, streams, athlete stats, gear, and kudos — existing
 - [x] Incremental sync and backfill can populate local Strava data while respecting API rate limits — existing
 - [x] Daily report computes recent activity panorama, Banister form, ACWR, progressive signal, weekly plan, recommendations, and safety warnings — existing
 - [x] Weekly analytics and trend views compute rolling load, efficiency, sport summaries, and form trends — existing

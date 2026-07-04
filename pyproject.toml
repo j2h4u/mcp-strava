@@ -26,6 +26,7 @@ dev = [
     "vulture>=2.14",
     "pytest-xdist>=3.8.0",
     "actionlint-py>=1.7.12.24",
+    "pip-audit>=2.9.0",
 ]
 
 [tool.setuptools]

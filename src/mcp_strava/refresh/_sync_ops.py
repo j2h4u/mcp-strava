@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from calendar import monthrange
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -12,25 +11,6 @@ from mcp_strava.adapters.duckdb.activity_selectors import activities_missing_str
 from mcp_strava.adapters.duckdb.stream_coverage_queries import activities_missing_stream_channels
 from mcp_strava.refresh.schema_drift import journal_schema_drift
 from mcp_strava.refresh.stream_payload import STREAM_KEYS, STREAM_KEYS_QUERY, _stream_payload
-
-_ISO_DATE_LENGTH = 10  # "YYYY-MM-DD" length
-
-
-def _is_iso_day(value: str) -> bool:
-    if len(value) != _ISO_DATE_LENGTH or value[4] != "-" or value[7] != "-":
-        return False
-    year_text = value[:4]
-    month_text = value[5:7]
-    day_text = value[8:10]
-    if not (year_text.isdigit() and month_text.isdigit() and day_text.isdigit()):
-        return False
-    year = int(year_text)
-    month = int(month_text)
-    day = int(day_text)
-    if month < 1 or month > 12:  # noqa: PLR2004
-        return False
-    max_day = monthrange(year, month)[1]
-    return 1 <= day <= max_day
 
 
 def _write_streams(repo, act_id: int, data: dict, fetched_at: str | None = None) -> int:

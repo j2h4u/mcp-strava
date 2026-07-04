@@ -78,12 +78,6 @@ CREATE TABLE stream_channels (
     PRIMARY KEY (activity_id, channel_key)
 );
 
-CREATE TABLE athlete_zones (
-    id BIGINT PRIMARY KEY,
-    fetched_at VARCHAR,
-    zones_json VARCHAR
-);
-
 CREATE TABLE sync_log (
     id BIGINT PRIMARY KEY,
     timestamp VARCHAR NOT NULL,

@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** Preserve the local Strava mirror and keep trusted training analytics working while the service is refactored into clean core, repository, adapter, CLI, and MCP boundaries.
-**Current focus:** Phase 16 — duckdb-native-storage-cleanup
+**Current focus:** Enji cleanup and pipeline-boundary cleanup
 
 ## Current Position
 
-Phase: Milestone v1.1 complete
+Phase: No active phase
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-06-11 — Milestone v1.1 completed and archived
+Last activity: 2026-07-04 — docs/state cleanup updated for current work
 
 ## Performance Metrics
 
