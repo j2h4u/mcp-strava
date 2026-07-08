@@ -469,3 +469,34 @@ def test_parse_local_hhmm_none_and_garbage():
     assert parse_local_hhmm("") is None
     assert parse_local_hhmm("not-a-timestamp") is None
     assert parse_local_hhmm("2026-05-21") == "00:00"  # date-only -> midnight
+
+
+# ─── cardiac_drift helpers: _median and _percentile ───
+
+
+def test_median_correctness():
+    from mcp_strava.cardiac_drift import _median
+
+    assert _median([]) == 0
+    assert _median([5]) == 5
+    assert _median([1, 2, 3]) == 2
+    assert _median([1, 2, 3, 4]) == 2.5
+    assert _median([1, 3, 5, 7, 9]) == 5
+    assert _median([1, 2, 2, 3, 10]) == 2
+    print("  OK: _median — empty, single, odd, even")
+
+
+def test_percentile_correctness():
+    from mcp_strava.cardiac_drift import _percentile
+
+    assert _percentile([], 50) == 0
+    assert _percentile([7], 0) == 7
+    assert _percentile([7], 50) == 7
+    assert _percentile([7], 100) == 7
+    # p0, p50, p100 of [1,2,3,4,5]
+    assert _percentile([1, 2, 3, 4, 5], 0) == 1
+    assert _percentile([1, 2, 3, 4, 5], 25) == 2
+    assert _percentile([1, 2, 3, 4, 5], 50) == 3
+    assert _percentile([1, 2, 3, 4, 5], 75) == 4
+    assert _percentile([1, 2, 3, 4, 5], 100) == 5
+    print("  OK: _percentile — empty, single, edge percentiles")

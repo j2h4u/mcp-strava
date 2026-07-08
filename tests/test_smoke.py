@@ -155,3 +155,36 @@ def test_settings_loads_defaults_under_pytest(tmp_path):
 
     settings = load_settings(environ={}, project_root=tmp_path)
     assert str(settings.database_path).endswith("data/strava.duckdb")
+
+
+# ─── form_zone and acwr_zone classification ───
+
+
+def test_form_zone_boundaries():
+    from mcp_strava.training import form_zone
+
+    assert form_zone(-999) == "tired"
+    assert form_zone(-6) == "tired"
+    assert form_zone(-5) == "normal"
+    assert form_zone(-1) == "normal"
+    assert form_zone(0) == "normal"
+    assert form_zone(9) == "normal"
+    assert form_zone(10) == "fresh"
+    assert form_zone(50) == "fresh"
+    print("  OK: form_zone — tired/normal/fresh boundary transitions")
+
+
+def test_acwr_zone_boundaries():
+    from mcp_strava.training import acwr_zone
+
+    assert acwr_zone(None) == "unknown"
+    assert acwr_zone(0.0) == "undertrained"
+    assert acwr_zone(0.79) == "undertrained"
+    assert acwr_zone(0.8) == "sweet_spot"
+    assert acwr_zone(1.0) == "sweet_spot"
+    assert acwr_zone(1.3) == "sweet_spot"
+    assert acwr_zone(1.31) == "caution"
+    assert acwr_zone(1.35) == "caution"
+    assert acwr_zone(1.36) == "danger"
+    assert acwr_zone(2.0) == "danger"
+    print("  OK: acwr_zone — all five zones + None guard")
