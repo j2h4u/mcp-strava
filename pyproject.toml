@@ -12,7 +12,7 @@ requires-python = ">=3.14"
 dependencies = [
     "duckdb>=1.5.4,<1.6",
     "mcp>=1.28.1,<1.29",
-    "numpy>=2.5.0",
+    "numpy>=2.5.1",
     "PyYAML>=6.0.2,<7",
 ]
 
@@ -20,9 +20,9 @@ dependencies = [
 dev = [
     "pytest>=9.1.1",
     "pytest-cov>=6.2.1",
-    "ruff>=0.15.20",
+    "ruff>=0.15.21",
     "basedpyright>=1.39.9",
-    "import-linter>=2.12",
+    "import-linter>=2.13",
     "vulture>=2.14",
     "pytest-xdist>=3.8.0",
     "actionlint-py>=1.7.12.24",
