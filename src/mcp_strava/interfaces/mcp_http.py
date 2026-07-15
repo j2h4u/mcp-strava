@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import sys
 import time
@@ -9,10 +10,12 @@ from copy import deepcopy
 from enum import IntEnum, StrEnum
 from typing import TYPE_CHECKING, Annotated, Any
 
+from mcp.server.auth.provider import AccessToken
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import AnyHttpUrl, Field
 
 from mcp_strava.application.aggregate_services import (
     AggregateServiceRequest,
@@ -90,6 +93,8 @@ the calling agent."""
 _SAFE_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _WILDCARD_HOSTS = {"0.0.0.0", "::"}
 _UNSAFE_TRANSPORT_VALUES = {"*", "0.0.0.0", "::"}
+_MCP_HTTP_PATH = "/mcp"
+_MCP_READ_SCOPE = "mcp:strava:read"
 _CACHEABLE_TOOL_NAMES = {"compare_periods", "get_training_aggregates"}
 _TOOL_CACHE_TTL_SECONDS = 30.0
 _TOOL_CACHE_MAX_ENTRIES = 32
@@ -103,6 +108,20 @@ def _tool_annotations() -> ToolAnnotations:
         idempotentHint=True,
         openWorldHint=False,
     )
+
+
+class StaticBearerTokenVerifier:
+    """Validate the single shared bearer token configured for local/container HTTP."""
+
+    def __init__(self, token: str) -> None:
+        if not token:
+            raise ValueError("MCP_STRAVA_HTTP_BEARER_TOKEN must not be empty")
+        self._token = token
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if not hmac.compare_digest(token, self._token):
+            return None
+        return AccessToken(token=token, client_id="mcp-strava-local", scopes=[_MCP_READ_SCOPE])
 
 
 def _envelope_payload(envelope: ServiceEnvelope) -> ServiceEnvelope:
@@ -221,23 +240,21 @@ def validate_http_settings(settings: Settings) -> None:
             raise ValueError("Unsafe local bind host; local profile requires loopback host")
     if host in _WILDCARD_HOSTS and not (profile == "container" and settings.http.allow_container_bind):
         raise ValueError("Wildcard bind host requires container profile and explicit allow flag")
+    if _requires_http_bearer_token(profile, host) and not settings.http.bearer_token:
+        raise ValueError("MCP_STRAVA_HTTP_BEARER_TOKEN is required for container or non-loopback HTTP serving")
+
+
+def _requires_http_bearer_token(profile: str, host: str) -> bool:
+    return profile in {"container", "docker", "live"} or host not in _SAFE_LOCAL_HOSTS
 
 
 def build_transport_security(settings: Settings) -> TransportSecuritySettings:
     """Build transport-layer guards for the MCP HTTP surface.
 
-    THREAT MODEL (single-user, local): there is NO per-request authentication on
-    this surface — any process that can reach the bound address may call every
-    tool. That is acceptable only because the service is deployed for one user
-    behind these load-bearing assumptions:
-      - the container binds loopback by default; a wildcard bind requires the
-        container profile AND an explicit allow flag (see validate_http_settings);
-      - the compose file exposes the port to the internal Docker network only
-        (`expose`, not `ports`) — it is not published to the LAN;
-      - DNS-rebinding protection plus host/origin allowlists (below) block
-        browser-driven cross-origin access.
-    If this ever becomes multi-user or network-reachable, add per-request auth —
-    the transport guards here are not a substitute for it.
+    THREAT MODEL (single-user, local): container or non-loopback HTTP serving
+    requires a shared Bearer token, and all profiles retain DNS-rebinding
+    protection plus host/origin allowlists. This is still a single-user local
+    service, not a multi-user account boundary.
     """
     if not settings.http.allowed_hosts:
         raise ValueError("allowed_hosts must not be empty")
@@ -256,6 +273,23 @@ def build_transport_security(settings: Settings) -> TransportSecuritySettings:
     )
 
 
+def build_auth_settings(settings: Settings) -> AuthSettings | None:
+    if not settings.http.bearer_token:
+        return None
+    base_url = f"http://localhost:{settings.http.port}"
+    return AuthSettings(
+        issuer_url=AnyHttpUrl(base_url),
+        resource_server_url=AnyHttpUrl(f"{base_url}{_MCP_HTTP_PATH}"),
+        required_scopes=[_MCP_READ_SCOPE],
+    )
+
+
+def build_token_verifier(settings: Settings) -> StaticBearerTokenVerifier | None:
+    if not settings.http.bearer_token:
+        return None
+    return StaticBearerTokenVerifier(settings.http.bearer_token)
+
+
 def build_mcp_server(settings: Settings | None = None) -> FastMCP:  # noqa: C901 — flat sequence of MCP resource/prompt/tool registrations; no reducible complexity
     resolved_settings = settings or get_settings()
     validate_http_settings(resolved_settings)
@@ -264,8 +298,10 @@ def build_mcp_server(settings: Settings | None = None) -> FastMCP:  # noqa: C901
         instructions=MCP_INSTRUCTIONS,
         host=resolved_settings.http.host,
         port=resolved_settings.http.port,
-        streamable_http_path="/mcp",
+        streamable_http_path=_MCP_HTTP_PATH,
         stateless_http=True,
+        auth=build_auth_settings(resolved_settings),
+        token_verifier=build_token_verifier(resolved_settings),
         transport_security=build_transport_security(resolved_settings),
     )
 

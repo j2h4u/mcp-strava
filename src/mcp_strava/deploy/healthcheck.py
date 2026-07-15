@@ -50,8 +50,11 @@ def _validate_owner_and_children() -> None:
 def _validate_http() -> None:
     port = int(os.environ.get("MCP_STRAVA_HTTP_PORT", "8080"))
     connection = HTTPConnection("127.0.0.1", port, timeout=3)
+    headers = {"Accept": "text/event-stream"}
+    if token := os.environ.get("MCP_STRAVA_HTTP_BEARER_TOKEN", "").strip():
+        headers["Authorization"] = f"Bearer {token}"
     try:
-        connection.request("GET", "/mcp", headers={"Accept": "text/event-stream"})
+        connection.request("GET", "/mcp", headers=headers)
         response = connection.getresponse()
         if response.status >= HTTPStatus.BAD_REQUEST:
             raise RuntimeError(f"MCP HTTP health returned {response.status}")

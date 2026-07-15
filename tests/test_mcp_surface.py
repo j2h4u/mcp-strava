@@ -303,6 +303,7 @@ def test_validate_http_settings_and_transport_security() -> None:
             allow_container_bind=True,
             allowed_hosts=("127.0.0.1", "localhost", "mcp-strava"),
             allowed_origins=("http://127.0.0.1", "http://localhost"),
+            bearer_token="test-secret",
         ),
     )
     mcp_http.validate_http_settings(container_allowed)
