@@ -1,4 +1,5 @@
 import ast
+import asyncio
 import os
 import subprocess
 import sys
@@ -624,6 +625,72 @@ def test_default_compose_has_no_public_host_port_binding() -> None:
     text = compose.read_text(encoding="utf-8")
     assert "0.0.0.0:" not in text
     assert 'ports: ["0.0.0.0' not in text
+
+
+def test_container_wildcard_mcp_http_requires_bearer_token() -> None:
+    from mcp_strava.interfaces.mcp_http import validate_http_settings
+    from mcp_strava.settings import load_settings
+
+    settings = load_settings(
+        environ={
+            "MCP_STRAVA_RUNTIME_PROFILE": "container",
+            "MCP_STRAVA_HTTP_HOST": "0.0.0.0",
+            "MCP_STRAVA_ALLOW_CONTAINER_BIND": "1",
+        }
+    )
+
+    with pytest.raises(ValueError, match="MCP_STRAVA_HTTP_BEARER_TOKEN"):
+        validate_http_settings(settings)
+
+
+def test_container_wildcard_mcp_http_accepts_bearer_token() -> None:
+    from mcp_strava.interfaces.mcp_http import validate_http_settings
+    from mcp_strava.settings import load_settings
+
+    settings = load_settings(
+        environ={
+            "MCP_STRAVA_RUNTIME_PROFILE": "container",
+            "MCP_STRAVA_HTTP_HOST": "0.0.0.0",
+            "MCP_STRAVA_ALLOW_CONTAINER_BIND": "1",
+            "MCP_STRAVA_HTTP_BEARER_TOKEN": "test-secret",
+        }
+    )
+
+    validate_http_settings(settings)
+
+
+def test_mcp_http_rejects_request_without_bearer_token() -> None:
+    from starlette.testclient import TestClient
+
+    from mcp_strava.interfaces.mcp_http import build_mcp_server
+    from mcp_strava.settings import load_settings
+
+    settings = load_settings(
+        environ={
+            "MCP_STRAVA_RUNTIME_PROFILE": "container",
+            "MCP_STRAVA_HTTP_HOST": "0.0.0.0",
+            "MCP_STRAVA_ALLOW_CONTAINER_BIND": "1",
+            "MCP_STRAVA_HTTP_BEARER_TOKEN": "test-secret",
+        }
+    )
+    app = build_mcp_server(settings).streamable_http_app()
+
+    with TestClient(app) as client:
+        response = client.get("/mcp", headers={"Accept": "text/event-stream"})
+
+    assert response.status_code == 401
+    assert "test-secret" not in response.text
+
+
+def test_mcp_http_bearer_verifier_accepts_only_configured_token() -> None:
+    from mcp_strava.interfaces.mcp_http import StaticBearerTokenVerifier
+
+    verifier = StaticBearerTokenVerifier("test-secret")
+
+    assert asyncio.run(verifier.verify_token("wrong")) is None
+    accepted = asyncio.run(verifier.verify_token("test-secret"))
+    assert accepted is not None
+    assert accepted.scopes == ["mcp:strava:read"]
 
 
 def test_ci_compose_avoids_host_only_network_and_runtime_paths() -> None:

@@ -2,7 +2,7 @@
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from mcp_strava.constants import Config
@@ -29,6 +29,7 @@ class HttpSettings:
     allow_container_bind: bool
     allowed_hosts: tuple[str, ...]
     allowed_origins: tuple[str, ...]
+    bearer_token: str | None = field(repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ _KEYS = {
     "MCP_STRAVA_ALLOW_CONTAINER_BIND",
     "MCP_STRAVA_ALLOWED_HOSTS",
     "MCP_STRAVA_ALLOWED_ORIGINS",
+    "MCP_STRAVA_HTTP_BEARER_TOKEN",
     "MCP_STRAVA_REFRESH_INTERVAL_SECONDS",
     "MCP_STRAVA_REFRESH_FULL_RESYNC_INTERVAL_SECONDS",
     "MCP_STRAVA_PROJECT_ROOT",
@@ -146,6 +148,11 @@ def _parse_csv(raw: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in raw.split(",") if part.strip())
 
 
+def _parse_optional_secret(raw: str) -> str | None:
+    value = raw.strip()
+    return value or None
+
+
 def _default_database_path(root: Path, runtime_profile: str) -> Path:
     if runtime_profile in {"docker", "container", "live"}:
         return CANONICAL_DUCKDB_RUNTIME_PATH
@@ -212,6 +219,7 @@ def load_settings(
             "http://127.0.0.1,http://localhost,http://[::1]",
         )
     )
+    http_bearer_token = _parse_optional_secret(resolve("MCP_STRAVA_HTTP_BEARER_TOKEN", ""))
     refresh_interval_seconds = _parse_int(
         resolve("MCP_STRAVA_REFRESH_INTERVAL_SECONDS", "3600"),
         "MCP_STRAVA_REFRESH_INTERVAL_SECONDS",
@@ -252,6 +260,7 @@ def load_settings(
             allow_container_bind=allow_container_bind,
             allowed_hosts=allowed_hosts,
             allowed_origins=allowed_origins,
+            bearer_token=http_bearer_token,
         ),
         freshness=FreshnessSettings(
             warn_age_hours=FRESHNESS_WARN_AGE_HOURS,

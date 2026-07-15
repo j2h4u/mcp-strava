@@ -11,6 +11,7 @@ services:
       MCP_STRAVA_HTTP_HOST: 0.0.0.0
       MCP_STRAVA_HTTP_PORT: "8080"
       MCP_STRAVA_ALLOW_CONTAINER_BIND: "1"
+      MCP_STRAVA_HTTP_BEARER_TOKEN: ${MCP_STRAVA_CI_HTTP_BEARER_TOKEN:-ci-mcp-strava-token}
       MCP_STRAVA_ALLOWED_HOSTS: 127.0.0.1:8080,localhost:8080,mcp-strava:8080,mcp-strava,mcp-strava-ci:8080,mcp-strava-ci
       MCP_STRAVA_ALLOWED_ORIGINS: http://127.0.0.1:8080,http://localhost:8080,http://mcp-strava:8080,http://mcp-strava-ci:8080
       MCP_STRAVA_DB_PATH: /runtime/data/strava.duckdb

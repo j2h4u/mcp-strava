@@ -82,6 +82,7 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
 
 def _add_http_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--url", help="Streamable HTTP MCP endpoint. When set, server_command is ignored.")
+    parser.add_argument("--bearer-token", help="Bearer token for authenticated Streamable HTTP endpoints.")
 
 
 def parse_tool_arguments(raw_arguments: str) -> dict[str, object]:
@@ -115,7 +116,8 @@ async def _run_command(args: argparse.Namespace) -> object:
     url: str | None = cast(str | None, args.url)
     timeout: float = cast(float, args.timeout)
     if url:
-        async with HttpMcpClient(url, timeout_seconds=timeout) as client:
+        bearer_token = cast(str | None, args.bearer_token)
+        async with HttpMcpClient(url, timeout_seconds=timeout, bearer_token=bearer_token) as client:
             startup_ms = (time.perf_counter() - started_at) * 1000
             return await _dispatch(args, client, startup_ms=startup_ms)
 

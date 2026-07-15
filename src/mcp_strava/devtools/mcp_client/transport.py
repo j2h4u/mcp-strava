@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import types
 from contextlib import AsyncExitStack
 from datetime import timedelta
@@ -8,6 +9,7 @@ from typing import Any
 
 from mcp import ClientSession, StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared._httpx_utils import create_mcp_http_client
 
 from mcp_strava.devtools.mcp_client.contracts import DEFAULT_TIMEOUT_SECONDS, McpClientError
 
@@ -96,13 +98,22 @@ class StdioMcpClient:
 class HttpMcpClient:
     """Small async wrapper around the official MCP Streamable HTTP client transport."""
 
-    def __init__(self, url: str, *, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS) -> None:
+    def __init__(
+        self,
+        url: str,
+        *,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        bearer_token: str | None = None,
+    ) -> None:
         if not url:
             raise ValueError("url must not be empty")
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         self._url = url
         self._timeout_seconds = timeout_seconds
+        self._bearer_token = (
+            bearer_token if bearer_token is not None else os.environ.get("MCP_STRAVA_HTTP_BEARER_TOKEN")
+        )
         self._exit_stack: AsyncExitStack | None = None
         self._session: ClientSession | None = None
 
@@ -123,8 +134,12 @@ class HttpMcpClient:
             return
         exit_stack = AsyncExitStack()
         try:
+            http_client = None
+            if self._bearer_token:
+                http_client = create_mcp_http_client(headers={"Authorization": f"Bearer {self._bearer_token}"})
+                await exit_stack.enter_async_context(http_client)
             read_stream, write_stream, _get_session_id = await exit_stack.enter_async_context(
-                streamable_http_client(self._url)
+                streamable_http_client(self._url, http_client=http_client)
             )
             session = await exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
             await session.initialize()
