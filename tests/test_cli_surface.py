@@ -325,6 +325,29 @@ def test_admin_commands_are_namespaced_and_distinct(monkeypatch: pytest.MonkeyPa
     assert {"report", "weekly", "workouts", "workout", "freshness"}.issubset(cli.COMMANDS)
 
 
+def test_admin_token_refresh_redacts_access_token(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import mcp_strava.cli_admin as cli_admin
+
+    fake_token = "secret-access-token-value"
+
+    class _FakeStravaClient:
+        def refresh_token(self) -> str:
+            return fake_token
+
+    monkeypatch.setattr(cli_admin, "StravaClient", _FakeStravaClient)
+
+    stdout, stderr = _run_cli(monkeypatch, capsys, "admin", "token-refresh")
+    payload = json.loads(stdout)
+
+    assert stderr == ""
+    assert payload == {"status": "ok", "token": "<redacted>"}
+    assert fake_token not in stdout
+    assert fake_token[:10] not in stdout
+
+
 def test_admin_mirror_coverage_json_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
