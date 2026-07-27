@@ -150,6 +150,45 @@ def test_sports_registry():
     print("  OK: sports_registry — training, running, eff_windows, detect_new")
 
 
+def test_sports_registry_query_helpers():
+    """Sports registry: query helpers for known and unknown types."""
+    from mcp_strava.sports import (
+        build_eff_config,
+        get_category,
+        get_display,
+        is_hr_based,
+        is_known,
+    )
+
+    assert is_known("Run") is True
+    assert is_known("Golf") is True
+    assert is_known("FlyingSquirrel") is False
+
+    assert is_hr_based("Run") is True
+    assert is_hr_based("Golf") is False
+    assert is_hr_based("FlyingSquirrel") is False
+
+    assert get_display("TrailRun") == "Trail Run"
+    assert get_display("HighIntensityIntervalTraining") == "HIIT"
+    assert get_display("FlyingSquirrel") == "FlyingSquirrel"
+
+    assert get_category("Run") == "foot"
+    assert get_category("Ride") == "cycle"
+    assert get_category("Swim") == "water"
+    assert get_category("NordicSki") == "winter"
+    assert get_category("Workout") == "gym"
+    assert get_category("Golf") == "other"
+    assert get_category("FlyingSquirrel") == "other"
+
+    eff_config = build_eff_config()
+    assert isinstance(eff_config, dict)
+    assert eff_config["Run"] == [7, 28, 90]
+    assert eff_config["Swim"] == [7, 28]
+    assert "Golf" not in eff_config
+
+    print("  OK: sports_registry_query_helpers — is_known, is_hr_based, display, category, eff_config")
+
+
 def test_settings_loads_defaults_under_pytest(tmp_path):
     from mcp_strava.settings import load_settings
 

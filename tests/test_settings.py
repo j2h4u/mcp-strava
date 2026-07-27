@@ -240,3 +240,116 @@ def test_athlete_hr_rest_out_of_range_rejected() -> None:
 def test_unknown_hr_zone_model_rejected() -> None:
     with pytest.raises(ValueError, match="MCP_STRAVA_HR_ZONE_MODEL"):
         load_settings(environ={"MCP_STRAVA_HR_ZONE_MODEL": "bogus"}, project_root=Path("/tmp/project"))
+
+
+def test_read_token_file_values_parses_credentials(tmp_path: Path) -> None:
+    from mcp_strava.settings import _read_token_file_values
+
+    token_file = tmp_path / "token.env"
+    token_file.write_text(
+        "\n".join(  # noqa: FLY002 — multi-line token file literal reads better than one giant string
+            [
+                "# comment",
+                "STRAVA_CLIENT_ID=12345",
+                "STRAVA_CLIENT_SECRET=abcdef",
+                "  # indented comment",
+                "OTHER_KEY=value",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    values = _read_token_file_values(token_file)
+    assert values["STRAVA_CLIENT_ID"] == "12345"
+    assert values["STRAVA_CLIENT_SECRET"] == "abcdef"
+    assert values["OTHER_KEY"] == "value"
+
+
+def test_read_token_file_values_returns_empty_for_missing_file(tmp_path: Path) -> None:
+    from mcp_strava.settings import _read_token_file_values
+
+    values = _read_token_file_values(tmp_path / "nonexistent.env")
+    assert values == {}
+
+
+def test_required_strava_client_creds_returns_credentials(tmp_path: Path) -> None:
+    from mcp_strava.settings import (
+        AthleteSettings,
+        FreshnessSettings,
+        HttpSettings,
+        RefreshSettings,
+        Settings,
+        required_strava_client_creds,
+    )
+
+    token_file = tmp_path / "token.env"
+    token_file.write_text("STRAVA_CLIENT_ID=12345\nSTRAVA_CLIENT_SECRET=secret\n", encoding="utf-8")
+    settings = Settings(
+        database_path=tmp_path / "db.duckdb",
+        token_path=token_file,
+        runtime_profile="local",
+        prompt_language="en",
+        athlete=AthleteSettings(hr_rest=None, hr_zone_model="karvonen_hrr"),
+        http=HttpSettings(host="127.0.0.1", port=8000, allow_container_bind=False, allowed_hosts=(), allowed_origins=()),
+        freshness=FreshnessSettings(warn_age_hours=12, max_age_hours=24),
+        refresh=RefreshSettings(
+            interval_seconds=3600, stream_backfill_batch_size=50, read_model_batch_size=25, full_resync_interval_seconds=604800
+        ),
+    )
+    client_id, client_secret = required_strava_client_creds(settings)
+    assert client_id == "12345"
+    assert client_secret == "secret"
+
+
+def test_required_strava_client_creds_raises_on_missing_token_path(tmp_path: Path) -> None:
+    from mcp_strava.settings import (
+        AthleteSettings,
+        FreshnessSettings,
+        HttpSettings,
+        RefreshSettings,
+        Settings,
+        required_strava_client_creds,
+    )
+
+    settings = Settings(
+        database_path=tmp_path / "db.duckdb",
+        token_path=tmp_path / "nonexistent.env",
+        runtime_profile="local",
+        prompt_language="en",
+        athlete=AthleteSettings(hr_rest=None, hr_zone_model="karvonen_hrr"),
+        http=HttpSettings(host="127.0.0.1", port=8000, allow_container_bind=False, allowed_hosts=(), allowed_origins=()),
+        freshness=FreshnessSettings(warn_age_hours=12, max_age_hours=24),
+        refresh=RefreshSettings(
+            interval_seconds=3600, stream_backfill_batch_size=50, read_model_batch_size=25, full_resync_interval_seconds=604800
+        ),
+    )
+    with pytest.raises(RuntimeError, match="Missing Strava client settings"):
+        required_strava_client_creds(settings)
+
+
+def test_required_strava_client_creds_raises_on_partial_credentials(tmp_path: Path) -> None:
+    from mcp_strava.settings import (
+        AthleteSettings,
+        FreshnessSettings,
+        HttpSettings,
+        RefreshSettings,
+        Settings,
+        required_strava_client_creds,
+    )
+
+    token_file = tmp_path / "token.env"
+    token_file.write_text("STRAVA_CLIENT_ID=12345\n", encoding="utf-8")
+    settings = Settings(
+        database_path=tmp_path / "db.duckdb",
+        token_path=token_file,
+        runtime_profile="local",
+        prompt_language="en",
+        athlete=AthleteSettings(hr_rest=None, hr_zone_model="karvonen_hrr"),
+        http=HttpSettings(host="127.0.0.1", port=8000, allow_container_bind=False, allowed_hosts=(), allowed_origins=()),
+        freshness=FreshnessSettings(warn_age_hours=12, max_age_hours=24),
+        refresh=RefreshSettings(
+            interval_seconds=3600, stream_backfill_batch_size=50, read_model_batch_size=25, full_resync_interval_seconds=604800
+        ),
+    )
+    with pytest.raises(RuntimeError, match="Missing Strava client settings"):
+        required_strava_client_creds(settings)
