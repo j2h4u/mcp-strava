@@ -298,6 +298,27 @@ def test_calc_vertical_speed_nonzero_leading_offset():
     print(f"  OK: calc_vertical_speed nonzero-offset — vmh={result.vmh}, duration={result.duration_hours}h")
 
 
+def test_calc_vertical_speed_zero_ascent_flat_terrain():
+    """calc_vertical_speed: path with no ascent (flat terrain) returns vmh=0.
+    
+    Treadmill runs, flat races, or barometric drift can produce an altitude
+    series where every point has the same elevation. Total ascent is zero, so
+    vmh must be zero — not None, not an error. The function must also handle
+    this without division issues or incorrect None-guard firing.
+    """
+    n = Config.Metrics.MIN_ALT_POINTS + 10
+    rows = [
+        {"time_offset": i * 10, "altitude": 200.0}
+        for i in range(n)
+    ]
+    result = calc_vertical_speed(rows)
+    assert result is not None, "flat terrain must return a result, not None"
+    assert result.total_ascent_m == 0.0, f"zero ascent expected, got {result.total_ascent_m}"
+    assert result.vmh == 0, f"vmh must be 0 for zero ascent, got {result.vmh}"
+    assert result.duration_hours > 0
+    print(f"  OK: calc_vertical_speed zero-ascent — vmh={result.vmh}, ascent={result.total_ascent_m}m")
+
+
 # ─── calc_cardiac_drift ───
 
 
