@@ -447,6 +447,61 @@ def test_fetch_429_then_401_exhaustion_preserves_rate_limited_reason():
     assert exc.detail is not None, "detail must be non-None for rate_limited exhaustion"
 
 
+def test_fetch_429_waits_for_retry_after_before_retrying():
+    """A 429 response honours Strava's retry hint before a successful retry."""
+    from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport
+
+    class TokenProvider:
+        def access_token(self):
+            return "access-secret"
+
+        def refresh(self):
+            return "access-new"
+
+    sleeper = FakeSleeper()
+    http = FakeStravaHttp(
+        [
+            urllib.error.HTTPError("url", 429, "Too Many Requests", {"Retry-After": "7"}, None),
+            FakeHttpResponse(200, {"ok": True}),
+        ]
+    )
+
+    response = StravaTransport(
+        TokenProvider(), RateLimitPolicy(), clock=FakeClock(), sleeper=sleeper, http=http
+    ).fetch("/athlete")
+
+    assert response.data == {"ok": True}
+    assert sleeper.sleeps == [8]
+    assert len(http.requests) == 2
+
+
+def test_fetch_429_uses_safe_default_wait_for_invalid_retry_after():
+    """An invalid Retry-After header falls back to the deterministic safety delay."""
+    from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport
+
+    class TokenProvider:
+        def access_token(self):
+            return "access-secret"
+
+        def refresh(self):
+            return "access-new"
+
+    sleeper = FakeSleeper()
+    http = FakeStravaHttp(
+        [
+            urllib.error.HTTPError("url", 429, "Too Many Requests", {"Retry-After": "invalid"}, None),
+            FakeHttpResponse(200, {"ok": True}),
+        ]
+    )
+
+    response = StravaTransport(
+        TokenProvider(), RateLimitPolicy(), clock=FakeClock(), sleeper=sleeper, http=http
+    ).fetch("/athlete")
+
+    assert response.data == {"ok": True}
+    assert sleeper.sleeps == [15]
+
+
 def test_fetch_403_application_inactive_reports_actionable_reason():
     from mcp_strava.adapters.strava import RateLimitPolicy, StravaTransport, StravaUnavailableError
 
