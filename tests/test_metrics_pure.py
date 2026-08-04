@@ -3,6 +3,10 @@
 All tests use plain dict rows — no database connection, no repository.
 """
 
+import math
+
+import pytest
+
 from mcp_strava.constants import WALK_TRIMP_DISCOUNT, Config
 from mcp_strava.metrics import (
     calc_cardiac_drift,
@@ -469,3 +473,21 @@ def test_parse_local_hhmm_none_and_garbage():
     assert parse_local_hhmm("") is None
     assert parse_local_hhmm("not-a-timestamp") is None
     assert parse_local_hhmm("2026-05-21") == "00:00"  # date-only -> midnight
+
+
+# ─── Banister model constants ───
+
+
+def test_banister_tau_values_are_documented():
+    """TAU_FATIGUE=10 and TAU_FITNESS=42 are the author-tuned model constants."""
+    assert Config.Model.Banister.TAU_FATIGUE == 10
+    assert Config.Model.Banister.TAU_FITNESS == 42
+
+
+def test_banister_alpha_derived_from_tau():
+    """ALPHA_FATIGUE = 1 - exp(log(0.5)/TAU_FATIGUE) ≈ 0.067,
+    ALPHA_FITNESS = 1 - exp(log(0.5)/TAU_FITNESS) ≈ 0.016."""
+    expected_alpha_fatigue = 1.0 - math.exp(math.log(0.5) / Config.Model.Banister.TAU_FATIGUE)
+    expected_alpha_fitness = 1.0 - math.exp(math.log(0.5) / Config.Model.Banister.TAU_FITNESS)
+    assert pytest.approx(expected_alpha_fatigue, rel=1e-9) == Config.Model.Banister.ALPHA_FATIGUE
+    assert pytest.approx(expected_alpha_fitness, rel=1e-9) == Config.Model.Banister.ALPHA_FITNESS
