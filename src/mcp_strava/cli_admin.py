@@ -56,8 +56,9 @@ def cmd_sql(args):
 
 
 def cmd_refresh(args):
-    token = StravaClient().refresh_token()
-    print(json.dumps({"status": "ok", "token": token[:10] + "..."}))
+    _ = args
+    StravaClient().refresh_token()
+    print(json.dumps({"status": "ok", "token": "<redacted>"}))
 
 
 def cmd_strava_raw(args):
