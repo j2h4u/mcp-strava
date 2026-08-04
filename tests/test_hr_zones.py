@@ -47,6 +47,37 @@ def test_known_model_ids_includes_karvonen() -> None:
     assert "karvonen_hrr" in known_model_ids()
 
 
+def test_get_zone_model_happy_path() -> None:
+    """get_zone_model("karvonen_hrr") returns a working KarvonenHRR instance."""
+    model = get_zone_model("karvonen_hrr")
+    assert model.identifier == "karvonen_hrr"
+    assert model.zone_bounds(hr_max=191, hr_rest=53) == [122, 136, 150, 163, 177, 300]
+
+
+def test_zone_bounds_with_explicit_model_id() -> None:
+    """zone_bounds with an explicit model_id kwarg produces the same bounds."""
+    assert zone_bounds(191, 53, model_id="karvonen_hrr") == [122, 136, 150, 163, 177, 300]
+
+
+def test_zone_bounds_with_invalid_model_id_raises() -> None:
+    """zone_bounds with an unknown model_id propagates the ValueError."""
+    with pytest.raises(ValueError, match="Unknown HR zone model"):
+        zone_bounds(191, 53, model_id="threshold_lactate")
+
+
+def test_known_model_ids_returns_sorted_tuple() -> None:
+    """known_model_ids returns a sorted tuple with the expected entries."""
+    ids = known_model_ids()
+    assert isinstance(ids, tuple)
+    assert ids == tuple(sorted(ids))
+    assert "karvonen_hrr" in ids
+
+
+def test_karvonen_percentages() -> None:
+    """KarvonenHRR.PERCENTAGES must match the documented zone thresholds."""
+    assert KarvonenHRR.PERCENTAGES == (0.50, 0.60, 0.70, 0.80, 0.90)
+
+
 # ── Task 2 additions ──────────────────────────────────────────────────────────
 
 
