@@ -150,6 +150,77 @@ def test_sports_registry():
     print("  OK: sports_registry — training, running, eff_windows, detect_new")
 
 
+def test_sports_registry_group_consistency():
+    """Pre-computed groups SPORT_TRAINING, SPORT_RUNNING, SPORT_ALL match SPORT_REGISTRY.
+
+    These groups are used in DuckDB SQL IN clauses across the analytics pipeline.
+    If a sport's metadata is edited without updating the groups, queries silently break.
+    """
+    from mcp_strava.sports import SPORT_ALL, SPORT_REGISTRY, SPORT_RUNNING, SPORT_TRAINING
+
+    assert isinstance(SPORT_TRAINING, tuple), "SPORT_TRAINING must be a tuple"
+    assert isinstance(SPORT_RUNNING, tuple), "SPORT_RUNNING must be a tuple"
+    assert isinstance(SPORT_ALL, tuple), "SPORT_ALL must be a tuple"
+
+    assert len(SPORT_ALL) == 50, f"SPORT_ALL must have 50 keys, got {len(SPORT_ALL)}"
+    assert sorted(SPORT_ALL) == list(SPORT_ALL), "SPORT_ALL must be sorted"
+
+    expected_training = tuple(sorted(k for k, v in SPORT_REGISTRY.items() if v.is_training))
+    assert expected_training == SPORT_TRAINING, (
+        f"SPORT_TRAINING mismatch: {set(SPORT_TRAINING) ^ set(expected_training)}"
+    )
+
+    expected_running = tuple(sorted(k for k, v in SPORT_REGISTRY.items() if v.is_running))
+    assert expected_running == SPORT_RUNNING, (
+        f"SPORT_RUNNING mismatch: {set(SPORT_RUNNING) ^ set(expected_running)}"
+    )
+
+    expected_all = tuple(sorted(SPORT_REGISTRY.keys()))
+    assert expected_all == SPORT_ALL
+
+    for key in SPORT_TRAINING:
+        assert SPORT_REGISTRY[key].is_training, f"'{key}' in SPORT_TRAINING but is_training=False"
+
+    for key in SPORT_RUNNING:
+        assert SPORT_REGISTRY[key].is_running, f"'{key}' in SPORT_RUNNING but is_running=False"
+
+    print("  OK: sports_registry_group_consistency — groups match registry")
+
+
+def test_build_eff_config_output_shape():
+    """build_eff_config returns a dict of lists keyed by sports that track efficiency."""
+    from mcp_strava.sports import build_eff_config
+
+    cfg = build_eff_config()
+    assert isinstance(cfg, dict), "build_eff_config must return a dict"
+
+    for sport_key, windows in cfg.items():
+        assert isinstance(windows, list), f"'{sport_key}' windows must be a list, got {type(windows)}"
+        assert len(windows) > 0, f"'{sport_key}' must have at least one window"
+
+    assert "Run" in cfg
+    assert cfg["Run"] == [7, 28, 90]
+    assert "Walk" in cfg
+    assert cfg["Walk"] == [7, 28]
+    assert "Hike" in cfg
+    assert cfg["Hike"] == [28, 90]
+
+    assert "Golf" not in cfg, "Golf has no eff_windows — must not appear"
+    assert "Pilates" not in cfg, "Pilates has no eff_windows — must not appear"
+    assert "Snowboard" not in cfg, "Snowboard has no eff_windows — must not appear"
+
+    from mcp_strava.sports import SPORT_REGISTRY
+
+    for key, meta in SPORT_REGISTRY.items():
+        if meta.eff_windows:
+            assert key in cfg, f"'{key}' has eff_windows but is missing from config"
+            assert cfg[key] == list(meta.eff_windows), (
+                f"'{key}' windows mismatch: expected {list(meta.eff_windows)}, got {cfg[key]}"
+            )
+
+    print(f"  OK: build_eff_config — {len(cfg)} sports with efficiency windows")
+
+
 def test_settings_loads_defaults_under_pytest(tmp_path):
     from mcp_strava.settings import load_settings
 
