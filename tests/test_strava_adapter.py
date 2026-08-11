@@ -91,6 +91,65 @@ class FakeTokenRefreshTransport:
         )
 
 
+def test_client_facade_returns_transport_data_and_rate_headers():
+    from mcp_strava.adapters.strava import StravaClient, StravaRateInfo, StravaResponse
+
+    class Transport:
+        def __init__(self):
+            self.paths: list[str] = []
+
+        def fetch(self, path: str) -> StravaResponse:
+            self.paths.append(path)
+            return StravaResponse(
+                status=200,
+                data={"id": 42},
+                rate_info=StravaRateInfo(read_short=(3, 100), read_long=(7, 1_000)),
+            )
+
+    transport = Transport()
+
+    data, rate_headers = StravaClient(transport=transport).api_request("/athlete")
+
+    assert transport.paths == ["/athlete"]
+    assert data == {"id": 42}
+    assert rate_headers == {
+        "usage_15min": None,
+        "limit_15min": None,
+        "limit_daily": None,
+        "usage_daily": None,
+        "read_usage_15min": 3,
+        "read_limit_15min": 100,
+        "read_limit_daily": 1_000,
+        "read_usage_daily": 7,
+    }
+
+
+def test_client_facade_returns_rate_limited_sentinel():
+    from mcp_strava.adapters.strava import StravaClient, StravaUnavailableError
+
+    class Transport:
+        def fetch(self, path: str):
+            raise StravaUnavailableError("rate_limited")
+
+    data, rate_headers = StravaClient(transport=Transport()).api_request("/athlete")
+
+    assert data == {"_rate_limited": True, "_retry_after": None}
+    assert rate_headers == {}
+
+
+def test_client_facade_wraps_non_rate_limit_unavailability():
+    from mcp_strava.adapters.strava import StravaClient, StravaUnavailableError
+
+    class Transport:
+        def fetch(self, path: str):
+            raise StravaUnavailableError("endpoint_unavailable")
+
+    with pytest.raises(RuntimeError, match="Strava API request failed: endpoint_unavailable") as exc_info:
+        StravaClient(transport=Transport()).api_request("/athlete/zones")
+
+    assert isinstance(exc_info.value.__cause__, StravaUnavailableError)
+
+
 def _write_token_file(
     path: Path, *, access: str = "access-old", refresh: str = "refresh-old", expires: int = 0
 ) -> None:
