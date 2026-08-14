@@ -145,6 +145,42 @@ def _assert_all_sections_have_completeness(payload: dict[str, object]) -> None:
         _assert_bundle_completeness(section)
 
 
+def test_included_metrics_combines_sources_and_excludes_unavailable_rows() -> None:
+    from mcp_strava.application.product_bundle_format import included_metrics
+
+    included = included_metrics(
+        ("weekly_trimp", "active_days", "total_trimp_14d", "kudos_count"),
+        rows=[
+            {"metric_id": "weekly_trimp", "completeness_status": "complete"},
+            {"metric_id": "active_days", "completeness_status": "unavailable"},
+        ],
+        metrics={"active_days": 4, "not_requested": 99},
+        facts={"total_trimp_14d": 123.4, "kudos_count": None},
+        items=[{"kudos_count": 7}, {"weekly_trimp": None}],
+    )
+
+    assert included == {"weekly_trimp", "active_days", "total_trimp_14d", "kudos_count"}
+
+
+def test_bundle_completeness_keeps_explicit_reason_and_fills_remaining_metrics() -> None:
+    from mcp_strava.application.product_bundle_format import bundle_completeness
+
+    completeness = bundle_completeness(
+        ("weekly_trimp", "active_days", "total_trimp_14d", "not_registered"),
+        included_metrics=("weekly_trimp",),
+        unavailable_metrics=(
+            {"metric_id": "active_days", "reason_code": "missing_read_model_fact", "evidence_count": 2},
+        ),
+    )
+
+    assert completeness["requested_metrics"] == ["weekly_trimp", "active_days", "total_trimp_14d"]
+    assert completeness["included_metrics"] == ["weekly_trimp"]
+    assert completeness["unavailable_metrics"] == [
+        {"metric_id": "active_days", "reason_code": "missing_read_model_fact", "evidence_count": 2},
+        {"metric_id": "total_trimp_14d", "reason_code": "data_absent", "evidence_count": 0},
+    ]
+
+
 def _add_mirrored_gear_fixture(db_path: Path) -> None:
     conn = open_fixture_db(db_path)
     row = conn.execute("SELECT summary_json FROM activities WHERE id = 101").fetchone()
